@@ -15,6 +15,27 @@ export function formatDate(iso: string | null | undefined): string {
   return iso.slice(0, 10).replace(/-/g, ".");
 }
 
+/** ISO datetime → 한국 시간 (YYYY.MM.DD HH:mm) */
+export function formatDateTime(iso: string | null | undefined): string {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "—";
+  const fmt = new Intl.DateTimeFormat("ko-KR", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+    timeZone: "Asia/Seoul",
+  });
+  // ko-KR 출력: "2026. 04. 27. 09:30" → 정리
+  return fmt
+    .format(d)
+    .replace(/\.\s/g, ".")
+    .replace(/\.(\d{2}:)/, " $1");
+}
+
 export function formatPercent(value: number | null | undefined): string {
   if (value == null) return "—";
   return `${Math.round(value * 100)}%`;

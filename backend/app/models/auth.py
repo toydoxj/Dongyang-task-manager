@@ -26,6 +26,7 @@ class User(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime, default=lambda: datetime.now(timezone.utc)
     )
+    last_login_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
 
 # ── Pydantic 스키마 ──
@@ -53,6 +54,7 @@ class UserInfo(BaseModel):
     role: str = "member"
     status: str = "active"
     notion_user_id: str = ""
+    last_login_at: datetime | None = None
 
 
 class TokenResponse(BaseModel):

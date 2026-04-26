@@ -35,6 +35,7 @@ export interface UserInfo {
   role: UserRole;
   status: "active" | "pending" | "rejected";
   notion_user_id: string;
+  last_login_at: string | null;
 }
 
 export const ROLE_LABEL: Record<UserRole, string> = {

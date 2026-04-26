@@ -11,6 +11,7 @@ import {
   rejectUser,
   setUserRole,
 } from "@/lib/api";
+import { formatDateTime } from "@/lib/format";
 import { ROLE_LABEL, type UserInfo, type UserRole } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
@@ -138,13 +139,14 @@ export default function UsersAdminPage() {
               <th className="px-3 py-2">이메일</th>
               <th className="px-3 py-2">권한</th>
               <th className="px-3 py-2">상태</th>
+              <th className="px-3 py-2">최근 로그인</th>
               <th className="px-3 py-2 text-right">관리</th>
             </tr>
           </thead>
           <tbody>
             {isLoading && !data && (
               <tr>
-                <td colSpan={6} className="px-3 py-8 text-center text-xs text-zinc-500">
+                <td colSpan={7} className="px-3 py-8 text-center text-xs text-zinc-500">
                   불러오는 중…
                 </td>
               </tr>
@@ -162,7 +164,7 @@ export default function UsersAdminPage() {
             ))}
             {data && filtered.length === 0 && (
               <tr>
-                <td colSpan={6} className="px-3 py-8 text-center text-xs text-zinc-500">
+                <td colSpan={7} className="px-3 py-8 text-center text-xs text-zinc-500">
                   {view === "pending" ? "승인 대기 중인 사용자가 없습니다." : "사용자가 없습니다."}
                 </td>
               </tr>
@@ -223,6 +225,9 @@ function UserRow({
       </td>
       <td className={cellCls}>
         <StatusBadge status={u.status} />
+      </td>
+      <td className={cn(cellCls, "text-xs text-zinc-500 whitespace-nowrap")}>
+        {formatDateTime(u.last_login_at)}
       </td>
       <td className={cn(cellCls, "text-right whitespace-nowrap")}>
         {u.status === "pending" && (

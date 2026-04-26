@@ -121,6 +121,8 @@ export default function MyPage() {
         )}
       </section>
 
+      <hr className="border-zinc-200 dark:border-zinc-800" />
+
       <section>
         <div className="mb-2 flex items-center justify-between">
           <h2 className="text-sm font-medium text-zinc-700 dark:text-zinc-300">

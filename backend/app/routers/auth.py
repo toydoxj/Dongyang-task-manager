@@ -1,6 +1,7 @@
 """인증 라우터 — 회원가입(최초 관리자/승인 신청), 로그인, 사용자 관리."""
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from typing import Literal
 from uuid import uuid4
 
@@ -91,6 +92,7 @@ def login(body: LoginRequest, db: Session = Depends(get_db)) -> TokenResponse:
 
     sid = uuid4().hex
     user.session_id = sid
+    user.last_login_at = datetime.now(timezone.utc)
     db.commit()
     token = create_token(user.username, user.role, sid)
     return TokenResponse(access_token=token, user=_to_info(user))
