@@ -5,21 +5,22 @@ import { usePathname } from "next/navigation";
 
 import { useAuth } from "./AuthGuard";
 import { clearAuth } from "@/lib/auth";
+import type { UserRole } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 interface NavItem {
   href: string;
   label: string;
-  adminOnly?: boolean;
+  roles?: UserRole[]; // 미지정 시 모든 사용자 접근 가능
 }
 
 const NAV: NavItem[] = [
-  { href: "/", label: "대시보드" },
+  { href: "/", label: "대시보드", roles: ["admin", "team_lead"] },
   { href: "/projects", label: "프로젝트" },
   { href: "/me", label: "내 업무" },
   { href: "/utilities", label: "유틸 런처" },
-  { href: "/admin/employees", label: "직원 관리", adminOnly: true },
-  { href: "/admin/users", label: "사용자 관리", adminOnly: true },
+  { href: "/admin/employees", label: "직원 관리", roles: ["admin"] },
+  { href: "/admin/users", label: "사용자 관리", roles: ["admin"] },
 ];
 
 export default function Sidebar() {
@@ -51,7 +52,9 @@ export default function Sidebar() {
       </div>
 
       <nav className="flex-1 space-y-1 p-3">
-        {NAV.filter((n) => !n.adminOnly || user?.role === "admin").map((n) => {
+        {NAV.filter(
+          (n) => !n.roles || (user?.role && n.roles.includes(user.role)),
+        ).map((n) => {
           const active = pathname === n.href || pathname.startsWith(`${n.href}/`);
           return (
             <Link

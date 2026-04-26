@@ -51,14 +51,22 @@ export function useProject(id: string | null): SWRResponse<Project> {
 
 export function useTasks(
   filters?: Parameters<typeof listTasks>[0],
+  enabled: boolean = true,
 ): SWRResponse<TaskListResponse> {
-  return useSWR(keys.tasks(filters), () => listTasks(filters));
+  return useSWR(
+    enabled ? keys.tasks(filters) : null,
+    () => listTasks(filters),
+  );
 }
 
 export function useCashflow(
   filters?: Parameters<typeof getCashflow>[0],
+  enabled: boolean = true,
 ): SWRResponse<CashflowResponse> {
-  return useSWR(keys.cashflow(filters), () => getCashflow(filters));
+  return useSWR(
+    enabled ? keys.cashflow(filters) : null,
+    () => getCashflow(filters),
+  );
 }
 
 export function useClients(

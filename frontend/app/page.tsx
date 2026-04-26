@@ -1,5 +1,8 @@
 "use client";
 
+import { useRouter } from "next/navigation";
+import { useEffect } from "react";
+
 import { useAuth } from "@/components/AuthGuard";
 import CashflowForecast from "@/components/dashboard/CashflowForecast";
 import ExpenseTrend from "@/components/dashboard/ExpenseTrend";
@@ -13,10 +16,23 @@ import { useCashflow, useProjects, useTasks } from "@/lib/hooks";
 
 export default function DashboardPage() {
   const { user } = useAuth();
-  const { data: projectData, error: projectErr } = useProjects();
-  const { data: cashflowData, error: cashflowErr } = useCashflow({ flow: "income" });
-  const { data: expenseData } = useCashflow({ flow: "expense" });
-  const { data: tasksData } = useTasks();
+  const router = useRouter();
+
+  // 대시보드는 관리자/팀장 전용 — 일반 직원이 URL로 들어오면 내 업무로 redirect
+  const allowed = user?.role === "admin" || user?.role === "team_lead";
+  useEffect(() => {
+    if (user && !allowed) router.replace("/me");
+  }, [user, allowed, router]);
+
+  const { data: projectData, error: projectErr } = useProjects(undefined, allowed);
+  const { data: cashflowData, error: cashflowErr } = useCashflow(
+    { flow: "income" },
+    allowed,
+  );
+  const { data: expenseData } = useCashflow({ flow: "expense" }, allowed);
+  const { data: tasksData } = useTasks(undefined, allowed);
+
+  if (!user || !allowed) return null;
 
   const error = projectErr ?? cashflowErr;
   const projects = projectData?.items;
