@@ -28,6 +28,7 @@ class Settings(BaseSettings):
     notion_db_tasks: str = ""
     notion_db_cashflow: str = ""
     notion_db_expense: str = ""
+    notion_db_assign_log: str = ""  # 프로젝트 담당 변경 이력
 
 
 @lru_cache(maxsize=1)

@@ -10,7 +10,7 @@ import {
   useSensors,
 } from "@dnd-kit/core";
 import { CSS } from "@dnd-kit/utilities";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { updateTask } from "@/lib/api";
 import type { Task } from "@/lib/domain";
@@ -51,14 +51,34 @@ export default function TaskKanban({ tasks, onChanged, onCreate }: Props) {
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
   );
 
-  const grouped = new Map<string, Task[]>();
-  for (const s of TASK_STATUSES) grouped.set(s, []);
-  for (const t of tasks) {
-    const key = TASK_STATUSES.includes(t.status as (typeof TASK_STATUSES)[number])
-      ? t.status
-      : "시작 전";
-    grouped.get(key)?.push(t);
-  }
+  // 컴포넌트 mount 시점 캡처 (React purity 룰 — Date.now 직접 호출 금지)
+  const [nowMs] = useState(() => Date.now());
+  // "완료" 컬럼은 최근 N일 이내 완료된 것만 표시
+  const { grouped, hiddenCompleted } = useMemo(() => {
+    const COMPLETED_RECENT_DAYS = 10;
+    const g = new Map<string, Task[]>();
+    for (const s of TASK_STATUSES) g.set(s, []);
+    let hidden = 0;
+    for (const t of tasks) {
+      const key = TASK_STATUSES.includes(
+        t.status as (typeof TASK_STATUSES)[number],
+      )
+        ? t.status
+        : "시작 전";
+      if (key === "완료") {
+        const ref = t.actual_end_date ?? t.last_edited_time;
+        if (ref) {
+          const days = (nowMs - new Date(ref).getTime()) / 86400000;
+          if (days > COMPLETED_RECENT_DAYS) {
+            hidden += 1;
+            continue;
+          }
+        }
+      }
+      g.get(key)?.push(t);
+    }
+    return { grouped: g, hiddenCompleted: hidden };
+  }, [tasks, nowMs]);
 
   const showToast = (msg: string): void => {
     setToast(msg);
@@ -154,6 +174,7 @@ export default function TaskKanban({ tasks, onChanged, onCreate }: Props) {
               key={status}
               status={status}
               items={grouped.get(status) ?? []}
+              hiddenCount={status === "완료" ? hiddenCompleted : 0}
               onAdvance={(t, next) => void applyStatusChange(t, next)}
               onClickTask={setEditing}
               onCreate={onCreate}
@@ -180,12 +201,14 @@ export default function TaskKanban({ tasks, onChanged, onCreate }: Props) {
 function DroppableColumn({
   status,
   items,
+  hiddenCount,
   onAdvance,
   onClickTask,
   onCreate,
 }: {
   status: string;
   items: Task[];
+  hiddenCount: number;
   onAdvance: (t: Task, nextStatus: string) => void;
   onClickTask: (t: Task) => void;
   onCreate?: (initialStatus?: string) => void;
@@ -207,7 +230,17 @@ function DroppableColumn({
       <div className="mb-2 flex items-center justify-between px-1">
         <h4 className="text-xs font-semibold">{status}</h4>
         <div className="flex items-center gap-2">
-          <span className="text-[10px] text-zinc-500">{items.length}</span>
+          <span className="text-[10px] text-zinc-500">
+            {items.length}
+            {hiddenCount > 0 && (
+              <span
+                className="ml-1 text-zinc-400"
+                title={`최근 10일 이전 완료 ${hiddenCount}건은 숨김`}
+              >
+                (+{hiddenCount})
+              </span>
+            )}
+          </span>
           {onCreate && (
             <button
               type="button"

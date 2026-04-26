@@ -7,9 +7,10 @@ import { useSWRConfig } from "swr";
 import { useAuth } from "@/components/AuthGuard";
 import ProjectCreateModal from "@/components/me/ProjectCreateModal";
 import ProjectImportModal from "@/components/me/ProjectImportModal";
+import ProjectTaskRow from "@/components/me/ProjectTaskRow";
 import UpcomingDeadlines from "@/components/me/UpcomingDeadlines";
+import TaskCreateModal from "@/components/project/TaskCreateModal";
 import TaskEditModal from "@/components/project/TaskEditModal";
-import ProjectCard from "@/components/projects/ProjectCard";
 import LoadingState from "@/components/ui/LoadingState";
 import type { Task } from "@/lib/domain";
 import { dDayLabel, formatDate } from "@/lib/format";
@@ -22,6 +23,11 @@ export default function MyPage() {
   const [editing, setEditing] = useState<Task | null>(null);
   const [importOpen, setImportOpen] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
+  // 프로젝트별 신규 TASK 모달
+  const [taskCreate, setTaskCreate] = useState<{
+    projectId: string;
+    status?: string;
+  } | null>(null);
 
   const { data: projectData, error: projectErr } = useProjects(
     user?.name ? { mine: true } : undefined,
@@ -126,9 +132,19 @@ export default function MyPage() {
             진행중 + 담당으로 지정된 프로젝트가 없습니다.
           </p>
         ) : (
-          <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
+          <div className="space-y-4">
             {projects.map((p) => (
-              <ProjectCard key={p.id} project={p} />
+              <ProjectTaskRow
+                key={p.id}
+                project={p}
+                tasks={(tasks ?? []).filter((t) => t.project_ids.includes(p.id))}
+                myName={user.name}
+                onChanged={refreshTasks}
+                onCreate={(projectId, status) =>
+                  setTaskCreate({ projectId, status })
+                }
+                onUnassigned={refreshProjects}
+              />
             ))}
           </div>
         )}
@@ -151,6 +167,14 @@ export default function MyPage() {
         open={createOpen}
         onClose={() => setCreateOpen(false)}
         onCreated={refreshProjects}
+      />
+
+      <TaskCreateModal
+        open={!!taskCreate}
+        projectId={taskCreate?.projectId ?? ""}
+        initialStatus={taskCreate?.status}
+        onClose={() => setTaskCreate(null)}
+        onCreated={refreshTasks}
       />
     </div>
   );

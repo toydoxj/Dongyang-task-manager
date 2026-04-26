@@ -25,6 +25,33 @@ _CLIENT_DB_ID = "307e84986c8680f197eed98407eabf84"
 router = APIRouter(prefix="/projects", tags=["projects"])
 
 
+async def _log_assign_change(
+    notion: NotionService,
+    *,
+    project_id: str,
+    project_name: str,
+    actor: str,
+    target: str,
+    action: str,  # "담당 추가" | "담당 제거"
+) -> None:
+    """담당자 변경 이력을 노션 DB에 기록 (실패해도 main 작업은 계속)."""
+    db_id = get_settings().notion_db_assign_log
+    if not db_id:
+        return
+    title = f"{action} · {target} · {project_name}"[:200]
+    props = {
+        "이벤트": {"title": [{"text": {"content": title}}]},
+        "프로젝트": {"relation": [{"id": project_id}]},
+        "작업": {"select": {"name": action}},
+        "대상 담당자": {"rich_text": [{"text": {"content": target}}]},
+        "변경자": {"rich_text": [{"text": {"content": actor}}]},
+    }
+    try:
+        await notion.create_page(db_id, props)
+    except Exception:  # noqa: BLE001 — 로그 실패는 main 작업 막지 않음
+        pass
+
+
 async def _resolve_client_names(
     notion: NotionService, projects: list[Project]
 ) -> None:
@@ -172,7 +199,16 @@ async def assign_me(
         page_id,
         {"담당자": {"multi_select": [{"name": n} for n in new_assignees]}},
     )
-    return Project.from_notion_page(updated)
+    project = Project.from_notion_page(updated)
+    await _log_assign_change(
+        notion,
+        project_id=page_id,
+        project_name=project.name,
+        actor=user.name,
+        target=user.name,
+        action="담당 추가",
+    )
+    return project
 
 
 @router.delete("/{page_id}/assign", response_model=Project)
@@ -201,4 +237,13 @@ async def unassign_me(
         page_id,
         {"담당자": {"multi_select": [{"name": n} for n in new_assignees]}},
     )
-    return Project.from_notion_page(updated)
+    project = Project.from_notion_page(updated)
+    await _log_assign_change(
+        notion,
+        project_id=page_id,
+        project_name=project.name,
+        actor=user.name,
+        target=user.name,
+        action="담당 제거",
+    )
+    return project

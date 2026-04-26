@@ -64,7 +64,8 @@
       "Bash(BACKEND_PORT=8765 ./dist/backend/backend.exe)",
       "Bash(tee /tmp/be_test.log)",
       "Bash(python -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\('token len:', len\\(d.get\\('access_token',''\\)\\)\\); print\\('user:', d.get\\('user'\\)\\)\")",
-      "Bash(python -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\('count:', d.get\\('count', d.get\\('detail', '?'\\)\\)\\); print\\('첫 1건:', d['items'][0]['name'] if d.get\\('items'\\) else 'N/A'\\)\")"
+      "Bash(python -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\('count:', d.get\\('count', d.get\\('detail', '?'\\)\\)\\); print\\('첫 1건:', d['items'][0]['name'] if d.get\\('items'\\) else 'N/A'\\)\")",
+      "mcp__claude_ai_Notion__notion-update-data-source"
     ]
   },
   "enabledMcpjsonServers": [
