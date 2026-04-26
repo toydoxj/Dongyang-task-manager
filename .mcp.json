@@ -1,0 +1,21 @@
+{
+  "mcpServers": {
+    "shrimp-task-manager": {
+      "command": "npx",
+      "args": ["-y", "mcp-shrimp-task-manager"],
+      "env": {
+        "DATA_DIR": "C:\\Users\\user\\OneDrive\\문서\\Task_DY\\shrimp_data",
+        "TEMPLATES_USE": "en",
+        "ENABLE_GUI": "false"
+      }
+    },
+    "playwright": {
+      "command": "npx",
+      "args": ["@playwright/mcp@latest"]
+    },
+    "codex-cli": {
+      "command": "npx",
+      "args": ["-y", "codex-mcp-server"]
+    }
+  }
+}

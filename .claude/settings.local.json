@@ -1,0 +1,41 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(gh repo *)",
+      "Bash(gh api *)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "Bash(python -c \"import sys, json; data=json.load\\(sys.stdin\\); [print\\(f\\\\\"{x['type']}: {x['name']}\\\\\"\\) for x in data]\")",
+      "mcp__codex-cli__codex",
+      "Bash(rm \"C:/Users/user/OneDrive/문서/Task_DY/.claude/rule\")",
+      "Bash(mkdir -p \"C:/Users/user/OneDrive/문서/Task_DY/.claude/rule\")",
+      "mcp__claude_ai_Notion__notion-fetch",
+      "mcp__codex-cli__ping",
+      "mcp__claude_ai_Notion__notion-create-database",
+      "Bash(uv --version)",
+      "Bash(npm --version)",
+      "PowerShell(irm https://astral.sh/uv/install.ps1 | iex)",
+      "Bash(export PATH=\"/c/Users/user/.local/bin:$PATH\")",
+      "Bash(uv init *)",
+      "Bash(uv add *)",
+      "Bash(uv run *)",
+      "Bash(uv remove *)",
+      "Bash(npx --yes create-next-app@latest frontend --typescript --tailwind --app --no-src-dir --eslint --import-alias \"@/*\" --use-npm --turbopack --yes)",
+      "Bash(npm install *)",
+      "Bash(npm run *)",
+      "Bash(tee /tmp/backend.log)",
+      "Bash(tee /tmp/frontend.log)",
+      "Bash(curl -sf http://127.0.0.1:8000/health)",
+      "Bash(curl -s http://127.0.0.1:8000/health)",
+      "Bash(curl -sf http://127.0.0.1:3000/)",
+      "Bash(curl -s http://127.0.0.1:8000/api/auth/status)",
+      "Bash(curl -s -o /dev/null -w \"login page: HTTP %{http_code}\\\\n\" http://127.0.0.1:3000/login)",
+      "Bash(git config *)",
+      "Bash(gh auth *)"
+    ]
+  },
+  "enabledMcpjsonServers": [
+    "shrimp-task-manager",
+    "playwright",
+    "codex-cli"
+  ]
+}
