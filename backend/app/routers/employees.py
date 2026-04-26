@@ -17,6 +17,7 @@ from app.models.employee import (
 )
 from app.security import require_admin
 from app.services.employee_import import parse_workbook
+from app.services.employee_link import link_employee_to_user
 
 router = APIRouter(prefix="/admin/employees", tags=["employees"])
 
@@ -64,6 +65,8 @@ def create_employee(
         email=body.email,
     )
     db.add(emp)
+    db.flush()
+    link_employee_to_user(db, emp)
     db.commit()
     db.refresh(emp)
     return EmployeeOut.model_validate(emp)
@@ -80,10 +83,14 @@ def update_employee(
     if emp is None:
         raise HTTPException(status_code=404, detail="직원을 찾을 수 없습니다")
     data = body.model_dump(exclude_unset=True)
+    email_changed = "email" in data and data["email"] != emp.email
     for k, v in data.items():
         if v is None:
             continue
         setattr(emp, k, v)
+    if email_changed:
+        # 이메일 변경 → 새 이메일로 사용자 매칭 재시도 (이전 연결은 유지/덮어쓰기)
+        link_employee_to_user(db, emp)
     db.commit()
     db.refresh(emp)
     return EmployeeOut.model_validate(emp)
@@ -144,17 +151,18 @@ async def upload_employees(
             ).scalar_one_or_none()
 
         if existing is None:
-            db.add(
-                Employee(
-                    name=p.name,
-                    position=p.position,
-                    team=p.team,
-                    degree=p.degree,
-                    license=p.license,
-                    grade=p.grade,
-                    email=p.email,
-                )
+            new_emp = Employee(
+                name=p.name,
+                position=p.position,
+                team=p.team,
+                degree=p.degree,
+                license=p.license,
+                grade=p.grade,
+                email=p.email,
             )
+            db.add(new_emp)
+            db.flush()
+            link_employee_to_user(db, new_emp)
             inserted += 1
         else:
             # 기존 값 보존: 엑셀에 빈 값이면 덮어쓰지 않음 (admin 보강분 보호)
@@ -165,6 +173,8 @@ async def upload_employees(
                     setattr(existing, field, new_val)
                     changed = True
             if changed:
+                # 이메일이 갱신됐을 수 있으므로 매칭 재시도
+                link_employee_to_user(db, existing)
                 updated += 1
             else:
                 skipped += 1

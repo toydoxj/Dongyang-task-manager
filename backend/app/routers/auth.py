@@ -22,6 +22,7 @@ from app.security import (
     require_admin,
     verify_password,
 )
+from app.services.employee_link import link_user_to_employee
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -120,7 +121,7 @@ def update_me(
 
 @router.post("/request")
 def request_join(body: RegisterRequest, db: Session = Depends(get_db)) -> dict[str, str]:
-    """가입 신청 — pending 상태로 저장."""
+    """가입 신청 — 이메일이 직원 명부에 있으면 즉시 자동 승인 + 매칭, 아니면 pending."""
     if db.query(User).filter(User.username == body.username).first():
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT, detail="이미 존재하는 아이디입니다"
@@ -134,6 +135,15 @@ def request_join(body: RegisterRequest, db: Session = Depends(get_db)) -> dict[s
         status="pending",
     )
     db.add(user)
+    db.flush()  # user.id 확보
+    emp = link_user_to_employee(db, user)
+    if emp is not None:
+        user.status = "active"
+        db.commit()
+        return {
+            "status": "active",
+            "message": f"직원 명부에서 확인되어 자동 승인되었습니다 ({emp.team or emp.position}).",
+        }
     db.commit()
     return {
         "status": "pending",
@@ -160,6 +170,8 @@ def admin_create_user(
         status="active",
     )
     db.add(user)
+    db.flush()
+    link_user_to_employee(db, user)
     db.commit()
     db.refresh(user)
     return _to_info(user)
@@ -184,6 +196,8 @@ def approve_user(
             status_code=status.HTTP_404_NOT_FOUND, detail="사용자를 찾을 수 없습니다"
         )
     user.status = "active"
+    # 승인 시점에 직원 매칭 재시도 (admin이 employee 이메일을 그 사이에 추가했을 수 있음)
+    link_user_to_employee(db, user)
     db.commit()
     db.refresh(user)
     return _to_info(user)
