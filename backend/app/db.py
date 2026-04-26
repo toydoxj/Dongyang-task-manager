@@ -46,6 +46,13 @@ engine = create_engine(
     connect_args=_connect_args(),
     # Supabase 풀러는 idle 연결을 끊을 수 있으므로 ping 으로 stale 방지
     pool_pre_ping=not _is_sqlite,
+    # Postgres pool 튜닝 (sqlite는 의미 없음)
+    # default(5/10)는 sync 시점의 동시 요청 누적에 약함 → pool 고갈로 hang.
+    # PgBouncer transaction mode 와 호환되며 Render Starter 부하에 충분.
+    pool_size=10 if not _is_sqlite else 5,
+    max_overflow=20 if not _is_sqlite else 10,
+    pool_timeout=20,    # 대기 20초 후 fail → SWR retry로 폭주 방지
+    pool_recycle=300,   # PgBouncer가 idle 5분 후 끊는 connection 재사용 회피
 )
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 

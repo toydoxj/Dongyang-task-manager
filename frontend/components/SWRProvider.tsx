@@ -12,9 +12,10 @@ export default function SWRProvider({ children }: { children: React.ReactNode })
         revalidateOnFocus: false,
         // 네트워크 복귀 시 재검증
         revalidateOnReconnect: true,
-        // 에러 시 자동 재시도 (3회까지)
+        // 에러 시 자동 재시도 (3회, 간격 5초). 너무 짧으면 backend가
+        // 잠깐 hang일 때 재시도가 추가 부하를 만들어 회복을 늦춤.
         errorRetryCount: 3,
-        errorRetryInterval: 2000,
+        errorRetryInterval: 5000,
       }}
     >
       {children}

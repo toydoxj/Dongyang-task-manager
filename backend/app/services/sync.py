@@ -107,9 +107,15 @@ class NotionSyncService:
         sorts = [{"timestamp": "last_edited_time", "direction": "ascending"}]
         pages = await self.notion.query_all(db_id, filter=filt, sorts=sorts)
 
+        # 100건 단위로 commit — 단일 transaction이 row lock을 오래 잡으면
+        # /api/projects 같은 동시 read 요청이 hang됨. 작은 배치로 잘라
+        # lock 점유 시간을 줄임.
+        BATCH = 100
         with self.session_factory() as db:
-            for page in pages:
+            for i, page in enumerate(pages, start=1):
                 self._upsert_one(db, kind, page)
+                if i % BATCH == 0:
+                    db.commit()
             db.commit()
 
         # full이면 노션에 없는 미러 row를 archive (삭제 감지)
