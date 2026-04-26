@@ -11,6 +11,18 @@ from sqlalchemy.orm import Session
 
 VALID_ROLES = {"admin", "team_lead", "member"}
 
+# 회사 이메일 도메인 강제 (직원만 가입 허용)
+ALLOWED_EMAIL_DOMAIN = "@dyce.kr"
+
+
+def _ensure_company_email(email: str) -> None:
+    if not email or not email.lower().endswith(ALLOWED_EMAIL_DOMAIN):
+        raise HTTPException(
+            status_code=400,
+            detail=f"이메일은 회사 계정({ALLOWED_EMAIL_DOMAIN})만 사용 가능합니다",
+        )
+
+
 from app.db import get_db
 from app.models.auth import (
     LoginRequest,
@@ -67,6 +79,7 @@ def register(body: RegisterRequest, db: Session = Depends(get_db)) -> TokenRespo
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT, detail="이미 존재하는 아이디입니다"
         )
+    _ensure_company_email(str(body.email))
 
     sid = uuid4().hex
     user = User(
@@ -165,6 +178,7 @@ def request_join(body: RegisterRequest, db: Session = Depends(get_db)) -> dict[s
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT, detail="이미 존재하는 아이디입니다"
         )
+    _ensure_company_email(str(body.email))
     user = User(
         username=body.username,
         password=hash_password(body.password),
@@ -200,6 +214,7 @@ def admin_create_user(
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT, detail="이미 존재하는 아이디입니다"
         )
+    _ensure_company_email(str(body.email))
     user = User(
         username=body.username,
         password=hash_password(body.password),
@@ -277,6 +292,39 @@ def set_user_role(
                 status_code=400, detail="마지막 관리자는 강등할 수 없습니다"
             )
     user.role = body.role
+    db.commit()
+    db.refresh(user)
+    return _to_info(user)
+
+
+class AdminUserUpdate(BaseModel):
+    """admin이 다른 사용자 정보 수정 (비밀번호 reset은 별도 흐름)."""
+
+    name: str | None = None
+    email: str | None = None
+    notion_user_id: str | None = None
+
+
+@router.patch("/users/{user_id}", response_model=UserInfo)
+def admin_update_user(
+    user_id: int,
+    body: AdminUserUpdate,
+    admin: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+) -> UserInfo:
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="사용자를 찾을 수 없습니다"
+        )
+    if body.name is not None:
+        user.name = body.name
+    if body.email is not None:
+        _ensure_company_email(body.email)
+        user.email = body.email
+        link_user_to_employee(db, user)  # 이메일 변경 시 직원 매칭 재시도
+    if body.notion_user_id is not None:
+        user.notion_user_id = body.notion_user_id
     db.commit()
     db.refresh(user)
     return _to_info(user)

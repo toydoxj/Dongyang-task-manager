@@ -4,16 +4,20 @@ import { useState } from "react";
 import useSWR from "swr";
 
 import { useAuth } from "@/components/AuthGuard";
+import Modal from "@/components/ui/Modal";
 import {
   approveUser,
   deleteUser,
   listUsers,
   rejectUser,
   setUserRole,
+  updateUserAsAdmin,
 } from "@/lib/api";
 import { formatDateTime } from "@/lib/format";
 import { ROLE_LABEL, type UserInfo, type UserRole } from "@/lib/types";
 import { cn } from "@/lib/utils";
+
+const COMPANY_EMAIL_DOMAIN = "@dyce.kr";
 
 type UserView = "pending" | "active" | "all";
 
@@ -21,6 +25,7 @@ export default function UsersAdminPage() {
   const { user } = useAuth();
   const [view, setView] = useState<UserView>("pending");
   const [errMsg, setErrMsg] = useState<string | null>(null);
+  const [editing, setEditing] = useState<UserInfo | null>(null);
   const { data, mutate, error, isLoading } = useSWR(
     user?.role === "admin" ? ["users"] : null,
     () => listUsers(),
@@ -159,6 +164,7 @@ export default function UsersAdminPage() {
                 onReject={() => void onReject(u.id)}
                 onDelete={() => void onDelete(u.id)}
                 onChangeRole={(r) => void onChangeRole(u.id, r)}
+                onEdit={() => setEditing(u)}
                 isMe={u.id === user?.id}
               />
             ))}
@@ -172,7 +178,119 @@ export default function UsersAdminPage() {
           </tbody>
         </table>
       </div>
+
+      {editing && (
+        <UserEditModal
+          user={editing}
+          onClose={() => setEditing(null)}
+          onSaved={(u) => {
+            setEditing(null);
+            void mutate(
+              (prev) => prev?.map((x) => (x.id === u.id ? u : x)) ?? prev,
+              { revalidate: true },
+            );
+          }}
+          onError={(m) => setErrMsg(m)}
+        />
+      )}
     </main>
+  );
+}
+
+function UserEditModal({
+  user,
+  onClose,
+  onSaved,
+  onError,
+}: {
+  user: UserInfo;
+  onClose: () => void;
+  onSaved: (u: UserInfo) => void;
+  onError: (m: string) => void;
+}) {
+  const [name, setName] = useState(user.name);
+  const [email, setEmail] = useState(user.email);
+  const [notionId, setNotionId] = useState(user.notion_user_id);
+  const [saving, setSaving] = useState(false);
+
+  async function onSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (email && !email.toLowerCase().endsWith(COMPANY_EMAIL_DOMAIN)) {
+      onError(`이메일은 회사 계정(${COMPANY_EMAIL_DOMAIN})만 사용 가능합니다`);
+      return;
+    }
+    setSaving(true);
+    try {
+      const updated = await updateUserAsAdmin(user.id, {
+        name,
+        email,
+        notion_user_id: notionId,
+      });
+      onSaved(updated);
+    } catch (err) {
+      onError(err instanceof Error ? err.message : "저장 실패");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Modal open onClose={onClose} title={`사용자 편집 — ${user.username}`} size="md">
+      <form onSubmit={onSubmit} className="space-y-3">
+        <div>
+          <label className="mb-1 block text-xs text-zinc-500">이름</label>
+          <input
+            type="text"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            className="w-full rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-950"
+          />
+        </div>
+        <div>
+          <label className="mb-1 block text-xs text-zinc-500">
+            이메일 ({COMPANY_EMAIL_DOMAIN})
+          </label>
+          <input
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            placeholder={`name${COMPANY_EMAIL_DOMAIN}`}
+            className="w-full rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-950"
+          />
+          <p className="mt-1 text-[10px] text-zinc-500">
+            변경 시 직원 명부 매칭이 자동으로 재시도됩니다.
+          </p>
+        </div>
+        <div>
+          <label className="mb-1 block text-xs text-zinc-500">
+            노션 사용자 ID (선택)
+          </label>
+          <input
+            type="text"
+            value={notionId}
+            onChange={(e) => setNotionId(e.target.value)}
+            placeholder="UUID 형식"
+            className="w-full rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-sm font-mono dark:border-zinc-700 dark:bg-zinc-950"
+          />
+        </div>
+        <div className="flex justify-end gap-2 pt-2">
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-md border border-zinc-300 px-3 py-1.5 text-xs hover:bg-zinc-50 dark:border-zinc-700 dark:hover:bg-zinc-800"
+          >
+            취소
+          </button>
+          <button
+            type="submit"
+            disabled={saving}
+            className="rounded-md bg-zinc-900 px-3 py-1.5 text-xs text-white hover:bg-zinc-700 disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300"
+          >
+            {saving ? "저장 중..." : "저장"}
+          </button>
+        </div>
+      </form>
+    </Modal>
   );
 }
 
@@ -184,6 +302,7 @@ function UserRow({
   onReject,
   onDelete,
   onChangeRole,
+  onEdit,
   isMe,
 }: {
   u: UserInfo;
@@ -191,6 +310,7 @@ function UserRow({
   onReject: () => void;
   onDelete: () => void;
   onChangeRole: (role: UserRole) => void;
+  onEdit: () => void;
   isMe: boolean;
 }) {
   const roleColors: Record<UserRole, string> = {
@@ -230,12 +350,19 @@ function UserRow({
         {formatDateTime(u.last_login_at)}
       </td>
       <td className={cn(cellCls, "text-right whitespace-nowrap")}>
+        <button
+          type="button"
+          onClick={onEdit}
+          className="rounded border border-zinc-300 px-2 py-0.5 text-[11px] text-zinc-600 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
+        >
+          편집
+        </button>
         {u.status === "pending" && (
           <>
             <button
               type="button"
               onClick={onApprove}
-              className="rounded bg-emerald-600 px-2 py-0.5 text-[11px] text-white hover:bg-emerald-700"
+              className="ml-1 rounded bg-emerald-600 px-2 py-0.5 text-[11px] text-white hover:bg-emerald-700"
             >
               승인
             </button>
@@ -252,13 +379,13 @@ function UserRow({
           <button
             type="button"
             onClick={onDelete}
-            className="rounded border border-red-300 px-2 py-0.5 text-[11px] text-red-500 hover:bg-red-50 dark:border-red-900 dark:hover:bg-red-950"
+            className="ml-1 rounded border border-red-300 px-2 py-0.5 text-[11px] text-red-500 hover:bg-red-50 dark:border-red-900 dark:hover:bg-red-950"
           >
             삭제
           </button>
         )}
         {isMe && (
-          <span className="text-[10px] text-zinc-400">(나)</span>
+          <span className="ml-1 text-[10px] text-zinc-400">(나)</span>
         )}
       </td>
     </tr>

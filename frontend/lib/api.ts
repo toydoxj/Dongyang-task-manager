@@ -246,6 +246,24 @@ export async function setUserRole(id: number, role: UserRole): Promise<UserInfo>
   return jsonOrThrow<UserInfo>(res);
 }
 
+export interface AdminUserPatch {
+  name?: string;
+  email?: string;
+  notion_user_id?: string;
+}
+
+export async function updateUserAsAdmin(
+  id: number,
+  patch: AdminUserPatch,
+): Promise<UserInfo> {
+  const res = await authFetch(`/api/auth/users/${id}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(patch),
+  });
+  return jsonOrThrow<UserInfo>(res);
+}
+
 export async function deleteUser(id: number): Promise<void> {
   const res = await authFetch(`/api/auth/users/${id}`, { method: "DELETE" });
   if (!res.ok) {

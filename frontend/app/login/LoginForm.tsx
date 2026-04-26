@@ -11,10 +11,13 @@ interface Props {
 
 type Mode = "login" | "setup" | "request";
 
+const COMPANY_EMAIL_DOMAIN = "@dyce.kr";
+
 export default function LoginForm({ isSetup, onSuccess }: Props) {
   const [mode, setMode] = useState<Mode>(isSetup ? "setup" : "login");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+  const [passwordConfirm, setPasswordConfirm] = useState("");
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [error, setError] = useState("");
@@ -25,6 +28,19 @@ export default function LoginForm({ isSetup, onSuccess }: Props) {
     e.preventDefault();
     setError("");
     setInfo("");
+
+    // 가입/초기 설정 시 추가 검증
+    if (mode !== "login") {
+      if (password !== passwordConfirm) {
+        setError("비밀번호가 일치하지 않습니다");
+        return;
+      }
+      if (!email.toLowerCase().endsWith(COMPANY_EMAIL_DOMAIN)) {
+        setError(`이메일은 회사 계정(${COMPANY_EMAIL_DOMAIN})만 사용 가능합니다`);
+        return;
+      }
+    }
+
     setLoading(true);
     try {
       if (mode === "setup") {
@@ -37,6 +53,8 @@ export default function LoginForm({ isSetup, onSuccess }: Props) {
         const r = await requestJoin(username, password, name, email);
         setInfo(r.message);
         setMode("login");
+        setPassword("");
+        setPasswordConfirm("");
       }
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "오류가 발생했습니다");
@@ -47,6 +65,7 @@ export default function LoginForm({ isSetup, onSuccess }: Props) {
 
   const showName = mode !== "login";
   const showEmail = mode !== "login";
+  const showPasswordConfirm = mode !== "login";
   const title =
     mode === "setup"
       ? "초기 관리자 계정 생성"
@@ -75,11 +94,12 @@ export default function LoginForm({ isSetup, onSuccess }: Props) {
           )}
           {showEmail && (
             <Field
-              label="이메일"
+              label={`이메일 (${COMPANY_EMAIL_DOMAIN})`}
               type="email"
               value={email}
               onChange={setEmail}
-              placeholder="user@dongyang.example"
+              placeholder={`name${COMPANY_EMAIL_DOMAIN}`}
+              required
             />
           )}
           <Field
@@ -98,6 +118,16 @@ export default function LoginForm({ isSetup, onSuccess }: Props) {
             placeholder="비밀번호"
             required
           />
+          {showPasswordConfirm && (
+            <Field
+              label="비밀번호 확인"
+              type="password"
+              value={passwordConfirm}
+              onChange={setPasswordConfirm}
+              placeholder="비밀번호 재입력"
+              required
+            />
+          )}
 
           {error && <p className="text-center text-xs text-red-400">{error}</p>}
           {info && <p className="text-center text-xs text-emerald-400">{info}</p>}
