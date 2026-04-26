@@ -1,9 +1,36 @@
 "use client";
 
+import { useEffect, useState } from "react";
+
 import { useAuth } from "@/components/AuthGuard";
+import RevenueCollectionChart from "@/components/dashboard/RevenueCollectionChart";
+import StageBoard from "@/components/dashboard/StageBoard";
+import { getCashflow, listProjects } from "@/lib/api";
+import type { CashflowEntry, Project } from "@/lib/domain";
 
 export default function DashboardPage() {
   const { user } = useAuth();
+  const [projects, setProjects] = useState<Project[] | null>(null);
+  const [incomes, setIncomes] = useState<CashflowEntry[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    void (async () => {
+      try {
+        const [pr, cf] = await Promise.all([
+          listProjects(),
+          getCashflow({ flow: "income" }),
+        ]);
+        setProjects(pr.items);
+        setIncomes(cf.items);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "데이터 로딩 실패");
+      }
+    })();
+  }, []);
+
+  const loading = projects == null || incomes == null;
+
   return (
     <div className="space-y-6">
       <header>
@@ -13,23 +40,44 @@ export default function DashboardPage() {
         </p>
       </header>
 
-      <section className="grid grid-cols-1 gap-4 md:grid-cols-3">
-        <Placeholder title="진행단계별 칸반" caption="A1 — Phase 3 구현 예정" />
-        <Placeholder title="월별 매출/수금 콤보" caption="A4 — Phase 3 구현 예정" />
-        <Placeholder title="시작전 TASK 적체" caption="A8 — Phase 3 후반" />
-      </section>
+      {error && (
+        <div className="rounded-md border border-red-500/40 bg-red-500/5 p-3 text-sm text-red-400">
+          {error}
+        </div>
+      )}
+
+      {loading && !error && (
+        <div className="space-y-3">
+          <SkeletonCard />
+          <SkeletonCard h="h-[480px]" />
+        </div>
+      )}
+
+      {projects && incomes && (
+        <>
+          <section>
+            <h2 className="mb-2 text-sm font-medium text-zinc-700 dark:text-zinc-300">
+              월별 매출/수금 추이
+            </h2>
+            <RevenueCollectionChart projects={projects} incomes={incomes} />
+          </section>
+
+          <section>
+            <h2 className="mb-2 text-sm font-medium text-zinc-700 dark:text-zinc-300">
+              진행단계별 보드
+            </h2>
+            <StageBoard projects={projects} />
+          </section>
+        </>
+      )}
     </div>
   );
 }
 
-function Placeholder({ title, caption }: { title: string; caption: string }) {
+function SkeletonCard({ h = "h-72" }: { h?: string }) {
   return (
-    <div className="rounded-xl border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900">
-      <h2 className="text-sm font-semibold">{title}</h2>
-      <p className="mt-1 text-xs text-zinc-500">{caption}</p>
-      <div className="mt-4 flex h-32 items-center justify-center rounded-md border border-dashed border-zinc-300 text-xs text-zinc-400 dark:border-zinc-700">
-        준비 중
-      </div>
-    </div>
+    <div
+      className={`${h} animate-pulse rounded-xl border border-zinc-200 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900`}
+    />
   );
 }
