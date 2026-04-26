@@ -152,9 +152,6 @@ export default function TaskKanban({ tasks, onChanged, onCreate }: Props) {
       <header className="mb-3 flex items-center justify-between">
         <div>
           <h3 className="text-sm font-semibold">업무 TASK ({tasks.length})</h3>
-          <p className="text-[10px] text-zinc-500">
-            카드 클릭 = 편집 · 드래그 = 상태 이동 (완료시 오늘 날짜 자동) · Ctrl+Z = 되돌리기 · 컬럼 + = 새 업무
-          </p>
         </div>
         {onCreate && (
           <button
