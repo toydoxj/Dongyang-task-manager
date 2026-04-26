@@ -262,21 +262,32 @@ function categoryBg(t: Task): string {
 }
 
 function scheduleLabel(t: Task): string {
-  // datetime이면 시간만, 아니면 분류명
-  const tag = t.category || t.activity;
-  if (t.start_date && t.start_date.includes("T")) {
-    const s = new Date(t.start_date);
-    if (!Number.isNaN(s.getTime())) {
-      const fmt = new Intl.DateTimeFormat("ko-KR", {
-        hour: "2-digit",
-        minute: "2-digit",
-        hour12: false,
-        timeZone: "Asia/Seoul",
-      }).format(s);
-      return `${fmt} ${tag || "일정"}`;
-    }
+  // 표현:
+  //   - 종일(date only): "외근"
+  //   - 시작=종료 시각: "09:00 외근"
+  //   - 범위: "09:00~13:00 외근"
+  const tag = t.category || t.activity || "일정";
+  const startIso = t.start_date;
+  const endIso = t.end_date;
+  if (startIso && startIso.includes("T")) {
+    const s = formatHm(startIso);
+    const e = endIso && endIso.includes("T") ? formatHm(endIso) : "";
+    if (s && e && s !== e) return `${s}~${e} ${tag}`;
+    if (s) return `${s} ${tag}`;
   }
-  return tag || "일정";
+  return tag;
+}
+
+function formatHm(iso: string | null): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  return new Intl.DateTimeFormat("ko-KR", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+    timeZone: "Asia/Seoul",
+  }).format(d);
 }
 
 function buildMonthGrid(

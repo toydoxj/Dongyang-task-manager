@@ -6,11 +6,13 @@ import { useSWRConfig } from "swr";
 
 import { useAuth } from "@/components/AuthGuard";
 import ProjectCreateModal from "@/components/me/ProjectCreateModal";
+import OtherTasksKanban from "@/components/me/OtherTasksKanban";
 import ProjectImportModal from "@/components/me/ProjectImportModal";
 import ProjectTaskRow from "@/components/me/ProjectTaskRow";
 import TaskCreateModal from "@/components/project/TaskCreateModal";
 import TaskEditModal from "@/components/project/TaskEditModal";
 import LoadingState from "@/components/ui/LoadingState";
+import { archiveTask } from "@/lib/api";
 import type { Project, ProjectListResponse, Task } from "@/lib/domain";
 import { dDayLabel, formatDate } from "@/lib/format";
 import { keys, useProjects, useTasks } from "@/lib/hooks";
@@ -51,6 +53,18 @@ export default function MyPage() {
 
   const refreshTasks = (): void => {
     void mutate(keys.tasks(user?.name ? { mine: true } : undefined));
+  };
+
+  const handleDeleteTask = async (t: Task): Promise<void> => {
+    if (!confirm(`"${t.title || "(제목 없음)"}" 업무를 삭제하시겠습니까?\n노션에서 보관 처리됩니다.`)) {
+      return;
+    }
+    try {
+      await archiveTask(t.id);
+      refreshTasks();
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "삭제 실패");
+    }
   };
 
   const refreshProjects = (): void => {
@@ -126,6 +140,7 @@ export default function MyPage() {
             tasks={tasks}
             projects={projects ?? []}
             onClickTask={setEditing}
+            onDeleteTask={handleDeleteTask}
           />
         )}
       </section>
@@ -231,6 +246,31 @@ export default function MyPage() {
         )}
       </section>
 
+      <hr className="border-zinc-200 dark:border-zinc-800" />
+
+      <section>
+        <div className="mb-2 flex items-center justify-between">
+          <h2 className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
+            기타 업무 (프로젝트 외)
+          </h2>
+          <span className="text-[11px] text-zinc-500">
+            카드를 끌어 상태 변경 · ✕ 로 삭제
+          </span>
+        </div>
+        {tasks == null ? (
+          <LoadingState message="불러오는 중" height="h-32" />
+        ) : (
+          <OtherTasksKanban
+            tasks={tasks.filter((t) =>
+              ["개인업무", "사내잡무", "교육", "서비스"].includes(t.category),
+            )}
+            onClickTask={setEditing}
+            onDeleteTask={handleDeleteTask}
+            onChanged={refreshTasks}
+          />
+        )}
+      </section>
+
       <TaskEditModal
         task={editing}
         onClose={() => setEditing(null)}
@@ -266,10 +306,12 @@ function TodayTasks({
   tasks,
   projects,
   onClickTask,
+  onDeleteTask,
 }: {
   tasks: Task[];
   projects: Project[];
   onClickTask: (t: Task) => void;
+  onDeleteTask: (t: Task) => void;
 }) {
   const open = tasks.filter((t) => t.status !== "완료");
   open.sort((a, b) => {
@@ -351,6 +393,7 @@ function TodayTasks({
           items={projectTasks}
           findProject={findProject}
           onClickTask={onClickTask}
+          onDeleteTask={onDeleteTask}
         />
       )}
 
@@ -367,6 +410,7 @@ function TodayTasks({
                 task={t}
                 project={findProject(t.project_ids[0])}
                 onClick={() => onClickTask(t)}
+                onDelete={() => onDeleteTask(t)}
                 warn
               />
             ))}
@@ -393,36 +437,21 @@ function TodayTasks({
           ))}
         </div>
       </div>
-
-      {/* 기타 업무 — status별 4열 카드 (맨 아래) */}
-      <div>
-        <h3 className="mb-1.5 text-xs font-medium text-zinc-600 dark:text-zinc-400">
-          기타 업무 (프로젝트 외)
-        </h3>
-        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-          {STATUSES.map((s) => (
-            <CategoryCard
-              key={s}
-              label={s}
-              items={otherByStatus.get(s) ?? []}
-              onClickTask={onClickTask}
-              showCategoryBadge
-            />
-          ))}
-        </div>
-      </div>
     </div>
   );
 }
+
 
 function ProjectTaskList({
   items,
   findProject,
   onClickTask,
+  onDeleteTask,
 }: {
   items: Task[];
   findProject: (pid: string | undefined) => Project | undefined;
   onClickTask: (t: Task) => void;
+  onDeleteTask: (t: Task) => void;
 }) {
   return (
     <div>
@@ -437,6 +466,7 @@ function ProjectTaskList({
             task={t}
             project={findProject(t.project_ids[0])}
             onClick={() => onClickTask(t)}
+            onDelete={() => onDeleteTask(t)}
           />
         ))}
       </ul>
@@ -463,22 +493,37 @@ function TaskCard({
   task: t,
   project: proj,
   onClick,
+  onDelete,
   warn,
 }: {
   task: Task;
   project?: Project;
   onClick: () => void;
+  onDelete?: () => void;
   warn?: boolean;
 }) {
   return (
     <li
       className={cn(
-        "flex items-stretch overflow-hidden rounded-lg border bg-white dark:bg-zinc-900",
+        "group relative flex items-stretch overflow-hidden rounded-lg border bg-white dark:bg-zinc-900",
         warn
           ? "border-amber-300/60 dark:border-amber-700/60"
           : "border-zinc-200 dark:border-zinc-800",
       )}
     >
+      {onDelete && (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            onDelete();
+          }}
+          className="absolute right-1 top-1 z-10 hidden rounded p-0.5 text-zinc-400 hover:bg-red-500/15 hover:text-red-500 group-hover:block"
+          title="삭제"
+        >
+          ×
+        </button>
+      )}
       <button
         type="button"
         onClick={onClick}
