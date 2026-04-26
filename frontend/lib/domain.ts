@@ -34,6 +34,41 @@ export interface ProjectListResponse {
   count: number;
 }
 
+export interface ProjectCreateRequest {
+  name: string;
+  code?: string;
+  client_text?: string;
+  stage?: string;
+  teams?: string[];
+  assignees?: string[];
+  work_types?: string[];
+  start_date?: string;
+  contract_start?: string;
+  contract_end?: string;
+  contract_amount?: number;
+}
+
+export const WORK_TYPES = [
+  "구조설계",
+  "현장기술지원",
+  "안전진단(부분)",
+  "구조검토",
+  "구조감리",
+  "내진보강설계",
+  "내진성능평가",
+  "내진기술감리",
+  "비구조내진",
+  "정밀안전점검",
+  "정밀안전진단",
+  "기술제안",
+  "VE설계",
+  "증축설계",
+  "해체계획",
+  "해체감리",
+  "구조계획",
+  "기타",
+] as const;
+
 export interface Task {
   id: string;
   title: string;

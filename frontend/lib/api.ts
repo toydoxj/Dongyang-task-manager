@@ -4,6 +4,7 @@ import { authFetch } from "./auth";
 import type {
   CashflowResponse,
   Project,
+  ProjectCreateRequest,
   ProjectListResponse,
   Task,
   TaskCreateRequest,
@@ -47,6 +48,31 @@ export async function listProjects(filters: {
 
 export async function getProject(pageId: string): Promise<Project> {
   const res = await authFetch(`/api/projects/${pageId}`);
+  return jsonOrThrow<Project>(res);
+}
+
+export async function assignMe(pageId: string): Promise<Project> {
+  const res = await authFetch(`/api/projects/${pageId}/assign`, {
+    method: "POST",
+  });
+  return jsonOrThrow<Project>(res);
+}
+
+export async function unassignMe(pageId: string): Promise<Project> {
+  const res = await authFetch(`/api/projects/${pageId}/assign`, {
+    method: "DELETE",
+  });
+  return jsonOrThrow<Project>(res);
+}
+
+export async function createProject(
+  body: ProjectCreateRequest,
+): Promise<Project> {
+  const res = await authFetch(`/api/projects`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
   return jsonOrThrow<Project>(res);
 }
 

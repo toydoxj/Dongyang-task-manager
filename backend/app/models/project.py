@@ -92,3 +92,56 @@ class Project(BaseModel):
 class ProjectListResponse(BaseModel):
     items: list[Project]
     count: int
+
+
+class ProjectCreateRequest(BaseModel):
+    """노션 메인 프로젝트 DB에 새 페이지 생성 요청."""
+
+    name: str
+    code: str = ""
+    client_text: str = ""
+    stage: str = "진행중"
+    teams: list[str] = []
+    assignees: list[str] = []
+    work_types: list[str] = []
+    start_date: str | None = None
+    contract_start: str | None = None
+    contract_end: str | None = None
+    contract_amount: float | None = None
+
+
+def project_create_to_props(req: ProjectCreateRequest) -> dict[str, Any]:
+    """노션 페이지 생성용 properties 변환."""
+    props: dict[str, Any] = {
+        "프로젝트명": {"title": [{"text": {"content": req.name}}]},
+    }
+    if req.code:
+        props["Sub_CODE"] = {"rich_text": [{"text": {"content": req.code}}]}
+    if req.client_text:
+        props["발주처(임시)"] = {
+            "rich_text": [{"text": {"content": req.client_text}}]
+        }
+    if req.stage:
+        props["진행단계"] = {"select": {"name": req.stage}}
+    if req.teams:
+        props["담당팀"] = {"multi_select": [{"name": t} for t in req.teams]}
+    if req.assignees:
+        props["담당자"] = {
+            "multi_select": [{"name": a} for a in req.assignees]
+        }
+    if req.work_types:
+        props["업무내용"] = {
+            "multi_select": [{"name": w} for w in req.work_types]
+        }
+    if req.start_date:
+        props["시작일"] = {"date": {"start": req.start_date, "end": None}}
+    if req.contract_start or req.contract_end:
+        props["계약기간"] = {
+            "date": {
+                "start": req.contract_start or req.start_date,
+                "end": req.contract_end,
+            }
+        }
+    if req.contract_amount is not None:
+        props["용역비(VAT제외)"] = {"number": req.contract_amount}
+    return props

@@ -8,9 +8,12 @@ import { TASK_STATUSES } from "@/lib/domain";
 import { dDayLabel, formatDate, formatPercent } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
+import TaskEditModal from "./TaskEditModal";
+
 interface Props {
   tasks: Task[];
   onChanged: () => void;
+  onCreate?: () => void; // 신규 생성 버튼 (옵션)
 }
 
 const STATUS_COLOR: Record<string, string> = {
@@ -20,7 +23,9 @@ const STATUS_COLOR: Record<string, string> = {
   "보류": "border-pink-500/50",
 };
 
-export default function TaskKanban({ tasks, onChanged }: Props) {
+export default function TaskKanban({ tasks, onChanged, onCreate }: Props) {
+  const [editing, setEditing] = useState<Task | null>(null);
+
   const grouped = new Map<string, Task[]>();
   for (const s of TASK_STATUSES) grouped.set(s, []);
   for (const t of tasks) {
@@ -33,10 +38,21 @@ export default function TaskKanban({ tasks, onChanged }: Props) {
   return (
     <div className="rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
       <header className="mb-3 flex items-center justify-between">
-        <h3 className="text-sm font-semibold">업무 TASK ({tasks.length})</h3>
-        <p className="text-[10px] text-zinc-500">
-          상태 변경은 카드 우측의 → 버튼 사용
-        </p>
+        <div>
+          <h3 className="text-sm font-semibold">업무 TASK ({tasks.length})</h3>
+          <p className="text-[10px] text-zinc-500">
+            카드 클릭 = 편집, → 버튼 = 다음 상태로 빠르게
+          </p>
+        </div>
+        {onCreate && (
+          <button
+            type="button"
+            onClick={onCreate}
+            className="rounded-md border border-zinc-300 px-2.5 py-1 text-xs hover:bg-zinc-50 dark:border-zinc-700 dark:hover:bg-zinc-800"
+          >
+            + 새 업무
+          </button>
+        )}
       </header>
 
       <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-4">
@@ -66,6 +82,7 @@ export default function TaskKanban({ tasks, onChanged }: Props) {
                     task={t}
                     currentStatus={status}
                     onChanged={onChanged}
+                    onClick={() => setEditing(t)}
                   />
                 ))}
               </ul>
@@ -73,6 +90,12 @@ export default function TaskKanban({ tasks, onChanged }: Props) {
           );
         })}
       </div>
+
+      <TaskEditModal
+        task={editing}
+        onClose={() => setEditing(null)}
+        onSaved={onChanged}
+      />
     </div>
   );
 }
@@ -81,16 +104,19 @@ function TaskCardItem({
   task,
   currentStatus,
   onChanged,
+  onClick,
 }: {
   task: Task;
   currentStatus: string;
   onChanged: () => void;
+  onClick: () => void;
 }) {
   const [busy, setBusy] = useState(false);
   const idx = TASK_STATUSES.indexOf(currentStatus as (typeof TASK_STATUSES)[number]);
   const next = idx >= 0 && idx < TASK_STATUSES.length - 1 ? TASK_STATUSES[idx + 1] : null;
 
-  const advance = async (): Promise<void> => {
+  const advance = async (e: React.MouseEvent): Promise<void> => {
+    e.stopPropagation();
     if (!next) return;
     setBusy(true);
     try {
@@ -106,7 +132,10 @@ function TaskCardItem({
 
   const due = task.end_date;
   return (
-    <li className="rounded-md border border-zinc-200 bg-white p-2 text-xs dark:border-zinc-800 dark:bg-zinc-900">
+    <li
+      className="cursor-pointer rounded-md border border-zinc-200 bg-white p-2 text-xs transition-colors hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900 dark:hover:bg-zinc-800/50"
+      onClick={onClick}
+    >
       <div className="flex items-start justify-between gap-2">
         <p className="min-w-0 flex-1 truncate font-medium" title={task.title}>
           {task.title || "(제목 없음)"}

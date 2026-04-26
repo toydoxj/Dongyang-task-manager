@@ -7,8 +7,14 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from app.exceptions import NotFoundError
 from app.models.auth import User
-from app.models.project import Project, ProjectListResponse
+from app.models.project import (
+    Project,
+    ProjectCreateRequest,
+    ProjectListResponse,
+    project_create_to_props,
+)
 from app.security import get_current_user
+from app.services import notion_props as P
 from app.services.notion import NotionService, get_notion
 from app.settings import get_settings
 
@@ -77,6 +83,31 @@ async def list_projects(
     return ProjectListResponse(items=items, count=len(items))
 
 
+@router.post("", response_model=Project, status_code=status.HTTP_201_CREATED)
+async def create_project(
+    body: ProjectCreateRequest,
+    user: User = Depends(get_current_user),
+    notion: NotionService = Depends(get_notion),
+) -> Project:
+    """노션 메인 프로젝트 DB에 새 페이지 생성. 본인을 자동 담당자로 추가."""
+    db_id = get_settings().notion_db_projects
+    if not db_id:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="NOTION_DB_PROJECTS 미설정",
+        )
+    if not body.name.strip():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="프로젝트명 필수"
+        )
+    # 본인 자동 담당 추가 (중복 방지)
+    if user.name and user.name not in body.assignees:
+        body = body.model_copy(update={"assignees": [*body.assignees, user.name]})
+
+    page = await notion.create_page(db_id, project_create_to_props(body))
+    return Project.from_notion_page(page)
+
+
 @router.get("/{page_id}", response_model=Project)
 async def get_project(
     page_id: str,
@@ -88,3 +119,61 @@ async def get_project(
     except NotFoundError as exc:
         raise HTTPException(status_code=404, detail=exc.message) from exc
     return Project.from_notion_page(page)
+
+
+@router.post("/{page_id}/assign", response_model=Project)
+async def assign_me(
+    page_id: str,
+    user: User = Depends(get_current_user),
+    notion: NotionService = Depends(get_notion),
+) -> Project:
+    """현재 로그인 사용자를 프로젝트 담당자에 추가 (이미 있으면 no-op)."""
+    if not user.name:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="본인 이름이 등록되어 있지 않습니다",
+        )
+    try:
+        page = await notion.get_page(page_id)
+    except NotFoundError as exc:
+        raise HTTPException(status_code=404, detail=exc.message) from exc
+
+    current = P.multi_select_names(page.get("properties", {}), "담당자")
+    if user.name in current:
+        return Project.from_notion_page(page)
+
+    new_assignees = current + [user.name]
+    updated = await notion.update_page(
+        page_id,
+        {"담당자": {"multi_select": [{"name": n} for n in new_assignees]}},
+    )
+    return Project.from_notion_page(updated)
+
+
+@router.delete("/{page_id}/assign", response_model=Project)
+async def unassign_me(
+    page_id: str,
+    user: User = Depends(get_current_user),
+    notion: NotionService = Depends(get_notion),
+) -> Project:
+    """현재 로그인 사용자를 프로젝트 담당자에서 제거."""
+    if not user.name:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="본인 이름이 등록되어 있지 않습니다",
+        )
+    try:
+        page = await notion.get_page(page_id)
+    except NotFoundError as exc:
+        raise HTTPException(status_code=404, detail=exc.message) from exc
+
+    current = P.multi_select_names(page.get("properties", {}), "담당자")
+    if user.name not in current:
+        return Project.from_notion_page(page)
+
+    new_assignees = [n for n in current if n != user.name]
+    updated = await notion.update_page(
+        page_id,
+        {"담당자": {"multi_select": [{"name": n} for n in new_assignees]}},
+    )
+    return Project.from_notion_page(updated)
