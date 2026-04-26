@@ -101,10 +101,29 @@ class TaskListResponse(BaseModel):
 # ── DTO → 노션 properties 변환 ──
 
 
+def _ensure_kst_tz(s: str | None) -> str | None:
+    """datetime-local input ('YYYY-MM-DDTHH:mm')에 KST timezone 부착.
+
+    timezone이 이미 있거나 datetime이 아니면(date only) 그대로 반환.
+    Notion은 timezone이 없는 datetime을 UTC로 가정하므로 한국 사용자가
+    09:00 입력 후 다시 보면 18:00이 되는 문제 방지.
+    """
+    if not s or "T" not in s:
+        return s
+    if s.endswith("Z") or "+" in s[10:] or "-" in s[10:]:
+        return s
+    # 초가 없으면 ":00" 보충 후 +09:00
+    parts = s.split("T", 1)
+    time_part = parts[1]
+    if time_part.count(":") == 1:
+        time_part += ":00"
+    return f"{parts[0]}T{time_part}+09:00"
+
+
 def _date_prop(start: str | None, end: str | None) -> dict[str, Any] | None:
     if not start and not end:
         return None
-    return {"date": {"start": start, "end": end}}
+    return {"date": {"start": _ensure_kst_tz(start), "end": _ensure_kst_tz(end)}}
 
 
 def _multi_select(values: list[str]) -> dict[str, Any]:

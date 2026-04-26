@@ -444,6 +444,21 @@ function ProjectTaskList({
   );
 }
 
+function ActivityBadge({ activity }: { activity?: string }) {
+  if (!activity || activity === "사무실") return null;
+  const cls =
+    activity === "외근"
+      ? "bg-orange-500/15 text-orange-600 dark:text-orange-400"
+      : activity === "출장"
+        ? "bg-red-500/15 text-red-600 dark:text-red-400"
+        : "bg-zinc-500/15 text-zinc-500";
+  return (
+    <span className={cn("rounded px-1 py-0.5 text-[9px] font-medium", cls)}>
+      {activity}
+    </span>
+  );
+}
+
 function TaskCard({
   task: t,
   project: proj,
@@ -489,14 +504,17 @@ function TaskCard({
               {t.status} · 마감 {formatDate(t.end_date)}
             </p>
           </div>
-          <span
-            className={cn(
-              "shrink-0 rounded-md px-2 py-0.5 text-[10px] font-medium",
-              statusBadgeColor(t),
-            )}
-          >
-            {dDayLabel(t.end_date) || "—"}
-          </span>
+          <div className="flex shrink-0 flex-col items-end gap-1">
+            <span
+              className={cn(
+                "rounded-md px-2 py-0.5 text-[10px] font-medium",
+                statusBadgeColor(t),
+              )}
+            >
+              {dDayLabel(t.end_date) || "—"}
+            </span>
+            <ActivityBadge activity={t.activity} />
+          </div>
         </div>
       </button>
       {t.project_ids[0] && (
@@ -565,21 +583,24 @@ function CategoryCard({
                       ? formatRange(t.start_date, t.end_date)
                       : `마감 ${formatDate(t.end_date)}`}
                   </span>
-                  {showCategoryBadge && t.category && (
-                    <span className="shrink-0 rounded bg-zinc-100 px-1 py-0.5 text-[9px] text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300">
-                      {t.category}
-                    </span>
-                  )}
-                  {!showCategoryBadge && (
-                    <span
-                      className={cn(
-                        "shrink-0 rounded px-1 py-0.5 text-[9px] font-medium",
-                        statusBadgeColor(t),
-                      )}
-                    >
-                      {dDayLabel(t.end_date) || "—"}
-                    </span>
-                  )}
+                  <span className="flex shrink-0 items-center gap-1">
+                    <ActivityBadge activity={t.activity} />
+                    {showCategoryBadge && t.category && (
+                      <span className="rounded bg-zinc-100 px-1 py-0.5 text-[9px] text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300">
+                        {t.category}
+                      </span>
+                    )}
+                    {!showCategoryBadge && (
+                      <span
+                        className={cn(
+                          "rounded px-1 py-0.5 text-[9px] font-medium",
+                          statusBadgeColor(t),
+                        )}
+                      >
+                        {dDayLabel(t.end_date) || "—"}
+                      </span>
+                    )}
+                  </span>
                 </p>
               </button>
             </li>
