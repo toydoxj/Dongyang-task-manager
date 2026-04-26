@@ -107,9 +107,18 @@ export default function MyPage() {
       )}
 
       <section>
-        <h2 className="mb-2 text-sm font-medium text-zinc-700 dark:text-zinc-300">
-          해야할 일
-        </h2>
+        <div className="mb-2 flex items-center justify-between">
+          <h2 className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
+            해야할 일
+          </h2>
+          <button
+            type="button"
+            onClick={() => setTaskCreate({ projectId: "" })}
+            className="rounded-md bg-zinc-900 px-2.5 py-1 text-xs text-white hover:bg-zinc-700 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300"
+          >
+            + 새 업무
+          </button>
+        </div>
         {tasks == null ? (
           <LoadingState message="내 업무 TASK 불러오는 중" height="h-32" />
         ) : (
@@ -244,6 +253,7 @@ export default function MyPage() {
       <TaskCreateModal
         open={!!taskCreate}
         projectId={taskCreate?.projectId ?? ""}
+        projects={projects ?? []}
         initialStatus={taskCreate?.status}
         onClose={() => setTaskCreate(null)}
         onCreated={refreshTasks}

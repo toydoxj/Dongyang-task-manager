@@ -62,10 +62,8 @@ function buildBuckets(entries: CashflowEntry[]): Bucket[] {
 
 export default function ProjectCashflowChart({ project, entries }: Props) {
   const buckets = buildBuckets(entries);
-  // 수금 목표 = 용역비(VAT 제외) + 부가세. VAT 미입력 시 contract_amount × 10% 추정.
-  const base = project.contract_amount ?? 0;
-  const vat = project.vat ?? base * 0.1;
-  const target = base + vat;
+  // 수금 목표 = 용역비(VAT 제외) + 부가세
+  const target = (project.contract_amount ?? 0) + (project.vat ?? 0);
 
   return (
     <div className="rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">

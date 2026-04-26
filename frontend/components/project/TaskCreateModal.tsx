@@ -5,6 +5,7 @@ import { useState } from "react";
 import Modal from "@/components/ui/Modal";
 import { useAuth } from "@/components/AuthGuard";
 import { createTask } from "@/lib/api";
+import type { Project } from "@/lib/domain";
 import {
   TASK_CATEGORIES,
   TASK_DIFFICULTIES,
@@ -14,7 +15,10 @@ import {
 
 interface Props {
   open: boolean;
-  projectId: string;
+  /** 프로젝트 컨텍스트가 정해진 호출(프로젝트 상세 등). 없으면 선택 dropdown 노출. */
+  projectId?: string;
+  /** 비프로젝트 모드일 때 사용자가 고를 수 있는 프로젝트 목록 (담당 프로젝트 등). */
+  projects?: Project[];
   initialStatus?: string;
   onClose: () => void;
   onCreated: () => void;
@@ -22,7 +26,8 @@ interface Props {
 
 export default function TaskCreateModal({
   open,
-  projectId,
+  projectId = "",
+  projects,
   initialStatus,
   onClose,
   onCreated,
@@ -32,6 +37,7 @@ export default function TaskCreateModal({
     <Form
       key={`${projectId}:${initialStatus ?? ""}`}
       projectId={projectId}
+      projects={projects}
       initialStatus={initialStatus}
       onClose={onClose}
       onCreated={onCreated}
@@ -41,11 +47,13 @@ export default function TaskCreateModal({
 
 function Form({
   projectId,
+  projects,
   initialStatus,
   onClose,
   onCreated,
 }: {
   projectId: string;
+  projects?: Project[];
   initialStatus?: string;
   onClose: () => void;
   onCreated: () => void;
@@ -58,20 +66,25 @@ function Form({
   const [end, setEnd] = useState("");
   const [priority, setPriority] = useState("");
   const [difficulty, setDifficulty] = useState("");
-  // 프로젝트 상세 페이지에서 호출 시 projectId가 있으므로 default '프로젝트'
+  // 프로젝트 컨텍스트가 있으면 default '프로젝트', 없으면 미분류
   const [category, setCategory] = useState(projectId ? "프로젝트" : "");
+  // 분류=프로젝트 + projectId 미지정인 경우(=/me에서 새 업무) 사용자가 dropdown으로 선택
+  const [pickedProjectId, setPickedProjectId] = useState(projectId);
   const [assignees, setAssignees] = useState(user?.name ?? "");
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const showProjectPicker = category === "프로젝트" && !projectId;
 
   const submit = async (): Promise<void> => {
     if (!title.trim()) {
       setError("제목을 입력하세요");
       return;
     }
-    if (category === "프로젝트" && !projectId) {
-      setError("분류가 '프로젝트'면 프로젝트가 필요합니다");
+    const finalProjectId = projectId || pickedProjectId;
+    if (category === "프로젝트" && !finalProjectId) {
+      setError("분류가 '프로젝트'면 프로젝트를 선택하세요");
       return;
     }
     setBusy(true);
@@ -79,7 +92,7 @@ function Form({
     try {
       await createTask({
         title: title.trim(),
-        project_id: category === "프로젝트" ? projectId : "",
+        project_id: category === "프로젝트" ? finalProjectId : "",
         category: category || undefined,
         status,
         start_date: start || undefined,
@@ -175,6 +188,23 @@ function Form({
             </select>
           </Field>
         </div>
+
+        {showProjectPicker && (
+          <Field label="프로젝트" required>
+            <select
+              value={pickedProjectId}
+              onChange={(e) => setPickedProjectId(e.target.value)}
+              className={inputCls}
+            >
+              <option value="">— 선택하세요</option>
+              {(projects ?? []).map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.code ? `[${p.code}] ` : ""}{p.name}
+                </option>
+              ))}
+            </select>
+          </Field>
+        )}
 
         <div className="grid grid-cols-2 gap-3">
           <Field label="시작일">
