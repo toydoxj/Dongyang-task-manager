@@ -58,8 +58,9 @@ class UserInfo(BaseModel):
     role: str = "member"
     status: str = "active"
     notion_user_id: str = ""
+    # MIDAS 사용자 설정 — midas_key 자체는 응답에 노출하지 않음 (보안)
     midas_url: str = ""
-    midas_key: str = ""
+    has_midas_key: bool = False
     work_dir: str = ""
     last_login_at: datetime | None = None
 

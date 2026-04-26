@@ -33,7 +33,20 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 
 
 def _to_info(u: User) -> UserInfo:
-    return UserInfo.model_validate(u)
+    """midas_key 같은 비밀값은 응답에서 제외 (has_midas_key boolean만 노출)."""
+    return UserInfo(
+        id=u.id,
+        username=u.username,
+        name=u.name or "",
+        email=u.email or "",
+        role=u.role or "member",
+        status=u.status or "active",
+        notion_user_id=u.notion_user_id or "",
+        midas_url=u.midas_url or "",
+        has_midas_key=bool(u.midas_key),
+        work_dir=u.work_dir or "",
+        last_login_at=u.last_login_at,
+    )
 
 
 @router.get("/status")

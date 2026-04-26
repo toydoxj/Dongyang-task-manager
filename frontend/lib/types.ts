@@ -20,7 +20,7 @@ export interface UserInfo {
   status: "active" | "pending" | "rejected";
   notion_user_id: string;
   midas_url: string;
-  midas_key: string;
+  has_midas_key: boolean;
   work_dir: string;
   last_login_at: string | null;
 }
