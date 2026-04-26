@@ -108,7 +108,7 @@ export default function MyPage() {
 
       <section>
         <h2 className="mb-2 text-sm font-medium text-zinc-700 dark:text-zinc-300">
-          해야할 일 (진행 중·시작 전, 마감 임박순)
+          해야할 일
         </h2>
         {tasks == null ? (
           <LoadingState message="내 업무 TASK 불러오는 중" height="h-32" />
@@ -127,9 +127,6 @@ export default function MyPage() {
         <div className="mb-2 flex items-center justify-between">
           <h2 className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
             담당 프로젝트 ({projects?.length ?? "—"})
-            <span className="ml-2 text-[11px] font-normal text-zinc-500">
-              · 금주 TASK 활동으로 진행중/대기 자동 분류
-            </span>
           </h2>
           <div className="flex gap-2">
             <button
