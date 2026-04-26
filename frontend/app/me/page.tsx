@@ -8,7 +8,6 @@ import { useAuth } from "@/components/AuthGuard";
 import ProjectCreateModal from "@/components/me/ProjectCreateModal";
 import ProjectImportModal from "@/components/me/ProjectImportModal";
 import ProjectTaskRow from "@/components/me/ProjectTaskRow";
-import UpcomingDeadlines from "@/components/me/UpcomingDeadlines";
 import TaskCreateModal from "@/components/project/TaskCreateModal";
 import TaskEditModal from "@/components/project/TaskEditModal";
 import LoadingState from "@/components/ui/LoadingState";
@@ -119,17 +118,6 @@ export default function MyPage() {
             projects={projects ?? []}
             onClickTask={setEditing}
           />
-        )}
-      </section>
-
-      <section>
-        <h2 className="mb-2 text-sm font-medium text-zinc-700 dark:text-zinc-300">
-          마감 임박 프로젝트
-        </h2>
-        {projects == null ? (
-          <LoadingState message="프로젝트 마감일 분석 중" height="h-32" />
-        ) : (
-          <UpcomingDeadlines projects={projects} />
         )}
       </section>
 
