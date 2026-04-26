@@ -210,7 +210,8 @@ export interface Task {
   actual_end_date: string | null;
   priority: string; // 높음|보통|낮음
   difficulty: string; // 매우높음|높음|중간|낮음|매우낮음
-  category: string;   // 프로젝트|개인업무|사내잡무|교육|서비스 (빈 값=미분류)
+  category: string;   // 프로젝트|개인업무|사내잡무|교육|서비스|외근|출장|휴가
+  activity: string;   // 사무실|외근|출장 (분류와 독립)
   assignees: string[];
   teams: string[];
   note: string;
@@ -228,6 +229,7 @@ export interface TaskCreateRequest {
   title: string;
   project_id?: string;  // 분류='프로젝트'일 때만 필수
   category?: string;    // 분류
+  activity?: string;    // 활동 (사무실/외근/출장)
   status?: string;
   progress?: number;
   start_date?: string;
@@ -250,6 +252,7 @@ export interface TaskUpdateRequest {
   priority?: string;
   difficulty?: string;
   category?: string;
+  activity?: string;
   assignees?: string[];
   teams?: string[];
   note?: string;
@@ -316,6 +319,29 @@ export type TaskCategory = (typeof TASK_CATEGORIES)[number];
 
 /** 시간(시:분)까지 지정해야 하는 일정 분류. */
 export const TIME_BASED_CATEGORIES: readonly string[] = ["외근", "출장", "휴가"];
+
+/** 활동 유형 — 분류와 독립. 프로젝트 task의 외근/출장 표시용. */
+export const ACTIVITY_TYPES = ["사무실", "외근", "출장"] as const;
+export type ActivityType = (typeof ACTIVITY_TYPES)[number];
+
+/** 시간 지정이 필요한 활동 (외근/출장). */
+export const TIME_BASED_ACTIVITIES: readonly string[] = ["외근", "출장"];
+
+/** task가 시간 기반 일정인지 판정 — 분류 또는 활동 중 하나라도 시간 기반이면. */
+export function isTimeBasedTask(category?: string, activity?: string): boolean {
+  return (
+    (category != null && TIME_BASED_CATEGORIES.includes(category)) ||
+    (activity != null && TIME_BASED_ACTIVITIES.includes(activity))
+  );
+}
+
+/** /me 일정 카드에 표시되어야 할 task인지 — 분류=외근/출장/휴가 OR 활동=외근/출장 */
+export function isScheduleTask(category?: string, activity?: string): boolean {
+  return (
+    (category != null && TIME_BASED_CATEGORIES.includes(category)) ||
+    (activity != null && TIME_BASED_ACTIVITIES.includes(activity))
+  );
+}
 
 /** 일정 카드(외근/출장/휴가)에 표시할 분류. */
 export const SCHEDULE_CATEGORIES = ["외근", "출장", "휴가"] as const;

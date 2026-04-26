@@ -6,11 +6,12 @@ import Modal from "@/components/ui/Modal";
 import { archiveTask, updateTask } from "@/lib/api";
 import type { Task } from "@/lib/domain";
 import {
+  ACTIVITY_TYPES,
+  isTimeBasedTask,
   TASK_CATEGORIES,
   TASK_DIFFICULTIES,
   TASK_PRIORITIES,
   TASK_STATUSES,
-  TIME_BASED_CATEGORIES,
 } from "@/lib/domain";
 
 interface Props {
@@ -50,25 +51,37 @@ function Form({
   const [priority, setPriority] = useState(task.priority ?? "");
   const [difficulty, setDifficulty] = useState(task.difficulty ?? "");
   const [category, setCategory] = useState(task.category ?? "");
+  const [activity, setActivity] = useState(task.activity ?? "");
   const [assignees, setAssignees] = useState(task.assignees.join(", "));
   const [note, setNote] = useState(task.note ?? "");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const isTimeBased = TIME_BASED_CATEGORIES.includes(category);
+  const isTimeBased = isTimeBasedTask(category, activity);
+
+  const syncDateTimeFormat = (wasTime: boolean, nowTime: boolean): void => {
+    if (wasTime === nowTime) return;
+    if (nowTime) {
+      if (start && !start.includes("T")) setStart(`${start}T09:00`);
+      if (end && !end.includes("T")) setEnd(`${end}T18:00`);
+    } else {
+      if (start.includes("T")) setStart(start.slice(0, 10));
+      if (end.includes("T")) setEnd(end.slice(0, 10));
+    }
+  };
 
   const onChangeCategory = (next: string): void => {
-    const wasTime = TIME_BASED_CATEGORIES.includes(category);
-    const nowTime = TIME_BASED_CATEGORIES.includes(next);
-    if (wasTime !== nowTime) {
-      if (nowTime) {
-        if (start && !start.includes("T")) setStart(`${start}T09:00`);
-        if (end && !end.includes("T")) setEnd(`${end}T18:00`);
-      } else {
-        if (start.includes("T")) setStart(start.slice(0, 10));
-        if (end.includes("T")) setEnd(end.slice(0, 10));
-      }
-    }
+    syncDateTimeFormat(
+      isTimeBasedTask(category, activity),
+      isTimeBasedTask(next, activity),
+    );
     setCategory(next);
+  };
+  const onChangeActivity = (next: string): void => {
+    syncDateTimeFormat(
+      isTimeBasedTask(category, activity),
+      isTimeBasedTask(category, next),
+    );
+    setActivity(next);
   };
 
   const save = async (): Promise<void> => {
@@ -83,6 +96,7 @@ function Form({
       const wasPriority = task.priority ?? "";
       const wasDifficulty = task.difficulty ?? "";
       const wasCategory = task.category ?? "";
+      const wasActivity = task.activity ?? "";
       await updateTask(task.id, {
         title,
         status,
@@ -92,6 +106,7 @@ function Form({
         priority: priority === wasPriority ? undefined : priority,
         difficulty: difficulty === wasDifficulty ? undefined : difficulty,
         category: category === wasCategory ? undefined : category,
+        activity: activity === wasActivity ? undefined : activity,
         assignees: assignees
           .split(",")
           .map((s) => s.trim())
@@ -179,21 +194,36 @@ function Form({
               ))}
             </select>
           </Field>
-          <Field label="난이도">
+          <Field label="활동">
             <select
-              value={difficulty}
-              onChange={(e) => setDifficulty(e.target.value)}
+              value={activity}
+              onChange={(e) => onChangeActivity(e.target.value)}
               className={inputCls}
             >
               <option value="">—</option>
-              {TASK_DIFFICULTIES.map((d) => (
-                <option key={d} value={d}>
-                  {d}
+              {ACTIVITY_TYPES.map((a) => (
+                <option key={a} value={a}>
+                  {a}
                 </option>
               ))}
             </select>
           </Field>
         </div>
+
+        <Field label="난이도">
+          <select
+            value={difficulty}
+            onChange={(e) => setDifficulty(e.target.value)}
+            className={inputCls}
+          >
+            <option value="">—</option>
+            {TASK_DIFFICULTIES.map((d) => (
+              <option key={d} value={d}>
+                {d}
+              </option>
+            ))}
+          </select>
+        </Field>
 
         <div className="grid grid-cols-2 gap-3">
           <Field label={isTimeBased ? "시작 일시" : "시작일"}>

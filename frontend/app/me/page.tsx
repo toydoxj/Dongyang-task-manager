@@ -296,28 +296,49 @@ function TodayTasks({
     pid ? projectByNorm.get(normId(pid)) : undefined;
 
   // 1) 프로젝트 분류 → 상단 2열 grid
-  // 2) 미분류 → amber 영역 (분류 권장)
+  // 2) 미분류 → amber 영역
   // 3) 기타 업무(개인업무/사내잡무/교육/서비스) → status별 4열 카드
-  // 4) 일정(외근/출장/휴가) → 3열 카드 (시간 표시)
+  // 4) 일정 → 3열 카드 (분류=외근/출장/휴가 OR 활동=외근/출장 인 task 모두)
+  //    - 프로젝트 task가 활동=외근이면 일정에도 함께 노출
   const NON_PROJECT_WORK = ["개인업무", "사내잡무", "교육", "서비스"];
-  const SCHEDULE_CATS = ["외근", "출장", "휴가"];
   const STATUSES = ["시작 전", "진행 중", "완료", "보류"] as const;
 
   const projectTasks: Task[] = [];
   const otherByStatus = new Map<string, Task[]>();
   for (const s of STATUSES) otherByStatus.set(s, []);
-  const scheduleByCat = new Map<string, Task[]>();
-  for (const c of SCHEDULE_CATS) scheduleByCat.set(c, []);
+  const scheduleByBucket = new Map<string, Task[]>([
+    ["외근", []],
+    ["출장", []],
+    ["휴가", []],
+  ]);
   const unclassified: Task[] = [];
 
   for (const t of open) {
+    // 일정 영역에 등장해야 하는가 (분류 또는 활동 기준)
+    const scheduleBucket =
+      t.category === "휴가"
+        ? "휴가"
+        : t.activity === "출장" || t.category === "출장"
+          ? "출장"
+          : t.activity === "외근" || t.category === "외근"
+            ? "외근"
+            : null;
+    if (scheduleBucket) {
+      scheduleByBucket.get(scheduleBucket)!.push(t);
+    }
+
+    // 메인 그룹 (프로젝트/기타/미분류) — 일정 분류는 메인에서 제외, 단 프로젝트 분류는 일정과 별개로 메인에 둠
     if (t.category === "프로젝트") {
       projectTasks.push(t);
     } else if (NON_PROJECT_WORK.includes(t.category)) {
       const bucket = otherByStatus.get(t.status) ?? otherByStatus.get("시작 전")!;
       bucket.push(t);
-    } else if (SCHEDULE_CATS.includes(t.category)) {
-      scheduleByCat.get(t.category)!.push(t);
+    } else if (
+      t.category === "외근" ||
+      t.category === "출장" ||
+      t.category === "휴가"
+    ) {
+      // 일정 분류 task는 메인 영역에 추가 안 함 (일정 카드에만 표시)
     } else {
       unclassified.push(t);
     }
@@ -371,19 +392,21 @@ function TodayTasks({
         </div>
       </div>
 
-      {/* 일정 — 외근/출장/휴가 3열 카드 (시간 표시) */}
+      {/* 일정 — 외근/출장/휴가 3열 카드 (시간 표시). 분류=일정 OR 활동=일정 모두. */}
       <div>
         <h3 className="mb-1.5 text-xs font-medium text-zinc-600 dark:text-zinc-400">
           일정
         </h3>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-          {SCHEDULE_CATS.map((c) => (
+          {(["외근", "출장", "휴가"] as const).map((c) => (
             <CategoryCard
               key={c}
               label={c}
-              items={scheduleByCat.get(c) ?? []}
+              items={scheduleByBucket.get(c) ?? []}
               onClickTask={onClickTask}
               showTime
+              showProjectBadge
+              findProject={findProject}
             />
           ))}
         </div>
@@ -495,12 +518,16 @@ function CategoryCard({
   onClickTask,
   showCategoryBadge,
   showTime,
+  showProjectBadge,
+  findProject,
 }: {
   label: string;
   items: Task[];
   onClickTask: (t: Task) => void;
   showCategoryBadge?: boolean;
   showTime?: boolean;
+  showProjectBadge?: boolean;
+  findProject?: (pid: string | undefined) => Project | undefined;
 }) {
   return (
     <div className="rounded-xl border border-zinc-200 bg-white p-3 dark:border-zinc-800 dark:bg-zinc-900">
@@ -524,6 +551,14 @@ function CategoryCard({
                 <p className="truncate font-medium" title={t.title}>
                   {t.title || "(제목 없음)"}
                 </p>
+                {showProjectBadge && t.category === "프로젝트" && findProject && (
+                  <p className="mt-0.5 truncate text-[10px] text-zinc-500">
+                    {(() => {
+                      const proj = findProject(t.project_ids[0]);
+                      return proj ? `${proj.code || ""} ${proj.name}` : "프로젝트";
+                    })()}
+                  </p>
+                )}
                 <p className="mt-0.5 flex items-center justify-between gap-1 text-[10px] text-zinc-500">
                   <span className="truncate">
                     {showTime

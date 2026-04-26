@@ -24,7 +24,8 @@ class Task(BaseModel):
     actual_end_date: str | None = None
     priority: str = ""
     difficulty: str = ""  # 매우높음|높음|중간|낮음|매우낮음
-    category: str = ""    # 프로젝트|개인업무|사내잡무|교육|서비스 (빈 값=미분류)
+    category: str = ""    # 프로젝트|개인업무|사내잡무|교육|서비스|외근|출장|휴가
+    activity: str = ""    # 사무실|외근|출장 (분류와 독립, 프로젝트 task의 활동 유형)
     assignees: list[str] = []
     teams: list[str] = []
     note: str = ""
@@ -49,6 +50,7 @@ class Task(BaseModel):
             priority=P.select_name(props, "우선순위"),
             difficulty=P.select_name(props, "난이도"),
             category=P.select_name(props, "분류"),
+            activity=P.select_name(props, "활동"),
             assignees=P.multi_select_names(props, "담당자"),
             teams=P.multi_select_names(props, "담당팀"),
             note=P.rich_text(props, "비고"),
@@ -61,7 +63,8 @@ class Task(BaseModel):
 class TaskCreateRequest(BaseModel):
     title: str
     project_id: str = ""  # 분류='프로젝트'일 때만 필수
-    category: str = ""    # 프로젝트|개인업무|사내잡무|교육|서비스
+    category: str = ""    # 프로젝트|개인업무|사내잡무|교육|서비스|외근|출장|휴가
+    activity: str = ""    # 사무실|외근|출장 (선택)
     status: str | None = None
     progress: float | None = None
     start_date: str | None = None
@@ -84,6 +87,7 @@ class TaskUpdateRequest(BaseModel):
     priority: str | None = None
     difficulty: str | None = None
     category: str | None = None
+    activity: str | None = None
     assignees: list[str] | None = None
     teams: list[str] | None = None
     note: str | None = None
@@ -145,6 +149,8 @@ def task_create_to_props(req: TaskCreateRequest) -> dict[str, Any]:
         props["프로젝트"] = _relation([req.project_id])
     if req.category:
         props["분류"] = {"select": {"name": req.category}}
+    if req.activity:
+        props["활동"] = {"select": {"name": req.activity}}
     if req.code:
         props["CODE"] = _rich_text(req.code)
     if req.assignees:
@@ -220,6 +226,11 @@ def task_update_to_props(req: TaskUpdateRequest) -> dict[str, Any]:
             props["분류"] = {"select": None}
         else:
             props["분류"] = {"select": {"name": req.category}}
+    if req.activity is not None:
+        if req.activity == "":
+            props["활동"] = {"select": None}
+        else:
+            props["활동"] = {"select": {"name": req.activity}}
     if req.assignees is not None:
         props["담당자"] = _multi_select(req.assignees)
     if req.teams is not None:

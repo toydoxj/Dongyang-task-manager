@@ -51,6 +51,14 @@ TASK_DB_REQUIRED: dict[str, dict[str, Any]] = {
             ("휴가", "pink"),
         ]
     ),
+    # 활동 유형 — 분류와 독립. 프로젝트 task가 외근/출장일 수 있음.
+    "활동": _select(
+        [
+            ("사무실", "default"),
+            ("외근", "orange"),
+            ("출장", "red"),
+        ]
+    ),
 }
 
 # 추후 확장: 메인 프로젝트, 마스터 등 다른 DB schema도 여기 추가

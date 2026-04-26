@@ -7,11 +7,12 @@ import { useAuth } from "@/components/AuthGuard";
 import { createTask } from "@/lib/api";
 import type { Project } from "@/lib/domain";
 import {
+  ACTIVITY_TYPES,
+  isTimeBasedTask,
   TASK_CATEGORIES,
   TASK_DIFFICULTIES,
   TASK_PRIORITIES,
   TASK_STATUSES,
-  TIME_BASED_CATEGORIES,
 } from "@/lib/domain";
 
 interface Props {
@@ -69,6 +70,7 @@ function Form({
   const [difficulty, setDifficulty] = useState("");
   // 프로젝트 컨텍스트가 있으면 default '프로젝트', 없으면 미분류
   const [category, setCategory] = useState(projectId ? "프로젝트" : "");
+  const [activity, setActivity] = useState("");
   // 분류=프로젝트 + projectId 미지정인 경우(=/me에서 새 업무) 사용자가 dropdown으로 선택
   const [pickedProjectId, setPickedProjectId] = useState(projectId);
   const [assignees, setAssignees] = useState(user?.name ?? "");
@@ -77,7 +79,19 @@ function Form({
   const [error, setError] = useState<string | null>(null);
 
   const showProjectPicker = category === "프로젝트" && !projectId;
-  const isTimeBased = TIME_BASED_CATEGORIES.includes(category);
+  const isTimeBased = isTimeBasedTask(category, activity);
+
+  /** 시간 기반 ↔ date 형식 전환 시 input value 변환. */
+  const syncDateTimeFormat = (wasTime: boolean, nowTime: boolean): void => {
+    if (wasTime === nowTime) return;
+    if (nowTime) {
+      if (start && !start.includes("T")) setStart(`${start}T09:00`);
+      if (end && !end.includes("T")) setEnd(`${end}T18:00`);
+    } else {
+      if (start.includes("T")) setStart(start.slice(0, 10));
+      if (end.includes("T")) setEnd(end.slice(0, 10));
+    }
+  };
 
   const submit = async (): Promise<void> => {
     if (!title.trim()) {
@@ -96,6 +110,7 @@ function Form({
         title: title.trim(),
         project_id: category === "프로젝트" ? finalProjectId : "",
         category: category || undefined,
+        activity: activity || undefined,
         status,
         start_date: start || undefined,
         end_date: end || undefined,
@@ -166,18 +181,10 @@ function Form({
               value={category}
               onChange={(e) => {
                 const next = e.target.value;
-                const wasTime = TIME_BASED_CATEGORIES.includes(category);
-                const nowTime = TIME_BASED_CATEGORIES.includes(next);
-                if (wasTime !== nowTime) {
-                  // date ↔ datetime-local 형식 변환
-                  if (nowTime) {
-                    if (start && !start.includes("T")) setStart(`${start}T09:00`);
-                    if (end && !end.includes("T")) setEnd(`${end}T18:00`);
-                  } else {
-                    if (start.includes("T")) setStart(start.slice(0, 10));
-                    if (end.includes("T")) setEnd(end.slice(0, 10));
-                  }
-                }
+                syncDateTimeFormat(
+                  isTimeBasedTask(category, activity),
+                  isTimeBasedTask(next, activity),
+                );
                 setCategory(next);
               }}
               className={inputCls}
@@ -190,21 +197,43 @@ function Form({
               ))}
             </select>
           </Field>
-          <Field label="난이도">
+          <Field label="활동">
             <select
-              value={difficulty}
-              onChange={(e) => setDifficulty(e.target.value)}
+              value={activity}
+              onChange={(e) => {
+                const next = e.target.value;
+                syncDateTimeFormat(
+                  isTimeBasedTask(category, activity),
+                  isTimeBasedTask(category, next),
+                );
+                setActivity(next);
+              }}
               className={inputCls}
             >
               <option value="">—</option>
-              {TASK_DIFFICULTIES.map((d) => (
-                <option key={d} value={d}>
-                  {d}
+              {ACTIVITY_TYPES.map((a) => (
+                <option key={a} value={a}>
+                  {a}
                 </option>
               ))}
             </select>
           </Field>
         </div>
+
+        <Field label="난이도">
+          <select
+            value={difficulty}
+            onChange={(e) => setDifficulty(e.target.value)}
+            className={inputCls}
+          >
+            <option value="">—</option>
+            {TASK_DIFFICULTIES.map((d) => (
+              <option key={d} value={d}>
+                {d}
+              </option>
+            ))}
+          </select>
+        </Field>
 
         {showProjectPicker && (
           <Field label="프로젝트" required>
