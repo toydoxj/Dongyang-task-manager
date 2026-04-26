@@ -25,9 +25,13 @@ def _setup_runtime() -> None:
         base_dir = os.path.dirname(os.path.abspath(__file__))
         exe_dir = base_dir
 
-    # 3. .env 로드 (이미 환경변수가 있으면 override 안 함)
+    # 3. .env 로드 — 우선순위:
+    #    (1) BACKEND_DATA_DIR/.env (사용자 override)
+    #    (2) exe_dir/.env (수동 배치)
+    #    (3) base_dir/.env.production (빌드에 번들된 기본값)
     from dotenv import load_dotenv
 
+    loaded_user_env = False
     for candidate in (
         os.environ.get("BACKEND_DATA_DIR"),
         exe_dir,
@@ -37,18 +41,49 @@ def _setup_runtime() -> None:
             env_path = os.path.join(candidate, ".env")
             if os.path.isfile(env_path):
                 load_dotenv(env_path, override=False)
+                loaded_user_env = True
                 break
-    load_dotenv(override=False)  # 기본 탐색
+    if not loaded_user_env:
+        bundled = os.path.join(base_dir, ".env.production")
+        if os.path.isfile(bundled):
+            load_dotenv(bundled, override=False)
+    load_dotenv(override=False)  # 시스템 환경변수 fallback
 
-    # 4. DATABASE_URL 기본값 (사용자별 데이터 디렉토리)
+    # 4. 사용자 데이터 디렉토리 (DB + JWT secret 영구 저장)
+    user_dir = os.environ.get("BACKEND_DATA_DIR")
+    if not user_dir:
+        if sys.platform == "win32":
+            base = os.environ.get("LOCALAPPDATA") or os.path.expanduser("~")
+            user_dir = os.path.join(base, "동양구조 업무관리")
+        else:
+            user_dir = os.path.join(os.path.expanduser("~"), ".dongyang-task-manager")
+    os.makedirs(user_dir, exist_ok=True)
+
+    # 5. DATABASE_URL 기본값
     if not os.environ.get("DATABASE_URL"):
-        data_dir = os.environ.get("BACKEND_DATA_DIR") or os.path.join(exe_dir, "data")
+        data_dir = os.path.join(user_dir, "data")
         os.makedirs(data_dir, exist_ok=True)
-        # SQLite URL 은 forward slash 권장
         db_path = os.path.join(data_dir, "app.db").replace("\\", "/")
         os.environ["DATABASE_URL"] = f"sqlite:///{db_path}"
 
-    # 5. 정적 frontend 위치 (백엔드가 서빙)
+    # 6. JWT_SECRET — 기본값/미설정이면 user_dir에 영구 저장 후 재사용
+    weak = ("", "change-me-in-production")
+    if os.environ.get("JWT_SECRET", "") in weak:
+        secret_file = os.path.join(user_dir, ".jwt-secret")
+        if os.path.isfile(secret_file):
+            with open(secret_file, encoding="utf-8") as f:
+                token = f.read().strip()
+            if token:
+                os.environ["JWT_SECRET"] = token
+        if os.environ.get("JWT_SECRET", "") in weak:
+            import secrets as _secrets
+
+            token = _secrets.token_urlsafe(64)
+            with open(secret_file, "w", encoding="utf-8") as f:
+                f.write(token)
+            os.environ["JWT_SECRET"] = token
+
+    # 7. 정적 frontend 위치 (백엔드가 서빙)
     if not os.environ.get("FRONTEND_DIST"):
         candidate = os.path.join(base_dir, "frontend_out")
         if os.path.isdir(candidate):

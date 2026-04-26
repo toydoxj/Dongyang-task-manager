@@ -52,6 +52,11 @@ _FRONTEND_OUT = os.path.normpath(os.path.join(_HERE, "..", "frontend", "out"))
 if os.path.isdir(_FRONTEND_OUT):
     datas.append((_FRONTEND_OUT, "frontend_out"))
 
+# 운영용 기본 .env (노션 토큰/DB ID) — backend resources 안에 번들
+_ENV_PRODUCTION = os.path.join(_HERE, ".env.production")
+if os.path.isfile(_ENV_PRODUCTION):
+    datas.append((_ENV_PRODUCTION, "."))
+
 # Alembic 마이그레이션 (운영에서는 init_db로 충분하지만 함께 번들)
 _ALEMBIC = os.path.join(_HERE, "alembic")
 if os.path.isdir(_ALEMBIC):

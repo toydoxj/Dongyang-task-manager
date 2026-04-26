@@ -108,12 +108,20 @@ async function startBackend() {
     logStream.write(`[launcher] port=${backendPort}\n\n`);
   } catch (_) {}
 
+  // 사용자 쓰기 가능 디렉토리 (Program Files 회피)
+  const userDataDir = app.getPath("userData");
+  if (!fs.existsSync(userDataDir)) {
+    fs.mkdirSync(userDataDir, { recursive: true });
+  }
+  if (logStream) logStream.write(`[launcher] BACKEND_DATA_DIR=${userDataDir}\n\n`);
+
   backendExitInfo = null;
   backendProcess = spawn(cmd, args, {
     cwd,
     env: {
       ...process.env,
       BACKEND_PORT: String(backendPort),
+      BACKEND_DATA_DIR: userDataDir,
       PYTHONIOENCODING: "utf-8",
     },
     stdio: ["ignore", "pipe", "pipe"],

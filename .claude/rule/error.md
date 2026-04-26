@@ -21,3 +21,26 @@
 - 원인: 이전 세션에서 `rule`이 0바이트 파일로 생성되어 있었음
 - 해결: 빈 파일 삭제 후 `mkdir -p`로 디렉토리 생성
 - 재발 방지: 디렉토리 생성 전 `ls -la`로 동일 이름 파일 존재 여부 확인
+
+### 2026-04-26 — packaged backend.exe가 Program Files data 디렉토리 생성 시 권한 거부
+- 컨텍스트: NSIS 설치 후 첫 실행 — backend.exe가 `Program Files\dongyang-task-electron\resources\backend\data` 만들려다 실패
+- 증상: `PermissionError: [WinError 5] 액세스가 거부되었습니다`, exit code 1
+- 원인: run.py가 BACKEND_DATA_DIR 미설정 시 fallback을 `exe_dir/data`로 두어 read-only 위치 시도
+- 해결:
+  1) electron/main.js spawn env에 `BACKEND_DATA_DIR: app.getPath("userData")` 명시 전달
+  2) run.py fallback도 `%LOCALAPPDATA%\동양구조 업무관리\data`로 강화
+- 재발 방지: PyInstaller로 sidecar 만들 때 데이터 디렉토리는 절대 설치 위치(Program Files)에 의존하지 말 것. Electron이 항상 userData 경로를 명시 전달.
+
+### 2026-04-26 — packaged frontend가 backend random port에 접근 못 함 (Failed to fetch)
+- 컨텍스트: 설치 후 UI는 떴으나 모든 API 호출이 "Failed to fetch"
+- 증상: 대시보드 빨간 에러 박스 "Failed to fetch"
+- 원인: frontend의 `API_BASE`를 빌드 시점에 `process.env.NEXT_PUBLIC_API_BASE` (= `http://127.0.0.1:8000`)로 인라인. packaged 환경에서 backend는 `getFreePort()`로 랜덤 포트(예: 56727) 사용 → 8000으로 보낸 요청 모두 fail
+- 해결: lib/types.ts의 `API_BASE`를 client-side에서 `window.location.origin` 사용하도록 동적 계산. backend가 frontend도 정적 서빙하므로 같은 origin으로 호출 가능
+- 재발 방지: Electron sidecar + 정적 frontend 패턴에서 환경변수를 빌드 시점에 인라인 금지. client에서 런타임 `window.location.origin` 사용. dev에서는 별도 분기.
+
+### 2026-04-26 — Packaged 환경에서 노션 토큰 배포 방식
+- 컨텍스트: 사용자 PC마다 .env 직접 두기 불편. NOTION_API_KEY 등 어떻게 배포?
+- 결정: 옵션 A — `backend/.env.production` 파일을 PyInstaller datas에 번들 (사내 도구라 보안 trade-off 수용)
+- 우선순위: `BACKEND_DATA_DIR/.env` (사용자 override) > `exe_dir/.env` > 번들 `.env.production` (기본값)
+- JWT_SECRET은 첫 실행 시 user_dir에 자동 생성/저장 (`secrets.token_urlsafe(64)`)
+- 재발 방지: `.env.production`은 .gitignore 처리, 빌드자만 보유. 토큰 유출 시 노션 통합 토큰 재발급으로 대응 가능
