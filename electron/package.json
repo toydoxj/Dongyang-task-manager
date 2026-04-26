@@ -1,14 +1,15 @@
 {
   "name": "dongyang-task-electron",
-  "version": "0.1.0",
+  "version": "0.0.1",
   "description": "(주)동양구조 업무관리 — Electron 셸",
   "main": "main.js",
   "private": true,
   "scripts": {
     "dev": "cross-env ELECTRON_DEV=1 ELECTRON_DEV_URL=http://localhost:3000 electron .",
     "start": "electron .",
-    "pack": "electron-builder --dir",
-    "build": "electron-builder --win"
+    "pack": "electron-builder --dir --publish never",
+    "build": "electron-builder --win --publish never",
+    "release": "electron-builder --win --publish always"
   },
   "devDependencies": {
     "cross-env": "^7.0.3",
@@ -16,27 +17,51 @@
     "electron-builder": "^25.0.0"
   },
   "dependencies": {
+    "electron-updater": "^6.8.3",
     "tree-kill": "^1.2.2"
   },
   "build": {
     "appId": "kr.co.dongyang.task-manager",
-    "productName": "Dongyang Task Manager",
+    "productName": "동양구조 업무관리",
+    "asar": true,
     "win": {
-      "target": "nsis"
+      "target": [
+        {
+          "target": "nsis",
+          "arch": ["x64"]
+        }
+      ]
     },
     "nsis": {
       "oneClick": false,
-      "allowToChangeInstallationDirectory": true
+      "allowToChangeInstallationDirectory": true,
+      "perMachine": false,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "동양구조 업무관리"
     },
     "files": [
       "main.js",
-      "preload.js"
+      "preload.js",
+      "package.json"
     ],
-    "asar": false,
+    "extraResources": [
+      {
+        "from": "../backend/dist/backend",
+        "to": "backend",
+        "filter": ["**/*"]
+      },
+      {
+        "from": "update-token.txt",
+        "to": "update-token.txt"
+      }
+    ],
     "publish": {
       "provider": "github",
       "owner": "toydoxj",
-      "repo": "Dongyang-task-manager"
+      "repo": "Dongyang-task-manager",
+      "private": true,
+      "releaseType": "release"
     }
   }
 }

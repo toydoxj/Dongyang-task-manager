@@ -142,7 +142,7 @@ function TodayTasks({ tasks }: { tasks: Task[] }) {
           <li key={t.id}>
             {projId ? (
               <Link
-                href={`/projects/${projId}`}
+                href={`/project?id=${projId}`}
                 className="block hover:bg-zinc-50 dark:hover:bg-zinc-800/50"
               >
                 {node}

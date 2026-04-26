@@ -1,7 +1,6 @@
 "use client";
 
 import Link from "next/link";
-import { use } from "react";
 import { useSWRConfig } from "swr";
 
 import ExpenseBreakdown from "@/components/project/ExpenseBreakdown";
@@ -13,12 +12,7 @@ import TaskKanban from "@/components/project/TaskKanban";
 import LoadingState from "@/components/ui/LoadingState";
 import { keys, useCashflow, useProject, useTasks } from "@/lib/hooks";
 
-interface PageProps {
-  params: Promise<{ id: string }>;
-}
-
-export default function ProjectDetailPage({ params }: PageProps) {
-  const { id } = use(params);
+export default function ProjectClient({ id }: { id: string }) {
   const { mutate } = useSWRConfig();
 
   const { data: project, error: projectErr } = useProject(id);
@@ -31,7 +25,6 @@ export default function ProjectDetailPage({ params }: PageProps) {
   const tasks = tasksData?.items;
   const cashflow = cashflowData?.items;
 
-  // TASK 갱신 후 캐시 무효화
   const refreshTasks = (): void => {
     void mutate(keys.tasks({ project_id: id }));
   };

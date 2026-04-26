@@ -72,7 +72,7 @@ export default function StageBoard({ projects }: Props) {
               {items.slice(0, 50).map((p) => (
                 <li key={p.id}>
                   <Link
-                    href={`/projects/${p.id}`}
+                    href={`/project?id=${p.id}`}
                     className="block rounded-md border border-zinc-200 bg-white p-2.5 text-xs transition-colors hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-950 dark:hover:bg-zinc-900"
                   >
                     <p className="font-medium text-zinc-900 dark:text-zinc-100 truncate">

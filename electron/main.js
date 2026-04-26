@@ -9,6 +9,7 @@
 //   - 프론트: 백엔드가 정적 빌드 서빙 → http://127.0.0.1:{port}
 
 const { app, BrowserWindow, dialog, ipcMain } = require("electron");
+const { autoUpdater } = require("electron-updater");
 const path = require("path");
 const fs = require("fs");
 const net = require("net");
@@ -187,12 +188,93 @@ async function createWindow() {
   });
 }
 
+// ── 자동 업데이트 (private GitHub Releases) ──
+//
+// PAT 우선순위: 1) process.env.GH_PAT  2) resources/update-token.txt
+// 토큰이 없으면 자동 업데이트 비활성 (수동 다운로드).
+function getUpdateToken() {
+  if (IS_DEV) return null;
+  if (process.env.GH_PAT) return process.env.GH_PAT;
+  try {
+    const tokenFile = path.join(process.resourcesPath, "update-token.txt");
+    if (fs.existsSync(tokenFile)) {
+      return fs.readFileSync(tokenFile, "utf-8").trim();
+    }
+  } catch (_) {
+    /* ignore */
+  }
+  return null;
+}
+
+function setupAutoUpdater() {
+  const token = getUpdateToken();
+  if (!token) {
+    console.log("[updater] 토큰 없음 — 자동 업데이트 비활성");
+    return;
+  }
+
+  autoUpdater.setFeedURL({
+    provider: "github",
+    owner: "toydoxj",
+    repo: "Dongyang-task-manager",
+    private: true,
+    token,
+  });
+  autoUpdater.autoDownload = false;
+  autoUpdater.logger = console;
+
+  autoUpdater.on("update-available", (info) => {
+    if (!mainWindow) return;
+    const releaseNotes =
+      typeof info.releaseNotes === "string"
+        ? info.releaseNotes
+        : Array.isArray(info.releaseNotes)
+          ? info.releaseNotes.map((n) => n.note || n).join("\n")
+          : "";
+    dialog
+      .showMessageBox(mainWindow, {
+        type: "info",
+        title: "업데이트 알림",
+        message: `새 버전 v${info.version}이 있습니다.${releaseNotes ? "\n\n" + releaseNotes : ""}\n\n다운로드하시겠습니까?`,
+        buttons: ["다운로드", "나중에"],
+      })
+      .then(({ response }) => {
+        if (response === 0) autoUpdater.downloadUpdate().catch(console.error);
+      });
+  });
+
+  autoUpdater.on("update-downloaded", (info) => {
+    if (!mainWindow) return;
+    dialog
+      .showMessageBox(mainWindow, {
+        type: "info",
+        title: "업데이트 준비 완료",
+        message: `v${info.version} 다운로드 완료. 지금 재시작하여 설치할까요?`,
+        buttons: ["재시작", "나중에"],
+      })
+      .then(({ response }) => {
+        if (response === 0) autoUpdater.quitAndInstall();
+      });
+  });
+
+  autoUpdater.on("error", (err) => {
+    console.error("[updater] error:", err);
+  });
+
+  autoUpdater.checkForUpdates().catch((err) => {
+    console.error("[updater] checkForUpdates failed:", err);
+  });
+}
+
 // ── IPC ──
 ipcMain.handle("get-version", () => app.getVersion());
 ipcMain.handle("get-backend-url", () => `http://127.0.0.1:${backendPort}`);
 
 // ── 생명주기 ──
-app.whenReady().then(createWindow);
+app.whenReady().then(async () => {
+  await createWindow();
+  if (app.isPackaged) setupAutoUpdater();
+});
 
 app.on("window-all-closed", () => {
   stopBackend();

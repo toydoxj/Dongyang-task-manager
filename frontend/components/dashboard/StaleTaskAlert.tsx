@@ -88,7 +88,7 @@ export default function StaleTaskAlert({ tasks, topN = 10 }: Props) {
               <li key={t.id}>
                 {projId ? (
                   <Link
-                    href={`/projects/${projId}`}
+                    href={`/project?id=${projId}`}
                     className="block rounded-md hover:bg-zinc-50 dark:hover:bg-zinc-800/50"
                   >
                     {node}

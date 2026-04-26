@@ -47,7 +47,7 @@ export default function UpcomingDeadlines({ projects, topN = 10 }: Props) {
           return (
             <li key={p.id}>
               <Link
-                href={`/projects/${p.id}`}
+                href={`/project?id=${p.id}`}
                 className="flex items-center justify-between gap-3 rounded-md px-2 py-2 hover:bg-zinc-50 dark:hover:bg-zinc-800/50"
               >
                 <div className="min-w-0 flex-1">
