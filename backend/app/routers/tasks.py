@@ -65,6 +65,9 @@ async def create_task(
     _user: User = Depends(get_current_user),
     notion: NotionService = Depends(get_notion),
 ) -> Task:
+    # 종료예정일 미지정 시 시작일과 동일하게 (단순 일정 task UX 개선)
+    if body.start_date and not body.end_date:
+        body.end_date = body.start_date
     db_id = get_settings().notion_db_tasks
     props = task_create_to_props(body)
     page = await notion.create_page(db_id, props)
