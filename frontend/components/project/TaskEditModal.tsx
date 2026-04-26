@@ -5,7 +5,12 @@ import { useState } from "react";
 import Modal from "@/components/ui/Modal";
 import { archiveTask, updateTask } from "@/lib/api";
 import type { Task } from "@/lib/domain";
-import { TASK_DIFFICULTIES, TASK_PRIORITIES, TASK_STATUSES } from "@/lib/domain";
+import {
+  TASK_CATEGORIES,
+  TASK_DIFFICULTIES,
+  TASK_PRIORITIES,
+  TASK_STATUSES,
+} from "@/lib/domain";
 
 interface Props {
   task: Task | null;
@@ -37,6 +42,7 @@ function Form({
   const [actualEnd, setActualEnd] = useState(task.actual_end_date ?? "");
   const [priority, setPriority] = useState(task.priority ?? "");
   const [difficulty, setDifficulty] = useState(task.difficulty ?? "");
+  const [category, setCategory] = useState(task.category ?? "");
   const [assignees, setAssignees] = useState(task.assignees.join(", "));
   const [note, setNote] = useState(task.note ?? "");
   const [busy, setBusy] = useState(false);
@@ -53,6 +59,7 @@ function Form({
       const wasActual = task.actual_end_date ?? "";
       const wasPriority = task.priority ?? "";
       const wasDifficulty = task.difficulty ?? "";
+      const wasCategory = task.category ?? "";
       await updateTask(task.id, {
         title,
         status,
@@ -61,6 +68,7 @@ function Form({
         actual_end_date: actualEnd === wasActual ? undefined : actualEnd,
         priority: priority === wasPriority ? undefined : priority,
         difficulty: difficulty === wasDifficulty ? undefined : difficulty,
+        category: category === wasCategory ? undefined : category,
         assignees: assignees
           .split(",")
           .map((s) => s.trim())
@@ -134,6 +142,20 @@ function Form({
         </div>
 
         <div className="grid grid-cols-2 gap-3">
+          <Field label="분류">
+            <select
+              value={category}
+              onChange={(e) => setCategory(e.target.value)}
+              className={inputCls}
+            >
+              <option value="">— 미분류</option>
+              {TASK_CATEGORIES.map((c) => (
+                <option key={c} value={c}>
+                  {c}
+                </option>
+              ))}
+            </select>
+          </Field>
           <Field label="난이도">
             <select
               value={difficulty}

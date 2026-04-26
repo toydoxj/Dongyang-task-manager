@@ -210,6 +210,7 @@ export interface Task {
   actual_end_date: string | null;
   priority: string; // 높음|보통|낮음
   difficulty: string; // 매우높음|높음|중간|낮음|매우낮음
+  category: string;   // 프로젝트|개인업무|사내잡무|교육|서비스 (빈 값=미분류)
   assignees: string[];
   teams: string[];
   note: string;
@@ -225,7 +226,8 @@ export interface TaskListResponse {
 
 export interface TaskCreateRequest {
   title: string;
-  project_id: string;
+  project_id?: string;  // 분류='프로젝트'일 때만 필수
+  category?: string;    // 분류
   status?: string;
   progress?: number;
   start_date?: string;
@@ -247,6 +249,7 @@ export interface TaskUpdateRequest {
   actual_end_date?: string;
   priority?: string;
   difficulty?: string;
+  category?: string;
   assignees?: string[];
   teams?: string[];
   note?: string;
@@ -298,3 +301,12 @@ export const TASK_DIFFICULTIES = [
   "낮음",
   "매우낮음",
 ] as const;
+
+export const TASK_CATEGORIES = [
+  "프로젝트",
+  "개인업무",
+  "사내잡무",
+  "교육",
+  "서비스",
+] as const;
+export type TaskCategory = (typeof TASK_CATEGORIES)[number];

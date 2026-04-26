@@ -5,7 +5,12 @@ import { useState } from "react";
 import Modal from "@/components/ui/Modal";
 import { useAuth } from "@/components/AuthGuard";
 import { createTask } from "@/lib/api";
-import { TASK_DIFFICULTIES, TASK_PRIORITIES, TASK_STATUSES } from "@/lib/domain";
+import {
+  TASK_CATEGORIES,
+  TASK_DIFFICULTIES,
+  TASK_PRIORITIES,
+  TASK_STATUSES,
+} from "@/lib/domain";
 
 interface Props {
   open: boolean;
@@ -53,6 +58,8 @@ function Form({
   const [end, setEnd] = useState("");
   const [priority, setPriority] = useState("");
   const [difficulty, setDifficulty] = useState("");
+  // 프로젝트 상세 페이지에서 호출 시 projectId가 있으므로 default '프로젝트'
+  const [category, setCategory] = useState(projectId ? "프로젝트" : "");
   const [assignees, setAssignees] = useState(user?.name ?? "");
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
@@ -63,12 +70,17 @@ function Form({
       setError("제목을 입력하세요");
       return;
     }
+    if (category === "프로젝트" && !projectId) {
+      setError("분류가 '프로젝트'면 프로젝트가 필요합니다");
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
       await createTask({
         title: title.trim(),
-        project_id: projectId,
+        project_id: category === "프로젝트" ? projectId : "",
+        category: category || undefined,
         status,
         start_date: start || undefined,
         end_date: end || undefined,
@@ -133,20 +145,36 @@ function Form({
           </Field>
         </div>
 
-        <Field label="난이도">
-          <select
-            value={difficulty}
-            onChange={(e) => setDifficulty(e.target.value)}
-            className={inputCls}
-          >
-            <option value="">—</option>
-            {TASK_DIFFICULTIES.map((d) => (
-              <option key={d} value={d}>
-                {d}
-              </option>
-            ))}
-          </select>
-        </Field>
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="분류">
+            <select
+              value={category}
+              onChange={(e) => setCategory(e.target.value)}
+              className={inputCls}
+            >
+              <option value="">— 미분류</option>
+              {TASK_CATEGORIES.map((c) => (
+                <option key={c} value={c}>
+                  {c}
+                </option>
+              ))}
+            </select>
+          </Field>
+          <Field label="난이도">
+            <select
+              value={difficulty}
+              onChange={(e) => setDifficulty(e.target.value)}
+              className={inputCls}
+            >
+              <option value="">—</option>
+              {TASK_DIFFICULTIES.map((d) => (
+                <option key={d} value={d}>
+                  {d}
+                </option>
+              ))}
+            </select>
+          </Field>
+        </div>
 
         <div className="grid grid-cols-2 gap-3">
           <Field label="시작일">

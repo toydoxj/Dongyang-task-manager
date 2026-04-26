@@ -51,6 +51,7 @@ class MirrorTask(Base):
     status: Mapped[str] = mapped_column(String, default="", index=True)
     priority: Mapped[str] = mapped_column(String, default="")
     difficulty: Mapped[str] = mapped_column(String, default="")
+    category: Mapped[str] = mapped_column(String, default="", index=True)
     progress: Mapped[float | None] = mapped_column(Float, nullable=True)
     start_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     end_date: Mapped[date | None] = mapped_column(Date, nullable=True, index=True)

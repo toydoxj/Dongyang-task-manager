@@ -24,6 +24,7 @@ class Task(BaseModel):
     actual_end_date: str | None = None
     priority: str = ""
     difficulty: str = ""  # 매우높음|높음|중간|낮음|매우낮음
+    category: str = ""    # 프로젝트|개인업무|사내잡무|교육|서비스 (빈 값=미분류)
     assignees: list[str] = []
     teams: list[str] = []
     note: str = ""
@@ -47,6 +48,7 @@ class Task(BaseModel):
             actual_end_date=P.date_range(props, "실제 완료일")[0],
             priority=P.select_name(props, "우선순위"),
             difficulty=P.select_name(props, "난이도"),
+            category=P.select_name(props, "분류"),
             assignees=P.multi_select_names(props, "담당자"),
             teams=P.multi_select_names(props, "담당팀"),
             note=P.rich_text(props, "비고"),
@@ -58,7 +60,8 @@ class Task(BaseModel):
 
 class TaskCreateRequest(BaseModel):
     title: str
-    project_id: str  # 부모 프로젝트 1개 (단일 관계로 단순화)
+    project_id: str = ""  # 분류='프로젝트'일 때만 필수
+    category: str = ""    # 프로젝트|개인업무|사내잡무|교육|서비스
     status: str | None = None
     progress: float | None = None
     start_date: str | None = None
@@ -80,6 +83,7 @@ class TaskUpdateRequest(BaseModel):
     actual_end_date: str | None = None
     priority: str | None = None
     difficulty: str | None = None
+    category: str | None = None
     assignees: list[str] | None = None
     teams: list[str] | None = None
     note: str | None = None
@@ -136,8 +140,11 @@ def _relation(ids: list[str]) -> dict[str, Any]:
 def task_create_to_props(req: TaskCreateRequest) -> dict[str, Any]:
     props: dict[str, Any] = {
         "내용": _title(req.title),
-        "프로젝트": _relation([req.project_id]),
     }
+    if req.project_id:
+        props["프로젝트"] = _relation([req.project_id])
+    if req.category:
+        props["분류"] = {"select": {"name": req.category}}
     if req.code:
         props["CODE"] = _rich_text(req.code)
     if req.assignees:
@@ -208,6 +215,11 @@ def task_update_to_props(req: TaskUpdateRequest) -> dict[str, Any]:
             diff = _select(req.difficulty)
             if diff:
                 props["난이도"] = diff
+    if req.category is not None:
+        if req.category == "":
+            props["분류"] = {"select": None}
+        else:
+            props["분류"] = {"select": {"name": req.category}}
     if req.assignees is not None:
         props["담당자"] = _multi_select(req.assignees)
     if req.teams is not None:

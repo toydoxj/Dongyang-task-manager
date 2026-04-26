@@ -39,6 +39,15 @@ TASK_DB_REQUIRED: dict[str, dict[str, Any]] = {
             ("매우낮음", "gray"),
         ]
     ),
+    "분류": _select(
+        [
+            ("프로젝트", "blue"),
+            ("개인업무", "gray"),
+            ("사내잡무", "brown"),
+            ("교육", "green"),
+            ("서비스", "purple"),
+        ]
+    ),
 }
 
 # 추후 확장: 메인 프로젝트, 마스터 등 다른 DB schema도 여기 추가
