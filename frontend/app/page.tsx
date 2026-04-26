@@ -5,6 +5,7 @@ import { useEffect } from "react";
 
 import { useAuth } from "@/components/AuthGuard";
 import CashflowForecast from "@/components/dashboard/CashflowForecast";
+import EmployeeLoadHeatmap from "@/components/dashboard/EmployeeLoadHeatmap";
 import ExpenseTrend from "@/components/dashboard/ExpenseTrend";
 import RevenueCollectionChart from "@/components/dashboard/RevenueCollectionChart";
 import StageBoard from "@/components/dashboard/StageBoard";
@@ -93,6 +94,13 @@ export default function DashboardPage() {
               <WorkTypeTreemap projects={projects} />
             </section>
           </div>
+
+          <section>
+            <h2 className="mb-2 text-sm font-medium text-zinc-700 dark:text-zinc-300">
+              직원별 부하
+            </h2>
+            <EmployeeLoadHeatmap projects={projects} />
+          </section>
 
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
             <section>
