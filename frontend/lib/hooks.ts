@@ -23,8 +23,12 @@ export const keys = {
 
 export function useProjects(
   filters?: Parameters<typeof listProjects>[0],
+  enabled: boolean = true,
 ): SWRResponse<ProjectListResponse> {
-  return useSWR(keys.projects(filters), () => listProjects(filters));
+  return useSWR(
+    enabled ? keys.projects(filters) : null,
+    () => listProjects(filters),
+  );
 }
 
 export function useProject(id: string | null): SWRResponse<Project> {
