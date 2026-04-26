@@ -1,6 +1,9 @@
 """/api/admin/employees — 직원 마스터 CRUD + 엑셀 import (admin only)."""
 from __future__ import annotations
 
+from datetime import date as Date
+from typing import Literal
+
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
@@ -27,10 +30,17 @@ _MAX_UPLOAD_BYTES = 5 * 1024 * 1024  # 5MB
 @router.get("", response_model=EmployeeListResponse)
 def list_employees(
     q: str | None = Query(default=None, description="이름/이메일/소속 검색"),
+    view: Literal["active", "resigned", "all"] = Query(
+        default="active", description="재직중(기본)/퇴사자/전체"
+    ),
     _admin: User = Depends(require_admin),
     db: Session = Depends(get_db),
 ) -> EmployeeListResponse:
     stmt = select(Employee)
+    if view == "active":
+        stmt = stmt.where(Employee.resigned_at.is_(None))
+    elif view == "resigned":
+        stmt = stmt.where(Employee.resigned_at.is_not(None))
     if q:
         like = f"%{q}%"
         stmt = stmt.where(
@@ -40,11 +50,48 @@ def list_employees(
                 Employee.team.ilike(like),
             )
         )
-    stmt = stmt.order_by(Employee.team.asc(), Employee.name.asc())
+    if view == "resigned":
+        # 최근 퇴사자 우선
+        stmt = stmt.order_by(
+            Employee.resigned_at.desc(), Employee.name.asc()
+        )
+    else:
+        stmt = stmt.order_by(Employee.team.asc(), Employee.name.asc())
     rows = db.execute(stmt).scalars().all()
     return EmployeeListResponse(
         items=[EmployeeOut.model_validate(r) for r in rows], count=len(rows)
     )
+
+
+@router.post("/{emp_id}/resign", response_model=EmployeeOut)
+def resign_employee(
+    emp_id: int,
+    on: Date | None = Query(default=None, description="퇴사일 (생략 시 오늘)"),
+    _admin: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+) -> EmployeeOut:
+    emp = db.get(Employee, emp_id)
+    if emp is None:
+        raise HTTPException(status_code=404, detail="직원을 찾을 수 없습니다")
+    emp.resigned_at = on or Date.today()
+    db.commit()
+    db.refresh(emp)
+    return EmployeeOut.model_validate(emp)
+
+
+@router.post("/{emp_id}/restore", response_model=EmployeeOut)
+def restore_employee(
+    emp_id: int,
+    _admin: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+) -> EmployeeOut:
+    emp = db.get(Employee, emp_id)
+    if emp is None:
+        raise HTTPException(status_code=404, detail="직원을 찾을 수 없습니다")
+    emp.resigned_at = None
+    db.commit()
+    db.refresh(emp)
+    return EmployeeOut.model_validate(emp)
 
 
 @router.post("", response_model=EmployeeOut, status_code=status.HTTP_201_CREATED)

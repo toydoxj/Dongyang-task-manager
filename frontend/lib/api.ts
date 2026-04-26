@@ -9,6 +9,7 @@ import type {
   EmployeeImportResult,
   EmployeeListResponse,
   EmployeeUpdate,
+  EmployeeView,
   MasterImage,
   MasterImageList,
   MasterOptions,
@@ -198,11 +199,66 @@ export async function uploadMasterImage(
   return jsonOrThrow<MasterImage>(res);
 }
 
+// ── 사용자 관리 (admin) ──
+
+import type { UserInfo } from "./types";
+
+export async function listUsers(): Promise<UserInfo[]> {
+  const res = await authFetch(`/api/auth/users`);
+  return jsonOrThrow<UserInfo[]>(res);
+}
+
+export async function approveUser(id: number): Promise<UserInfo> {
+  const res = await authFetch(`/api/auth/users/${id}/approve`, {
+    method: "POST",
+  });
+  return jsonOrThrow<UserInfo>(res);
+}
+
+export async function rejectUser(id: number): Promise<{ status: string }> {
+  const res = await authFetch(`/api/auth/users/${id}/reject`, {
+    method: "POST",
+  });
+  return jsonOrThrow<{ status: string }>(res);
+}
+
+export async function deleteUser(id: number): Promise<void> {
+  const res = await authFetch(`/api/auth/users/${id}`, { method: "DELETE" });
+  if (!res.ok) {
+    const detail = await res
+      .json()
+      .then((d) => (d as { detail?: string }).detail)
+      .catch(() => undefined);
+    throw new Error(detail ?? `${res.status} ${res.statusText}`);
+  }
+}
+
 // ── 직원 (admin) ──
 
-export async function listEmployees(q?: string): Promise<EmployeeListResponse> {
-  const res = await authFetch(`/api/admin/employees${qs({ q })}`);
+export async function listEmployees(
+  q?: string,
+  view: EmployeeView = "active",
+): Promise<EmployeeListResponse> {
+  const res = await authFetch(`/api/admin/employees${qs({ q, view })}`);
   return jsonOrThrow<EmployeeListResponse>(res);
+}
+
+export async function resignEmployee(
+  id: number,
+  on?: string,
+): Promise<Employee> {
+  const res = await authFetch(
+    `/api/admin/employees/${id}/resign${qs({ on })}`,
+    { method: "POST" },
+  );
+  return jsonOrThrow<Employee>(res);
+}
+
+export async function restoreEmployee(id: number): Promise<Employee> {
+  const res = await authFetch(`/api/admin/employees/${id}/restore`, {
+    method: "POST",
+  });
+  return jsonOrThrow<Employee>(res);
 }
 
 export async function createEmployee(body: EmployeeCreate): Promise<Employee> {

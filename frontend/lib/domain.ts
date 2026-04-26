@@ -134,6 +134,7 @@ export interface Employee {
   grade: string;
   email: string;
   linked_user_id: number | null;
+  resigned_at: string | null; // ISO YYYY-MM-DD
 }
 
 export interface EmployeeListResponse {
@@ -149,7 +150,10 @@ export interface EmployeeUpdate {
   license?: string;
   grade?: string;
   email?: string;
+  resigned_at?: string | null;
 }
+
+export type EmployeeView = "active" | "resigned" | "all";
 
 export interface EmployeeCreate {
   name: string;

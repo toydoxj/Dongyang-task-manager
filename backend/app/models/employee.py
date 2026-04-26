@@ -5,10 +5,10 @@
 """
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
 from pydantic import BaseModel, ConfigDict, EmailStr
-from sqlalchemy import DateTime, ForeignKey, Integer, String
+from sqlalchemy import Date, DateTime, ForeignKey, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db import Base
@@ -33,6 +33,8 @@ class Employee(Base):
     linked_user_id: Mapped[int | None] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True
     )
+    # 퇴사일 — None이면 재직 중. 명부는 영구 보존.
+    resigned_at: Mapped[date | None] = mapped_column(Date, nullable=True, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=_utcnow, onupdate=_utcnow
@@ -54,6 +56,7 @@ class EmployeeOut(BaseModel):
     grade: str = ""
     email: str = ""
     linked_user_id: int | None = None
+    resigned_at: date | None = None
 
 
 class EmployeeListResponse(BaseModel):
@@ -69,6 +72,7 @@ class EmployeeUpdate(BaseModel):
     license: str | None = None
     grade: str | None = None
     email: EmailStr | str | None = None
+    resigned_at: date | None = None
 
 
 class EmployeeCreate(BaseModel):

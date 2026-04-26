@@ -8,6 +8,8 @@ import {
   createEmployee,
   deleteEmployee,
   listEmployees,
+  resignEmployee,
+  restoreEmployee,
   updateEmployee,
   uploadEmployees,
 } from "@/lib/api";
@@ -15,6 +17,7 @@ import type {
   Employee,
   EmployeeCreate,
   EmployeeImportResult,
+  EmployeeView,
 } from "@/lib/domain";
 import { cn } from "@/lib/utils";
 
@@ -22,9 +25,10 @@ export default function EmployeesAdminPage() {
   const { user } = useAuth();
   const [q, setQ] = useState("");
   const [debouncedQ, setDebouncedQ] = useState("");
+  const [view, setView] = useState<EmployeeView>("active");
   const { data, isLoading, mutate, error } = useSWR(
-    user?.role === "admin" ? ["employees", debouncedQ] : null,
-    () => listEmployees(debouncedQ || undefined),
+    user?.role === "admin" ? ["employees", view, debouncedQ] : null,
+    () => listEmployees(debouncedQ || undefined, view),
   );
   const [editId, setEditId] = useState<number | null>(null);
   const [adding, setAdding] = useState(false);
@@ -64,12 +68,35 @@ export default function EmployeesAdminPage() {
   }
 
   async function onDelete(id: number) {
-    if (!confirm("이 직원을 삭제하시겠습니까?")) return;
+    if (!confirm("이 직원을 영구 삭제하시겠습니까? (퇴사 처리만 하려면 '퇴사' 버튼)"))
+      return;
     try {
       await deleteEmployee(id);
       await mutate();
     } catch (e) {
       setErrMsg(e instanceof Error ? e.message : "삭제 실패");
+    }
+  }
+
+  async function onResign(id: number) {
+    const today = new Date().toISOString().slice(0, 10);
+    const input = prompt("퇴사일 (YYYY-MM-DD)", today);
+    if (!input) return;
+    try {
+      await resignEmployee(id, input);
+      await mutate();
+    } catch (e) {
+      setErrMsg(e instanceof Error ? e.message : "퇴사 처리 실패");
+    }
+  }
+
+  async function onRestore(id: number) {
+    if (!confirm("복직 처리하시겠습니까?")) return;
+    try {
+      await restoreEmployee(id);
+      await mutate();
+    } catch (e) {
+      setErrMsg(e instanceof Error ? e.message : "복직 실패");
     }
   }
 
@@ -120,6 +147,30 @@ export default function EmployeesAdminPage() {
         </div>
       </header>
 
+      <div className="flex gap-1 border-b border-zinc-200 dark:border-zinc-800">
+        {(
+          [
+            ["active", "재직중"],
+            ["resigned", "퇴사자"],
+            ["all", "전체"],
+          ] as const
+        ).map(([k, label]) => (
+          <button
+            key={k}
+            type="button"
+            onClick={() => setView(k)}
+            className={cn(
+              "border-b-2 px-3 py-1.5 text-xs",
+              view === k
+                ? "border-blue-500 text-blue-600 dark:text-blue-400"
+                : "border-transparent text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300",
+            )}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
       {importMsg && (
         <p className="rounded-md border border-emerald-500/40 bg-emerald-500/5 p-2 text-sm text-emerald-500">
           {importMsg}
@@ -148,6 +199,7 @@ export default function EmployeesAdminPage() {
               <th className="px-3 py-2">등급</th>
               <th className="px-3 py-2">이메일</th>
               <th className="px-3 py-2">계정</th>
+              <th className="px-3 py-2">퇴사일</th>
               <th className="px-3 py-2 text-right">관리</th>
             </tr>
           </thead>
@@ -164,7 +216,7 @@ export default function EmployeesAdminPage() {
             )}
             {isLoading && !data && (
               <tr>
-                <td colSpan={9} className="px-3 py-8 text-center text-xs text-zinc-500">
+                <td colSpan={10} className="px-3 py-8 text-center text-xs text-zinc-500">
                   불러오는 중…
                 </td>
               </tr>
@@ -187,13 +239,17 @@ export default function EmployeesAdminPage() {
                   emp={emp}
                   onEdit={() => setEditId(emp.id)}
                   onDelete={() => void onDelete(emp.id)}
+                  onResign={() => void onResign(emp.id)}
+                  onRestore={() => void onRestore(emp.id)}
                 />
               ),
             )}
             {data && data.items.length === 0 && (
               <tr>
-                <td colSpan={9} className="px-3 py-8 text-center text-xs text-zinc-500">
-                  직원이 없습니다. 우상단 &quot;엑셀 업로드&quot;로 일괄 등록하세요.
+                <td colSpan={10} className="px-3 py-8 text-center text-xs text-zinc-500">
+                  {view === "resigned"
+                    ? "퇴사자 없음"
+                    : "직원이 없습니다. 우상단 \"엑셀 업로드\"로 일괄 등록하세요."}
                 </td>
               </tr>
             )}
@@ -216,13 +272,23 @@ function ViewRow({
   emp,
   onEdit,
   onDelete,
+  onResign,
+  onRestore,
 }: {
   emp: Employee;
   onEdit: () => void;
   onDelete: () => void;
+  onResign: () => void;
+  onRestore: () => void;
 }) {
+  const resigned = !!emp.resigned_at;
   return (
-    <tr className="border-t border-zinc-200 hover:bg-zinc-50 dark:border-zinc-800 dark:hover:bg-zinc-900">
+    <tr
+      className={cn(
+        "border-t border-zinc-200 hover:bg-zinc-50 dark:border-zinc-800 dark:hover:bg-zinc-900",
+        resigned && "text-zinc-400 dark:text-zinc-500",
+      )}
+    >
       <td className={cellCls}>{emp.name}</td>
       <td className={cellCls}>{emp.position || "—"}</td>
       <td className={cellCls}>{emp.team || "—"}</td>
@@ -239,7 +305,16 @@ function ViewRow({
           <span className="text-[10px] text-zinc-500">미연결</span>
         )}
       </td>
-      <td className={cn(cellCls, "text-right")}>
+      <td className={cellCls}>
+        {emp.resigned_at ? (
+          <span className="rounded bg-zinc-500/15 px-1.5 py-0.5 text-[10px] text-zinc-500">
+            {emp.resigned_at}
+          </span>
+        ) : (
+          <span className="text-[10px] text-zinc-400">—</span>
+        )}
+      </td>
+      <td className={cn(cellCls, "text-right whitespace-nowrap")}>
         <button
           type="button"
           onClick={onEdit}
@@ -247,6 +322,23 @@ function ViewRow({
         >
           편집
         </button>
+        {resigned ? (
+          <button
+            type="button"
+            onClick={onRestore}
+            className="ml-1 rounded border border-emerald-300 px-2 py-0.5 text-[11px] text-emerald-600 hover:bg-emerald-50 dark:border-emerald-900 dark:hover:bg-emerald-950"
+          >
+            복직
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={onResign}
+            className="ml-1 rounded border border-amber-300 px-2 py-0.5 text-[11px] text-amber-600 hover:bg-amber-50 dark:border-amber-900 dark:hover:bg-amber-950"
+          >
+            퇴사
+          </button>
+        )}
         <button
           type="button"
           onClick={onDelete}
@@ -310,6 +402,7 @@ function EditRow({
           />
         </td>
       ))}
+      <td className={cellCls}>—</td>
       <td className={cellCls}>—</td>
       <td className={cn(cellCls, "text-right")}>
         <button
@@ -383,6 +476,7 @@ function NewRow({
           />
         </td>
       ))}
+      <td className={cellCls}>—</td>
       <td className={cellCls}>—</td>
       <td className={cn(cellCls, "text-right")}>
         <button
