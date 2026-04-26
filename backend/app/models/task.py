@@ -102,22 +102,27 @@ class TaskListResponse(BaseModel):
 
 
 def _ensure_kst_tz(s: str | None) -> str | None:
-    """datetime-local input ('YYYY-MM-DDTHH:mm')에 KST timezone 부착.
+    """datetime-local input ('YYYY-MM-DDTHH:mm')을 KST로 가정해 UTC ISO로 변환.
 
-    timezone이 이미 있거나 datetime이 아니면(date only) 그대로 반환.
-    Notion은 timezone이 없는 datetime을 UTC로 가정하므로 한국 사용자가
-    09:00 입력 후 다시 보면 18:00이 되는 문제 방지.
+    노션은 timezone offset 표기('+09:00')가 있어도 응답 시 UTC로 normalize 하지 않고
+    그대로 보존하지 않는 케이스가 있어, 우리가 명시적으로 UTC로 변환해 보낸다.
+      - input: '2026-04-27T09:00'           (KST wall time)
+      - output: '2026-04-27T00:00:00+00:00' (UTC, 노션이 그대로 저장)
+    이미 timezone 있는 ISO 또는 date only는 그대로 반환.
     """
+    from datetime import datetime, timedelta, timezone as dt_tz
+
     if not s or "T" not in s:
         return s
     if s.endswith("Z") or "+" in s[10:] or "-" in s[10:]:
         return s
-    # 초가 없으면 ":00" 보충 후 +09:00
-    parts = s.split("T", 1)
-    time_part = parts[1]
-    if time_part.count(":") == 1:
-        time_part += ":00"
-    return f"{parts[0]}T{time_part}+09:00"
+    try:
+        naive = datetime.fromisoformat(s)
+    except ValueError:
+        return s
+    kst = naive.replace(tzinfo=dt_tz(timedelta(hours=9)))
+    utc = kst.astimezone(dt_tz.utc)
+    return utc.isoformat()
 
 
 def _date_prop(start: str | None, end: str | None) -> dict[str, Any] | None:

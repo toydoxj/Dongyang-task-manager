@@ -280,7 +280,12 @@ function scheduleLabel(t: Task): string {
 
 function formatHm(iso: string | null): string {
   if (!iso) return "";
-  const d = new Date(iso);
+  // timezone 명시가 없는 ISO는 KST로 가정 (노션 응답이 가끔 timezone 없이 와도 안전)
+  let s = iso;
+  if (s.includes("T") && !s.endsWith("Z") && !/[+-]\d{2}:?\d{2}$/.test(s)) {
+    s = `${s}+09:00`;
+  }
+  const d = new Date(s);
   if (Number.isNaN(d.getTime())) return "";
   return new Intl.DateTimeFormat("ko-KR", {
     hour: "2-digit",
