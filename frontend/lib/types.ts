@@ -25,15 +25,23 @@ function resolveApiBase(): string {
 
 export const API_BASE: string = resolveApiBase();
 
+export type UserRole = "admin" | "team_lead" | "member";
+
 export interface UserInfo {
   id: number;
   username: string;
   name: string;
   email: string;
-  role: "admin" | "user";
+  role: UserRole;
   status: "active" | "pending" | "rejected";
   notion_user_id: string;
 }
+
+export const ROLE_LABEL: Record<UserRole, string> = {
+  admin: "관리자",
+  team_lead: "팀장",
+  member: "일반직원",
+};
 
 export interface AuthStatus {
   initialized: boolean;

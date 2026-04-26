@@ -1,10 +1,14 @@
 """인증 라우터 — 회원가입(최초 관리자/승인 신청), 로그인, 사용자 관리."""
 from __future__ import annotations
 
+from typing import Literal
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
+
+VALID_ROLES = {"admin", "team_lead", "member"}
 
 from app.db import get_db
 from app.models.auth import (
@@ -131,7 +135,7 @@ def request_join(body: RegisterRequest, db: Session = Depends(get_db)) -> dict[s
         password=hash_password(body.password),
         name=body.name,
         email=str(body.email),
-        role="user",
+        role="member",
         status="pending",
     )
     db.add(user)
@@ -166,7 +170,7 @@ def admin_create_user(
         password=hash_password(body.password),
         name=body.name,
         email=str(body.email),
-        role="user",
+        role="member",
         status="active",
     )
     db.add(user)
@@ -198,6 +202,46 @@ def approve_user(
     user.status = "active"
     # 승인 시점에 직원 매칭 재시도 (admin이 employee 이메일을 그 사이에 추가했을 수 있음)
     link_user_to_employee(db, user)
+    db.commit()
+    db.refresh(user)
+    return _to_info(user)
+
+
+class RoleUpdate(BaseModel):
+    role: Literal["admin", "team_lead", "member"]
+
+
+@router.patch("/users/{user_id}/role", response_model=UserInfo)
+def set_user_role(
+    user_id: int,
+    body: RoleUpdate,
+    admin: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+) -> UserInfo:
+    """admin이 사용자 권한 변경. 자기 자신을 강등(admin → 다른 role)할 때는
+    다른 admin이 최소 1명 남아 있어야 한다."""
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="사용자를 찾을 수 없습니다"
+        )
+    if body.role not in VALID_ROLES:
+        raise HTTPException(status_code=400, detail="잘못된 role")
+    if (
+        admin.id == user.id
+        and user.role == "admin"
+        and body.role != "admin"
+    ):
+        other_admin = (
+            db.query(User)
+            .filter(User.role == "admin", User.id != user.id)
+            .first()
+        )
+        if not other_admin:
+            raise HTTPException(
+                status_code=400, detail="마지막 관리자는 강등할 수 없습니다"
+            )
+    user.role = body.role
     db.commit()
     db.refresh(user)
     return _to_info(user)

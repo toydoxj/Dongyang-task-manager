@@ -18,7 +18,8 @@ class User(Base):
     password: Mapped[str] = mapped_column(String, nullable=False)  # bcrypt
     name: Mapped[str] = mapped_column(String, default="")
     email: Mapped[str] = mapped_column(String, default="", index=True)
-    role: Mapped[str] = mapped_column(String, default="user")  # "admin" | "user"
+    # "admin" | "team_lead" | "member"  (이전 "user"는 마이그레이션으로 "member"로 변환)
+    role: Mapped[str] = mapped_column(String, default="member")
     status: Mapped[str] = mapped_column(String, default="active")  # active|pending|rejected
     session_id: Mapped[str] = mapped_column(String, default="")
     notion_user_id: Mapped[str] = mapped_column(String, default="")
@@ -49,7 +50,7 @@ class UserInfo(BaseModel):
     username: str
     name: str = ""
     email: str = ""
-    role: str = "user"
+    role: str = "member"
     status: str = "active"
     notion_user_id: str = ""
 

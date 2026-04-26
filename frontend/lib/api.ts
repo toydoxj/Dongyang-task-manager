@@ -201,7 +201,7 @@ export async function uploadMasterImage(
 
 // ── 사용자 관리 (admin) ──
 
-import type { UserInfo } from "./types";
+import type { UserInfo, UserRole } from "./types";
 
 export async function listUsers(): Promise<UserInfo[]> {
   const res = await authFetch(`/api/auth/users`);
@@ -220,6 +220,15 @@ export async function rejectUser(id: number): Promise<{ status: string }> {
     method: "POST",
   });
   return jsonOrThrow<{ status: string }>(res);
+}
+
+export async function setUserRole(id: number, role: UserRole): Promise<UserInfo> {
+  const res = await authFetch(`/api/auth/users/${id}/role`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ role }),
+  });
+  return jsonOrThrow<UserInfo>(res);
 }
 
 export async function deleteUser(id: number): Promise<void> {

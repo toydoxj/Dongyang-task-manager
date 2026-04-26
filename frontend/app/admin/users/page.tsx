@@ -9,8 +9,9 @@ import {
   deleteUser,
   listUsers,
   rejectUser,
+  setUserRole,
 } from "@/lib/api";
-import type { UserInfo } from "@/lib/types";
+import { ROLE_LABEL, type UserInfo, type UserRole } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 type UserView = "pending" | "active" | "all";
@@ -71,6 +72,15 @@ export default function UsersAdminPage() {
       await mutate();
     } catch (e) {
       setErrMsg(e instanceof Error ? e.message : "삭제 실패");
+    }
+  }
+
+  async function onChangeRole(id: number, role: UserRole) {
+    try {
+      await setUserRole(id, role);
+      await mutate();
+    } catch (e) {
+      setErrMsg(e instanceof Error ? e.message : "권한 변경 실패");
     }
   }
 
@@ -146,6 +156,7 @@ export default function UsersAdminPage() {
                 onApprove={() => void onApprove(u.id)}
                 onReject={() => void onReject(u.id)}
                 onDelete={() => void onDelete(u.id)}
+                onChangeRole={(r) => void onChangeRole(u.id, r)}
                 isMe={u.id === user?.id}
               />
             ))}
@@ -170,30 +181,45 @@ function UserRow({
   onApprove,
   onReject,
   onDelete,
+  onChangeRole,
   isMe,
 }: {
   u: UserInfo;
   onApprove: () => void;
   onReject: () => void;
   onDelete: () => void;
+  onChangeRole: (role: UserRole) => void;
   isMe: boolean;
 }) {
+  const roleColors: Record<UserRole, string> = {
+    admin: "bg-purple-500/15 text-purple-600 dark:text-purple-400",
+    team_lead: "bg-blue-500/15 text-blue-600 dark:text-blue-400",
+    member: "bg-zinc-500/15 text-zinc-500",
+  };
   return (
     <tr className="border-t border-zinc-200 hover:bg-zinc-50 dark:border-zinc-800 dark:hover:bg-zinc-900">
       <td className={cn(cellCls, "font-mono text-xs")}>{u.username}</td>
       <td className={cellCls}>{u.name || "—"}</td>
       <td className={cn(cellCls, "text-zinc-500")}>{u.email || "—"}</td>
       <td className={cellCls}>
-        <span
-          className={cn(
-            "rounded px-1.5 py-0.5 text-[10px]",
-            u.role === "admin"
-              ? "bg-purple-500/15 text-purple-600 dark:text-purple-400"
-              : "bg-zinc-500/15 text-zinc-500",
-          )}
-        >
-          {u.role}
-        </span>
+        {u.status === "active" ? (
+          <select
+            value={u.role}
+            onChange={(e) => onChangeRole(e.target.value as UserRole)}
+            className={cn(
+              "rounded border-0 px-1.5 py-0.5 text-[11px] font-medium outline-none",
+              roleColors[u.role],
+            )}
+          >
+            <option value="admin">{ROLE_LABEL.admin}</option>
+            <option value="team_lead">{ROLE_LABEL.team_lead}</option>
+            <option value="member">{ROLE_LABEL.member}</option>
+          </select>
+        ) : (
+          <span className={cn("rounded px-1.5 py-0.5 text-[10px]", roleColors[u.role])}>
+            {ROLE_LABEL[u.role]}
+          </span>
+        )}
       </td>
       <td className={cellCls}>
         <StatusBadge status={u.status} />
