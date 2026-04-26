@@ -18,6 +18,7 @@ const NAV: NavItem[] = [
   { href: "/projects", label: "프로젝트" },
   { href: "/me", label: "내 업무" },
   { href: "/utilities", label: "유틸 런처" },
+  { href: "/admin/employees", label: "직원 관리", adminOnly: true },
   { href: "/admin/users", label: "사용자 관리", adminOnly: true },
 ];
 

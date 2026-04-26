@@ -122,6 +122,52 @@ export interface MasterOptions {
   special_types: string[];
 }
 
+// ── 직원 ──
+
+export interface Employee {
+  id: number;
+  name: string;
+  position: string;
+  team: string;
+  degree: string;
+  license: string;
+  grade: string;
+  email: string;
+  linked_user_id: number | null;
+}
+
+export interface EmployeeListResponse {
+  items: Employee[];
+  count: number;
+}
+
+export interface EmployeeUpdate {
+  name?: string;
+  position?: string;
+  team?: string;
+  degree?: string;
+  license?: string;
+  grade?: string;
+  email?: string;
+}
+
+export interface EmployeeCreate {
+  name: string;
+  position?: string;
+  team?: string;
+  degree?: string;
+  license?: string;
+  grade?: string;
+  email?: string;
+}
+
+export interface EmployeeImportResult {
+  inserted: number;
+  updated: number;
+  skipped: number;
+  total_rows: number;
+}
+
 export interface ClientListResponse {
   items: Client[];
   count: number;

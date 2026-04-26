@@ -57,6 +57,6 @@ def get_db() -> Generator[Session, None, None]:
 def init_db() -> None:
     """테이블 생성 (개발/테스트용 — 운영에서는 Alembic 사용)."""
     # 모든 모델을 import해 Base.metadata에 등록되도록 한다
-    from app.models import auth, mirror  # noqa: F401
+    from app.models import auth, employee, mirror  # noqa: F401
 
     Base.metadata.create_all(bind=engine)

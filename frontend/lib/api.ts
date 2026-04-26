@@ -4,6 +4,11 @@ import { authFetch } from "./auth";
 import type {
   CashflowResponse,
   ClientListResponse,
+  Employee,
+  EmployeeCreate,
+  EmployeeImportResult,
+  EmployeeListResponse,
+  EmployeeUpdate,
   MasterImage,
   MasterImageList,
   MasterOptions,
@@ -191,6 +196,59 @@ export async function uploadMasterImage(
     body: fd,
   });
   return jsonOrThrow<MasterImage>(res);
+}
+
+// ── 직원 (admin) ──
+
+export async function listEmployees(q?: string): Promise<EmployeeListResponse> {
+  const res = await authFetch(`/api/admin/employees${qs({ q })}`);
+  return jsonOrThrow<EmployeeListResponse>(res);
+}
+
+export async function createEmployee(body: EmployeeCreate): Promise<Employee> {
+  const res = await authFetch(`/api/admin/employees`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  return jsonOrThrow<Employee>(res);
+}
+
+export async function updateEmployee(
+  id: number,
+  body: EmployeeUpdate,
+): Promise<Employee> {
+  const res = await authFetch(`/api/admin/employees/${id}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  return jsonOrThrow<Employee>(res);
+}
+
+export async function deleteEmployee(id: number): Promise<void> {
+  const res = await authFetch(`/api/admin/employees/${id}`, {
+    method: "DELETE",
+  });
+  if (!res.ok) {
+    const detail = await res
+      .json()
+      .then((d) => (d as { detail?: string }).detail)
+      .catch(() => undefined);
+    throw new Error(detail ?? `${res.status} ${res.statusText}`);
+  }
+}
+
+export async function uploadEmployees(
+  file: File,
+): Promise<EmployeeImportResult> {
+  const fd = new FormData();
+  fd.append("file", file, file.name);
+  const res = await authFetch(`/api/admin/employees/upload`, {
+    method: "POST",
+    body: fd,
+  });
+  return jsonOrThrow<EmployeeImportResult>(res);
 }
 
 export async function deleteMasterImage(

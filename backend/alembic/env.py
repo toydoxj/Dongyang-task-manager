@@ -14,7 +14,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from app.db import Base  # noqa: E402
 from app.db import _normalize_db_url  # noqa: E402
-from app.models import auth, mirror  # noqa: F401, E402  — Base에 모델 등록
+from app.models import auth, employee, mirror  # noqa: F401, E402  — Base에 모델 등록
 from app.settings import get_settings  # noqa: E402
 
 config = context.config
