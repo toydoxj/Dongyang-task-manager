@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { useState } from "react";
 import { useSWRConfig } from "swr";
 
@@ -20,6 +21,14 @@ import { cn } from "@/lib/utils";
 
 export default function MyPage() {
   const { user } = useAuth();
+  const sp = useSearchParams();
+  // ?as=직원이름 으로 다른 직원 업무 보기 (admin/team_lead 만)
+  const overrideName = sp.get("as");
+  const isViewingOther = !!overrideName && overrideName !== user?.name;
+  const allowedToView =
+    !isViewingOther || user?.role === "admin" || user?.role === "team_lead";
+  const effectiveName = isViewingOther ? overrideName : user?.name;
+
   const { mutate } = useSWRConfig();
   const [editing, setEditing] = useState<Task | null>(null);
   const [importOpen, setImportOpen] = useState(false);
@@ -30,12 +39,15 @@ export default function MyPage() {
     status?: string;
   } | null>(null);
 
-  const { data: projectData, error: projectErr } = useProjects(
-    user?.name ? { mine: true } : undefined,
-  );
-  const { data: tasksData, error: tasksErr } = useTasks(
-    user?.name ? { mine: true } : undefined,
-  );
+  // 다른 직원 보기 모드면 mine 대신 assignee=name 으로 fetch
+  const fetchFilters = effectiveName
+    ? isViewingOther
+      ? { assignee: effectiveName }
+      : { mine: true }
+    : undefined;
+
+  const { data: projectData, error: projectErr } = useProjects(fetchFilters);
+  const { data: tasksData, error: tasksErr } = useTasks(fetchFilters);
 
   const error = projectErr ?? tasksErr;
   const tasks = tasksData?.items;
@@ -52,7 +64,7 @@ export default function MyPage() {
   const projects = candidates;
 
   const refreshTasks = (): void => {
-    void mutate(keys.tasks(user?.name ? { mine: true } : undefined));
+    void mutate(keys.tasks(fetchFilters));
   };
 
   const handleDeleteTask = async (t: Task): Promise<void> => {
@@ -68,16 +80,15 @@ export default function MyPage() {
   };
 
   const refreshProjects = (): void => {
-    // mine + 전체(import 모달용 stage 필터 캐시) 둘 다 무효화
-    void mutate(keys.projects(user?.name ? { mine: true } : undefined));
+    void mutate(keys.projects(fetchFilters));
     void mutate(keys.projects({ stage: "진행중" }));
   };
 
   /** 본인 담당 해제 시: SWR 캐시에서 그 프로젝트를 즉시 제거 + 백그라운드 revalidate */
   const handleUnassigned = (projectId: string): void => {
-    if (!user?.name) return;
+    if (!effectiveName) return;
     void mutate<ProjectListResponse>(
-      keys.projects({ mine: true }),
+      keys.projects(fetchFilters),
       (old) =>
         old
           ? {
@@ -88,11 +99,21 @@ export default function MyPage() {
           : old,
       { revalidate: true },
     );
-    // import 모달의 "본인 미담당 진행중" 캐시도 새로고침 필요
     void mutate(keys.projects({ stage: "진행중" }));
   };
 
-  if (!user?.name) {
+  if (isViewingOther && !allowedToView) {
+    return (
+      <div className="space-y-3">
+        <h1 className="text-2xl font-semibold">권한 없음</h1>
+        <p className="rounded-md border border-red-500/40 bg-red-500/5 p-3 text-sm text-red-400">
+          다른 직원의 업무는 관리자/팀장만 조회할 수 있습니다.
+        </p>
+      </div>
+    );
+  }
+
+  if (!effectiveName) {
     return (
       <div className="space-y-3">
         <h1 className="text-2xl font-semibold">내 업무</h1>
@@ -108,9 +129,20 @@ export default function MyPage() {
   return (
     <div className="space-y-6">
       <header>
-        <h1 className="text-2xl font-semibold">내 업무</h1>
+        <h1 className="text-2xl font-semibold">
+          {isViewingOther ? `${effectiveName} 님의 업무` : "내 업무"}
+        </h1>
         <p className="mt-1 text-sm text-zinc-500">
-          {user.name} 님이 담당자로 지정된 진행중 프로젝트와 업무 TASK 입니다.
+          {isViewingOther ? (
+            <>
+              {effectiveName} 님이 담당자로 지정된 진행중 프로젝트와 업무 TASK
+              입니다. <Link href="/admin/employee-work" className="underline">
+                ← 직원 변경
+              </Link>
+            </>
+          ) : (
+            `${effectiveName} 님이 담당자로 지정된 진행중 프로젝트와 업무 TASK 입니다.`
+          )}
         </p>
       </header>
 
@@ -197,7 +229,7 @@ export default function MyPage() {
                       key={p.id}
                       project={p}
                       tasks={(tasks ?? []).filter((t) => taskBelongsTo(t, p.id))}
-                      myName={user.name}
+                      myName={effectiveName}
                       effectiveActive={true}
                       onChanged={refreshTasks}
                       onCreate={(projectId, status) =>
@@ -230,7 +262,7 @@ export default function MyPage() {
                       key={p.id}
                       project={p}
                       tasks={(tasks ?? []).filter((t) => taskBelongsTo(t, p.id))}
-                      myName={user.name}
+                      myName={effectiveName}
                       effectiveActive={false}
                       onChanged={refreshTasks}
                       onCreate={(projectId, status) =>
@@ -281,7 +313,7 @@ export default function MyPage() {
         open={importOpen}
         onClose={() => setImportOpen(false)}
         onAssigned={refreshProjects}
-        myName={user.name}
+        myName={effectiveName}
       />
 
       <ProjectCreateModal
