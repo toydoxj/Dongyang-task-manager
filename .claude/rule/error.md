@@ -38,6 +38,18 @@
 - 해결: lib/types.ts의 `API_BASE`를 client-side에서 `window.location.origin` 사용하도록 동적 계산. backend가 frontend도 정적 서빙하므로 같은 origin으로 호출 가능
 - 재발 방지: Electron sidecar + 정적 frontend 패턴에서 환경변수를 빌드 시점에 인라인 금지. client에서 런타임 `window.location.origin` 사용. dev에서는 별도 분기.
 
+### 2026-04-26 — 노션 API 응답 지연 → Postgres 미러 캐싱 도입
+- 컨텍스트: 모든 read endpoint가 노션 직접 호출 → 페이지당 1~3초. MasterProjectModal sub-project N+1, list_projects의 client/master title lookup 누적 호출
+- 증상: UI 진입마다 1~3초 로딩, 클릭마다 추가 지연
+- 원인: 노션 API 자체 200~800ms + RateLimiter 0.4초 + TTLCache 30초로 사실상 매번 cache miss
+- 해결:
+  1) `app/services/sync.py` NotionSyncService — 노션 → mirror_* 테이블 upsert
+  2) `app/services/scheduler.py` APScheduler 5분 incremental + 1일 03:00 full reconcile
+  3) read 라우터 모두 mirror 조회로 전환
+  4) write 라우터는 노션 update 직후 sync.upsert_page (write-through)
+  5) MasterProjectModal sub-project N+1 → mirror_projects 단일 IN 쿼리
+- 재발 방지: 외부 API에 의존하는 read는 항상 mirror/cache 레이어 우선. 미러 부재 시만 fallback fetch + upsert.
+
 ### 2026-04-26 — Packaged 환경에서 노션 토큰 배포 방식
 - 컨텍스트: 사용자 PC마다 .env 직접 두기 불편. NOTION_API_KEY 등 어떻게 배포?
 - 결정: 옵션 A — `backend/.env.production` 파일을 PyInstaller datas에 번들 (사내 도구라 보안 trade-off 수용)

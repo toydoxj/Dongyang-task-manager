@@ -29,6 +29,21 @@ class Settings(BaseSettings):
     notion_db_cashflow: str = ""
     notion_db_expense: str = ""
     notion_db_assign_log: str = ""  # 프로젝트 담당 변경 이력
+    notion_db_clients: str = ""  # 협력업체 (발주처 relation)
+    notion_db_master: str = ""  # 마스터 프로젝트
+
+    # CORS 허용 origin (콤마 구분 raw string — pydantic_settings가 list를 JSON으로
+    # 파싱하려 하므로 str로 받고 cors_origins_list로 변환)
+    cors_origins: str = "http://localhost:3000,http://127.0.0.1:3000"
+
+    # APScheduler 5분 sync 토글 + 인증 토큰 (외부에서 강제 트리거할 때)
+    sync_enabled: bool = True
+    sync_interval_minutes: int = 5
+    cron_secret: str = ""
+
+    @property
+    def cors_origins_list(self) -> list[str]:
+        return [s.strip() for s in self.cors_origins.split(",") if s.strip()]
 
 
 @lru_cache(maxsize=1)

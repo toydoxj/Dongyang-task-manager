@@ -4,6 +4,8 @@ export interface Project {
   id: string;
   code: string;
   master_code: string;
+  master_project_id: string;
+  master_project_name: string;
   name: string;
   client_text: string;
   client_relation_ids: string[];
@@ -54,6 +56,64 @@ export interface Client {
   id: string;
   name: string;
   category: string;
+}
+
+export interface SubProjectRef {
+  id: string;
+  name: string;
+  code: string;
+  stage: string;
+}
+
+export interface MasterProject {
+  id: string;
+  name: string;
+  code: string;
+  address: string;
+  usage: string[];
+  structure: string[];
+  floors_above: number | null;
+  floors_below: number | null;
+  height: number | null;
+  area: number | null;
+  units: number | null;
+  high_rise: boolean;
+  multi_use: boolean;
+  special_structure: boolean;
+  completed: boolean;
+  special_types: string[];
+  sub_project_ids: string[];
+  sub_projects: SubProjectRef[];
+  url: string | null;
+}
+
+export interface MasterProjectUpdate {
+  name?: string;
+  code?: string;
+  address?: string;
+  usage?: string[];
+  structure?: string[];
+  floors_above?: number | null;
+  floors_below?: number | null;
+  height?: number | null;
+  area?: number | null;
+  units?: number | null;
+  high_rise?: boolean;
+  multi_use?: boolean;
+  special_structure?: boolean;
+  completed?: boolean;
+  special_types?: string[];
+}
+
+export interface MasterImage {
+  block_id: string;
+  url: string;
+  caption: string;
+  source: string;
+}
+
+export interface MasterImageList {
+  items: MasterImage[];
 }
 
 export interface ClientListResponse {

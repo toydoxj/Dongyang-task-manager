@@ -4,6 +4,10 @@ import { authFetch } from "./auth";
 import type {
   CashflowResponse,
   ClientListResponse,
+  MasterImage,
+  MasterImageList,
+  MasterProject,
+  MasterProjectUpdate,
   Project,
   ProjectCreateRequest,
   ProjectListResponse,
@@ -77,6 +81,13 @@ export async function createProject(
   return jsonOrThrow<Project>(res);
 }
 
+export async function syncProjectStage(pageId: string): Promise<Project> {
+  const res = await authFetch(`/api/projects/${pageId}/sync-stage`, {
+    method: "POST",
+  });
+  return jsonOrThrow<Project>(res);
+}
+
 // ── 업무TASK ──
 
 export async function listTasks(filters: {
@@ -132,4 +143,63 @@ export async function getCashflow(filters: {
 export async function listClients(): Promise<ClientListResponse> {
   const res = await authFetch(`/api/clients`);
   return jsonOrThrow<ClientListResponse>(res);
+}
+
+// ── 마스터 프로젝트 ──
+
+export async function getMasterProject(pageId: string): Promise<MasterProject> {
+  const res = await authFetch(`/api/master-projects/${pageId}`);
+  return jsonOrThrow<MasterProject>(res);
+}
+
+export async function updateMasterProject(
+  pageId: string,
+  body: MasterProjectUpdate,
+): Promise<MasterProject> {
+  const res = await authFetch(`/api/master-projects/${pageId}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  return jsonOrThrow<MasterProject>(res);
+}
+
+export async function listMasterImages(
+  pageId: string,
+): Promise<MasterImageList> {
+  const res = await authFetch(`/api/master-projects/${pageId}/images`);
+  return jsonOrThrow<MasterImageList>(res);
+}
+
+export async function uploadMasterImage(
+  pageId: string,
+  file: File,
+  caption: string = "",
+): Promise<MasterImage> {
+  const fd = new FormData();
+  fd.append("file", file, file.name);
+  if (caption) fd.append("caption", caption);
+  // Content-Type은 FormData가 자동 설정 (boundary 포함). authFetch가 덮어쓰지 않도록 헤더 미지정.
+  const res = await authFetch(`/api/master-projects/${pageId}/images`, {
+    method: "POST",
+    body: fd,
+  });
+  return jsonOrThrow<MasterImage>(res);
+}
+
+export async function deleteMasterImage(
+  pageId: string,
+  blockId: string,
+): Promise<void> {
+  const res = await authFetch(
+    `/api/master-projects/${pageId}/images/${blockId}`,
+    { method: "DELETE" },
+  );
+  if (!res.ok) {
+    const detail = await res
+      .json()
+      .then((d) => (d as { detail?: string }).detail)
+      .catch(() => undefined);
+    throw new Error(detail ?? `${res.status} ${res.statusText}`);
+  }
 }

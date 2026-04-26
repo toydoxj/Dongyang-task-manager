@@ -1,11 +1,15 @@
-"""/api/projects — 노션 메인 프로젝트 DB 조회 라우터."""
+"""/api/projects — read는 mirror, write는 노션 + write-through."""
 from __future__ import annotations
 
-from typing import Any
+from datetime import date, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy import or_, select
+from sqlalchemy.orm import Session
 
+from app.db import get_db
 from app.exceptions import NotFoundError
+from app.models import mirror as M
 from app.models.auth import User
 from app.models.project import (
     Project,
@@ -15,14 +19,15 @@ from app.models.project import (
 )
 from app.security import get_current_user
 from app.services import notion_props as P
+from app.services.mirror_dto import project_from_mirror
 from app.services.notion import NotionService, get_notion
+from app.services.sync import get_sync
 from app.settings import get_settings
 
-# 발주처(협력업체) DB — 메인 프로젝트의 "발주처" relation이 가리킴
-# 주의: query_all 은 database id 를 받음 (data_source id 가 아님)
-_CLIENT_DB_ID = "307e84986c8680f197eed98407eabf84"
-
 router = APIRouter(prefix="/projects", tags=["projects"])
+
+
+# ── 담당 변경 이력 (write-only, 노션 기록) ──
 
 
 async def _log_assign_change(
@@ -32,9 +37,8 @@ async def _log_assign_change(
     project_name: str,
     actor: str,
     target: str,
-    action: str,  # "담당 추가" | "담당 제거"
+    action: str,
 ) -> None:
-    """담당자 변경 이력을 노션 DB에 기록 (실패해도 main 작업은 계속)."""
     db_id = get_settings().notion_db_assign_log
     if not db_id:
         return
@@ -48,74 +52,63 @@ async def _log_assign_change(
     }
     try:
         await notion.create_page(db_id, props)
-    except Exception:  # noqa: BLE001 — 로그 실패는 main 작업 막지 않음
+    except Exception:  # noqa: BLE001
         pass
 
 
-async def _resolve_client_names(
-    notion: NotionService, projects: list[Project]
-) -> None:
-    """모든 프로젝트의 client_relation_ids 를 일괄로 이름 매핑."""
-    has_relations = any(p.client_relation_ids for p in projects)
-    if not has_relations:
+# ── mirror 기반 이름 해결 ──
+
+
+def _resolve_names(db: Session, projects: list[Project]) -> None:
+    """mirror_clients / mirror_master_projects에서 이름을 조회해 채운다."""
+    if not projects:
         return
-    try:
-        title_map = await notion.fetch_title_dict(_CLIENT_DB_ID)
-    except Exception:
-        return
+    client_ids: set[str] = {
+        rid for p in projects for rid in p.client_relation_ids if rid
+    }
+    master_ids: set[str] = {p.master_project_id for p in projects if p.master_project_id}
+
+    client_map: dict[str, str] = {}
+    if client_ids:
+        rows = db.execute(
+            select(M.MirrorClient.page_id, M.MirrorClient.name).where(
+                M.MirrorClient.page_id.in_(client_ids)
+            )
+        ).all()
+        client_map = {pid: name for pid, name in rows}
+
+    master_map: dict[str, str] = {}
+    if master_ids:
+        rows = db.execute(
+            select(M.MirrorMaster.page_id, M.MirrorMaster.name).where(
+                M.MirrorMaster.page_id.in_(master_ids)
+            )
+        ).all()
+        master_map = {pid: name for pid, name in rows}
+
     for p in projects:
         if p.client_relation_ids:
             p.client_names = [
-                title_map.get(rid, "") for rid in p.client_relation_ids if title_map.get(rid)
+                client_map.get(rid, "") for rid in p.client_relation_ids if client_map.get(rid)
             ]
+        if p.master_project_id:
+            p.master_project_name = master_map.get(p.master_project_id, "")
 
 
-def _build_filter(
-    *,
-    assignee: str | None,
-    stage: str | None,
-    team: str | None,
-    completed: bool | None,
-) -> dict[str, Any] | None:
-    """노션 filter 표현식 합성. 없으면 None."""
-    clauses: list[dict[str, Any]] = []
-    if assignee:
-        clauses.append(
-            {"property": "담당자", "multi_select": {"contains": assignee}}
-        )
-    if stage:
-        clauses.append({"property": "진행단계", "select": {"equals": stage}})
-    if team:
-        clauses.append({"property": "담당팀", "multi_select": {"contains": team}})
-    if completed is not None:
-        clauses.append({"property": "완료", "checkbox": {"equals": completed}})
-
-    if not clauses:
-        return None
-    if len(clauses) == 1:
-        return clauses[0]
-    return {"and": clauses}
+# ── 라우터 ──
 
 
 @router.get("", response_model=ProjectListResponse)
 async def list_projects(
-    assignee: str | None = Query(default=None, description="담당자명"),
-    stage: str | None = Query(default=None, description="진행단계"),
-    team: str | None = Query(default=None, description="담당팀"),
-    completed: bool | None = Query(default=None, description="완료 여부"),
-    mine: bool = Query(default=False, description="True면 본인 담당만 (assignee 무시)"),
+    assignee: str | None = Query(default=None),
+    stage: str | None = Query(default=None),
+    team: str | None = Query(default=None),
+    completed: bool | None = Query(default=None),
+    mine: bool = Query(default=False),
     user: User = Depends(get_current_user),
-    notion: NotionService = Depends(get_notion),
+    db: Session = Depends(get_db),
 ) -> ProjectListResponse:
-    db_id = get_settings().notion_db_projects
-    if not db_id:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="NOTION_DB_PROJECTS 미설정",
-        )
-
     if mine:
-        # 본인 이름이 노션 담당자 옵션에 등록되어 있다고 가정 (User.name 사용)
         if not user.name:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -123,13 +116,19 @@ async def list_projects(
             )
         assignee = user.name
 
-    filt = _build_filter(
-        assignee=assignee, stage=stage, team=team, completed=completed
-    )
-    sorts = [{"property": "Sub_CODE", "direction": "ascending"}]
-    pages = await notion.query_all(db_id, filter=filt, sorts=sorts)
-    items = [Project.from_notion_page(p) for p in pages]
-    await _resolve_client_names(notion, items)
+    stmt = select(M.MirrorProject).where(M.MirrorProject.archived.is_(False))
+    if assignee:
+        stmt = stmt.where(M.MirrorProject.assignees.any(assignee))  # type: ignore[attr-defined]
+    if stage:
+        stmt = stmt.where(M.MirrorProject.stage == stage)
+    if team:
+        stmt = stmt.where(M.MirrorProject.teams.any(team))  # type: ignore[attr-defined]
+    if completed is not None:
+        stmt = stmt.where(M.MirrorProject.completed.is_(completed))
+    stmt = stmt.order_by(M.MirrorProject.code.asc())
+    rows = db.execute(stmt).scalars().all()
+    items = [project_from_mirror(r) for r in rows]
+    _resolve_names(db, items)
     return ProjectListResponse(items=items, count=len(items))
 
 
@@ -139,7 +138,6 @@ async def create_project(
     user: User = Depends(get_current_user),
     notion: NotionService = Depends(get_notion),
 ) -> Project:
-    """노션 메인 프로젝트 DB에 새 페이지 생성. 본인을 자동 담당자로 추가."""
     db_id = get_settings().notion_db_projects
     if not db_id:
         raise HTTPException(
@@ -150,11 +148,11 @@ async def create_project(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail="프로젝트명 필수"
         )
-    # 본인 자동 담당 추가 (중복 방지)
     if user.name and user.name not in body.assignees:
         body = body.model_copy(update={"assignees": [*body.assignees, user.name]})
 
     page = await notion.create_page(db_id, project_create_to_props(body))
+    get_sync().upsert_page("projects", page)
     return Project.from_notion_page(page)
 
 
@@ -162,14 +160,22 @@ async def create_project(
 async def get_project(
     page_id: str,
     _user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
     notion: NotionService = Depends(get_notion),
 ) -> Project:
+    row = db.get(M.MirrorProject, page_id)
+    if row is not None and not row.archived:
+        project = project_from_mirror(row)
+        _resolve_names(db, [project])
+        return project
+    # mirror miss → 노션 fallback + upsert
     try:
         page = await notion.get_page(page_id)
     except NotFoundError as exc:
         raise HTTPException(status_code=404, detail=exc.message) from exc
+    get_sync().upsert_page("projects", page)
     project = Project.from_notion_page(page)
-    await _resolve_client_names(notion, [project])
+    _resolve_names(db, [project])
     return project
 
 
@@ -179,7 +185,6 @@ async def assign_me(
     user: User = Depends(get_current_user),
     notion: NotionService = Depends(get_notion),
 ) -> Project:
-    """현재 로그인 사용자를 프로젝트 담당자에 추가 (이미 있으면 no-op)."""
     if not user.name:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -199,6 +204,7 @@ async def assign_me(
         page_id,
         {"담당자": {"multi_select": [{"name": n} for n in new_assignees]}},
     )
+    get_sync().upsert_page("projects", updated)
     project = Project.from_notion_page(updated)
     await _log_assign_change(
         notion,
@@ -217,7 +223,6 @@ async def unassign_me(
     user: User = Depends(get_current_user),
     notion: NotionService = Depends(get_notion),
 ) -> Project:
-    """현재 로그인 사용자를 프로젝트 담당자에서 제거."""
     if not user.name:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -237,6 +242,7 @@ async def unassign_me(
         page_id,
         {"담당자": {"multi_select": [{"name": n} for n in new_assignees]}},
     )
+    get_sync().upsert_page("projects", updated)
     project = Project.from_notion_page(updated)
     await _log_assign_change(
         notion,
@@ -247,3 +253,58 @@ async def unassign_me(
         action="담당 제거",
     )
     return project
+
+
+# ── 진행단계 자동 sync (mirror_tasks 기반으로 N+1 제거) ──
+
+
+def _this_week_range() -> tuple[date, date]:
+    today = date.today()
+    monday = today - timedelta(days=today.weekday())
+    sunday = monday + timedelta(days=6)
+    return monday, sunday
+
+
+@router.post("/{page_id}/sync-stage", response_model=Project)
+async def sync_stage_by_tasks(
+    page_id: str,
+    _user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    notion: NotionService = Depends(get_notion),
+) -> Project:
+    """진행중/대기 외 단계는 수동 설정 존중. mirror_tasks 단일 쿼리로 판단."""
+    proj = db.get(M.MirrorProject, page_id)
+    if proj is None or proj.archived:
+        raise HTTPException(status_code=404, detail="프로젝트 미존재 (mirror)")
+    if proj.stage not in ("진행중", "대기"):
+        return project_from_mirror(proj)
+
+    monday, sunday = _this_week_range()
+    has_active = (
+        db.execute(
+            select(M.MirrorTask.page_id)
+            .where(
+                M.MirrorTask.project_ids.any(page_id),  # type: ignore[attr-defined]
+                M.MirrorTask.archived.is_(False),
+                or_(
+                    # 기간이 금주에 걸침
+                    (M.MirrorTask.start_date <= sunday)
+                    & (M.MirrorTask.end_date >= monday),
+                    # 또는 실제 완료일이 금주
+                    (M.MirrorTask.actual_end_date >= monday)
+                    & (M.MirrorTask.actual_end_date <= sunday),
+                ),
+            )
+            .limit(1)
+        ).first()
+        is not None
+    )
+    desired = "진행중" if has_active else "대기"
+    if desired == proj.stage:
+        return project_from_mirror(proj)
+
+    updated = await notion.update_page(
+        page_id, {"진행단계": {"select": {"name": desired}}}
+    )
+    get_sync().upsert_page("projects", updated)
+    return Project.from_notion_page(updated)

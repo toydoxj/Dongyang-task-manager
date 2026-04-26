@@ -1,8 +1,12 @@
 "use client";
 
+import { useState } from "react";
+
 import type { Project } from "@/lib/domain";
 import { formatDate } from "@/lib/format";
 import { cn } from "@/lib/utils";
+
+import MasterProjectModal from "./MasterProjectModal";
 
 const STAGE_BADGE: Record<string, string> = {
   "진행중": "bg-blue-500/15 text-blue-400 border-blue-500/30",
@@ -15,14 +19,28 @@ const STAGE_BADGE: Record<string, string> = {
 };
 
 export default function ProjectHeader({ project }: { project: Project }) {
+  const [masterOpen, setMasterOpen] = useState(false);
+  const masterLabel =
+    project.master_project_name || project.master_code || "";
+
   return (
     <header className="rounded-xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
-          <p className="font-mono text-xs text-zinc-500">
-            {project.code || "—"}
-            {project.master_code && (
-              <span className="ml-2 text-zinc-400">({project.master_code})</span>
+          <p className="flex items-center gap-2 font-mono text-xs text-zinc-500">
+            <span>{project.code || "—"}</span>
+            {masterLabel && project.master_project_id && (
+              <button
+                type="button"
+                onClick={() => setMasterOpen(true)}
+                className="truncate rounded-md border border-zinc-300 px-1.5 py-0.5 text-[10px] font-sans text-zinc-700 hover:border-zinc-400 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-800"
+                title="마스터 프로젝트 상세"
+              >
+                ▣ {masterLabel}
+              </button>
+            )}
+            {masterLabel && !project.master_project_id && (
+              <span className="text-zinc-400">({masterLabel})</span>
             )}
           </p>
           <h1 className="mt-1 text-xl font-semibold text-zinc-900 dark:text-zinc-100">
@@ -69,6 +87,12 @@ export default function ProjectHeader({ project }: { project: Project }) {
           value={formatDate(project.last_edited_time)}
         />
       </dl>
+
+      <MasterProjectModal
+        open={masterOpen}
+        pageId={project.master_project_id || null}
+        onClose={() => setMasterOpen(false)}
+      />
     </header>
   );
 }

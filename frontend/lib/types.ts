@@ -1,12 +1,9 @@
 /**
  * 백엔드 API 베이스 URL 결정 우선순위:
- *  1) Electron이 런타임 주입한 window.__BACKEND_URL__
- *  2) 빌드 시점에 inline된 NEXT_PUBLIC_API_BASE (dev: .env.local의 :8000)
- *  3) window.location.origin (packaged: backend가 frontend 정적 서빙)
- *  4) http://127.0.0.1:8000 (SSR/file:// fallback)
- *
- * NOTE: packaged 빌드는 next.config.ts의 env override로
- *       NEXT_PUBLIC_API_BASE="" 가 inline 되어 (3)이 동작한다.
+ *  1) Electron 런타임 주입 window.__BACKEND_URL__ (Electron 빌드 부활 시)
+ *  2) 빌드 시점 inline NEXT_PUBLIC_API_BASE (Vercel: https://api.dyce.kr / dev: http://127.0.0.1:8000)
+ *  3) Electron packaged 빌드의 window.location.origin 폴백
+ *  4) dev SSR fallback
  */
 function resolveApiBase(): string {
   if (typeof window !== "undefined") {
@@ -16,9 +13,10 @@ function resolveApiBase(): string {
   }
   const envBase = process.env.NEXT_PUBLIC_API_BASE;
   if (envBase) return envBase;
+  // Electron packaged 빌드(env가 빈 문자열로 inline)에서만 origin 사용
   if (typeof window !== "undefined") {
     const proto = window.location.protocol;
-    if (proto === "http:" || proto === "https:") {
+    if (proto === "file:" || proto === "app:") {
       return window.location.origin;
     }
   }

@@ -4,14 +4,18 @@ import useSWR, { type SWRResponse } from "swr";
 
 import {
   getCashflow,
+  getMasterProject,
   getProject,
   listClients,
+  listMasterImages,
   listProjects,
   listTasks,
 } from "./api";
 import type {
   CashflowResponse,
   ClientListResponse,
+  MasterImageList,
+  MasterProject,
   Project,
   ProjectListResponse,
   TaskListResponse,
@@ -60,3 +64,23 @@ export function useClients(
 ): SWRResponse<ClientListResponse> {
   return useSWR(enabled ? keys.clients() : null, () => listClients());
 }
+
+export function useMasterProject(
+  id: string | null,
+): SWRResponse<MasterProject> {
+  return useSWR(id ? ["master-project", id] : null, () => getMasterProject(id!));
+}
+
+export function useMasterImages(
+  id: string | null,
+): SWRResponse<MasterImageList> {
+  return useSWR(
+    id ? ["master-images", id] : null,
+    () => listMasterImages(id!),
+  );
+}
+
+export const masterKeys = {
+  master: (id: string) => ["master-project", id] as const,
+  images: (id: string) => ["master-images", id] as const,
+};

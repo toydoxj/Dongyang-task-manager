@@ -8,6 +8,7 @@ from collections.abc import Callable
 from functools import lru_cache
 from typing import Any
 
+import httpx
 from notion_client import Client
 from notion_client.errors import APIResponseError
 
@@ -17,6 +18,9 @@ from app.settings import get_settings
 # 노션 공식 한도: 평균 3 req/s. 보수적으로 ~2.5 req/s.
 _MIN_INTERVAL_S = 0.4
 _CACHE_TTL_S = 30.0
+# file_upload API 는 notion-client 미지원 → raw httpx
+_NOTION_API = "https://api.notion.com/v1"
+_NOTION_VERSION = "2025-09-03"
 
 
 class RateLimiter:
@@ -69,6 +73,7 @@ class NotionService:
     """노션 API 호출의 유일한 진입점."""
 
     def __init__(self, api_key: str) -> None:
+        self._api_key = api_key
         self._client = Client(auth=api_key)
         self._limiter = RateLimiter(_MIN_INTERVAL_S)
         self._cache = TTLCache(_CACHE_TTL_S)
@@ -203,6 +208,83 @@ class NotionService:
         self._cache.invalidate(f"page:{page_id}")
         self._cache.invalidate("query:")
         return result
+
+    # ── 블록(페이지 본문) ──
+
+    async def list_block_children(
+        self, block_id: str, *, page_size: int = 100
+    ) -> list[dict[str, Any]]:
+        """페이지/블록의 children 전체 (페이지네이션 자동)."""
+        results: list[dict[str, Any]] = []
+        cursor: str | None = None
+        while True:
+            opts: dict[str, Any] = {"block_id": block_id, "page_size": page_size}
+            if cursor is not None:
+                opts["start_cursor"] = cursor
+            page = await self._call(
+                lambda o=opts: self._client.blocks.children.list(**o),
+            )
+            results.extend(page.get("results", []))
+            if not page.get("has_more"):
+                break
+            cursor = page.get("next_cursor")
+        return results
+
+    async def append_block_children(
+        self, block_id: str, children: list[dict[str, Any]]
+    ) -> dict[str, Any]:
+        return await self._call(
+            lambda: self._client.blocks.children.append(
+                block_id=block_id, children=children
+            ),
+        )
+
+    async def delete_block(self, block_id: str) -> dict[str, Any]:
+        return await self._call(lambda: self._client.blocks.delete(block_id=block_id))
+
+    # ── file_upload (notion-client 미지원, raw httpx) ──
+
+    async def upload_file(
+        self, *, filename: str, content_type: str, data: bytes
+    ) -> str:
+        """단일-part 업로드 → file_upload_id 반환."""
+        headers = {
+            "Authorization": f"Bearer {self._api_key}",
+            "Notion-Version": _NOTION_VERSION,
+        }
+        await self._limiter.wait()
+        async with httpx.AsyncClient(timeout=60.0) as http:
+            try:
+                init = await http.post(
+                    f"{_NOTION_API}/file_uploads",
+                    headers={**headers, "Content-Type": "application/json"},
+                    json={
+                        "mode": "single_part",
+                        "filename": filename,
+                        "content_type": content_type,
+                    },
+                )
+                init.raise_for_status()
+            except httpx.HTTPError as exc:
+                raise NotionApiError(f"file_upload 초기화 실패: {exc}") from exc
+            payload = init.json()
+            upload_id = payload.get("id")
+            upload_url = payload.get("upload_url") or (
+                f"{_NOTION_API}/file_uploads/{upload_id}/send" if upload_id else None
+            )
+            if not upload_id or not upload_url:
+                raise NotionApiError("file_upload 응답에 id/upload_url 없음")
+            await self._limiter.wait()
+            try:
+                send = await http.post(
+                    upload_url,
+                    headers=headers,
+                    files={"file": (filename, data, content_type)},
+                )
+                send.raise_for_status()
+            except httpx.HTTPError as exc:
+                raise NotionApiError(f"file_upload 전송 실패: {exc}") from exc
+        return upload_id
 
     # ── 캐시 제어 (테스트/관리용) ──
 

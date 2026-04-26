@@ -1,11 +1,15 @@
-"""/api/tasks — 신규 통합 업무TASK DB CRUD."""
+"""/api/tasks — 통합 업무TASK CRUD. read는 mirror, write는 노션 + write-through."""
 from __future__ import annotations
 
-from typing import Any
+import asyncio
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy import select
+from sqlalchemy.orm import Session
 
+from app.db import get_db
 from app.exceptions import NotFoundError
+from app.models import mirror as M
 from app.models.auth import User
 from app.models.task import (
     Task,
@@ -16,35 +20,12 @@ from app.models.task import (
     task_update_to_props,
 )
 from app.security import get_current_user
+from app.services.mirror_dto import task_from_mirror
 from app.services.notion import NotionService, get_notion
+from app.services.sync import get_sync
 from app.settings import get_settings
 
 router = APIRouter(prefix="/tasks", tags=["tasks"])
-
-
-def _build_filter(
-    *,
-    project_id: str | None,
-    assignee: str | None,
-    status_name: str | None,
-) -> dict[str, Any] | None:
-    clauses: list[dict[str, Any]] = []
-    if project_id:
-        clauses.append(
-            {"property": "프로젝트", "relation": {"contains": project_id}}
-        )
-    if assignee:
-        clauses.append(
-            {"property": "담당자", "multi_select": {"contains": assignee}}
-        )
-    if status_name:
-        clauses.append({"property": "상태", "status": {"equals": status_name}})
-
-    if not clauses:
-        return None
-    if len(clauses) == 1:
-        return clauses[0]
-    return {"and": clauses}
 
 
 @router.get("", response_model=TaskListResponse)
@@ -54,14 +35,8 @@ async def list_tasks(
     status_name: str | None = Query(default=None, alias="status"),
     mine: bool = Query(default=False),
     user: User = Depends(get_current_user),
-    notion: NotionService = Depends(get_notion),
+    db: Session = Depends(get_db),
 ) -> TaskListResponse:
-    db_id = get_settings().notion_db_tasks
-    if not db_id:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="NOTION_DB_TASKS 미설정",
-        )
     if mine:
         if not user.name:
             raise HTTPException(
@@ -70,11 +45,17 @@ async def list_tasks(
             )
         assignee = user.name
 
-    filt = _build_filter(
-        project_id=project_id, assignee=assignee, status_name=status_name
-    )
-    pages = await notion.query_all(db_id, filter=filt)
-    items = [Task.from_notion_page(p) for p in pages]
+    stmt = select(M.MirrorTask).where(M.MirrorTask.archived.is_(False))
+    if project_id:
+        # Postgres ARRAY contains: project_ids @> ARRAY[project_id]
+        stmt = stmt.where(M.MirrorTask.project_ids.any(project_id))  # type: ignore[attr-defined]
+    if assignee:
+        stmt = stmt.where(M.MirrorTask.assignees.any(assignee))  # type: ignore[attr-defined]
+    if status_name:
+        stmt = stmt.where(M.MirrorTask.status == status_name)
+    stmt = stmt.order_by(M.MirrorTask.end_date.asc().nullslast())
+    rows = db.execute(stmt).scalars().all()
+    items = [task_from_mirror(r) for r in rows]
     return TaskListResponse(items=items, count=len(items))
 
 
@@ -87,6 +68,7 @@ async def create_task(
     db_id = get_settings().notion_db_tasks
     props = task_create_to_props(body)
     page = await notion.create_page(db_id, props)
+    get_sync().upsert_page("tasks", page)  # write-through
     return Task.from_notion_page(page)
 
 
@@ -94,12 +76,18 @@ async def create_task(
 async def get_task(
     page_id: str,
     _user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
     notion: NotionService = Depends(get_notion),
 ) -> Task:
+    row = db.get(M.MirrorTask, page_id)
+    if row is not None and not row.archived:
+        return task_from_mirror(row)
+    # mirror 미존재 → 노션 fallback + upsert
     try:
         page = await notion.get_page(page_id)
     except NotFoundError as exc:
         raise HTTPException(status_code=404, detail=exc.message) from exc
+    get_sync().upsert_page("tasks", page)
     return Task.from_notion_page(page)
 
 
@@ -116,6 +104,7 @@ async def update_task(
             status_code=status.HTTP_400_BAD_REQUEST, detail="갱신할 필드가 없습니다"
         )
     page = await notion.update_page(page_id, props)
+    get_sync().upsert_page("tasks", page)  # write-through
     return Task.from_notion_page(page)
 
 
@@ -126,14 +115,9 @@ async def archive_task(
     notion: NotionService = Depends(get_notion),
 ) -> dict[str, str]:
     """노션은 영구 삭제 대신 archive 사용."""
-    await notion.update_page(page_id, properties={})  # placeholder
-    # archive: pages.update에는 없고, 별도 호출 필요
-    # notion-client 3.x: client.pages.update(page_id, archived=True)
-    # 단순화 위해 raw 호출
-    import asyncio
-
     await asyncio.to_thread(
         notion._client.pages.update, page_id=page_id, archived=True
     )
     notion.clear_cache()
+    get_sync().archive_page("tasks", page_id)
     return {"status": "archived", "page_id": page_id}

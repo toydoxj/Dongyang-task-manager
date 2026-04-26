@@ -15,6 +15,8 @@ class Project(BaseModel):
     id: str
     code: str = ""              # Sub_CODE
     master_code: str = ""       # Master Code (rollup)
+    master_project_id: str = "" # Master Project relation 첫 번째 page id
+    master_project_name: str = ""  # Master Project 의 용역명 (resolve_master_names 로 채움)
     name: str                   # 프로젝트명 (title)
 
     # 발주처
@@ -60,10 +62,12 @@ class Project(BaseModel):
     def from_notion_page(cls, page: dict[str, Any]) -> "Project":
         props = page.get("properties", {})
         cs, ce = P.date_range(props, "계약기간")
+        master_ids = P.relation_ids(props, "Master Project")
         return cls(
             id=page.get("id", ""),
             code=P.rich_text(props, "Sub_CODE"),
             master_code=str(P.rollup_value(props, "Master Code") or ""),
+            master_project_id=master_ids[0] if master_ids else "",
             name=P.title(props, "프로젝트명"),
             client_text=P.rich_text(props, "발주처(임시)"),
             client_relation_ids=P.relation_ids(props, "발주처"),

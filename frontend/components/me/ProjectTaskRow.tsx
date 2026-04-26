@@ -14,16 +14,15 @@ interface Props {
   tasks: Task[];                       // 이 프로젝트의 task 만 (이미 필터됨)
   onChanged: () => void;               // task 변경 시 호출
   onCreate: (projectId: string, initialStatus?: string) => void;
-  onUnassigned?: () => void;           // 담당 해제 후 호출 (마이페이지 갱신)
+  onUnassigned?: (projectId: string) => void;  // 담당 해제 후 호출 (즉시 제거 + revalidate)
   myName?: string;                     // 본인 이름 (담당 해제 표시 조건)
+  /** 우리 앱 분류: 금주 TASK 활동 있으면 true (배지 표시 우선) */
+  effectiveActive?: boolean;
 }
 
 const STAGE_BADGE: Record<string, string> = {
-  "진행중": "bg-blue-500/15 text-blue-400 border-blue-500/30",
+  "진행 중": "bg-blue-500/15 text-blue-400 border-blue-500/30",
   "대기": "bg-purple-500/15 text-purple-400 border-purple-500/30",
-  "보류": "bg-pink-500/15 text-pink-400 border-pink-500/30",
-  "완료": "bg-emerald-500/15 text-emerald-400 border-emerald-500/30",
-  "타절": "bg-red-500/15 text-red-400 border-red-500/30",
 };
 
 export default function ProjectTaskRow({
@@ -33,7 +32,15 @@ export default function ProjectTaskRow({
   onCreate,
   onUnassigned,
   myName,
+  effectiveActive,
 }: Props) {
+  // 우리 앱 분류 (effectiveActive) 가 우선, 없으면 노션 stage 사용
+  const displayStage =
+    effectiveActive == null
+      ? project.stage
+      : effectiveActive
+        ? "진행 중"
+        : "대기";
   const rate =
     typeof project.collection_rate === "number" ? project.collection_rate : null;
   const client =
@@ -49,7 +56,7 @@ export default function ProjectTaskRow({
     setBusy(true);
     try {
       await unassignMe(project.id);
-      onUnassigned?.();
+      onUnassigned?.(project.id);
     } catch (err) {
       alert(err instanceof Error ? err.message : "담당 해제 실패");
     } finally {
@@ -70,15 +77,15 @@ export default function ProjectTaskRow({
             >
               {project.name || "(제목 없음)"}
             </Link>
-            {project.stage && (
+            {displayStage && (
               <span
                 className={cn(
                   "shrink-0 rounded-md border px-1.5 py-0.5 text-[10px] font-medium",
-                  STAGE_BADGE[project.stage] ??
+                  STAGE_BADGE[displayStage] ??
                     "border-zinc-500/30 bg-zinc-500/15 text-zinc-400",
                 )}
               >
-                {project.stage}
+                {displayStage}
               </span>
             )}
           </div>

@@ -65,7 +65,18 @@
       "Bash(tee /tmp/be_test.log)",
       "Bash(python -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\('token len:', len\\(d.get\\('access_token',''\\)\\)\\); print\\('user:', d.get\\('user'\\)\\)\")",
       "Bash(python -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\('count:', d.get\\('count', d.get\\('detail', '?'\\)\\)\\); print\\('첫 1건:', d['items'][0]['name'] if d.get\\('items'\\) else 'N/A'\\)\")",
-      "mcp__claude_ai_Notion__notion-update-data-source"
+      "mcp__claude_ai_Notion__notion-update-data-source",
+      "Bash(.venv/Scripts/python.exe -m ruff check app/)",
+      "Bash(.venv/Scripts/python.exe -m ruff check app/services/sync.py app/services/scheduler.py app/services/mirror_dto.py app/cli.py app/routers/ app/db.py app/main.py app/settings.py app/models/mirror.py)",
+      "Bash(.venv/Scripts/python.exe -m ruff check app/services/sync.py app/services/scheduler.py app/services/mirror_dto.py app/cli.py app/routers/projects.py app/routers/tasks.py app/routers/clients.py app/routers/cashflow.py app/routers/master_projects.py)",
+      "Bash(.venv/Scripts/python.exe -m ruff check app/ --select F401)",
+      "Bash(.venv/Scripts/python.exe -m ruff check app/ --select F401 --fix)",
+      "Bash(.venv/Scripts/python.exe -c \"from app.main import app; print\\('OK', len\\(app.routes\\)\\)\")",
+      "Bash(.venv/Scripts/python.exe -m pip install apscheduler \"psycopg[binary]>=3.2\")",
+      "Bash(.venv/Scripts/python.exe -m ensurepip)",
+      "Bash(.venv/Scripts/python.exe -m alembic upgrade head)",
+      "Bash(PYTHONUTF8=1 .venv/Scripts/python.exe -m alembic upgrade head)",
+      "Bash(.venv/Scripts/python.exe -m app.cli sync-all)"
     ]
   },
   "enabledMcpjsonServers": [

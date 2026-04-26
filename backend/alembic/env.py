@@ -13,7 +13,8 @@ from alembic import context
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from app.db import Base  # noqa: E402
-from app.models import auth  # noqa: F401, E402  — Base에 모델 등록
+from app.db import _normalize_db_url  # noqa: E402
+from app.models import auth, mirror  # noqa: F401, E402  — Base에 모델 등록
 from app.settings import get_settings  # noqa: E402
 
 config = context.config
@@ -21,8 +22,8 @@ config = context.config
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-# 동적으로 DB URL을 우리 settings에서 가져온다
-config.set_main_option("sqlalchemy.url", get_settings().database_url)
+# 동적으로 DB URL을 우리 settings에서 가져온다 (postgres:// → postgresql+psycopg:// 정규화)
+config.set_main_option("sqlalchemy.url", _normalize_db_url(get_settings().database_url))
 
 target_metadata = Base.metadata
 

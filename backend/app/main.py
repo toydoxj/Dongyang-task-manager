@@ -5,7 +5,7 @@ import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Request
+from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -15,8 +15,11 @@ from app.exceptions import AppError
 from app.routers import auth as auth_router
 from app.routers import cashflow as cashflow_router
 from app.routers import clients as clients_router
+from app.routers import master_projects as master_projects_router
 from app.routers import projects as projects_router
 from app.routers import tasks as tasks_router
+from app.services.scheduler import shutdown_scheduler, start_scheduler
+from app.services.sync import ALL_KINDS, get_sync
 from app.settings import get_settings
 
 settings = get_settings()
@@ -25,7 +28,11 @@ settings = get_settings()
 @asynccontextmanager
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     init_db()
-    yield
+    start_scheduler()
+    try:
+        yield
+    finally:
+        shutdown_scheduler()
 
 
 app = FastAPI(
@@ -36,8 +43,9 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
-    allow_credentials=True,
+    allow_origins=settings.cors_origins_list,
+    # localStorage + Authorization 헤더 사용 → cookie 기반 credential 불필요
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -56,11 +64,42 @@ app.include_router(projects_router.router, prefix="/api")
 app.include_router(tasks_router.router, prefix="/api")
 app.include_router(cashflow_router.router, prefix="/api")
 app.include_router(clients_router.router, prefix="/api")
+app.include_router(master_projects_router.router, prefix="/api")
 
 
 @app.get("/health")
 async def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+def _verify_cron(authorization: str | None = Header(default=None)) -> None:
+    secret = settings.cron_secret
+    if not secret:
+        raise HTTPException(status_code=503, detail="CRON_SECRET 미설정")
+    expected = f"Bearer {secret}"
+    if authorization != expected:
+        raise HTTPException(status_code=401, detail="invalid cron token")
+
+
+@app.post("/api/cron/sync")
+async def cron_sync(
+    full: bool = False,
+    _ok: None = Depends(_verify_cron),
+) -> dict[str, int]:
+    """수동/외부 cron 트리거. Header: Authorization: Bearer $CRON_SECRET."""
+    return await get_sync().sync_all(full=full)
+
+
+@app.post("/api/cron/sync/{kind}")
+async def cron_sync_one(
+    kind: str,
+    full: bool = False,
+    _ok: None = Depends(_verify_cron),
+) -> dict[str, int]:
+    if kind not in ALL_KINDS:
+        raise HTTPException(status_code=400, detail=f"unknown kind: {kind}")
+    n = await get_sync().sync_kind(kind, full=full)  # type: ignore[arg-type]
+    return {kind: n}
 
 
 # 정적 frontend 서빙 (FRONTEND_DIST 환경변수가 설정되었을 때만)

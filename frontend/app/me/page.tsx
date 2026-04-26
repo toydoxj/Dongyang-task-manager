@@ -12,7 +12,7 @@ import UpcomingDeadlines from "@/components/me/UpcomingDeadlines";
 import TaskCreateModal from "@/components/project/TaskCreateModal";
 import TaskEditModal from "@/components/project/TaskEditModal";
 import LoadingState from "@/components/ui/LoadingState";
-import type { Task } from "@/lib/domain";
+import type { Project, ProjectListResponse, Task } from "@/lib/domain";
 import { dDayLabel, formatDate } from "@/lib/format";
 import { keys, useProjects, useTasks } from "@/lib/hooks";
 import { cn } from "@/lib/utils";
@@ -37,11 +37,18 @@ export default function MyPage() {
   );
 
   const error = projectErr ?? tasksErr;
-  // 기본 = 진행중 + 본인 담당
-  const projects = projectData?.items.filter(
-    (p) => !p.completed && p.stage === "진행중",
-  );
   const tasks = tasksData?.items;
+  // mine 프로젝트 = 진행중 + 대기 (완료/타절/종결/이관 제외)
+  const candidates = projectData?.items.filter(
+    (p) => !p.completed && (p.stage === "진행중" || p.stage === "대기"),
+  );
+  // 금주 TASK 활동으로 진행중 vs 대기 자동 분류
+  const { active: activeProjects, idle: idleProjects } = splitByThisWeek(
+    candidates ?? [],
+    tasks ?? [],
+  );
+  // ProjectImportModal / 카운트 등에는 합친 목록 사용
+  const projects = candidates;
 
   const refreshTasks = (): void => {
     void mutate(keys.tasks(user?.name ? { mine: true } : undefined));
@@ -50,6 +57,25 @@ export default function MyPage() {
   const refreshProjects = (): void => {
     // mine + 전체(import 모달용 stage 필터 캐시) 둘 다 무효화
     void mutate(keys.projects(user?.name ? { mine: true } : undefined));
+    void mutate(keys.projects({ stage: "진행중" }));
+  };
+
+  /** 본인 담당 해제 시: SWR 캐시에서 그 프로젝트를 즉시 제거 + 백그라운드 revalidate */
+  const handleUnassigned = (projectId: string): void => {
+    if (!user?.name) return;
+    void mutate<ProjectListResponse>(
+      keys.projects({ mine: true }),
+      (old) =>
+        old
+          ? {
+              ...old,
+              items: old.items.filter((p) => p.id !== projectId),
+              count: Math.max(0, old.count - 1),
+            }
+          : old,
+      { revalidate: true },
+    );
+    // import 모달의 "본인 미담당 진행중" 캐시도 새로고침 필요
     void mutate(keys.projects({ stage: "진행중" }));
   };
 
@@ -106,7 +132,10 @@ export default function MyPage() {
       <section>
         <div className="mb-2 flex items-center justify-between">
           <h2 className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
-            담당 진행중 프로젝트 ({projects?.length ?? "—"})
+            담당 프로젝트 ({projects?.length ?? "—"})
+            <span className="ml-2 text-[11px] font-normal text-zinc-500">
+              · 금주 TASK 활동으로 진행중/대기 자동 분류
+            </span>
           </h2>
           <div className="flex gap-2">
             <button
@@ -129,23 +158,75 @@ export default function MyPage() {
           <LoadingState message="담당 프로젝트 불러오는 중" height="h-32" />
         ) : projects.length === 0 ? (
           <p className="rounded-md border border-zinc-200 bg-white p-4 text-sm text-zinc-500 dark:border-zinc-800 dark:bg-zinc-900">
-            진행중 + 담당으로 지정된 프로젝트가 없습니다.
+            담당 프로젝트가 없습니다.
           </p>
         ) : (
-          <div className="space-y-4">
-            {projects.map((p) => (
-              <ProjectTaskRow
-                key={p.id}
-                project={p}
-                tasks={(tasks ?? []).filter((t) => t.project_ids.includes(p.id))}
-                myName={user.name}
-                onChanged={refreshTasks}
-                onCreate={(projectId, status) =>
-                  setTaskCreate({ projectId, status })
-                }
-                onUnassigned={refreshProjects}
-              />
-            ))}
+          <div className="space-y-6">
+            {/* 진행중 (금주 TASK 있음) */}
+            <div>
+              <h3 className="mb-2 flex items-center gap-2 text-xs font-semibold text-blue-600 dark:text-blue-400">
+                <span className="h-2 w-2 rounded-full bg-blue-500" />
+                진행 중 ({activeProjects.length})
+                <span className="text-[10px] font-normal text-zinc-500">
+                  금주 활동 있음
+                </span>
+              </h3>
+              {activeProjects.length === 0 ? (
+                <p className="rounded-md border border-zinc-200 bg-white p-3 text-xs text-zinc-500 dark:border-zinc-800 dark:bg-zinc-900">
+                  금주 활동 중인 프로젝트가 없습니다.
+                </p>
+              ) : (
+                <div className="space-y-4">
+                  {activeProjects.map((p) => (
+                    <ProjectTaskRow
+                      key={p.id}
+                      project={p}
+                      tasks={(tasks ?? []).filter((t) => taskBelongsTo(t, p.id))}
+                      myName={user.name}
+                      effectiveActive={true}
+                      onChanged={refreshTasks}
+                      onCreate={(projectId, status) =>
+                        setTaskCreate({ projectId, status })
+                      }
+                      onUnassigned={handleUnassigned}
+                    />
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* 대기 (금주 TASK 없음) */}
+            <div>
+              <h3 className="mb-2 flex items-center gap-2 text-xs font-semibold text-purple-600 dark:text-purple-400">
+                <span className="h-2 w-2 rounded-full bg-purple-500" />
+                대기 ({idleProjects.length})
+                <span className="text-[10px] font-normal text-zinc-500">
+                  금주 활동 없음
+                </span>
+              </h3>
+              {idleProjects.length === 0 ? (
+                <p className="rounded-md border border-zinc-200 bg-white p-3 text-xs text-zinc-500 dark:border-zinc-800 dark:bg-zinc-900">
+                  대기 중인 프로젝트가 없습니다.
+                </p>
+              ) : (
+                <div className="space-y-4">
+                  {idleProjects.map((p) => (
+                    <ProjectTaskRow
+                      key={p.id}
+                      project={p}
+                      tasks={(tasks ?? []).filter((t) => taskBelongsTo(t, p.id))}
+                      myName={user.name}
+                      effectiveActive={false}
+                      onChanged={refreshTasks}
+                      onCreate={(projectId, status) =>
+                        setTaskCreate({ projectId, status })
+                      }
+                      onUnassigned={handleUnassigned}
+                    />
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         )}
       </section>
@@ -245,6 +326,63 @@ function TodayTasks({
       ))}
     </ul>
   );
+}
+
+// 노션 page ID 는 응답에 따라 dash 유무가 섞여 있을 수 있어 비교 시 정규화 필요.
+function normId(s: string): string {
+  return s.replace(/-/g, "").toLowerCase();
+}
+
+function taskBelongsTo(t: Task, projectId: string): boolean {
+  const target = normId(projectId);
+  return t.project_ids.some((pid) => normId(pid) === target);
+}
+
+// 이번주 월요일 00:00 ~ 일요일 23:59 범위
+function thisWeekRange(): [Date, Date] {
+  const now = new Date();
+  const day = now.getDay(); // 일=0, 월=1, ..., 토=6
+  const offsetToMon = day === 0 ? -6 : 1 - day;
+  const mon = new Date(now);
+  mon.setDate(now.getDate() + offsetToMon);
+  mon.setHours(0, 0, 0, 0);
+  const sun = new Date(mon);
+  sun.setDate(mon.getDate() + 6);
+  sun.setHours(23, 59, 59, 999);
+  return [mon, sun];
+}
+
+function taskInWeek(t: Task, weekStart: Date, weekEnd: Date): boolean {
+  // 기간(start_date~end_date) 또는 actual_end_date 가 금주와 겹치면 true.
+  // 양쪽 다 비어있으면 created_time 기반 보조 판정 (있으면).
+  const candidates: Array<[string | null, string | null]> = [
+    [t.start_date, t.end_date],
+  ];
+  if (t.actual_end_date) candidates.push([t.actual_end_date, t.actual_end_date]);
+  for (const [s, e] of candidates) {
+    if (!s && !e) continue;
+    const start = s ? new Date(s) : new Date(e!);
+    const end = e ? new Date(e) : start;
+    end.setHours(23, 59, 59, 999);
+    if (start <= weekEnd && end >= weekStart) return true;
+  }
+  return false;
+}
+
+function splitByThisWeek(
+  projects: Project[],
+  tasks: Task[],
+): { active: Project[]; idle: Project[] } {
+  const [weekStart, weekEnd] = thisWeekRange();
+  const active: Project[] = [];
+  const idle: Project[] = [];
+  for (const p of projects) {
+    const projTasks = tasks.filter((t) => taskBelongsTo(t, p.id));
+    const hasThisWeek = projTasks.some((t) => taskInWeek(t, weekStart, weekEnd));
+    if (hasThisWeek) active.push(p);
+    else idle.push(p);
+  }
+  return { active, idle };
 }
 
 function statusBadgeColor(t: Task): string {
