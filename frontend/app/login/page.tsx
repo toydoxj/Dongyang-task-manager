@@ -6,5 +6,5 @@ import LoginForm from "./LoginForm";
 
 export default function LoginPage() {
   const router = useRouter();
-  return <LoginForm isSetup={false} onSuccess={() => router.replace("/")} />;
+  return <LoginForm isSetup={false} onSuccess={() => router.replace("/me")} />;
 }
