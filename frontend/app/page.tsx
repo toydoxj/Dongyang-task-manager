@@ -3,17 +3,22 @@
 import { useAuth } from "@/components/AuthGuard";
 import RevenueCollectionChart from "@/components/dashboard/RevenueCollectionChart";
 import StageBoard from "@/components/dashboard/StageBoard";
+import StaleTaskAlert from "@/components/dashboard/StaleTaskAlert";
+import TeamLoadHeatmap from "@/components/dashboard/TeamLoadHeatmap";
+import WorkTypeTreemap from "@/components/dashboard/WorkTypeTreemap";
 import LoadingState from "@/components/ui/LoadingState";
-import { useCashflow, useProjects } from "@/lib/hooks";
+import { useCashflow, useProjects, useTasks } from "@/lib/hooks";
 
 export default function DashboardPage() {
   const { user } = useAuth();
   const { data: projectData, error: projectErr } = useProjects();
   const { data: cashflowData, error: cashflowErr } = useCashflow({ flow: "income" });
+  const { data: tasksData } = useTasks();
 
   const error = projectErr ?? cashflowErr;
   const projects = projectData?.items;
   const incomes = cashflowData?.items;
+  const allTasks = tasksData?.items;
   const loading = !projects || !incomes;
 
   return (
@@ -53,6 +58,30 @@ export default function DashboardPage() {
             </h2>
             <StageBoard projects={projects} />
           </section>
+
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+            <section>
+              <h2 className="mb-2 text-sm font-medium text-zinc-700 dark:text-zinc-300">
+                팀별 부하
+              </h2>
+              <TeamLoadHeatmap projects={projects} />
+            </section>
+            <section>
+              <h2 className="mb-2 text-sm font-medium text-zinc-700 dark:text-zinc-300">
+                업무유형 매출
+              </h2>
+              <WorkTypeTreemap projects={projects} />
+            </section>
+          </div>
+
+          {allTasks && allTasks.length > 0 && (
+            <section>
+              <h2 className="mb-2 text-sm font-medium text-zinc-700 dark:text-zinc-300">
+                업무 적체 알림
+              </h2>
+              <StaleTaskAlert tasks={allTasks} />
+            </section>
+          )}
         </>
       )}
     </div>

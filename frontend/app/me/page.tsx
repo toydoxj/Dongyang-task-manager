@@ -3,6 +3,7 @@
 import Link from "next/link";
 
 import { useAuth } from "@/components/AuthGuard";
+import UpcomingDeadlines from "@/components/me/UpcomingDeadlines";
 import ProjectCard from "@/components/projects/ProjectCard";
 import LoadingState from "@/components/ui/LoadingState";
 import type { Task } from "@/lib/domain";
@@ -59,6 +60,17 @@ export default function MyPage() {
           <LoadingState message="내 업무 TASK 불러오는 중" height="h-32" />
         ) : (
           <TodayTasks tasks={tasks} />
+        )}
+      </section>
+
+      <section>
+        <h2 className="mb-2 text-sm font-medium text-zinc-700 dark:text-zinc-300">
+          마감 임박 프로젝트
+        </h2>
+        {projects == null ? (
+          <LoadingState message="프로젝트 마감일 분석 중" height="h-32" />
+        ) : (
+          <UpcomingDeadlines projects={projects} />
         )}
       </section>
 

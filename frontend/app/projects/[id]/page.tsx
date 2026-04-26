@@ -4,6 +4,7 @@ import Link from "next/link";
 import { use } from "react";
 import { useSWRConfig } from "swr";
 
+import ExpenseBreakdown from "@/components/project/ExpenseBreakdown";
 import LifecycleTimeline from "@/components/project/LifecycleTimeline";
 import ProgressOverview from "@/components/project/ProgressOverview";
 import ProjectCashflowChart from "@/components/project/ProjectCashflowChart";
@@ -87,6 +88,8 @@ export default function ProjectDetailPage({ params }: PageProps) {
         <ProgressOverview project={project} tasks={tasks} />
         <ProjectCashflowChart project={project} entries={cashflow} />
       </div>
+
+      <ExpenseBreakdown entries={cashflow} />
 
       <TaskKanban tasks={tasks} onChanged={refreshTasks} />
     </div>
