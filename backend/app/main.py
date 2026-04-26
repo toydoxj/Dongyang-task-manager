@@ -19,6 +19,8 @@ from app.routers import employees as employees_router
 from app.routers import master_projects as master_projects_router
 from app.routers import projects as projects_router
 from app.routers import tasks as tasks_router
+from app.services.notion import get_notion
+from app.services.notion_schema import ensure_all_schemas
 from app.services.scheduler import shutdown_scheduler, start_scheduler
 from app.services.sync import ALL_KINDS, get_sync
 from app.settings import get_settings
@@ -29,6 +31,13 @@ settings = get_settings()
 @asynccontextmanager
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     init_db()
+    # 노션 schema 자동 보강 (실패해도 부팅 계속)
+    try:
+        await ensure_all_schemas(get_notion(), settings)
+    except Exception:  # noqa: BLE001
+        import logging
+
+        logging.getLogger("startup").exception("노션 schema 보강 중 예외 (무시)")
     start_scheduler()
     try:
         yield

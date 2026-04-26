@@ -242,6 +242,34 @@ class NotionService:
     async def delete_block(self, block_id: str) -> dict[str, Any]:
         return await self._call(lambda: self._client.blocks.delete(block_id=block_id))
 
+    # ── data_source schema 수정 (raw httpx — notion-client 안정성 보강) ──
+
+    async def update_data_source_schema(
+        self, db_id: str, *, properties: dict[str, Any]
+    ) -> dict[str, Any]:
+        """누락 properties만 patch (이미 있는 건 그대로). 캐시 무효화."""
+        ds_id = await self._resolve_data_source_id(db_id)
+        headers = {
+            "Authorization": f"Bearer {self._api_key}",
+            "Notion-Version": _NOTION_VERSION,
+            "Content-Type": "application/json",
+        }
+        await self._limiter.wait()
+        async with httpx.AsyncClient(timeout=30.0) as http:
+            try:
+                res = await http.patch(
+                    f"{_NOTION_API}/data_sources/{ds_id}",
+                    headers=headers,
+                    json={"properties": properties},
+                )
+                res.raise_for_status()
+            except httpx.HTTPError as exc:
+                raise NotionApiError(f"data_source schema update 실패: {exc}") from exc
+        # ds/db 캐시 무효화 (다음 조회 시 새 schema 반영)
+        self._cache.invalidate(f"ds:{ds_id}")
+        self._cache.invalidate(f"db:{db_id}")
+        return res.json()
+
     # ── file_upload (notion-client 미지원, raw httpx) ──
 
     async def upload_file(
