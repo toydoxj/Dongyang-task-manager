@@ -1,0 +1,42 @@
+{
+  "name": "dongyang-task-electron",
+  "version": "0.1.0",
+  "description": "(주)동양구조 업무관리 — Electron 셸",
+  "main": "main.js",
+  "private": true,
+  "scripts": {
+    "dev": "cross-env ELECTRON_DEV=1 ELECTRON_DEV_URL=http://localhost:3000 electron .",
+    "start": "electron .",
+    "pack": "electron-builder --dir",
+    "build": "electron-builder --win"
+  },
+  "devDependencies": {
+    "cross-env": "^7.0.3",
+    "electron": "^33.0.0",
+    "electron-builder": "^25.0.0"
+  },
+  "dependencies": {
+    "tree-kill": "^1.2.2"
+  },
+  "build": {
+    "appId": "kr.co.dongyang.task-manager",
+    "productName": "Dongyang Task Manager",
+    "win": {
+      "target": "nsis"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    },
+    "files": [
+      "main.js",
+      "preload.js"
+    ],
+    "asar": false,
+    "publish": {
+      "provider": "github",
+      "owner": "toydoxj",
+      "repo": "Dongyang-task-manager"
+    }
+  }
+}
