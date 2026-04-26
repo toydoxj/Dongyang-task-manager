@@ -1,7 +1,0 @@
-node_modules/
-dist/
-release/
-build/output/
-
-# 자동 업데이트 PAT (release.ps1이 빌드 시 임시 생성/제거)
-update-token.txt

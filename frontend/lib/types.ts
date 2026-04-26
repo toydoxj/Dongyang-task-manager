@@ -1,26 +1,10 @@
 /**
- * 백엔드 API 베이스 URL 결정 우선순위:
- *  1) Electron 런타임 주입 window.__BACKEND_URL__ (Electron 빌드 부활 시)
- *  2) 빌드 시점 inline NEXT_PUBLIC_API_BASE (Vercel: https://api.dyce.kr / dev: http://127.0.0.1:8000)
- *  3) Electron packaged 빌드의 window.location.origin 폴백
- *  4) dev SSR fallback
+ * 백엔드 API 베이스 URL — 빌드 시점에 inline된 NEXT_PUBLIC_API_BASE 사용.
+ * - Vercel 운영: https://api.dyce.kr
+ * - 로컬 dev:   http://127.0.0.1:8000 (.env.local에서 설정)
  */
 function resolveApiBase(): string {
-  if (typeof window !== "undefined") {
-    const injected = (window as unknown as { __BACKEND_URL__?: string })
-      .__BACKEND_URL__;
-    if (injected) return injected;
-  }
-  const envBase = process.env.NEXT_PUBLIC_API_BASE;
-  if (envBase) return envBase;
-  // Electron packaged 빌드(env가 빈 문자열로 inline)에서만 origin 사용
-  if (typeof window !== "undefined") {
-    const proto = window.location.protocol;
-    if (proto === "file:" || proto === "app:") {
-      return window.location.origin;
-    }
-  }
-  return "http://127.0.0.1:8000";
+  return process.env.NEXT_PUBLIC_API_BASE || "http://127.0.0.1:8000";
 }
 
 export const API_BASE: string = resolveApiBase();
@@ -55,11 +39,3 @@ export interface TokenResponse {
   user: UserInfo;
 }
 
-declare global {
-  interface Window {
-    electronAPI?: {
-      isElectron: boolean;
-      getVersion: () => Promise<string>;
-    };
-  }
-}
