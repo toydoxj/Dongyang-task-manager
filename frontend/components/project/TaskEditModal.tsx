@@ -5,7 +5,7 @@ import { useState } from "react";
 import Modal from "@/components/ui/Modal";
 import { archiveTask, updateTask } from "@/lib/api";
 import type { Task } from "@/lib/domain";
-import { TASK_PRIORITIES, TASK_STATUSES } from "@/lib/domain";
+import { TASK_DIFFICULTIES, TASK_PRIORITIES, TASK_STATUSES } from "@/lib/domain";
 
 interface Props {
   task: Task | null;
@@ -36,6 +36,7 @@ function Form({
   const [end, setEnd] = useState(task.end_date ?? "");
   const [actualEnd, setActualEnd] = useState(task.actual_end_date ?? "");
   const [priority, setPriority] = useState(task.priority ?? "");
+  const [difficulty, setDifficulty] = useState(task.difficulty ?? "");
   const [assignees, setAssignees] = useState(task.assignees.join(", "));
   const [note, setNote] = useState(task.note ?? "");
   const [busy, setBusy] = useState(false);
@@ -51,6 +52,7 @@ function Form({
       const wasEnd = task.end_date ?? "";
       const wasActual = task.actual_end_date ?? "";
       const wasPriority = task.priority ?? "";
+      const wasDifficulty = task.difficulty ?? "";
       await updateTask(task.id, {
         title,
         status,
@@ -58,6 +60,7 @@ function Form({
         end_date: end === wasEnd ? undefined : end,
         actual_end_date: actualEnd === wasActual ? undefined : actualEnd,
         priority: priority === wasPriority ? undefined : priority,
+        difficulty: difficulty === wasDifficulty ? undefined : difficulty,
         assignees: assignees
           .split(",")
           .map((s) => s.trim())
@@ -124,6 +127,23 @@ function Form({
               {TASK_PRIORITIES.map((p) => (
                 <option key={p} value={p}>
                   {p}
+                </option>
+              ))}
+            </select>
+          </Field>
+        </div>
+
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="난이도">
+            <select
+              value={difficulty}
+              onChange={(e) => setDifficulty(e.target.value)}
+              className={inputCls}
+            >
+              <option value="">—</option>
+              {TASK_DIFFICULTIES.map((d) => (
+                <option key={d} value={d}>
+                  {d}
                 </option>
               ))}
             </select>

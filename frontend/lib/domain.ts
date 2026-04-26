@@ -209,6 +209,7 @@ export interface Task {
   end_date: string | null;
   actual_end_date: string | null;
   priority: string; // 높음|보통|낮음
+  difficulty: string; // 매우높음|높음|중간|낮음|매우낮음
   assignees: string[];
   teams: string[];
   note: string;
@@ -230,6 +231,7 @@ export interface TaskCreateRequest {
   start_date?: string;
   end_date?: string;
   priority?: string;
+  difficulty?: string;
   assignees?: string[];
   teams?: string[];
   note?: string;
@@ -244,6 +246,7 @@ export interface TaskUpdateRequest {
   end_date?: string;
   actual_end_date?: string;
   priority?: string;
+  difficulty?: string;
   assignees?: string[];
   teams?: string[];
   note?: string;
@@ -288,3 +291,10 @@ export const TEAMS = [
 
 export const TASK_STATUSES = ["시작 전", "진행 중", "완료", "보류"] as const;
 export const TASK_PRIORITIES = ["높음", "보통", "낮음"] as const;
+export const TASK_DIFFICULTIES = [
+  "매우높음",
+  "높음",
+  "중간",
+  "낮음",
+  "매우낮음",
+] as const;

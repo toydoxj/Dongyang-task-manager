@@ -23,6 +23,7 @@ class Task(BaseModel):
     end_date: str | None = None
     actual_end_date: str | None = None
     priority: str = ""
+    difficulty: str = ""  # 매우높음|높음|중간|낮음|매우낮음
     assignees: list[str] = []
     teams: list[str] = []
     note: str = ""
@@ -45,6 +46,7 @@ class Task(BaseModel):
             end_date=e,
             actual_end_date=P.date_range(props, "실제 완료일")[0],
             priority=P.select_name(props, "우선순위"),
+            difficulty=P.select_name(props, "난이도"),
             assignees=P.multi_select_names(props, "담당자"),
             teams=P.multi_select_names(props, "담당팀"),
             note=P.rich_text(props, "비고"),
@@ -62,6 +64,7 @@ class TaskCreateRequest(BaseModel):
     start_date: str | None = None
     end_date: str | None = None
     priority: str | None = None
+    difficulty: str | None = None
     assignees: list[str] = []
     teams: list[str] = []
     note: str = ""
@@ -76,6 +79,7 @@ class TaskUpdateRequest(BaseModel):
     end_date: str | None = None
     actual_end_date: str | None = None
     priority: str | None = None
+    difficulty: str | None = None
     assignees: list[str] | None = None
     teams: list[str] | None = None
     note: str | None = None
@@ -152,6 +156,9 @@ def task_create_to_props(req: TaskCreateRequest) -> dict[str, Any]:
     pri = _select(req.priority)
     if pri:
         props["우선순위"] = pri
+    diff = _select(req.difficulty)
+    if diff:
+        props["난이도"] = diff
     if req.note:
         props["비고"] = _rich_text(req.note)
     return props
@@ -194,6 +201,13 @@ def task_update_to_props(req: TaskUpdateRequest) -> dict[str, Any]:
             pri = _select(req.priority)
             if pri:
                 props["우선순위"] = pri
+    if req.difficulty is not None:
+        if req.difficulty == "":
+            props["난이도"] = {"select": None}
+        else:
+            diff = _select(req.difficulty)
+            if diff:
+                props["난이도"] = diff
     if req.assignees is not None:
         props["담당자"] = _multi_select(req.assignees)
     if req.teams is not None:

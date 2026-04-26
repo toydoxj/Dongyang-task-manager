@@ -5,7 +5,7 @@ import { useState } from "react";
 import Modal from "@/components/ui/Modal";
 import { useAuth } from "@/components/AuthGuard";
 import { createTask } from "@/lib/api";
-import { TASK_PRIORITIES, TASK_STATUSES } from "@/lib/domain";
+import { TASK_DIFFICULTIES, TASK_PRIORITIES, TASK_STATUSES } from "@/lib/domain";
 
 interface Props {
   open: boolean;
@@ -52,6 +52,7 @@ function Form({
   const [start, setStart] = useState(today);
   const [end, setEnd] = useState("");
   const [priority, setPriority] = useState("");
+  const [difficulty, setDifficulty] = useState("");
   const [assignees, setAssignees] = useState(user?.name ?? "");
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
@@ -72,6 +73,7 @@ function Form({
         start_date: start || undefined,
         end_date: end || undefined,
         priority: priority || undefined,
+        difficulty: difficulty || undefined,
         assignees: assignees
           .split(",")
           .map((s) => s.trim())
@@ -130,6 +132,21 @@ function Form({
             </select>
           </Field>
         </div>
+
+        <Field label="난이도">
+          <select
+            value={difficulty}
+            onChange={(e) => setDifficulty(e.target.value)}
+            className={inputCls}
+          >
+            <option value="">—</option>
+            {TASK_DIFFICULTIES.map((d) => (
+              <option key={d} value={d}>
+                {d}
+              </option>
+            ))}
+          </select>
+        </Field>
 
         <div className="grid grid-cols-2 gap-3">
           <Field label="시작일">
