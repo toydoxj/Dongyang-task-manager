@@ -1,35 +1,20 @@
 "use client";
 
-import { useEffect, useState } from "react";
-
 import { useAuth } from "@/components/AuthGuard";
 import RevenueCollectionChart from "@/components/dashboard/RevenueCollectionChart";
 import StageBoard from "@/components/dashboard/StageBoard";
-import { getCashflow, listProjects } from "@/lib/api";
-import type { CashflowEntry, Project } from "@/lib/domain";
+import LoadingState from "@/components/ui/LoadingState";
+import { useCashflow, useProjects } from "@/lib/hooks";
 
 export default function DashboardPage() {
   const { user } = useAuth();
-  const [projects, setProjects] = useState<Project[] | null>(null);
-  const [incomes, setIncomes] = useState<CashflowEntry[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const { data: projectData, error: projectErr } = useProjects();
+  const { data: cashflowData, error: cashflowErr } = useCashflow({ flow: "income" });
 
-  useEffect(() => {
-    void (async () => {
-      try {
-        const [pr, cf] = await Promise.all([
-          listProjects(),
-          getCashflow({ flow: "income" }),
-        ]);
-        setProjects(pr.items);
-        setIncomes(cf.items);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : "데이터 로딩 실패");
-      }
-    })();
-  }, []);
-
-  const loading = projects == null || incomes == null;
+  const error = projectErr ?? cashflowErr;
+  const projects = projectData?.items;
+  const incomes = cashflowData?.items;
+  const loading = !projects || !incomes;
 
   return (
     <div className="space-y-6">
@@ -42,15 +27,15 @@ export default function DashboardPage() {
 
       {error && (
         <div className="rounded-md border border-red-500/40 bg-red-500/5 p-3 text-sm text-red-400">
-          {error}
+          {error instanceof Error ? error.message : String(error)}
         </div>
       )}
 
       {loading && !error && (
-        <div className="space-y-3">
-          <SkeletonCard />
-          <SkeletonCard h="h-[480px]" />
-        </div>
+        <LoadingState
+          message="대시보드 데이터 불러오는 중 (프로젝트 1,500+ / 수금 1,900+)"
+          height="h-96"
+        />
       )}
 
       {projects && incomes && (
@@ -71,13 +56,5 @@ export default function DashboardPage() {
         </>
       )}
     </div>
-  );
-}
-
-function SkeletonCard({ h = "h-72" }: { h?: string }) {
-  return (
-    <div
-      className={`${h} animate-pulse rounded-xl border border-zinc-200 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900`}
-    />
   );
 }

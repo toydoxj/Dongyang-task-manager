@@ -1,19 +1,19 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 
 import ProjectCard from "@/components/projects/ProjectCard";
 import ProjectFilter, {
   type FilterState,
 } from "@/components/projects/ProjectFilter";
-import { listProjects } from "@/lib/api";
-import type { Project } from "@/lib/domain";
+import LoadingState from "@/components/ui/LoadingState";
+import { useProjects } from "@/lib/hooks";
 
 const PAGE_SIZE = 60;
 
 export default function ProjectsPage() {
-  const [all, setAll] = useState<Project[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const { data, error } = useProjects();
+  const all = data?.items;
   const [filter, setFilter] = useState<FilterState>({
     query: "",
     stage: "",
@@ -22,18 +22,6 @@ export default function ProjectsPage() {
   });
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
 
-  useEffect(() => {
-    void (async () => {
-      try {
-        const r = await listProjects();
-        setAll(r.items);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : "데이터 로딩 실패");
-      }
-    })();
-  }, []);
-
-  // 필터 변경 시 visibleCount 도 리셋. setState in effect 방지를 위해 setter wrap.
   const updateFilter = (next: FilterState) => {
     setFilter(next);
     setVisibleCount(PAGE_SIZE);
@@ -66,7 +54,7 @@ export default function ProjectsPage() {
 
       {error && (
         <div className="rounded-md border border-red-500/40 bg-red-500/5 p-3 text-sm text-red-400">
-          {error}
+          {error instanceof Error ? error.message : String(error)}
         </div>
       )}
 
@@ -80,14 +68,10 @@ export default function ProjectsPage() {
       )}
 
       {!all && !error && (
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
-          {Array.from({ length: 6 }).map((_, i) => (
-            <div
-              key={i}
-              className="h-32 animate-pulse rounded-xl border border-zinc-200 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900"
-            />
-          ))}
-        </div>
+        <LoadingState
+          message="프로젝트 목록 불러오는 중 (1,500+ 건)"
+          height="h-64"
+        />
       )}
 
       {all && (

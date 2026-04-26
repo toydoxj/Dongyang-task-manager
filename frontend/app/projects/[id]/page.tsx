@@ -1,15 +1,16 @@
 "use client";
 
 import Link from "next/link";
-import { use, useCallback, useEffect, useState } from "react";
+import { use } from "react";
+import { useSWRConfig } from "swr";
 
 import LifecycleTimeline from "@/components/project/LifecycleTimeline";
 import ProgressOverview from "@/components/project/ProgressOverview";
 import ProjectCashflowChart from "@/components/project/ProjectCashflowChart";
 import ProjectHeader from "@/components/project/ProjectHeader";
 import TaskKanban from "@/components/project/TaskKanban";
-import { getCashflow, getProject, listTasks } from "@/lib/api";
-import type { CashflowEntry, Project, Task } from "@/lib/domain";
+import LoadingState from "@/components/ui/LoadingState";
+import { keys, useCashflow, useProject, useTasks } from "@/lib/hooks";
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -17,31 +18,22 @@ interface PageProps {
 
 export default function ProjectDetailPage({ params }: PageProps) {
   const { id } = use(params);
-  const [project, setProject] = useState<Project | null>(null);
-  const [tasks, setTasks] = useState<Task[] | null>(null);
-  const [cashflow, setCashflow] = useState<CashflowEntry[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const { mutate } = useSWRConfig();
 
-  const load = useCallback(async () => {
-    try {
-      const [p, ts, cf] = await Promise.all([
-        getProject(id),
-        listTasks({ project_id: id }),
-        getCashflow({ project_id: id }),
-      ]);
-      setProject(p);
-      setTasks(ts.items);
-      setCashflow(cf.items);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "데이터 로딩 실패");
-    }
-  }, [id]);
+  const { data: project, error: projectErr } = useProject(id);
+  const { data: tasksData, error: tasksErr } = useTasks({ project_id: id });
+  const { data: cashflowData, error: cashflowErr } = useCashflow({
+    project_id: id,
+  });
 
-  useEffect(() => {
-    void (async () => {
-      await load();
-    })();
-  }, [load]);
+  const error = projectErr ?? tasksErr ?? cashflowErr;
+  const tasks = tasksData?.items;
+  const cashflow = cashflowData?.items;
+
+  // TASK 갱신 후 캐시 무효화
+  const refreshTasks = (): void => {
+    void mutate(keys.tasks({ project_id: id }));
+  };
 
   if (error) {
     return (
@@ -50,7 +42,7 @@ export default function ProjectDetailPage({ params }: PageProps) {
           ← 프로젝트 목록
         </Link>
         <div className="rounded-md border border-red-500/40 bg-red-500/5 p-3 text-sm text-red-400">
-          {error}
+          {error instanceof Error ? error.message : String(error)}
         </div>
       </div>
     );
@@ -62,9 +54,10 @@ export default function ProjectDetailPage({ params }: PageProps) {
         <Link href="/projects" className="text-xs text-zinc-500 hover:underline">
           ← 프로젝트 목록
         </Link>
-        <div className="h-32 animate-pulse rounded-xl border border-zinc-200 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900" />
-        <div className="h-32 animate-pulse rounded-xl border border-zinc-200 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900" />
-        <div className="h-72 animate-pulse rounded-xl border border-zinc-200 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900" />
+        <LoadingState
+          message="프로젝트 상세 불러오는 중 (프로젝트·업무·현금흐름)"
+          height="h-64"
+        />
       </div>
     );
   }
@@ -95,7 +88,7 @@ export default function ProjectDetailPage({ params }: PageProps) {
         <ProjectCashflowChart project={project} entries={cashflow} />
       </div>
 
-      <TaskKanban tasks={tasks} onChanged={() => void load()} />
+      <TaskKanban tasks={tasks} onChanged={refreshTasks} />
     </div>
   );
 }

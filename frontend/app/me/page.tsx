@@ -1,35 +1,27 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
 
 import { useAuth } from "@/components/AuthGuard";
 import ProjectCard from "@/components/projects/ProjectCard";
-import { listProjects, listTasks } from "@/lib/api";
-import type { Project, Task } from "@/lib/domain";
+import LoadingState from "@/components/ui/LoadingState";
+import type { Task } from "@/lib/domain";
 import { dDayLabel, formatDate, formatPercent } from "@/lib/format";
+import { useProjects, useTasks } from "@/lib/hooks";
 import { cn } from "@/lib/utils";
 
 export default function MyPage() {
   const { user } = useAuth();
-  const [projects, setProjects] = useState<Project[] | null>(null);
-  const [tasks, setTasks] = useState<Task[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const { data: projectData, error: projectErr } = useProjects(
+    user?.name ? { mine: true } : undefined,
+  );
+  const { data: tasksData, error: tasksErr } = useTasks(
+    user?.name ? { mine: true } : undefined,
+  );
 
-  useEffect(() => {
-    void (async () => {
-      try {
-        const [pr, ts] = await Promise.all([
-          listProjects({ mine: true }),
-          listTasks({ mine: true }),
-        ]);
-        setProjects(pr.items);
-        setTasks(ts.items);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : "데이터 로딩 실패");
-      }
-    })();
-  }, []);
+  const error = projectErr ?? tasksErr;
+  const projects = projectData?.items;
+  const tasks = tasksData?.items;
 
   if (!user?.name) {
     return (
@@ -55,33 +47,27 @@ export default function MyPage() {
 
       {error && (
         <div className="rounded-md border border-red-500/40 bg-red-500/5 p-3 text-sm text-red-400">
-          {error}
+          {error instanceof Error ? error.message : String(error)}
         </div>
       )}
 
-      {/* C3 — Today TASK 위젯 (가장 위에) */}
       <section>
         <h2 className="mb-2 text-sm font-medium text-zinc-700 dark:text-zinc-300">
           오늘 할 일 (진행 중·시작 전, 마감 임박순)
         </h2>
         {tasks == null ? (
-          <Skeleton h="h-32" />
+          <LoadingState message="내 업무 TASK 불러오는 중" height="h-32" />
         ) : (
           <TodayTasks tasks={tasks} />
         )}
       </section>
 
-      {/* C1 — 본인 담당 프로젝트 카드 */}
       <section>
         <h2 className="mb-2 text-sm font-medium text-zinc-700 dark:text-zinc-300">
           담당 프로젝트 ({projects?.length ?? "—"})
         </h2>
         {projects == null ? (
-          <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
-            <Skeleton />
-            <Skeleton />
-            <Skeleton />
-          </div>
+          <LoadingState message="담당 프로젝트 불러오는 중" height="h-32" />
         ) : projects.length === 0 ? (
           <p className="rounded-md border border-zinc-200 bg-white p-4 text-sm text-zinc-500 dark:border-zinc-800 dark:bg-zinc-900">
             담당으로 지정된 프로젝트가 없습니다.
@@ -99,7 +85,6 @@ export default function MyPage() {
 }
 
 function TodayTasks({ tasks }: { tasks: Task[] }) {
-  // 진행중 + 시작전만, end_date 오름차순 (없으면 뒤로)
   const open = tasks.filter((t) => t.status !== "완료");
   open.sort((a, b) => {
     if (!a.end_date && !b.end_date) return 0;
@@ -169,12 +154,4 @@ function statusBadgeColor(t: Task): string {
   if (days <= 3) return "bg-orange-500/20 text-orange-400";
   if (days <= 7) return "bg-yellow-500/20 text-yellow-400";
   return "bg-emerald-500/20 text-emerald-400";
-}
-
-function Skeleton({ h = "h-32" }: { h?: string }) {
-  return (
-    <div
-      className={`${h} animate-pulse rounded-xl border border-zinc-200 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900`}
-    />
-  );
 }
