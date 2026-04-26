@@ -1,6 +1,8 @@
 "use client";
 
 import { useAuth } from "@/components/AuthGuard";
+import CashflowForecast from "@/components/dashboard/CashflowForecast";
+import ExpenseTrend from "@/components/dashboard/ExpenseTrend";
 import RevenueCollectionChart from "@/components/dashboard/RevenueCollectionChart";
 import StageBoard from "@/components/dashboard/StageBoard";
 import StaleTaskAlert from "@/components/dashboard/StaleTaskAlert";
@@ -13,11 +15,13 @@ export default function DashboardPage() {
   const { user } = useAuth();
   const { data: projectData, error: projectErr } = useProjects();
   const { data: cashflowData, error: cashflowErr } = useCashflow({ flow: "income" });
+  const { data: expenseData } = useCashflow({ flow: "expense" });
   const { data: tasksData } = useTasks();
 
   const error = projectErr ?? cashflowErr;
   const projects = projectData?.items;
   const incomes = cashflowData?.items;
+  const expenses = expenseData?.items;
   const allTasks = tasksData?.items;
   const loading = !projects || !incomes;
 
@@ -71,6 +75,25 @@ export default function DashboardPage() {
                 업무유형 매출
               </h2>
               <WorkTypeTreemap projects={projects} />
+            </section>
+          </div>
+
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+            <section>
+              <h2 className="mb-2 text-sm font-medium text-zinc-700 dark:text-zinc-300">
+                현금흐름 예측 (향후 12개월)
+              </h2>
+              <CashflowForecast projects={projects} />
+            </section>
+            <section>
+              <h2 className="mb-2 text-sm font-medium text-zinc-700 dark:text-zinc-300">
+                지출 구분 월간 추이
+              </h2>
+              {expenses ? (
+                <ExpenseTrend expenses={expenses} />
+              ) : (
+                <LoadingState message="지출 데이터 분석 중" height="h-64" />
+              )}
             </section>
           </div>
 
