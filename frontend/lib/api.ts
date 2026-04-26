@@ -6,6 +6,7 @@ import type {
   ClientListResponse,
   MasterImage,
   MasterImageList,
+  MasterOptions,
   MasterProject,
   MasterProjectUpdate,
   Project,
@@ -150,6 +151,11 @@ export async function listClients(): Promise<ClientListResponse> {
 export async function getMasterProject(pageId: string): Promise<MasterProject> {
   const res = await authFetch(`/api/master-projects/${pageId}`);
   return jsonOrThrow<MasterProject>(res);
+}
+
+export async function getMasterOptions(): Promise<MasterOptions> {
+  const res = await authFetch(`/api/master-projects/options`);
+  return jsonOrThrow<MasterOptions>(res);
 }
 
 export async function updateMasterProject(

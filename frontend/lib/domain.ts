@@ -116,6 +116,12 @@ export interface MasterImageList {
   items: MasterImage[];
 }
 
+export interface MasterOptions {
+  usage: string[];
+  structure: string[];
+  special_types: string[];
+}
+
 export interface ClientListResponse {
   items: Client[];
   count: number;

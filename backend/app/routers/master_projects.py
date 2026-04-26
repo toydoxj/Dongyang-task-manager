@@ -16,6 +16,7 @@ from app.security import get_current_user
 from app.services import notion_props as P
 from app.services.notion import NotionService, get_notion
 from app.services.sync import get_sync
+from app.settings import get_settings
 
 # 노션이 업로드를 받는 MIME 화이트리스트 (이미지)
 _IMAGE_TYPES = {"image/png", "image/jpeg", "image/gif", "image/webp", "image/svg+xml"}
@@ -82,6 +83,14 @@ class MasterImage(BaseModel):
 
 class MasterImageList(BaseModel):
     items: list[MasterImage]
+
+
+class MasterOptions(BaseModel):
+    """multi_select 옵션 목록 (편집 모달의 자동완성/chips 표시용)."""
+
+    usage: list[str] = []
+    structure: list[str] = []
+    special_types: list[str] = []
 
 
 def _multi_select(values: list[str]) -> dict[str, Any]:
@@ -199,6 +208,35 @@ def _resolve_sub_projects(db: Session, mp: MasterProject) -> None:
             )
         else:
             mp.sub_projects.append(SubProjectRef(id=sub_id, name="(미동기화)"))
+
+
+@router.get("/options", response_model=MasterOptions)
+async def get_master_options(
+    _user: User = Depends(get_current_user),
+    notion: NotionService = Depends(get_notion),
+) -> MasterOptions:
+    """노션 마스터 DB의 multi_select 옵션 목록 (편집 모달의 chips 표시용).
+
+    NotionService 캐시(30초)에 의존하므로 별도 캐시 불필요.
+    """
+    db_id = get_settings().notion_db_master
+    if not db_id:
+        raise HTTPException(status_code=503, detail="NOTION_DB_MASTER 미설정")
+    ds = await notion.get_data_source(db_id)
+    props = ds.get("properties", {})
+
+    def _opts(name: str) -> list[str]:
+        prop = props.get(name) or {}
+        if prop.get("type") != "multi_select":
+            return []
+        opts = (prop.get("multi_select") or {}).get("options") or []
+        return [o.get("name", "") for o in opts if o.get("name")]
+
+    return MasterOptions(
+        usage=_opts("용도"),
+        structure=_opts("구조형식"),
+        special_types=_opts("특수유형"),
+    )
 
 
 @router.get("/{page_id}", response_model=MasterProject)

@@ -5,6 +5,7 @@ import { useRef, useState } from "react";
 import { mutate } from "swr";
 
 import Modal from "@/components/ui/Modal";
+import MultiSelectChips from "@/components/ui/MultiSelectChips";
 import {
   deleteMasterImage,
   updateMasterProject,
@@ -14,6 +15,7 @@ import type { MasterImage, MasterProject, MasterProjectUpdate } from "@/lib/doma
 import {
   masterKeys,
   useMasterImages,
+  useMasterOptions,
   useMasterProject,
 } from "@/lib/hooks";
 import { cn } from "@/lib/utils";
@@ -347,6 +349,7 @@ function EditForm({
   onCancel: () => void;
   onSaved: () => void;
 }) {
+  const { data: options } = useMasterOptions();
   const [form, setForm] = useState<MasterProjectUpdate>({
     name: mp.name,
     code: mp.code,
@@ -414,19 +417,22 @@ function EditForm({
           onChange={(v) => setField("address", v)}
           full
         />
-        <CsvInput
-          label="용도 (콤마)"
+        <MultiSelectChips
+          label="용도"
           value={form.usage ?? []}
+          options={options?.usage ?? []}
           onChange={(v) => setField("usage", v)}
         />
-        <CsvInput
-          label="구조형식 (콤마)"
+        <MultiSelectChips
+          label="구조형식"
           value={form.structure ?? []}
+          options={options?.structure ?? []}
           onChange={(v) => setField("structure", v)}
         />
-        <CsvInput
-          label="특수유형 (콤마)"
+        <MultiSelectChips
+          label="특수유형"
           value={form.special_types ?? []}
+          options={options?.special_types ?? []}
           onChange={(v) => setField("special_types", v)}
           full
         />
@@ -543,38 +549,6 @@ function NumInput({
           const s = e.target.value;
           onChange(s === "" ? null : Number(s));
         }}
-        className="mt-0.5 w-full rounded border border-zinc-300 bg-white px-2 py-1 text-xs text-zinc-900 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100"
-      />
-    </label>
-  );
-}
-
-function CsvInput({
-  label,
-  value,
-  onChange,
-  full,
-}: {
-  label: string;
-  value: string[];
-  onChange: (v: string[]) => void;
-  full?: boolean;
-}) {
-  // 콤마 분리 멀티셀렉트
-  return (
-    <label className={cn("block text-xs", full && "sm:col-span-2")}>
-      <span className="text-zinc-500">{label}</span>
-      <input
-        type="text"
-        value={value.join(", ")}
-        onChange={(e) =>
-          onChange(
-            e.target.value
-              .split(",")
-              .map((s) => s.trim())
-              .filter(Boolean),
-          )
-        }
         className="mt-0.5 w-full rounded border border-zinc-300 bg-white px-2 py-1 text-xs text-zinc-900 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100"
       />
     </label>

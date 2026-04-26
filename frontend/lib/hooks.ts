@@ -4,6 +4,7 @@ import useSWR, { type SWRResponse } from "swr";
 
 import {
   getCashflow,
+  getMasterOptions,
   getMasterProject,
   getProject,
   listClients,
@@ -15,6 +16,7 @@ import type {
   CashflowResponse,
   ClientListResponse,
   MasterImageList,
+  MasterOptions,
   MasterProject,
   Project,
   ProjectListResponse,
@@ -83,4 +85,16 @@ export function useMasterImages(
 export const masterKeys = {
   master: (id: string) => ["master-project", id] as const,
   images: (id: string) => ["master-images", id] as const,
+  options: () => ["master-options"] as const,
 };
+
+export function useMasterOptions(
+  enabled: boolean = true,
+): SWRResponse<MasterOptions> {
+  // 옵션은 거의 안 바뀌므로 dedupe 1시간
+  return useSWR(
+    enabled ? masterKeys.options() : null,
+    () => getMasterOptions(),
+    { dedupingInterval: 60 * 60 * 1000 },
+  );
+}
