@@ -32,11 +32,21 @@ export default function Sidebar() {
 
   return (
     <aside className="fixed inset-y-0 left-0 z-10 flex w-64 flex-col border-r border-zinc-800 bg-zinc-950 text-zinc-200">
-      <div className="border-b border-zinc-800 px-5 py-5">
-        <p className="text-xs font-medium uppercase tracking-wider text-zinc-500">
-          (주)동양구조
-        </p>
-        <h1 className="mt-1 text-base font-semibold">업무관리</h1>
+      <div className="border-b border-zinc-800 px-5 py-4">
+        <Link href="/" className="flex items-center gap-2.5">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src="/logo.svg"
+            alt="동양구조"
+            className="h-8 w-8 shrink-0"
+          />
+          <div className="min-w-0">
+            <p className="text-[10px] font-medium uppercase tracking-wider text-zinc-500">
+              (주)동양구조
+            </p>
+            <h1 className="text-sm font-semibold leading-tight">업무관리</h1>
+          </div>
+        </Link>
       </div>
 
       <nav className="flex-1 space-y-1 p-3">
