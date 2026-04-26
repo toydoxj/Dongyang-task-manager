@@ -4,9 +4,7 @@ import Link from "next/link";
 import { useState } from "react";
 import { useSWRConfig } from "swr";
 
-import ExpenseBreakdown from "@/components/project/ExpenseBreakdown";
 import LifecycleTimeline from "@/components/project/LifecycleTimeline";
-import ProgressOverview from "@/components/project/ProgressOverview";
 import ProjectCashflowChart from "@/components/project/ProjectCashflowChart";
 import ProjectHeader from "@/components/project/ProjectHeader";
 import TaskCreateModal from "@/components/project/TaskCreateModal";
@@ -86,14 +84,9 @@ export default function ProjectClient({ id }: { id: string }) {
       <ProjectHeader project={project} />
       <LifecycleTimeline project={project} tasks={tasks} />
 
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <ProgressOverview project={project} tasks={tasks} />
-        <ProjectCashflowChart project={project} entries={cashflow} />
-      </div>
-
-      <ExpenseBreakdown entries={cashflow} />
-
       <TaskKanban tasks={tasks} onChanged={refreshTasks} onCreate={openCreate} />
+
+      <ProjectCashflowChart project={project} entries={cashflow} />
 
       <TaskCreateModal
         open={createOpen}
