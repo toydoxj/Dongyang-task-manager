@@ -20,6 +20,7 @@ class Project(BaseModel):
     # 발주처
     client_text: str = ""       # 발주처(임시) (정식 발주처 relation은 별도 조회)
     client_relation_ids: list[str] = []
+    client_names: list[str] = []  # 발주처 relation 이름 해결 결과 (선택, 빈 배열이면 미해결)
 
     # 상태
     stage: str = ""             # 진행단계 (진행중/대기/보류/완료/타절/종결/이관)
@@ -99,7 +100,8 @@ class ProjectCreateRequest(BaseModel):
 
     name: str
     code: str = ""
-    client_text: str = ""
+    client_text: str = ""                 # 협력업체 미매칭 시 fallback (text 컬럼)
+    client_relation_ids: list[str] = []   # 협력업체 DB page_id (선택 시)
     stage: str = "진행중"
     teams: list[str] = []
     assignees: list[str] = []
@@ -120,6 +122,10 @@ def project_create_to_props(req: ProjectCreateRequest) -> dict[str, Any]:
     if req.client_text:
         props["발주처(임시)"] = {
             "rich_text": [{"text": {"content": req.client_text}}]
+        }
+    if req.client_relation_ids:
+        props["발주처"] = {
+            "relation": [{"id": rid} for rid in req.client_relation_ids]
         }
     if req.stage:
         props["진행단계"] = {"select": {"name": req.stage}}

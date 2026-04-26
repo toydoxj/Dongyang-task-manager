@@ -9,13 +9,13 @@ interface Props {
   tasks: Task[];
 }
 
-/** 0~1. 완료=100%, 진행 중=task 진행률 평균, 시작 전=0. */
+/** 0~1. status 가중치: 완료=1, 진행중=0.5, 시작전/보류=0. */
 function computeProjectProgress(tasks: Task[]): number | null {
   if (tasks.length === 0) return null;
   const sum = tasks.reduce((s, t) => {
     if (t.status === "완료") return s + 1;
-    if (t.status === "시작 전") return s + 0;
-    return s + (t.progress ?? 0);
+    if (t.status === "진행 중") return s + 0.5;
+    return s; // 시작 전 / 보류 / 기타
   }, 0);
   return sum / tasks.length;
 }

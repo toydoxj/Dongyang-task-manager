@@ -18,7 +18,29 @@ from app.services import notion_props as P
 from app.services.notion import NotionService, get_notion
 from app.settings import get_settings
 
+# 발주처(협력업체) DB — 메인 프로젝트의 "발주처" relation이 가리킴
+# 주의: query_all 은 database id 를 받음 (data_source id 가 아님)
+_CLIENT_DB_ID = "307e84986c8680f197eed98407eabf84"
+
 router = APIRouter(prefix="/projects", tags=["projects"])
+
+
+async def _resolve_client_names(
+    notion: NotionService, projects: list[Project]
+) -> None:
+    """모든 프로젝트의 client_relation_ids 를 일괄로 이름 매핑."""
+    has_relations = any(p.client_relation_ids for p in projects)
+    if not has_relations:
+        return
+    try:
+        title_map = await notion.fetch_title_dict(_CLIENT_DB_ID)
+    except Exception:
+        return
+    for p in projects:
+        if p.client_relation_ids:
+            p.client_names = [
+                title_map.get(rid, "") for rid in p.client_relation_ids if title_map.get(rid)
+            ]
 
 
 def _build_filter(
@@ -80,6 +102,7 @@ async def list_projects(
     sorts = [{"property": "Sub_CODE", "direction": "ascending"}]
     pages = await notion.query_all(db_id, filter=filt, sorts=sorts)
     items = [Project.from_notion_page(p) for p in pages]
+    await _resolve_client_names(notion, items)
     return ProjectListResponse(items=items, count=len(items))
 
 
@@ -118,7 +141,9 @@ async def get_project(
         page = await notion.get_page(page_id)
     except NotFoundError as exc:
         raise HTTPException(status_code=404, detail=exc.message) from exc
-    return Project.from_notion_page(page)
+    project = Project.from_notion_page(page)
+    await _resolve_client_names(notion, [project])
+    return project
 
 
 @router.post("/{page_id}/assign", response_model=Project)

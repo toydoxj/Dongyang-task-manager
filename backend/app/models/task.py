@@ -158,7 +158,12 @@ def task_create_to_props(req: TaskCreateRequest) -> dict[str, Any]:
 
 
 def task_update_to_props(req: TaskUpdateRequest) -> dict[str, Any]:
-    """None 이 아닌 필드만 properties 로 변환."""
+    """None 이 아닌 필드만 properties 로 변환.
+
+    빈 문자열은 명시적 'clear' 신호:
+      - 날짜 필드: 빈 문자열 → {"date": None}
+      - 텍스트/select: 빈 문자열 → 비우기
+    """
     props: dict[str, Any] = {}
     if req.title is not None:
         props["내용"] = _title(req.title)
@@ -169,17 +174,26 @@ def task_update_to_props(req: TaskUpdateRequest) -> dict[str, Any]:
     if req.progress is not None:
         props["진행률"] = {"number": req.progress}
     if req.start_date is not None or req.end_date is not None:
-        d = _date_prop(req.start_date, req.end_date)
-        if d:
-            props["기간"] = d
+        if req.start_date == "" and (req.end_date is None or req.end_date == ""):
+            props["기간"] = {"date": None}
+        else:
+            d = _date_prop(req.start_date or None, req.end_date or None)
+            if d:
+                props["기간"] = d
     if req.actual_end_date is not None:
-        d = _date_prop(req.actual_end_date, None)
-        if d:
-            props["실제 완료일"] = d
+        if req.actual_end_date == "":
+            props["실제 완료일"] = {"date": None}
+        else:
+            d = _date_prop(req.actual_end_date, None)
+            if d:
+                props["실제 완료일"] = d
     if req.priority is not None:
-        pri = _select(req.priority)
-        if pri:
-            props["우선순위"] = pri
+        if req.priority == "":
+            props["우선순위"] = {"select": None}
+        else:
+            pri = _select(req.priority)
+            if pri:
+                props["우선순위"] = pri
     if req.assignees is not None:
         props["담당자"] = _multi_select(req.assignees)
     if req.teams is not None:

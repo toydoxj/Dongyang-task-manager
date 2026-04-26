@@ -3,6 +3,7 @@
 import { authFetch } from "./auth";
 import type {
   CashflowResponse,
+  ClientListResponse,
   Project,
   ProjectCreateRequest,
   ProjectListResponse,
@@ -124,4 +125,11 @@ export async function getCashflow(filters: {
 } = {}): Promise<CashflowResponse> {
   const res = await authFetch(`/api/cashflow${qs(filters)}`);
   return jsonOrThrow<CashflowResponse>(res);
+}
+
+// ── 협력업체 ──
+
+export async function listClients(): Promise<ClientListResponse> {
+  const res = await authFetch(`/api/clients`);
+  return jsonOrThrow<ClientListResponse>(res);
 }

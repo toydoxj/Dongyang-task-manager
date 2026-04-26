@@ -7,6 +7,7 @@ export interface Project {
   name: string;
   client_text: string;
   client_relation_ids: string[];
+  client_names: string[];
   stage: string; // 진행중|대기|보류|완료|타절|종결|이관
   contract_signed: boolean;
   completed: boolean;
@@ -38,6 +39,7 @@ export interface ProjectCreateRequest {
   name: string;
   code?: string;
   client_text?: string;
+  client_relation_ids?: string[];
   stage?: string;
   teams?: string[];
   assignees?: string[];
@@ -46,6 +48,17 @@ export interface ProjectCreateRequest {
   contract_start?: string;
   contract_end?: string;
   contract_amount?: number;
+}
+
+export interface Client {
+  id: string;
+  name: string;
+  category: string;
+}
+
+export interface ClientListResponse {
+  items: Client[];
+  count: number;
 }
 
 export const WORK_TYPES = [

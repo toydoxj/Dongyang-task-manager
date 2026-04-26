@@ -209,6 +209,25 @@ class NotionService:
     def clear_cache(self) -> None:
         self._cache.invalidate()
 
+    # ── 발주처(협력업체) 매핑 ──
+
+    async def fetch_title_dict(self, db_id: str) -> dict[str, str]:
+        """relation lookup용: page_id → title 매핑."""
+        cache_key = f"titlemap:{db_id}"
+        cached = self._cache.get(cache_key)
+        if cached is not None:
+            return cached
+        pages = await self.query_all(db_id)
+        result: dict[str, str] = {}
+        for p in pages:
+            for prop in p.get("properties", {}).values():
+                if prop.get("type") == "title":
+                    arr = prop.get("title", [])
+                    result[p.get("id", "")] = arr[0].get("plain_text", "") if arr else ""
+                    break
+        self._cache.put(cache_key, result)
+        return result
+
 
 @lru_cache(maxsize=1)
 def get_notion() -> NotionService:

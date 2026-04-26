@@ -5,6 +5,7 @@ import { useState } from "react";
 import Modal from "@/components/ui/Modal";
 import { createProject } from "@/lib/api";
 import { TEAMS, WORK_TYPES } from "@/lib/domain";
+import { useClients } from "@/lib/hooks";
 
 interface Props {
   open: boolean;
@@ -29,6 +30,12 @@ export default function ProjectCreateModal({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // 협력업체 목록 (모달 열릴 때만 fetch)
+  const { data: clientData } = useClients(open);
+  const clientMatch = clientData?.items.find(
+    (c) => c.name.trim() === client.trim() && client.trim() !== "",
+  );
+
   const reset = (): void => {
     setName("");
     setCode("");
@@ -50,10 +57,13 @@ export default function ProjectCreateModal({
     setBusy(true);
     setError(null);
     try {
+      const trimmedClient = client.trim();
       await createProject({
         name: name.trim(),
         code: code.trim() || undefined,
-        client_text: client.trim() || undefined,
+        // 협력업체 매칭되면 relation 으로, 아니면 text fallback
+        client_relation_ids: clientMatch ? [clientMatch.id] : undefined,
+        client_text: clientMatch ? undefined : trimmedClient || undefined,
         teams: team ? [team] : [],
         work_types: workType ? [workType] : [],
         start_date: startDate || undefined,
@@ -103,11 +113,30 @@ export default function ProjectCreateModal({
           <Field label="발주처">
             <input
               type="text"
+              list="dy-clients"
               value={client}
               onChange={(e) => setClient(e.target.value)}
               className={inputCls}
-              placeholder="OO건설"
+              placeholder={
+                clientData
+                  ? `목록 ${clientData.count}개 자동완성, 없으면 직접 입력`
+                  : "협력업체 목록 불러오는 중..."
+              }
             />
+            <datalist id="dy-clients">
+              {clientData?.items.map((c) => (
+                <option key={c.id} value={c.name}>
+                  {c.category}
+                </option>
+              ))}
+            </datalist>
+            {client.trim() && (
+              <p className="mt-1 text-[10px] text-zinc-500">
+                {clientMatch
+                  ? `✓ 매칭: ${clientMatch.name} (${clientMatch.category || "분류 없음"})`
+                  : "신규 발주처로 입력 (text 컬럼)"}
+              </p>
+            )}
           </Field>
         </div>
 

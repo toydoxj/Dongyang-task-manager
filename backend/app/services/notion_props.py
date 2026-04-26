@@ -61,6 +61,11 @@ def formula_value(props: dict[str, Any], name: str) -> Any:
 
 
 def rollup_value(props: dict[str, Any], name: str) -> Any:
+    """rollup 값을 사람이 읽을 수 있는 형태로 추출.
+
+    - number/date: 그대로 반환
+    - array: 각 element 의 type 별로 text/number/date 평탄화 → 콤마 join 문자열
+    """
     r = (props.get(name) or {}).get("rollup") or {}
     t = r.get("type")
     if t == "number":
@@ -68,5 +73,46 @@ def rollup_value(props: dict[str, Any], name: str) -> Any:
     if t == "date":
         return r.get("date")
     if t == "array":
-        return r.get("array") or []
+        return rollup_array_to_text(r.get("array") or [])
     return r.get(t) if t else None
+
+
+def rollup_array_to_text(arr: list[dict[str, Any]]) -> str:
+    """rollup array 항목을 사람이 읽을 수 있는 문자열로 평탄화."""
+    parts: list[str] = []
+    for it in arr:
+        it_type = it.get("type")
+        if it_type == "rich_text":
+            seg = "".join(s.get("plain_text", "") for s in it.get("rich_text") or [])
+            if seg:
+                parts.append(seg)
+        elif it_type == "title":
+            seg = "".join(s.get("plain_text", "") for s in it.get("title") or [])
+            if seg:
+                parts.append(seg)
+        elif it_type == "number":
+            n = it.get("number")
+            if n is not None:
+                parts.append(str(n))
+        elif it_type == "date":
+            d = it.get("date") or {}
+            s = d.get("start")
+            if s:
+                parts.append(s)
+        elif it_type == "select":
+            sel = it.get("select")
+            if sel:
+                parts.append(sel.get("name", ""))
+        elif it_type == "multi_select":
+            for opt in it.get("multi_select") or []:
+                if opt.get("name"):
+                    parts.append(opt["name"])
+        elif it_type == "url":
+            u = it.get("url")
+            if u:
+                parts.append(u)
+        elif it_type:
+            v = it.get(it_type)
+            if isinstance(v, str | int | float):
+                parts.append(str(v))
+    return ", ".join(parts)

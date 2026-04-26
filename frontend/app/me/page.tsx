@@ -12,7 +12,7 @@ import TaskEditModal from "@/components/project/TaskEditModal";
 import ProjectCard from "@/components/projects/ProjectCard";
 import LoadingState from "@/components/ui/LoadingState";
 import type { Task } from "@/lib/domain";
-import { dDayLabel, formatDate, formatPercent } from "@/lib/format";
+import { dDayLabel, formatDate } from "@/lib/format";
 import { keys, useProjects, useTasks } from "@/lib/hooks";
 import { cn } from "@/lib/utils";
 
@@ -195,7 +195,7 @@ function TodayTasks({
                   {t.title || "(제목 없음)"}
                 </p>
                 <p className="mt-0.5 text-[11px] text-zinc-500">
-                  {t.status} · {formatPercent(t.progress)} · 마감 {formatDate(t.end_date)}
+                  {t.status} · 마감 {formatDate(t.end_date)}
                 </p>
               </div>
               <span

@@ -14,6 +14,7 @@ from app.db import init_db
 from app.exceptions import AppError
 from app.routers import auth as auth_router
 from app.routers import cashflow as cashflow_router
+from app.routers import clients as clients_router
 from app.routers import projects as projects_router
 from app.routers import tasks as tasks_router
 from app.settings import get_settings
@@ -54,6 +55,7 @@ app.include_router(auth_router.router, prefix="/api")
 app.include_router(projects_router.router, prefix="/api")
 app.include_router(tasks_router.router, prefix="/api")
 app.include_router(cashflow_router.router, prefix="/api")
+app.include_router(clients_router.router, prefix="/api")
 
 
 @app.get("/health")

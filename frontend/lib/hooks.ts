@@ -2,9 +2,16 @@
 
 import useSWR, { type SWRResponse } from "swr";
 
-import { getCashflow, getProject, listProjects, listTasks } from "./api";
+import {
+  getCashflow,
+  getProject,
+  listClients,
+  listProjects,
+  listTasks,
+} from "./api";
 import type {
   CashflowResponse,
+  ClientListResponse,
   Project,
   ProjectListResponse,
   TaskListResponse,
@@ -19,6 +26,7 @@ export const keys = {
     ["tasks", filters ?? null] as const,
   cashflow: (filters?: Parameters<typeof getCashflow>[0]) =>
     ["cashflow", filters ?? null] as const,
+  clients: () => ["clients"] as const,
 };
 
 export function useProjects(
@@ -45,4 +53,10 @@ export function useCashflow(
   filters?: Parameters<typeof getCashflow>[0],
 ): SWRResponse<CashflowResponse> {
   return useSWR(keys.cashflow(filters), () => getCashflow(filters));
+}
+
+export function useClients(
+  enabled: boolean = true,
+): SWRResponse<ClientListResponse> {
+  return useSWR(enabled ? keys.clients() : null, () => listClients());
 }

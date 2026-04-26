@@ -11,6 +11,9 @@ const nextConfig: NextConfig = {
     trailingSlash: true,
     // 정적 export 시 next/image optimization 비활성
     images: { unoptimized: true },
+    // packaged 빌드는 .env.local 의 NEXT_PUBLIC_API_BASE 를 무시하고
+    // 런타임에 window.location.origin 을 사용해야 backend random port 와 일치.
+    env: { NEXT_PUBLIC_API_BASE: "" },
   }),
 };
 

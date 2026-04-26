@@ -50,6 +50,14 @@ export default function ProjectCard({ project }: { project: Project }) {
       </div>
 
       <dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-1.5 text-[11px]">
+        <Row
+          label="발주처"
+          value={
+            project.client_names.length > 0
+              ? project.client_names.join(", ")
+              : project.client_text || "—"
+          }
+        />
         <Row label="담당팀" value={project.teams.join(", ") || "—"} />
         <Row label="담당자" value={project.assignees.join(", ") || "—"} />
         <Row

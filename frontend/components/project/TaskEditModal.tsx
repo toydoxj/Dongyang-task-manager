@@ -32,9 +32,6 @@ function Form({
 }) {
   const [title, setTitle] = useState(task.title ?? "");
   const [status, setStatus] = useState(task.status || "시작 전");
-  const [progress, setProgress] = useState(
-    Math.round((task.progress ?? 0) * 100),
-  );
   const [start, setStart] = useState(task.start_date ?? "");
   const [end, setEnd] = useState(task.end_date ?? "");
   const [actualEnd, setActualEnd] = useState(task.actual_end_date ?? "");
@@ -48,14 +45,19 @@ function Form({
     setBusy(true);
     setError(null);
     try {
+      // 빈 문자열은 명시적 'clear' 신호로 backend에 그대로 전송 (None 처리).
+      // 원본과 동일하면 변경 없음으로 undefined.
+      const wasStart = task.start_date ?? "";
+      const wasEnd = task.end_date ?? "";
+      const wasActual = task.actual_end_date ?? "";
+      const wasPriority = task.priority ?? "";
       await updateTask(task.id, {
         title,
         status,
-        progress: progress / 100,
-        start_date: start || undefined,
-        end_date: end || undefined,
-        actual_end_date: actualEnd || undefined,
-        priority: priority || undefined,
+        start_date: start === wasStart ? undefined : start,
+        end_date: end === wasEnd ? undefined : end,
+        actual_end_date: actualEnd === wasActual ? undefined : actualEnd,
+        priority: priority === wasPriority ? undefined : priority,
         assignees: assignees
           .split(",")
           .map((s) => s.trim())
@@ -127,18 +129,6 @@ function Form({
             </select>
           </Field>
         </div>
-
-        <Field label={`진행률  ${progress}%`}>
-          <input
-            type="range"
-            min={0}
-            max={100}
-            step={5}
-            value={progress}
-            onChange={(e) => setProgress(Number(e.target.value))}
-            className="w-full"
-          />
-        </Field>
 
         <div className="grid grid-cols-2 gap-3">
           <Field label="시작일">

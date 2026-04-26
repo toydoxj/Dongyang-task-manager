@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useState } from "react";
 import { useSWRConfig } from "swr";
 
 import ExpenseBreakdown from "@/components/project/ExpenseBreakdown";
@@ -8,12 +9,15 @@ import LifecycleTimeline from "@/components/project/LifecycleTimeline";
 import ProgressOverview from "@/components/project/ProgressOverview";
 import ProjectCashflowChart from "@/components/project/ProjectCashflowChart";
 import ProjectHeader from "@/components/project/ProjectHeader";
+import TaskCreateModal from "@/components/project/TaskCreateModal";
 import TaskKanban from "@/components/project/TaskKanban";
 import LoadingState from "@/components/ui/LoadingState";
 import { keys, useCashflow, useProject, useTasks } from "@/lib/hooks";
 
 export default function ProjectClient({ id }: { id: string }) {
   const { mutate } = useSWRConfig();
+  const [createOpen, setCreateOpen] = useState(false);
+  const [createStatus, setCreateStatus] = useState<string | undefined>(undefined);
 
   const { data: project, error: projectErr } = useProject(id);
   const { data: tasksData, error: tasksErr } = useTasks({ project_id: id });
@@ -27,6 +31,11 @@ export default function ProjectClient({ id }: { id: string }) {
 
   const refreshTasks = (): void => {
     void mutate(keys.tasks({ project_id: id }));
+  };
+
+  const openCreate = (status?: string): void => {
+    setCreateStatus(status);
+    setCreateOpen(true);
   };
 
   if (error) {
@@ -84,7 +93,15 @@ export default function ProjectClient({ id }: { id: string }) {
 
       <ExpenseBreakdown entries={cashflow} />
 
-      <TaskKanban tasks={tasks} onChanged={refreshTasks} />
+      <TaskKanban tasks={tasks} onChanged={refreshTasks} onCreate={openCreate} />
+
+      <TaskCreateModal
+        open={createOpen}
+        projectId={id}
+        initialStatus={createStatus}
+        onClose={() => setCreateOpen(false)}
+        onCreated={refreshTasks}
+      />
     </div>
   );
 }

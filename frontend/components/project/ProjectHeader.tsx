@@ -29,7 +29,10 @@ export default function ProjectHeader({ project }: { project: Project }) {
             {project.name || "(제목 없음)"}
           </h1>
           <p className="mt-1 text-sm text-zinc-500">
-            발주처: {project.client_text || "—"}
+            발주처:{" "}
+            {project.client_names.length > 0
+              ? project.client_names.join(", ")
+              : project.client_text || "—"}
           </p>
         </div>
 
