@@ -55,10 +55,20 @@ export default function ProjectImportModal({
   }, [searchMode, openData, allData, trimmed, myName]);
 
   const handleAssign = async (p: Project): Promise<void> => {
+    // 진행단계가 "진행중"이 아니면 사용자 확인 후 "대기"로 자동 전환
+    let setToWaiting = false;
+    if (p.stage !== "진행중") {
+      const ok = confirm(
+        `이 프로젝트의 현재 진행단계는 "${p.stage || "(미설정)"}" 입니다.\n` +
+          `가져오면서 진행단계를 "대기"로 변경합니다. 계속하시겠습니까?`,
+      );
+      if (!ok) return;
+      setToWaiting = true;
+    }
     setBusyId(p.id);
     setAssignErr(null);
     try {
-      await assignMe(p.id);
+      await assignMe(p.id, { setToWaiting });
       onAssigned();
     } catch (err) {
       setAssignErr(err instanceof Error ? err.message : "추가 실패");

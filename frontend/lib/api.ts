@@ -63,10 +63,14 @@ export async function getProject(pageId: string): Promise<Project> {
   return jsonOrThrow<Project>(res);
 }
 
-export async function assignMe(pageId: string): Promise<Project> {
-  const res = await authFetch(`/api/projects/${pageId}/assign`, {
-    method: "POST",
-  });
+export async function assignMe(
+  pageId: string,
+  options: { setToWaiting?: boolean } = {},
+): Promise<Project> {
+  const res = await authFetch(
+    `/api/projects/${pageId}/assign${qs({ set_to_waiting: options.setToWaiting })}`,
+    { method: "POST" },
+  );
   return jsonOrThrow<Project>(res);
 }
 

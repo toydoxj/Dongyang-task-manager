@@ -182,6 +182,10 @@ async def get_project(
 @router.post("/{page_id}/assign", response_model=Project)
 async def assign_me(
     page_id: str,
+    set_to_waiting: bool = Query(
+        default=False,
+        description="True면 진행단계가 '진행중'이 아닐 때 '대기'로 변경 (가져오기 시 사용)",
+    ),
     user: User = Depends(get_current_user),
     notion: NotionService = Depends(get_notion),
 ) -> Project:
@@ -195,25 +199,36 @@ async def assign_me(
     except NotFoundError as exc:
         raise HTTPException(status_code=404, detail=exc.message) from exc
 
-    current = P.multi_select_names(page.get("properties", {}), "담당자")
-    if user.name in current:
+    props = page.get("properties", {})
+    current = P.multi_select_names(props, "담당자")
+    current_stage = P.select_name(props, "진행단계")
+    needs_assign = user.name not in current
+    needs_stage = set_to_waiting and current_stage != "진행중"
+
+    if not needs_assign and not needs_stage:
         return Project.from_notion_page(page)
 
-    new_assignees = current + [user.name]
-    updated = await notion.update_page(
-        page_id,
-        {"담당자": {"multi_select": [{"name": n} for n in new_assignees]}},
-    )
+    update_props: dict = {}
+    if needs_assign:
+        new_assignees = current + [user.name]
+        update_props["담당자"] = {
+            "multi_select": [{"name": n} for n in new_assignees]
+        }
+    if needs_stage:
+        update_props["진행단계"] = {"select": {"name": "대기"}}
+
+    updated = await notion.update_page(page_id, update_props)
     get_sync().upsert_page("projects", updated)
     project = Project.from_notion_page(updated)
-    await _log_assign_change(
-        notion,
-        project_id=page_id,
-        project_name=project.name,
-        actor=user.name,
-        target=user.name,
-        action="담당 추가",
-    )
+    if needs_assign:
+        await _log_assign_change(
+            notion,
+            project_id=page_id,
+            project_name=project.name,
+            actor=user.name,
+            target=user.name,
+            action="담당 추가",
+        )
     return project
 
 
