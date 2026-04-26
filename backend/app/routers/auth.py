@@ -117,6 +117,12 @@ def update_me(
         user.password = hash_password(body.password)
     if body.notion_user_id is not None:
         user.notion_user_id = body.notion_user_id
+    if body.midas_url is not None:
+        user.midas_url = body.midas_url
+    if body.midas_key is not None:
+        user.midas_key = body.midas_key
+    if body.work_dir is not None:
+        user.work_dir = body.work_dir
     db.commit()
     db.refresh(user)
     return _to_info(user)

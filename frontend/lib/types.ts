@@ -19,6 +19,9 @@ export interface UserInfo {
   role: UserRole;
   status: "active" | "pending" | "rejected";
   notion_user_id: string;
+  midas_url: string;
+  midas_key: string;
+  work_dir: string;
   last_login_at: string | null;
 }
 

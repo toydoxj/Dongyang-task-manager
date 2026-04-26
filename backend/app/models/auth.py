@@ -23,6 +23,10 @@ class User(Base):
     status: Mapped[str] = mapped_column(String, default="active")  # active|pending|rejected
     session_id: Mapped[str] = mapped_column(String, default="")
     notion_user_id: Mapped[str] = mapped_column(String, default="")
+    # MIDAS Electron 앱 사용자별 설정 (동양구조 웹은 미사용, MIDAS만 읽음)
+    midas_url: Mapped[str] = mapped_column(String, default="")
+    midas_key: Mapped[str] = mapped_column(String, default="")
+    work_dir: Mapped[str] = mapped_column(String, default="")
     created_at: Mapped[datetime] = mapped_column(
         DateTime, default=lambda: datetime.now(timezone.utc)
     )
@@ -54,6 +58,9 @@ class UserInfo(BaseModel):
     role: str = "member"
     status: str = "active"
     notion_user_id: str = ""
+    midas_url: str = ""
+    midas_key: str = ""
+    work_dir: str = ""
     last_login_at: datetime | None = None
 
 
@@ -68,3 +75,6 @@ class UserUpdateRequest(BaseModel):
     email: EmailStr | str | None = None
     password: str | None = None
     notion_user_id: str | None = None
+    midas_url: str | None = None
+    midas_key: str | None = None
+    work_dir: str | None = None
