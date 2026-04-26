@@ -43,6 +43,13 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
       }
       setUser(getUser());
       setPhase("ready");
+      // 로그인 후에도 /login URL에 머물러 있으면 즉시 내 업무로 이동
+      if (
+        typeof window !== "undefined" &&
+        window.location.pathname.startsWith("/login")
+      ) {
+        window.location.replace("/me");
+      }
     })();
   };
 
