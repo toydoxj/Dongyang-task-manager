@@ -374,24 +374,6 @@ function TodayTasks({
         </div>
       )}
 
-      {/* 기타 업무 — status별 4열 카드 */}
-      <div>
-        <h3 className="mb-1.5 text-xs font-medium text-zinc-600 dark:text-zinc-400">
-          기타 업무 (프로젝트 외)
-        </h3>
-        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-          {STATUSES.map((s) => (
-            <CategoryCard
-              key={s}
-              label={s}
-              items={otherByStatus.get(s) ?? []}
-              onClickTask={onClickTask}
-              showCategoryBadge
-            />
-          ))}
-        </div>
-      </div>
-
       {/* 일정 — 외근/출장/휴가 3열 카드 (시간 표시). 분류=일정 OR 활동=일정 모두. */}
       <div>
         <h3 className="mb-1.5 text-xs font-medium text-zinc-600 dark:text-zinc-400">
@@ -407,6 +389,24 @@ function TodayTasks({
               showTime
               showProjectBadge
               findProject={findProject}
+            />
+          ))}
+        </div>
+      </div>
+
+      {/* 기타 업무 — status별 4열 카드 (맨 아래) */}
+      <div>
+        <h3 className="mb-1.5 text-xs font-medium text-zinc-600 dark:text-zinc-400">
+          기타 업무 (프로젝트 외)
+        </h3>
+        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+          {STATUSES.map((s) => (
+            <CategoryCard
+              key={s}
+              label={s}
+              items={otherByStatus.get(s) ?? []}
+              onClickTask={onClickTask}
+              showCategoryBadge
             />
           ))}
         </div>

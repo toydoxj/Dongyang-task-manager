@@ -18,6 +18,7 @@ const NAV: NavItem[] = [
   { href: "/", label: "대시보드", roles: ["admin", "team_lead"] },
   { href: "/projects", label: "프로젝트" },
   { href: "/me", label: "내 업무" },
+  { href: "/schedule", label: "팀 일정" },
   { href: "/utilities", label: "유틸 런처" },
   { href: "/admin/employees", label: "직원 관리", roles: ["admin"] },
   { href: "/admin/users", label: "사용자 관리", roles: ["admin"] },

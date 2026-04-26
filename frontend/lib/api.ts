@@ -117,6 +117,7 @@ export async function listTasks(filters: {
   assignee?: string;
   status?: string;
   mine?: boolean;
+  schedule_only?: boolean;
 } = {}): Promise<TaskListResponse> {
   const res = await authFetch(`/api/tasks${qs(filters)}`);
   return jsonOrThrow<TaskListResponse>(res);

@@ -34,6 +34,10 @@ async def list_tasks(
     assignee: str | None = Query(default=None),
     status_name: str | None = Query(default=None, alias="status"),
     mine: bool = Query(default=False),
+    schedule_only: bool = Query(
+        default=False,
+        description="True면 일정 task만 (분류=외근/출장/휴가 OR 활동=외근/출장)",
+    ),
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> TaskListResponse:
@@ -53,6 +57,15 @@ async def list_tasks(
         stmt = stmt.where(M.MirrorTask.assignees.any(assignee))  # type: ignore[attr-defined]
     if status_name:
         stmt = stmt.where(M.MirrorTask.status == status_name)
+    if schedule_only:
+        from sqlalchemy import or_
+
+        stmt = stmt.where(
+            or_(
+                M.MirrorTask.category.in_(["외근", "출장", "휴가"]),
+                M.MirrorTask.activity.in_(["외근", "출장"]),
+            )
+        )
     stmt = stmt.order_by(M.MirrorTask.end_date.asc().nullslast())
     rows = db.execute(stmt).scalars().all()
     items = [task_from_mirror(r) for r in rows]
