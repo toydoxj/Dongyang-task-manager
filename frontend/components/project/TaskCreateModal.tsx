@@ -136,7 +136,12 @@ function Form({
             <input
               type="date"
               value={start}
-              onChange={(e) => setStart(e.target.value)}
+              onChange={(e) => {
+                const v = e.target.value;
+                // 완료일이 비어있거나 이전 시작일과 같으면 자동 동기화 (사용자가 명시 변경한 값은 보존)
+                if (!end || end === start) setEnd(v);
+                setStart(v);
+              }}
               className={inputCls}
             />
           </Field>
