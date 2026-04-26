@@ -1,10 +1,23 @@
 "use client";
 
+import {
+  DndContext,
+  DragEndEvent,
+  PointerSensor,
+  useDraggable,
+  useDroppable,
+  useSensor,
+  useSensors,
+} from "@dnd-kit/core";
 import Link from "next/link";
+import { useState } from "react";
+import { mutate as globalMutate } from "swr";
 
-import type { Project } from "@/lib/domain";
+import { setProjectStage } from "@/lib/api";
+import type { Project, ProjectListResponse } from "@/lib/domain";
 import { PROJECT_STAGES } from "@/lib/domain";
 import { formatWon } from "@/lib/format";
+import { keys } from "@/lib/hooks";
 import { cn } from "@/lib/utils";
 
 interface Props {
@@ -32,76 +45,196 @@ const STAGE_DOT: Record<string, string> = {
 };
 
 export default function StageBoard({ projects }: Props) {
+  const [items, setItems] = useState<Project[]>(projects);
+  const [err, setErr] = useState<string | null>(null);
+
+  // 부모가 새 데이터 주면 동기화 (SWR revalidate)
+  if (projects !== items && projects.length !== items.length) {
+    setItems(projects);
+  }
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+  );
+
   const grouped = new Map<string, Project[]>();
   for (const stage of PROJECT_STAGES) grouped.set(stage, []);
-  for (const p of projects) {
+  for (const p of items) {
     const list = grouped.get(p.stage);
     if (list) list.push(p);
   }
 
-  return (
-    <div className="flex gap-3 overflow-x-auto pb-2">
-      {PROJECT_STAGES.map((stage) => {
-        const items = grouped.get(stage) ?? [];
-        const total = items.reduce((s, p) => s + (p.contract_amount ?? 0), 0);
-        return (
-          <div
-            key={stage}
-            className={cn(
-              "flex w-72 flex-shrink-0 flex-col rounded-xl border bg-white dark:bg-zinc-900",
-              STAGE_COLOR[stage] ?? "border-zinc-300",
-            )}
-          >
-            <header className="flex items-center justify-between border-b border-zinc-200 px-4 py-3 dark:border-zinc-800">
-              <div className="flex items-center gap-2">
-                <span className={cn("h-2 w-2 rounded-full", STAGE_DOT[stage])} />
-                <h3 className="text-sm font-semibold">{stage}</h3>
-                <span className="text-xs text-zinc-500">{items.length}건</span>
-              </div>
-              <span className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
-                {formatWon(total, true)}
-              </span>
-            </header>
+  async function handleDragEnd(e: DragEndEvent): Promise<void> {
+    const { active, over } = e;
+    if (!over) return;
+    const projectId = String(active.id);
+    const targetStage = String(over.id);
+    const proj = items.find((p) => p.id === projectId);
+    if (!proj || proj.stage === targetStage) return;
+    if (targetStage === "진행중") {
+      setErr("'진행중'은 금주 TASK 활동으로 자동 결정됩니다. 수동 변경 불가.");
+      return;
+    }
 
-            <ul className="max-h-[480px] space-y-1.5 overflow-y-auto p-2">
-              {items.length === 0 && (
-                <li className="px-2 py-6 text-center text-xs text-zinc-400">
-                  비어있음
-                </li>
-              )}
-              {items.slice(0, 50).map((p) => (
-                <li key={p.id}>
-                  <Link
-                    href={`/project?id=${p.id}`}
-                    className="block rounded-md border border-zinc-200 bg-white p-2.5 text-xs transition-colors hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-950 dark:hover:bg-zinc-900"
-                  >
-                    <p className="font-medium text-zinc-900 dark:text-zinc-100 truncate">
-                      {p.name || "(제목 없음)"}
-                    </p>
-                    <div className="mt-1 flex items-center justify-between">
-                      <span className="font-mono text-[10px] text-zinc-500">
-                        {p.code || "—"}
-                      </span>
-                      <span className="text-[10px] text-zinc-500">
-                        {p.assignees.length > 0
-                          ? p.assignees.length === 1
-                            ? p.assignees[0]
-                            : `${p.assignees[0]} +${p.assignees.length - 1}`
-                          : "—"}
-                      </span>
-                    </div>
-                  </Link>
-                </li>
-              ))}
-              {items.length > 50 && (
-                <li className="px-2 py-2 text-center text-[10px] text-zinc-400">
-                  … {items.length - 50}건 더
-                </li>
-              )}
-            </ul>
-          </div>
-        );
-      })}
+    setErr(null);
+    // optimistic update
+    const prev = items;
+    setItems(items.map((p) => (p.id === projectId ? { ...p, stage: targetStage } : p)));
+
+    try {
+      await setProjectStage(projectId, targetStage);
+      // SWR 캐시도 갱신
+      void globalMutate(
+        keys.projects(),
+        (old: ProjectListResponse | undefined) =>
+          old
+            ? {
+                ...old,
+                items: old.items.map((p) =>
+                  p.id === projectId ? { ...p, stage: targetStage } : p,
+                ),
+              }
+            : old,
+        { revalidate: true },
+      );
+    } catch (e) {
+      // rollback
+      setItems(prev);
+      setErr(e instanceof Error ? e.message : "단계 변경 실패");
+    }
+  }
+
+  return (
+    <div className="space-y-2">
+      {err && (
+        <p className="rounded-md border border-amber-500/40 bg-amber-500/5 p-2 text-xs text-amber-500">
+          {err}
+        </p>
+      )}
+      <DndContext sensors={sensors} onDragEnd={handleDragEnd}>
+        <div className="flex gap-3 overflow-x-auto pb-2">
+          {PROJECT_STAGES.map((stage) => (
+            <StageColumn
+              key={stage}
+              stage={stage}
+              items={grouped.get(stage) ?? []}
+            />
+          ))}
+        </div>
+      </DndContext>
     </div>
+  );
+}
+
+function StageColumn({ stage, items }: { stage: string; items: Project[] }) {
+  const isAutoStage = stage === "진행중";
+  const { isOver, setNodeRef } = useDroppable({
+    id: stage,
+    disabled: isAutoStage, // 진행중 컬럼은 drop 차단
+  });
+  const total = items.reduce((s, p) => s + (p.contract_amount ?? 0), 0);
+
+  return (
+    <div
+      ref={setNodeRef}
+      className={cn(
+        "flex w-72 flex-shrink-0 flex-col rounded-xl border bg-white transition-colors dark:bg-zinc-900",
+        STAGE_COLOR[stage] ?? "border-zinc-300",
+        isOver && !isAutoStage && "ring-2 ring-blue-400",
+        isAutoStage && "opacity-95",
+      )}
+    >
+      <header className="flex items-center justify-between border-b border-zinc-200 px-4 py-3 dark:border-zinc-800">
+        <div className="flex items-center gap-2">
+          <span className={cn("h-2 w-2 rounded-full", STAGE_DOT[stage])} />
+          <h3 className="text-sm font-semibold">{stage}</h3>
+          <span className="text-xs text-zinc-500">{items.length}건</span>
+          {isAutoStage && (
+            <span
+              className="rounded bg-blue-500/15 px-1 py-0.5 text-[9px] text-blue-500"
+              title="금주 TASK 활동으로 자동 결정"
+            >
+              자동
+            </span>
+          )}
+        </div>
+        <span className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
+          {formatWon(total, true)}
+        </span>
+      </header>
+
+      <ul className="max-h-[480px] space-y-1.5 overflow-y-auto p-2">
+        {items.length === 0 && (
+          <li className="px-2 py-6 text-center text-xs text-zinc-400">
+            비어있음
+          </li>
+        )}
+        {items.slice(0, 50).map((p) => (
+          <ProjectCard key={p.id} project={p} />
+        ))}
+        {items.length > 50 && (
+          <li className="px-2 py-2 text-center text-[10px] text-zinc-400">
+            … {items.length - 50}건 더
+          </li>
+        )}
+      </ul>
+    </div>
+  );
+}
+
+function ProjectCard({ project: p }: { project: Project }) {
+  const { attributes, listeners, setNodeRef, transform, isDragging } =
+    useDraggable({ id: p.id });
+
+  const style: React.CSSProperties | undefined = transform
+    ? {
+        transform: `translate3d(${transform.x}px, ${transform.y}px, 0)`,
+        zIndex: 50,
+      }
+    : undefined;
+
+  return (
+    <li
+      ref={setNodeRef}
+      style={style}
+      className={cn(
+        "select-none touch-none",
+        isDragging && "opacity-60",
+      )}
+      {...attributes}
+      {...listeners}
+    >
+      <div className="rounded-md border border-zinc-200 bg-white p-2.5 text-xs transition-colors hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-950 dark:hover:bg-zinc-900">
+        <div className="flex items-start justify-between gap-1">
+          <p
+            className="truncate font-medium text-zinc-900 dark:text-zinc-100"
+            title={p.name}
+          >
+            {p.name || "(제목 없음)"}
+          </p>
+          {/* 카드 자체는 drag 영역. 우측 → 링크는 drag 충돌 방지 위해 PointerEvents 막음 */}
+          <Link
+            href={`/project?id=${p.id}`}
+            onPointerDown={(e) => e.stopPropagation()}
+            className="shrink-0 text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200"
+            title="상세"
+          >
+            ↗
+          </Link>
+        </div>
+        <div className="mt-1 flex items-center justify-between">
+          <span className="font-mono text-[10px] text-zinc-500">
+            {p.code || "—"}
+          </span>
+          <span className="text-[10px] text-zinc-500">
+            {p.assignees.length > 0
+              ? p.assignees.length === 1
+                ? p.assignees[0]
+                : `${p.assignees[0]} +${p.assignees.length - 1}`
+              : "—"}
+          </span>
+        </div>
+      </div>
+    </li>
   );
 }

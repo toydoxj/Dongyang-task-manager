@@ -99,6 +99,17 @@ export async function syncProjectStage(pageId: string): Promise<Project> {
   return jsonOrThrow<Project>(res);
 }
 
+export async function setProjectStage(
+  pageId: string,
+  stage: string,
+): Promise<Project> {
+  const res = await authFetch(
+    `/api/projects/${pageId}/stage${qs({ stage })}`,
+    { method: "PATCH" },
+  );
+  return jsonOrThrow<Project>(res);
+}
+
 // ── 업무TASK ──
 
 export async function listTasks(filters: {

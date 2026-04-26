@@ -232,6 +232,34 @@ async def assign_me(
     return project
 
 
+VALID_STAGES = {"진행중", "대기", "보류", "완료", "타절", "종결", "이관"}
+
+
+@router.patch("/{page_id}/stage", response_model=Project)
+async def set_project_stage(
+    page_id: str,
+    stage: str = Query(..., description="대기/보류/완료/타절/종결/이관 중 하나"),
+    _user: User = Depends(get_current_user),
+    notion: NotionService = Depends(get_notion),
+) -> Project:
+    """대시보드 칸반 드래그용 — '진행중'은 자동 결정이라 강제 변경 불가."""
+    if stage not in VALID_STAGES:
+        raise HTTPException(status_code=400, detail=f"잘못된 stage: {stage}")
+    if stage == "진행중":
+        raise HTTPException(
+            status_code=400,
+            detail="'진행중'은 금주 TASK 활동으로 자동 결정됩니다. 수동 변경 불가",
+        )
+    try:
+        page = await notion.update_page(
+            page_id, {"진행단계": {"select": {"name": stage}}}
+        )
+    except NotFoundError as exc:
+        raise HTTPException(status_code=404, detail=exc.message) from exc
+    get_sync().upsert_page("projects", page)
+    return Project.from_notion_page(page)
+
+
 @router.delete("/{page_id}/assign", response_model=Project)
 async def unassign_me(
     page_id: str,
