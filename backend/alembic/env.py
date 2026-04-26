@@ -42,10 +42,17 @@ def run_migrations_offline() -> None:
 
 
 def run_migrations_online() -> None:
+    url = config.get_main_option("sqlalchemy.url") or ""
+    is_sqlite = url.startswith("sqlite")
+    connect_args: dict = {}
+    if not is_sqlite:
+        # Supabase PgBouncer 호환: prepared statements 비활성화
+        connect_args["prepare_threshold"] = None
     connectable = engine_from_config(
         config.get_section(config.config_ini_section, {}),
         prefix="sqlalchemy.",
         poolclass=pool.NullPool,
+        connect_args=connect_args,
     )
     with connectable.connect() as connection:
         is_sqlite = connection.dialect.name == "sqlite"

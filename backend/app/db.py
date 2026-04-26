@@ -32,9 +32,18 @@ if _db_url.startswith("sqlite:///"):
 
 _is_sqlite = _db_url.startswith("sqlite")
 
+
+def _connect_args() -> dict:
+    if _is_sqlite:
+        return {"check_same_thread": False}
+    # Supabase PgBouncer (transaction mode, port 6543)는 prepared statements 미지원
+    # → psycopg3의 prepare_threshold=None 으로 비활성화. 또한 statement cache 크기 0.
+    return {"prepare_threshold": None}
+
+
 engine = create_engine(
     _db_url,
-    connect_args={"check_same_thread": False} if _is_sqlite else {},
+    connect_args=_connect_args(),
     # Supabase 풀러는 idle 연결을 끊을 수 있으므로 ping 으로 stale 방지
     pool_pre_ping=not _is_sqlite,
 )
