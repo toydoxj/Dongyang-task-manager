@@ -7,6 +7,8 @@ import { formatWon } from "@/lib/format";
 
 interface Props {
   projects: Project[];
+  title?: string;
+  subtitle?: string;
 }
 
 interface TreeNode {
@@ -41,17 +43,24 @@ function buildData(projects: Project[]): TreeNode {
   return { name: "root", children: main };
 }
 
-export default function WorkTypeTreemap({ projects }: Props) {
+export default function WorkTypeTreemap({
+  projects,
+  title = "업무유형 매출 분포",
+  subtitle,
+}: Props) {
   const data = buildData(projects);
   const total = (data.children ?? []).reduce((s, n) => s + (n.value ?? 0), 0);
 
   return (
     <div className="rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
       <header className="mb-3">
-        <h3 className="text-sm font-semibold">업무유형 매출 분포</h3>
+        <h3 className="text-sm font-semibold">{title}</h3>
         <p className="text-[10px] text-zinc-500">
-          업무내용별 용역비 합 (다중 유형은 균등 배분, 1% 미만 = 기타) /
-          총 {formatWon(total, true)}
+          {subtitle
+            ? `${subtitle} · `
+            : ""}
+          업무내용별 용역비 합 (다중 유형은 균등 배분, 1% 미만 = 기타) / 총{" "}
+          {formatWon(total, true)}
         </p>
       </header>
 

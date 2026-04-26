@@ -103,20 +103,18 @@ export default function TeamLoadHeatmap({ projects, monthsBack = 12 }: Props) {
           emptyColor={isDark ? "#27272a" : "#f4f4f5"}
           borderColor={isDark ? "#18181b" : "#fafafa"}
           borderWidth={2}
-          labelTextColor={{
-            from: "color",
-            modifiers: [["darker", 2.5]],
-          }}
+          labelTextColor={isDark ? "#fafafa" : "#18181b"}
           theme={{
-            text: { fill: axisColor, fontSize: 10 },
+            text: { fill: axisColor, fontSize: 12, fontWeight: 500 },
             axis: {
-              ticks: { text: { fill: axisColor, fontSize: 10 } },
+              ticks: { text: { fill: axisColor, fontSize: 12, fontWeight: 500 } },
             },
+            labels: { text: { fontSize: 12, fontWeight: 600 } },
             tooltip: {
               container: {
                 background: "rgba(20,20,20,0.92)",
                 color: "#e4e4e7",
-                fontSize: 11,
+                fontSize: 12,
               },
             },
           }}

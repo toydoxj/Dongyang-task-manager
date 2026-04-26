@@ -42,6 +42,14 @@ export default function DashboardPage() {
   const allTasks = tasksData?.items;
   const loading = !projects || !incomes;
 
+  // 최근 1년 (시작일 기준)
+  const oneYearAgo = new Date();
+  oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
+  const recentYearProjects = (projects ?? []).filter((p) => {
+    if (!p.start_date) return false;
+    return new Date(p.start_date) >= oneYearAgo;
+  });
+
   return (
     <div className="space-y-6">
       <header>
@@ -89,18 +97,34 @@ export default function DashboardPage() {
             </section>
             <section>
               <h2 className="mb-2 text-sm font-medium text-zinc-700 dark:text-zinc-300">
-                업무유형 매출
+                직원별 부하
               </h2>
-              <WorkTypeTreemap projects={projects} />
+              <EmployeeLoadHeatmap projects={projects} />
             </section>
           </div>
 
-          <section>
-            <h2 className="mb-2 text-sm font-medium text-zinc-700 dark:text-zinc-300">
-              직원별 부하
-            </h2>
-            <EmployeeLoadHeatmap projects={projects} />
-          </section>
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+            <section>
+              <h2 className="mb-2 text-sm font-medium text-zinc-700 dark:text-zinc-300">
+                업무유형 매출 (전체)
+              </h2>
+              <WorkTypeTreemap
+                projects={projects}
+                title="업무유형 매출 — 전체"
+                subtitle="누적 전체"
+              />
+            </section>
+            <section>
+              <h2 className="mb-2 text-sm font-medium text-zinc-700 dark:text-zinc-300">
+                업무유형 매출 (최근 1년)
+              </h2>
+              <WorkTypeTreemap
+                projects={recentYearProjects}
+                title="업무유형 매출 — 최근 1년"
+                subtitle="시작일 기준 최근 12개월"
+              />
+            </section>
+          </div>
 
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
             <section>
