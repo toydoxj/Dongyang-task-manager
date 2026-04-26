@@ -62,7 +62,10 @@ function buildBuckets(entries: CashflowEntry[]): Bucket[] {
 
 export default function ProjectCashflowChart({ project, entries }: Props) {
   const buckets = buildBuckets(entries);
-  const target = project.contract_amount ?? 0;
+  // 수금 목표 = 용역비(VAT 제외) + 부가세. VAT 미입력 시 contract_amount × 10% 추정.
+  const base = project.contract_amount ?? 0;
+  const vat = project.vat ?? base * 0.1;
+  const target = base + vat;
 
   return (
     <div className="rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
@@ -70,7 +73,7 @@ export default function ProjectCashflowChart({ project, entries }: Props) {
         <div>
           <h3 className="text-sm font-semibold">현금흐름 (실측)</h3>
           <p className="text-[10px] text-zinc-500">
-            영역 = 누적 수금/지출, 점선 = 용역비 목표선
+            영역 = 누적 수금/지출, 점선 = 용역비 + 부가세 목표선
           </p>
         </div>
         <div className="flex gap-3 text-[10px]">
@@ -132,7 +135,7 @@ export default function ProjectCashflowChart({ project, entries }: Props) {
                 <Line
                   type="monotone"
                   dataKey={() => target}
-                  name="용역비 목표"
+                  name="용역비+부가세"
                   stroke="#a3a3a3"
                   strokeDasharray="4 4"
                   dot={false}

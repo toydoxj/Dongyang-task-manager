@@ -52,7 +52,10 @@ function buildBuckets(
   for (const p of projects) {
     const k = monthKey(p.start_date);
     if (k && idx.has(k)) {
-      idx.get(k)!.revenue += p.contract_amount ?? 0;
+      // 수금 목표 = 용역비(VAT 제외) + 부가세. VAT 미입력 시 10% 추정.
+      const base = p.contract_amount ?? 0;
+      const vat = p.vat ?? base * 0.1;
+      idx.get(k)!.revenue += base + vat;
     }
   }
   for (const e of incomes) {
