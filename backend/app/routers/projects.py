@@ -135,6 +135,10 @@ async def list_projects(
 @router.post("", response_model=Project, status_code=status.HTTP_201_CREATED)
 async def create_project(
     body: ProjectCreateRequest,
+    for_user: str | None = Query(
+        default=None,
+        description="admin/team_lead가 다른 직원 명의로 프로젝트 생성 시 사용",
+    ),
     user: User = Depends(get_current_user),
     notion: NotionService = Depends(get_notion),
 ) -> Project:
@@ -148,8 +152,17 @@ async def create_project(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail="프로젝트명 필수"
         )
-    if user.name and user.name not in body.assignees:
-        body = body.model_copy(update={"assignees": [*body.assignees, user.name]})
+    # for_user 지정 시: 그 사람을 자동 담당자로. 권한 체크.
+    target_name = user.name
+    if for_user:
+        if user.role not in {"admin", "team_lead"}:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="다른 직원 명의 생성은 관리자/팀장만 가능합니다",
+            )
+        target_name = for_user
+    if target_name and target_name not in body.assignees:
+        body = body.model_copy(update={"assignees": [*body.assignees, target_name]})
 
     page = await notion.create_page(db_id, project_create_to_props(body))
     get_sync().upsert_page("projects", page)
@@ -186,14 +199,30 @@ async def assign_me(
         default=False,
         description="True면 진행단계가 '진행중'이 아닐 때 '대기'로 변경 (가져오기 시 사용)",
     ),
+    for_user: str | None = Query(
+        default=None,
+        description="admin/team_lead가 다른 직원을 담당자로 추가할 때 사용",
+    ),
     user: User = Depends(get_current_user),
     notion: NotionService = Depends(get_notion),
 ) -> Project:
-    if not user.name:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="본인 이름이 등록되어 있지 않습니다",
-        )
+    # for_user 지정 시 권한 체크
+    target_name: str
+    if for_user:
+        if user.role not in {"admin", "team_lead"}:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="다른 직원 대리 담당은 관리자/팀장만 가능합니다",
+            )
+        target_name = for_user
+    else:
+        if not user.name:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="본인 이름이 등록되어 있지 않습니다",
+            )
+        target_name = user.name
+
     try:
         page = await notion.get_page(page_id)
     except NotFoundError as exc:
@@ -202,7 +231,7 @@ async def assign_me(
     props = page.get("properties", {})
     current = P.multi_select_names(props, "담당자")
     current_stage = P.select_name(props, "진행단계")
-    needs_assign = user.name not in current
+    needs_assign = target_name not in current
     needs_stage = set_to_waiting and current_stage != "진행중"
 
     if not needs_assign and not needs_stage:
@@ -210,7 +239,7 @@ async def assign_me(
 
     update_props: dict = {}
     if needs_assign:
-        new_assignees = current + [user.name]
+        new_assignees = current + [target_name]
         update_props["담당자"] = {
             "multi_select": [{"name": n} for n in new_assignees]
         }
@@ -225,8 +254,8 @@ async def assign_me(
             notion,
             project_id=page_id,
             project_name=project.name,
-            actor=user.name,
-            target=user.name,
+            actor=user.name or "(시스템)",
+            target=target_name,
             action="담당 추가",
         )
     return project

@@ -314,18 +314,21 @@ export default function MyPage() {
         onClose={() => setImportOpen(false)}
         onAssigned={refreshProjects}
         myName={effectiveName}
+        forUser={isViewingOther ? effectiveName : undefined}
       />
 
       <ProjectCreateModal
         open={createOpen}
         onClose={() => setCreateOpen(false)}
         onCreated={refreshProjects}
+        forUser={isViewingOther ? effectiveName : undefined}
       />
 
       <TaskCreateModal
         open={!!taskCreate}
         projectId={taskCreate?.projectId ?? ""}
         projects={projects ?? []}
+        defaultAssignee={effectiveName}
         initialStatus={taskCreate?.status}
         onClose={() => setTaskCreate(null)}
         onCreated={refreshTasks}

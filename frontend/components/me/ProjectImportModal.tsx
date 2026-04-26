@@ -13,6 +13,8 @@ interface Props {
   onClose: () => void;
   onAssigned: () => void;
   myName: string;
+  /** 다른 직원 대신 가져오는 모드 (admin/team_lead). 지정 시 backend에 for_user로 전달. */
+  forUser?: string;
 }
 
 export default function ProjectImportModal({
@@ -20,6 +22,7 @@ export default function ProjectImportModal({
   onClose,
   onAssigned,
   myName,
+  forUser,
 }: Props) {
   const [query, setQuery] = useState("");
   const trimmed = query.trim();
@@ -68,7 +71,7 @@ export default function ProjectImportModal({
     setBusyId(p.id);
     setAssignErr(null);
     try {
-      await assignMe(p.id, { setToWaiting });
+      await assignMe(p.id, { setToWaiting, forUser });
       onAssigned();
     } catch (err) {
       setAssignErr(err instanceof Error ? err.message : "추가 실패");

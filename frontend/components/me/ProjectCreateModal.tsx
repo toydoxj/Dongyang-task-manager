@@ -11,12 +11,15 @@ interface Props {
   open: boolean;
   onClose: () => void;
   onCreated: () => void;
+  /** 다른 직원 명의 생성 (admin/team_lead). 지정 시 그 사람이 자동 담당자. */
+  forUser?: string;
 }
 
 export default function ProjectCreateModal({
   open,
   onClose,
   onCreated,
+  forUser,
 }: Props) {
   const [name, setName] = useState("");
   const [code, setCode] = useState("");
@@ -58,19 +61,22 @@ export default function ProjectCreateModal({
     setError(null);
     try {
       const trimmedClient = client.trim();
-      await createProject({
-        name: name.trim(),
-        code: code.trim() || undefined,
-        // 협력업체 매칭되면 relation 으로, 아니면 text fallback
-        client_relation_ids: clientMatch ? [clientMatch.id] : undefined,
-        client_text: clientMatch ? undefined : trimmedClient || undefined,
-        teams: team ? [team] : [],
-        work_types: workType ? [workType] : [],
-        start_date: startDate || undefined,
-        contract_start: contractStart || undefined,
-        contract_end: contractEnd || undefined,
-        contract_amount: amount ? Number(amount) : undefined,
-      });
+      await createProject(
+        {
+          name: name.trim(),
+          code: code.trim() || undefined,
+          // 협력업체 매칭되면 relation 으로, 아니면 text fallback
+          client_relation_ids: clientMatch ? [clientMatch.id] : undefined,
+          client_text: clientMatch ? undefined : trimmedClient || undefined,
+          teams: team ? [team] : [],
+          work_types: workType ? [workType] : [],
+          start_date: startDate || undefined,
+          contract_start: contractStart || undefined,
+          contract_end: contractEnd || undefined,
+          contract_amount: amount ? Number(amount) : undefined,
+        },
+        { forUser },
+      );
       reset();
       onCreated();
       onClose();
@@ -85,8 +91,10 @@ export default function ProjectCreateModal({
     <Modal open={open} onClose={onClose} title="새 프로젝트 생성" size="lg">
       <div className="space-y-3">
         <p className="text-xs text-zinc-500">
-          노션 메인 DB에 새 프로젝트 페이지를 생성합니다. 본인이 자동으로
-          담당자에 추가됩니다.
+          노션 메인 DB에 새 프로젝트 페이지를 생성합니다.{" "}
+          {forUser
+            ? `${forUser} 님이 자동으로 담당자에 추가됩니다.`
+            : "본인이 자동으로 담당자에 추가됩니다."}
         </p>
 
         <Field label="프로젝트명" required>

@@ -65,10 +65,13 @@ export async function getProject(pageId: string): Promise<Project> {
 
 export async function assignMe(
   pageId: string,
-  options: { setToWaiting?: boolean } = {},
+  options: { setToWaiting?: boolean; forUser?: string } = {},
 ): Promise<Project> {
   const res = await authFetch(
-    `/api/projects/${pageId}/assign${qs({ set_to_waiting: options.setToWaiting })}`,
+    `/api/projects/${pageId}/assign${qs({
+      set_to_waiting: options.setToWaiting,
+      for_user: options.forUser,
+    })}`,
     { method: "POST" },
   );
   return jsonOrThrow<Project>(res);
@@ -83,12 +86,16 @@ export async function unassignMe(pageId: string): Promise<Project> {
 
 export async function createProject(
   body: ProjectCreateRequest,
+  options: { forUser?: string } = {},
 ): Promise<Project> {
-  const res = await authFetch(`/api/projects`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
+  const res = await authFetch(
+    `/api/projects${qs({ for_user: options.forUser })}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    },
+  );
   return jsonOrThrow<Project>(res);
 }
 

@@ -21,6 +21,8 @@ interface Props {
   projectId?: string;
   /** 비프로젝트 모드일 때 사용자가 고를 수 있는 프로젝트 목록 (담당 프로젝트 등). */
   projects?: Project[];
+  /** 담당자 default. 미지정 시 현재 로그인 사용자. (직원 업무 모드에서 직원 이름 전달) */
+  defaultAssignee?: string;
   initialStatus?: string;
   onClose: () => void;
   onCreated: () => void;
@@ -30,6 +32,7 @@ export default function TaskCreateModal({
   open,
   projectId = "",
   projects,
+  defaultAssignee,
   initialStatus,
   onClose,
   onCreated,
@@ -40,6 +43,7 @@ export default function TaskCreateModal({
       key={`${projectId}:${initialStatus ?? ""}`}
       projectId={projectId}
       projects={projects}
+      defaultAssignee={defaultAssignee}
       initialStatus={initialStatus}
       onClose={onClose}
       onCreated={onCreated}
@@ -50,12 +54,14 @@ export default function TaskCreateModal({
 function Form({
   projectId,
   projects,
+  defaultAssignee,
   initialStatus,
   onClose,
   onCreated,
 }: {
   projectId: string;
   projects?: Project[];
+  defaultAssignee?: string;
   initialStatus?: string;
   onClose: () => void;
   onCreated: () => void;
@@ -73,7 +79,8 @@ function Form({
   const [activity, setActivity] = useState("");
   // 분류=프로젝트 + projectId 미지정인 경우(=/me에서 새 업무) 사용자가 dropdown으로 선택
   const [pickedProjectId, setPickedProjectId] = useState(projectId);
-  const [assignees, setAssignees] = useState(user?.name ?? "");
+  // 담당자 default: defaultAssignee(직원 업무 모드의 직원 이름) > 본인
+  const [assignees, setAssignees] = useState(defaultAssignee ?? user?.name ?? "");
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
