@@ -109,12 +109,16 @@ export default function MyPage() {
 
       <section>
         <h2 className="mb-2 text-sm font-medium text-zinc-700 dark:text-zinc-300">
-          오늘 할 일 (진행 중·시작 전, 마감 임박순)
+          해야할 일 (진행 중·시작 전, 마감 임박순)
         </h2>
         {tasks == null ? (
           <LoadingState message="내 업무 TASK 불러오는 중" height="h-32" />
         ) : (
-          <TodayTasks tasks={tasks} onClickTask={setEditing} />
+          <TodayTasks
+            tasks={tasks}
+            projects={projects ?? []}
+            onClickTask={setEditing}
+          />
         )}
       </section>
 
@@ -263,9 +267,11 @@ export default function MyPage() {
 
 function TodayTasks({
   tasks,
+  projects,
   onClickTask,
 }: {
   tasks: Task[];
+  projects: Project[];
   onClickTask: (t: Task) => void;
 }) {
   const open = tasks.filter((t) => t.status !== "완료");
@@ -285,45 +291,73 @@ function TodayTasks({
     );
   }
 
+  // project_id → name lookup (id에 dash 유무 차이 무시)
+  const projectByNorm = new Map<string, Project>();
+  for (const p of projects) {
+    projectByNorm.set(normId(p.id), p);
+  }
+  const findProject = (pid: string | undefined): Project | undefined =>
+    pid ? projectByNorm.get(normId(pid)) : undefined;
+
   return (
-    <ul className="divide-y divide-zinc-200 rounded-xl border border-zinc-200 bg-white dark:divide-zinc-800 dark:border-zinc-800 dark:bg-zinc-900">
-      {top.map((t) => (
-        <li key={t.id} className="flex items-stretch">
-          <button
-            type="button"
-            onClick={() => onClickTask(t)}
-            className="min-w-0 flex-1 px-4 py-2.5 text-left hover:bg-zinc-50 dark:hover:bg-zinc-800/50"
+    <ul className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+      {top.map((t) => {
+        const proj = findProject(t.project_ids[0]);
+        return (
+          <li
+            key={t.id}
+            className="flex items-stretch overflow-hidden rounded-lg border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900"
           >
-            <div className="flex items-center justify-between gap-3">
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-sm font-medium" title={t.title}>
-                  {t.title || "(제목 없음)"}
-                </p>
-                <p className="mt-0.5 text-[11px] text-zinc-500">
-                  {t.status} · 마감 {formatDate(t.end_date)}
-                </p>
-              </div>
-              <span
-                className={cn(
-                  "shrink-0 rounded-md px-2 py-0.5 text-[10px] font-medium",
-                  statusBadgeColor(t),
-                )}
-              >
-                {dDayLabel(t.end_date) || "—"}
-              </span>
-            </div>
-          </button>
-          {t.project_ids[0] && (
-            <Link
-              href={`/project?id=${t.project_ids[0]}`}
-              className="flex shrink-0 items-center px-3 text-[10px] text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800"
-              title="프로젝트로 이동"
+            <button
+              type="button"
+              onClick={() => onClickTask(t)}
+              className="min-w-0 flex-1 px-3 py-2.5 text-left hover:bg-zinc-50 dark:hover:bg-zinc-800/50"
             >
-              →
-            </Link>
-          )}
-        </li>
-      ))}
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0 flex-1">
+                  <p
+                    className="truncate text-sm font-medium"
+                    title={t.title}
+                  >
+                    {t.title || "(제목 없음)"}
+                  </p>
+                  {proj && (
+                    <p
+                      className="mt-0.5 truncate text-[11px] text-zinc-600 dark:text-zinc-400"
+                      title={proj.name}
+                    >
+                      <span className="font-mono text-zinc-400">
+                        {proj.code || proj.id.slice(0, 6)}
+                      </span>
+                      <span className="ml-1.5">{proj.name}</span>
+                    </p>
+                  )}
+                  <p className="mt-0.5 text-[11px] text-zinc-500">
+                    {t.status} · 마감 {formatDate(t.end_date)}
+                  </p>
+                </div>
+                <span
+                  className={cn(
+                    "shrink-0 rounded-md px-2 py-0.5 text-[10px] font-medium",
+                    statusBadgeColor(t),
+                  )}
+                >
+                  {dDayLabel(t.end_date) || "—"}
+                </span>
+              </div>
+            </button>
+            {t.project_ids[0] && (
+              <Link
+                href={`/project?id=${t.project_ids[0]}`}
+                className="flex shrink-0 items-center px-3 text-[10px] text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800"
+                title="프로젝트로 이동"
+              >
+                →
+              </Link>
+            )}
+          </li>
+        );
+      })}
     </ul>
   );
 }
