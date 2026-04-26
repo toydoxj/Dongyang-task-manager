@@ -11,6 +11,7 @@ import {
   TASK_DIFFICULTIES,
   TASK_PRIORITIES,
   TASK_STATUSES,
+  TIME_BASED_CATEGORIES,
 } from "@/lib/domain";
 
 interface Props {
@@ -76,6 +77,7 @@ function Form({
   const [error, setError] = useState<string | null>(null);
 
   const showProjectPicker = category === "프로젝트" && !projectId;
+  const isTimeBased = TIME_BASED_CATEGORIES.includes(category);
 
   const submit = async (): Promise<void> => {
     if (!title.trim()) {
@@ -162,7 +164,22 @@ function Form({
           <Field label="분류">
             <select
               value={category}
-              onChange={(e) => setCategory(e.target.value)}
+              onChange={(e) => {
+                const next = e.target.value;
+                const wasTime = TIME_BASED_CATEGORIES.includes(category);
+                const nowTime = TIME_BASED_CATEGORIES.includes(next);
+                if (wasTime !== nowTime) {
+                  // date ↔ datetime-local 형식 변환
+                  if (nowTime) {
+                    if (start && !start.includes("T")) setStart(`${start}T09:00`);
+                    if (end && !end.includes("T")) setEnd(`${end}T18:00`);
+                  } else {
+                    if (start.includes("T")) setStart(start.slice(0, 10));
+                    if (end.includes("T")) setEnd(end.slice(0, 10));
+                  }
+                }
+                setCategory(next);
+              }}
               className={inputCls}
             >
               <option value="">— 미분류</option>
@@ -207,22 +224,22 @@ function Form({
         )}
 
         <div className="grid grid-cols-2 gap-3">
-          <Field label="시작일">
+          <Field label={isTimeBased ? "시작 일시" : "시작일"}>
             <input
-              type="date"
+              type={isTimeBased ? "datetime-local" : "date"}
               value={start}
               onChange={(e) => {
                 const v = e.target.value;
-                // 완료일이 비어있거나 이전 시작일과 같으면 자동 동기화 (사용자가 명시 변경한 값은 보존)
+                // 완료일이 비어있거나 이전 시작일과 같으면 자동 동기화
                 if (!end || end === start) setEnd(v);
                 setStart(v);
               }}
               className={inputCls}
             />
           </Field>
-          <Field label="예상 완료일">
+          <Field label={isTimeBased ? "종료 일시" : "예상 완료일"}>
             <input
-              type="date"
+              type={isTimeBased ? "datetime-local" : "date"}
               value={end}
               onChange={(e) => setEnd(e.target.value)}
               className={inputCls}

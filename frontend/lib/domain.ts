@@ -308,5 +308,22 @@ export const TASK_CATEGORIES = [
   "사내잡무",
   "교육",
   "서비스",
+  "외근",
+  "출장",
+  "휴가",
 ] as const;
 export type TaskCategory = (typeof TASK_CATEGORIES)[number];
+
+/** 시간(시:분)까지 지정해야 하는 일정 분류. */
+export const TIME_BASED_CATEGORIES: readonly string[] = ["외근", "출장", "휴가"];
+
+/** 일정 카드(외근/출장/휴가)에 표시할 분류. */
+export const SCHEDULE_CATEGORIES = ["외근", "출장", "휴가"] as const;
+
+/** 기타 업무(프로젝트도 일정도 아닌)에 묶을 분류. */
+export const NON_PROJECT_WORK_CATEGORIES = [
+  "개인업무",
+  "사내잡무",
+  "교육",
+  "서비스",
+] as const;

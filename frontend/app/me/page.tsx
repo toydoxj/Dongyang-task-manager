@@ -295,23 +295,29 @@ function TodayTasks({
   const findProject = (pid: string | undefined): Project | undefined =>
     pid ? projectByNorm.get(normId(pid)) : undefined;
 
-  // 1) '프로젝트' 분류 — 위쪽에 기존 grid (2열)
-  // 2) 비프로젝트 4분류 — 하단 4열 카드 (개인업무/사내잡무/교육/서비스)
-  // 3) 미분류 — 4열 사이 또는 별도. 여기서는 비프로젝트 카드 위 amber 영역.
-  const NON_PROJECT_CATEGORIES = ["개인업무", "사내잡무", "교육", "서비스"] as const;
+  // 1) 프로젝트 분류 → 상단 2열 grid
+  // 2) 미분류 → amber 영역 (분류 권장)
+  // 3) 기타 업무(개인업무/사내잡무/교육/서비스) → status별 4열 카드
+  // 4) 일정(외근/출장/휴가) → 3열 카드 (시간 표시)
+  const NON_PROJECT_WORK = ["개인업무", "사내잡무", "교육", "서비스"];
+  const SCHEDULE_CATS = ["외근", "출장", "휴가"];
+  const STATUSES = ["시작 전", "진행 중", "완료", "보류"] as const;
+
   const projectTasks: Task[] = [];
-  const nonProjectByCat = new Map<string, Task[]>();
-  for (const c of NON_PROJECT_CATEGORIES) nonProjectByCat.set(c, []);
+  const otherByStatus = new Map<string, Task[]>();
+  for (const s of STATUSES) otherByStatus.set(s, []);
+  const scheduleByCat = new Map<string, Task[]>();
+  for (const c of SCHEDULE_CATS) scheduleByCat.set(c, []);
   const unclassified: Task[] = [];
 
   for (const t of open) {
     if (t.category === "프로젝트") {
       projectTasks.push(t);
-    } else if (
-      t.category &&
-      NON_PROJECT_CATEGORIES.includes(t.category as never)
-    ) {
-      nonProjectByCat.get(t.category)!.push(t);
+    } else if (NON_PROJECT_WORK.includes(t.category)) {
+      const bucket = otherByStatus.get(t.status) ?? otherByStatus.get("시작 전")!;
+      bucket.push(t);
+    } else if (SCHEDULE_CATS.includes(t.category)) {
+      scheduleByCat.get(t.category)!.push(t);
     } else {
       unclassified.push(t);
     }
@@ -347,18 +353,37 @@ function TodayTasks({
         </div>
       )}
 
-      {/* 비프로젝트 4분류 카드 — 항상 4열 grid (작은 화면은 자동 축소) */}
+      {/* 기타 업무 — status별 4열 카드 */}
       <div>
         <h3 className="mb-1.5 text-xs font-medium text-zinc-600 dark:text-zinc-400">
           기타 업무 (프로젝트 외)
         </h3>
         <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-          {NON_PROJECT_CATEGORIES.map((c) => (
+          {STATUSES.map((s) => (
+            <CategoryCard
+              key={s}
+              label={s}
+              items={otherByStatus.get(s) ?? []}
+              onClickTask={onClickTask}
+              showCategoryBadge
+            />
+          ))}
+        </div>
+      </div>
+
+      {/* 일정 — 외근/출장/휴가 3열 카드 (시간 표시) */}
+      <div>
+        <h3 className="mb-1.5 text-xs font-medium text-zinc-600 dark:text-zinc-400">
+          일정
+        </h3>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+          {SCHEDULE_CATS.map((c) => (
             <CategoryCard
               key={c}
               label={c}
-              items={nonProjectByCat.get(c) ?? []}
+              items={scheduleByCat.get(c) ?? []}
               onClickTask={onClickTask}
+              showTime
             />
           ))}
         </div>
@@ -468,10 +493,14 @@ function CategoryCard({
   label,
   items,
   onClickTask,
+  showCategoryBadge,
+  showTime,
 }: {
   label: string;
   items: Task[];
   onClickTask: (t: Task) => void;
+  showCategoryBadge?: boolean;
+  showTime?: boolean;
 }) {
   return (
     <div className="rounded-xl border border-zinc-200 bg-white p-3 dark:border-zinc-800 dark:bg-zinc-900">
@@ -495,16 +524,27 @@ function CategoryCard({
                 <p className="truncate font-medium" title={t.title}>
                   {t.title || "(제목 없음)"}
                 </p>
-                <p className="mt-0.5 flex items-center justify-between text-[10px] text-zinc-500">
-                  <span>마감 {formatDate(t.end_date)}</span>
-                  <span
-                    className={cn(
-                      "rounded px-1 py-0.5 text-[9px] font-medium",
-                      statusBadgeColor(t),
-                    )}
-                  >
-                    {dDayLabel(t.end_date) || "—"}
+                <p className="mt-0.5 flex items-center justify-between gap-1 text-[10px] text-zinc-500">
+                  <span className="truncate">
+                    {showTime
+                      ? formatRange(t.start_date, t.end_date)
+                      : `마감 ${formatDate(t.end_date)}`}
                   </span>
+                  {showCategoryBadge && t.category && (
+                    <span className="shrink-0 rounded bg-zinc-100 px-1 py-0.5 text-[9px] text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300">
+                      {t.category}
+                    </span>
+                  )}
+                  {!showCategoryBadge && (
+                    <span
+                      className={cn(
+                        "shrink-0 rounded px-1 py-0.5 text-[9px] font-medium",
+                        statusBadgeColor(t),
+                      )}
+                    >
+                      {dDayLabel(t.end_date) || "—"}
+                    </span>
+                  )}
                 </p>
               </button>
             </li>
@@ -513,6 +553,31 @@ function CategoryCard({
       )}
     </div>
   );
+}
+
+/** 일정용: ISO datetime이면 'MM/DD HH:mm', 아니면 'YYYY.MM.DD' */
+function formatRange(start: string | null, end: string | null): string {
+  const fmt = (s: string | null): string => {
+    if (!s) return "";
+    if (s.includes("T")) {
+      const d = new Date(s);
+      if (Number.isNaN(d.getTime())) return s;
+      return new Intl.DateTimeFormat("ko-KR", {
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: false,
+        timeZone: "Asia/Seoul",
+      }).format(d);
+    }
+    return formatDate(s);
+  };
+  const a = fmt(start);
+  const b = fmt(end);
+  if (a && b && a === b) return a;
+  if (a && b) return `${a} ~ ${b}`;
+  return a || b || "—";
 }
 
 // 노션 page ID 는 응답에 따라 dash 유무가 섞여 있을 수 있어 비교 시 정규화 필요.

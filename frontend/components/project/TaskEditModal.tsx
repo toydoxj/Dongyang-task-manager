@@ -10,6 +10,7 @@ import {
   TASK_DIFFICULTIES,
   TASK_PRIORITIES,
   TASK_STATUSES,
+  TIME_BASED_CATEGORIES,
 } from "@/lib/domain";
 
 interface Props {
@@ -37,8 +38,14 @@ function Form({
 }) {
   const [title, setTitle] = useState(task.title ?? "");
   const [status, setStatus] = useState(task.status || "시작 전");
-  const [start, setStart] = useState(task.start_date ?? "");
-  const [end, setEnd] = useState(task.end_date ?? "");
+  // datetime-local input은 'YYYY-MM-DDTHH:mm' 형식. 기존 ISO datetime이면 잘라서 사용.
+  const normalizeForInput = (s: string | null): string => {
+    if (!s) return "";
+    if (s.includes("T")) return s.slice(0, 16); // YYYY-MM-DDTHH:mm
+    return s;
+  };
+  const [start, setStart] = useState(normalizeForInput(task.start_date));
+  const [end, setEnd] = useState(normalizeForInput(task.end_date));
   const [actualEnd, setActualEnd] = useState(task.actual_end_date ?? "");
   const [priority, setPriority] = useState(task.priority ?? "");
   const [difficulty, setDifficulty] = useState(task.difficulty ?? "");
@@ -47,6 +54,22 @@ function Form({
   const [note, setNote] = useState(task.note ?? "");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const isTimeBased = TIME_BASED_CATEGORIES.includes(category);
+
+  const onChangeCategory = (next: string): void => {
+    const wasTime = TIME_BASED_CATEGORIES.includes(category);
+    const nowTime = TIME_BASED_CATEGORIES.includes(next);
+    if (wasTime !== nowTime) {
+      if (nowTime) {
+        if (start && !start.includes("T")) setStart(`${start}T09:00`);
+        if (end && !end.includes("T")) setEnd(`${end}T18:00`);
+      } else {
+        if (start.includes("T")) setStart(start.slice(0, 10));
+        if (end.includes("T")) setEnd(end.slice(0, 10));
+      }
+    }
+    setCategory(next);
+  };
 
   const save = async (): Promise<void> => {
     setBusy(true);
@@ -145,7 +168,7 @@ function Form({
           <Field label="분류">
             <select
               value={category}
-              onChange={(e) => setCategory(e.target.value)}
+              onChange={(e) => onChangeCategory(e.target.value)}
               className={inputCls}
             >
               <option value="">— 미분류</option>
@@ -173,17 +196,17 @@ function Form({
         </div>
 
         <div className="grid grid-cols-2 gap-3">
-          <Field label="시작일">
+          <Field label={isTimeBased ? "시작 일시" : "시작일"}>
             <input
-              type="date"
+              type={isTimeBased ? "datetime-local" : "date"}
               value={start}
               onChange={(e) => setStart(e.target.value)}
               className={inputCls}
             />
           </Field>
-          <Field label="예상 완료일">
+          <Field label={isTimeBased ? "종료 일시" : "예상 완료일"}>
             <input
-              type="date"
+              type={isTimeBased ? "datetime-local" : "date"}
               value={end}
               onChange={(e) => setEnd(e.target.value)}
               className={inputCls}

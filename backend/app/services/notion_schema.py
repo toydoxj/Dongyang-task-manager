@@ -46,6 +46,9 @@ TASK_DB_REQUIRED: dict[str, dict[str, Any]] = {
             ("사내잡무", "brown"),
             ("교육", "green"),
             ("서비스", "purple"),
+            ("외근", "orange"),
+            ("출장", "red"),
+            ("휴가", "pink"),
         ]
     ),
 }
