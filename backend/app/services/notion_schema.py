@@ -66,6 +66,36 @@ PROJECT_DB_REQUIRED: dict[str, dict[str, Any]] = {}
 MASTER_DB_REQUIRED: dict[str, dict[str, Any]] = {}
 CLIENT_DB_REQUIRED: dict[str, dict[str, Any]] = {}
 
+# 날인요청 DB
+SEAL_REQUEST_DB_REQUIRED: dict[str, dict[str, Any]] = {
+    "날인유형": _select(
+        [
+            ("구조계산서", "blue"),
+            ("도면", "green"),
+            ("검토서", "purple"),
+            ("기타", "gray"),
+        ]
+    ),
+    "상태": _select(
+        [
+            ("요청", "yellow"),
+            ("팀장승인", "blue"),
+            ("관리자승인", "green"),
+            ("완료", "green"),
+            ("반려", "red"),
+        ]
+    ),
+    "요청자": {"rich_text": {}},
+    "팀장처리자": {"rich_text": {}},
+    "관리자처리자": {"rich_text": {}},
+    "요청일": {"date": {}},
+    "팀장처리일": {"date": {}},
+    "관리자처리일": {"date": {}},
+    "비고": {"rich_text": {}},
+    "첨부파일": {"files": {}},
+}
+
+
 # 건의사항 DB
 SUGGESTION_DB_REQUIRED: dict[str, dict[str, Any]] = {
     "내용": {"rich_text": {}},
@@ -131,4 +161,10 @@ async def ensure_all_schemas(notion: NotionService, settings: Settings) -> None:
         settings.notion_db_suggestions,
         SUGGESTION_DB_REQUIRED,
         label="suggestions",
+    )
+    await _ensure_db(
+        notion,
+        settings.notion_db_seal_requests,
+        SEAL_REQUEST_DB_REQUIRED,
+        label="seal_requests",
     )

@@ -32,6 +32,7 @@ class Settings(BaseSettings):
     notion_db_clients: str = ""  # 협력업체 (발주처 relation)
     notion_db_master: str = ""  # 마스터 프로젝트
     notion_db_suggestions: str = ""  # 건의사항
+    notion_db_seal_requests: str = ""  # 날인요청
 
     # CORS 허용 origin (콤마 구분 raw string — pydantic_settings가 list를 JSON으로
     # 파싱하려 하므로 str로 받고 cors_origins_list로 변환)

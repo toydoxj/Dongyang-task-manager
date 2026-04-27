@@ -54,6 +54,21 @@ def relation_ids(props: dict[str, Any], name: str) -> list[str]:
     return [r.get("id", "") for r in arr]
 
 
+def files(props: dict[str, Any], name: str) -> list[dict[str, str]]:
+    """files property → [{name, url, type}]. type='file'(노션호스팅, 1h URL) 또는 'external'."""
+    arr = (props.get(name) or {}).get("files") or []
+    out: list[dict[str, str]] = []
+    for f in arr:
+        item_name = f.get("name", "")
+        if f.get("type") == "external":
+            url = (f.get("external") or {}).get("url", "")
+            out.append({"name": item_name, "url": url, "type": "external"})
+        else:
+            url = (f.get("file") or {}).get("url", "")
+            out.append({"name": item_name, "url": url, "type": "file"})
+    return out
+
+
 def formula_value(props: dict[str, Any], name: str) -> Any:
     f = (props.get(name) or {}).get("formula") or {}
     t = f.get("type")

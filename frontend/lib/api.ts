@@ -454,3 +454,90 @@ export async function deleteSuggestion(id: string): Promise<void> {
     throw new Error(detail ?? `${res.status} ${res.statusText}`);
   }
 }
+
+// ── 날인요청 ──
+
+export interface SealAttachment {
+  name: string;
+  url: string;
+  type: "file" | "external";
+}
+
+export interface SealRequestItem {
+  id: string;
+  title: string;
+  project_ids: string[];
+  seal_type: string;
+  status: string;
+  requester: string;
+  lead_handler: string;
+  admin_handler: string;
+  requested_at: string | null;
+  lead_handled_at: string | null;
+  admin_handled_at: string | null;
+  note: string;
+  attachments: SealAttachment[];
+  created_time: string | null;
+  last_edited_time: string | null;
+}
+
+export interface SealListResponse {
+  items: SealRequestItem[];
+  count: number;
+}
+
+export async function listSealRequests(): Promise<SealListResponse> {
+  const res = await authFetch(`/api/seal-requests`);
+  return jsonOrThrow<SealListResponse>(res);
+}
+
+export async function getSealPendingCount(): Promise<{ count: number }> {
+  const res = await authFetch(`/api/seal-requests/pending-count`);
+  return jsonOrThrow<{ count: number }>(res);
+}
+
+export async function createSealRequest(form: FormData): Promise<SealRequestItem> {
+  // multipart/form-data: project_id, seal_type, title?, note, files[]
+  const res = await authFetch(`/api/seal-requests`, {
+    method: "POST",
+    body: form,
+  });
+  return jsonOrThrow<SealRequestItem>(res);
+}
+
+export async function approveSealLead(id: string): Promise<SealRequestItem> {
+  const res = await authFetch(`/api/seal-requests/${id}/approve-lead`, {
+    method: "PATCH",
+  });
+  return jsonOrThrow<SealRequestItem>(res);
+}
+
+export async function approveSealAdmin(id: string): Promise<SealRequestItem> {
+  const res = await authFetch(`/api/seal-requests/${id}/approve-admin`, {
+    method: "PATCH",
+  });
+  return jsonOrThrow<SealRequestItem>(res);
+}
+
+export async function rejectSealRequest(
+  id: string,
+  reason: string,
+): Promise<SealRequestItem> {
+  const res = await authFetch(`/api/seal-requests/${id}/reject`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ reason }),
+  });
+  return jsonOrThrow<SealRequestItem>(res);
+}
+
+export async function deleteSealRequest(id: string): Promise<void> {
+  const res = await authFetch(`/api/seal-requests/${id}`, { method: "DELETE" });
+  if (!res.ok) {
+    const detail = await res
+      .json()
+      .then((d) => (d as { detail?: string }).detail)
+      .catch(() => undefined);
+    throw new Error(detail ?? `${res.status} ${res.statusText}`);
+  }
+}

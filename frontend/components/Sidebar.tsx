@@ -2,8 +2,10 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import useSWR from "swr";
 
 import { useAuth } from "./AuthGuard";
+import { getSealPendingCount } from "@/lib/api";
 import { clearAuth } from "@/lib/auth";
 import type { UserRole } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -25,6 +27,7 @@ const NAV: NavItem[] = [
   },
   { href: "/schedule", label: "직원 일정" },
   { href: "/suggestions", label: "건의사항" },
+  { href: "/seal-requests", label: "날인요청" },
   { href: "/utilities", label: "유틸 런처" },
   { href: "/admin/employees", label: "직원 관리", roles: ["admin"] },
   { href: "/admin/users", label: "사용자 관리", roles: ["admin"] },
@@ -40,6 +43,16 @@ interface Props {
 export default function Sidebar({ mobileOpen, onCloseMobile }: Props) {
   const pathname = usePathname();
   const { user } = useAuth();
+
+  // 날인요청 처리 대기 카운트 (admin/team_lead만, 60초 간격 polling)
+  const showSealBadge =
+    user?.role === "admin" || user?.role === "team_lead";
+  const { data: sealPending } = useSWR(
+    showSealBadge ? ["seal-pending"] : null,
+    () => getSealPendingCount(),
+    { refreshInterval: 60_000 },
+  );
+  const sealCount = sealPending?.count ?? 0;
 
   const handleLogout = (): void => {
     clearAuth();
@@ -97,19 +110,26 @@ export default function Sidebar({ mobileOpen, onCloseMobile }: Props) {
           (n) => !n.roles || (user?.role && n.roles.includes(user.role)),
         ).map((n) => {
           const active = pathname === n.href || pathname.startsWith(`${n.href}/`);
+          const showBadge =
+            n.href === "/seal-requests" && showSealBadge && sealCount > 0;
           return (
             <Link
               key={n.href}
               href={n.href}
               onClick={onCloseMobile}
               className={cn(
-                "block rounded-md px-3 py-2 text-sm transition-colors",
+                "flex items-center justify-between rounded-md px-3 py-2 text-sm transition-colors",
                 active
                   ? "bg-zinc-800 text-white"
                   : "text-zinc-400 hover:bg-zinc-900 hover:text-zinc-100",
               )}
             >
-              {n.label}
+              <span>{n.label}</span>
+              {showBadge && (
+                <span className="rounded-full bg-red-500 px-1.5 py-0.5 text-[10px] font-medium text-white">
+                  {sealCount}
+                </span>
+              )}
             </Link>
           );
         })}
