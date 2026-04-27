@@ -15,7 +15,9 @@ from app.models.project import (
     Project,
     ProjectCreateRequest,
     ProjectListResponse,
+    ProjectUpdateRequest,
     project_create_to_props,
+    project_update_to_props,
 )
 from app.security import get_current_user
 from app.services import notion_props as P
@@ -259,6 +261,27 @@ async def assign_me(
             action="담당 추가",
         )
     return project
+
+
+@router.patch("/{page_id}", response_model=Project)
+async def update_project(
+    page_id: str,
+    body: ProjectUpdateRequest,
+    _user: User = Depends(get_current_user),
+    notion: NotionService = Depends(get_notion),
+) -> Project:
+    """프로젝트 부분 갱신 (편집 모달용)."""
+    props = project_update_to_props(body)
+    if not props:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="갱신할 필드가 없습니다"
+        )
+    try:
+        page = await notion.update_page(page_id, props)
+    except NotFoundError as exc:
+        raise HTTPException(status_code=404, detail=exc.message) from exc
+    get_sync().upsert_page("projects", page)
+    return Project.from_notion_page(page)
 
 
 VALID_STAGES = {"진행중", "대기", "보류", "완료", "타절", "종결", "이관"}

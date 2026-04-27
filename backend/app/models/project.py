@@ -116,6 +116,68 @@ class ProjectCreateRequest(BaseModel):
     contract_amount: float | None = None
 
 
+class ProjectUpdateRequest(BaseModel):
+    """노션 메인 프로젝트 DB 페이지 부분 갱신 요청. None 인 필드는 변경 안 함."""
+
+    name: str | None = None
+    code: str | None = None
+    client_text: str | None = None
+    client_relation_ids: list[str] | None = None
+    stage: str | None = None
+    teams: list[str] | None = None
+    assignees: list[str] | None = None
+    work_types: list[str] | None = None
+    start_date: str | None = None
+    contract_start: str | None = None
+    contract_end: str | None = None
+    contract_amount: float | None = None
+    vat: float | None = None
+
+
+def project_update_to_props(req: ProjectUpdateRequest) -> dict[str, Any]:
+    """None이 아닌 필드만 노션 properties로 변환. 빈 문자열은 'clear' 신호."""
+    props: dict[str, Any] = {}
+    if req.name is not None:
+        props["프로젝트명"] = {"title": [{"text": {"content": req.name}}]}
+    if req.code is not None:
+        props["Sub_CODE"] = {"rich_text": [{"text": {"content": req.code}}]}
+    if req.client_text is not None:
+        props["발주처(임시)"] = {"rich_text": [{"text": {"content": req.client_text}}]}
+    if req.client_relation_ids is not None:
+        props["발주처"] = {"relation": [{"id": rid} for rid in req.client_relation_ids]}
+    if req.stage is not None and req.stage != "":
+        props["진행단계"] = {"select": {"name": req.stage}}
+    if req.teams is not None:
+        props["담당팀"] = {"multi_select": [{"name": t} for t in req.teams]}
+    if req.assignees is not None:
+        props["담당자"] = {"multi_select": [{"name": a} for a in req.assignees]}
+    if req.work_types is not None:
+        props["업무내용"] = {"multi_select": [{"name": w} for w in req.work_types]}
+    if req.start_date is not None:
+        props["시작일"] = (
+            {"date": None}
+            if req.start_date == ""
+            else {"date": {"start": req.start_date, "end": None}}
+        )
+    if req.contract_start is not None or req.contract_end is not None:
+        if req.contract_start == "" and (
+            req.contract_end is None or req.contract_end == ""
+        ):
+            props["계약기간"] = {"date": None}
+        else:
+            props["계약기간"] = {
+                "date": {
+                    "start": req.contract_start or None,
+                    "end": req.contract_end or None,
+                }
+            }
+    if req.contract_amount is not None:
+        props["용역비(VAT제외)"] = {"number": req.contract_amount}
+    if req.vat is not None:
+        props["VAT"] = {"number": req.vat}
+    return props
+
+
 def project_create_to_props(req: ProjectCreateRequest) -> dict[str, Any]:
     """노션 페이지 생성용 properties 변환."""
     props: dict[str, Any] = {

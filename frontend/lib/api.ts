@@ -84,6 +84,18 @@ export async function unassignMe(pageId: string): Promise<Project> {
   return jsonOrThrow<Project>(res);
 }
 
+export async function updateProject(
+  pageId: string,
+  body: import("@/lib/domain").ProjectUpdateRequest,
+): Promise<Project> {
+  const res = await authFetch(`/api/projects/${pageId}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  return jsonOrThrow<Project>(res);
+}
+
 export async function createProject(
   body: ProjectCreateRequest,
   options: { forUser?: string } = {},

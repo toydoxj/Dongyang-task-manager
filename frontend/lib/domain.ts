@@ -52,6 +52,22 @@ export interface ProjectCreateRequest {
   contract_amount?: number;
 }
 
+export interface ProjectUpdateRequest {
+  name?: string;
+  code?: string;
+  client_text?: string;
+  client_relation_ids?: string[];
+  stage?: string;
+  teams?: string[];
+  assignees?: string[];
+  work_types?: string[];
+  start_date?: string;
+  contract_start?: string;
+  contract_end?: string;
+  contract_amount?: number;
+  vat?: number;
+}
+
 export interface Client {
   id: string;
   name: string;
