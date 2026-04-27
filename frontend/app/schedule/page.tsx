@@ -2,9 +2,12 @@
 
 import { useMemo, useState } from "react";
 
+import useSWR from "swr";
+
 import { useAuth } from "@/components/AuthGuard";
 import TaskEditModal from "@/components/project/TaskEditModal";
 import LoadingState from "@/components/ui/LoadingState";
+import { getEmployeeTeamsMap } from "@/lib/api";
 import type { Task } from "@/lib/domain";
 import { TEAMS } from "@/lib/domain";
 import { useTasks } from "@/lib/hooks";
@@ -24,6 +27,12 @@ export default function SchedulePage() {
     Boolean(user),
   );
   const allItems = useMemo(() => data?.items ?? [], [data]);
+
+  // 직원 이름 → 팀 매핑 (직원 명부 기반)
+  const { data: teamsMap } = useSWR(
+    user ? ["employee-teams-map"] : null,
+    () => getEmployeeTeamsMap(),
+  );
 
   // 직원 목록 (assignees union)
   const allAssignees = useMemo(() => {
@@ -47,14 +56,21 @@ export default function SchedulePage() {
         }
       }
       if (filterTeam !== "전체") {
-        if (!t.teams.includes(filterTeam)) return false;
+        // 직원 명부 기반: assignee 중 한 명이라도 그 팀 소속이면 통과
+        const map = teamsMap ?? {};
+        const matchByEmployee = t.assignees.some(
+          (a) => map[a] === filterTeam,
+        );
+        // task에 직접 입력된 담당팀도 fallback
+        const matchByTaskTeam = t.teams.includes(filterTeam);
+        if (!matchByEmployee && !matchByTaskTeam) return false;
       }
       if (filterAssignee !== "전체") {
         if (!t.assignees.includes(filterAssignee)) return false;
       }
       return true;
     });
-  }, [allItems, filterCategory, filterTeam, filterAssignee]);
+  }, [allItems, filterCategory, filterTeam, filterAssignee, teamsMap]);
 
   // 해당 월의 셀 (전월 말일 ~ 다음달 초) — 7×6 grid
   const cells = useMemo(() => buildMonthGrid(year, month), [year, month]);

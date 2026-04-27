@@ -18,7 +18,7 @@ from app.models.employee import (
     EmployeeOut,
     EmployeeUpdate,
 )
-from app.security import require_admin, require_admin_or_lead
+from app.security import get_current_user, require_admin, require_admin_or_lead
 from app.services.employee_import import parse_workbook
 from app.services.employee_link import link_employee_to_user
 
@@ -27,13 +27,29 @@ router = APIRouter(prefix="/admin/employees", tags=["employees"])
 _MAX_UPLOAD_BYTES = 5 * 1024 * 1024  # 5MB
 
 
+@router.get("/teams-map")
+def get_employee_teams_map(
+    _user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict[str, str]:
+    """직원 이름 → 팀 매핑 (재직중만). 일반 사용자도 호출 가능 — 이름·팀만 노출."""
+    rows = db.execute(
+        select(Employee.name, Employee.team).where(Employee.resigned_at.is_(None))
+    ).all()
+    out: dict[str, str] = {}
+    for name, team in rows:
+        if name and team:
+            out[name] = team
+    return out
+
+
 @router.get("", response_model=EmployeeListResponse)
 def list_employees(
     q: str | None = Query(default=None, description="이름/이메일/소속 검색"),
     view: Literal["active", "resigned", "all"] = Query(
         default="active", description="재직중(기본)/퇴사자/전체"
     ),
-    _user: User = Depends(require_admin_or_lead),  # 팀장도 직원 명부 조회 가능
+    user: User = Depends(require_admin_or_lead),  # 팀장도 직원 명부 조회 가능
     db: Session = Depends(get_db),
 ) -> EmployeeListResponse:
     stmt = select(Employee)
@@ -41,6 +57,15 @@ def list_employees(
         stmt = stmt.where(Employee.resigned_at.is_(None))
     elif view == "resigned":
         stmt = stmt.where(Employee.resigned_at.is_not(None))
+    # 팀장은 본인 team의 직원만 (admin은 전체)
+    if user.role == "team_lead":
+        my_emp = (
+            db.query(Employee).filter(Employee.linked_user_id == user.id).first()
+        )
+        my_team = (my_emp.team if my_emp else "") or ""
+        if not my_team:
+            return EmployeeListResponse(items=[], count=0)
+        stmt = stmt.where(Employee.team == my_team)
     if q:
         like = f"%{q}%"
         stmt = stmt.where(

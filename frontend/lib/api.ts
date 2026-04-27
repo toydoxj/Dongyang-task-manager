@@ -297,6 +297,12 @@ export async function deleteUser(id: number): Promise<void> {
 
 // ── 직원 (admin) ──
 
+/** 이름 → 팀 매핑 (재직중 직원만, 모든 사용자 호출 가능). */
+export async function getEmployeeTeamsMap(): Promise<Record<string, string>> {
+  const res = await authFetch(`/api/admin/employees/teams-map`);
+  return jsonOrThrow<Record<string, string>>(res);
+}
+
 export async function listEmployees(
   q?: string,
   view: EmployeeView = "active",
