@@ -18,7 +18,7 @@ from app.models.employee import (
     EmployeeOut,
     EmployeeUpdate,
 )
-from app.security import require_admin
+from app.security import require_admin, require_admin_or_lead
 from app.services.employee_import import parse_workbook
 from app.services.employee_link import link_employee_to_user
 
@@ -33,7 +33,7 @@ def list_employees(
     view: Literal["active", "resigned", "all"] = Query(
         default="active", description="재직중(기본)/퇴사자/전체"
     ),
-    _admin: User = Depends(require_admin),
+    _user: User = Depends(require_admin_or_lead),  # 팀장도 직원 명부 조회 가능
     db: Session = Depends(get_db),
 ) -> EmployeeListResponse:
     stmt = select(Employee)
