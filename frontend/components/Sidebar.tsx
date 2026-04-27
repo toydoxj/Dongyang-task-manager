@@ -24,6 +24,7 @@ const NAV: NavItem[] = [
     roles: ["admin", "team_lead"],
   },
   { href: "/schedule", label: "직원 일정" },
+  { href: "/suggestions", label: "건의사항" },
   { href: "/utilities", label: "유틸 런처" },
   { href: "/admin/employees", label: "직원 관리", roles: ["admin"] },
   { href: "/admin/users", label: "사용자 관리", roles: ["admin"] },

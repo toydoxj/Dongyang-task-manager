@@ -1,6 +1,8 @@
 """FastAPI 애플리케이션 진입점."""
 from __future__ import annotations
 
+import asyncio
+import logging
 import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -18,6 +20,7 @@ from app.routers import clients as clients_router
 from app.routers import employees as employees_router
 from app.routers import master_projects as master_projects_router
 from app.routers import projects as projects_router
+from app.routers import suggestions as suggestions_router
 from app.routers import tasks as tasks_router
 from app.services.notion import get_notion
 from app.services.notion_schema import ensure_all_schemas
@@ -30,18 +33,22 @@ settings = get_settings()
 
 @asynccontextmanager
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+    startup_task: asyncio.Task[None] | None = None
     init_db()
-    # 노션 schema 자동 보강 (실패해도 부팅 계속)
-    try:
-        await ensure_all_schemas(get_notion(), settings)
-    except Exception:  # noqa: BLE001
-        import logging
+    # 노션 schema 자동 보강은 백그라운드로 실행해 헬스체크 지연을 피한다.
+    async def _ensure_schemas_background() -> None:
+        try:
+            await ensure_all_schemas(get_notion(), settings)
+        except Exception:  # noqa: BLE001
+            logging.getLogger("startup").exception("노션 schema 보강 중 예외 (무시)")
 
-        logging.getLogger("startup").exception("노션 schema 보강 중 예외 (무시)")
+    startup_task = asyncio.create_task(_ensure_schemas_background())
     start_scheduler()
     try:
         yield
     finally:
+        if startup_task is not None and not startup_task.done():
+            startup_task.cancel()
         shutdown_scheduler()
 
 
@@ -76,6 +83,7 @@ app.include_router(cashflow_router.router, prefix="/api")
 app.include_router(clients_router.router, prefix="/api")
 app.include_router(master_projects_router.router, prefix="/api")
 app.include_router(employees_router.router, prefix="/api")
+app.include_router(suggestions_router.router, prefix="/api")
 
 
 @app.get("/health")

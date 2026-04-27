@@ -66,6 +66,21 @@ PROJECT_DB_REQUIRED: dict[str, dict[str, Any]] = {}
 MASTER_DB_REQUIRED: dict[str, dict[str, Any]] = {}
 CLIENT_DB_REQUIRED: dict[str, dict[str, Any]] = {}
 
+# 건의사항 DB
+SUGGESTION_DB_REQUIRED: dict[str, dict[str, Any]] = {
+    "내용": {"rich_text": {}},
+    "작성자": {"rich_text": {}},
+    "진행상황": _select(
+        [
+            ("접수", "gray"),
+            ("검토중", "yellow"),
+            ("완료", "green"),
+            ("반려", "red"),
+        ]
+    ),
+    "조치내용": {"rich_text": {}},
+}
+
 
 async def _ensure_db(
     notion: NotionService,
@@ -110,4 +125,10 @@ async def ensure_all_schemas(notion: NotionService, settings: Settings) -> None:
     )
     await _ensure_db(
         notion, settings.notion_db_clients, CLIENT_DB_REQUIRED, label="clients"
+    )
+    await _ensure_db(
+        notion,
+        settings.notion_db_suggestions,
+        SUGGESTION_DB_REQUIRED,
+        label="suggestions",
     )
