@@ -8,6 +8,7 @@ import LifecycleTimeline from "@/components/project/LifecycleTimeline";
 import ProjectCashflowChart from "@/components/project/ProjectCashflowChart";
 import ProjectEditModal from "@/components/project/ProjectEditModal";
 import ProjectHeader from "@/components/project/ProjectHeader";
+import SealRequestCreateModal from "@/components/project/SealRequestCreateModal";
 import TaskCreateModal from "@/components/project/TaskCreateModal";
 import TaskKanban from "@/components/project/TaskKanban";
 import LoadingState from "@/components/ui/LoadingState";
@@ -18,6 +19,7 @@ export default function ProjectClient({ id }: { id: string }) {
   const [createOpen, setCreateOpen] = useState(false);
   const [createStatus, setCreateStatus] = useState<string | undefined>(undefined);
   const [editOpen, setEditOpen] = useState(false);
+  const [sealOpen, setSealOpen] = useState(false);
 
   const { data: project, error: projectErr } = useProject(id);
   const { data: tasksData, error: tasksErr } = useTasks({ project_id: id });
@@ -74,6 +76,13 @@ export default function ProjectClient({ id }: { id: string }) {
         <div className="flex items-center gap-3">
           <button
             type="button"
+            onClick={() => setSealOpen(true)}
+            className="rounded-md border border-zinc-300 px-2.5 py-1 text-xs hover:bg-zinc-50 dark:border-zinc-700 dark:hover:bg-zinc-800"
+          >
+            🔖 날인 요청
+          </button>
+          <button
+            type="button"
             onClick={() => setEditOpen(true)}
             className="rounded-md border border-zinc-300 px-2.5 py-1 text-xs hover:bg-zinc-50 dark:border-zinc-700 dark:hover:bg-zinc-800"
           >
@@ -116,6 +125,13 @@ export default function ProjectClient({ id }: { id: string }) {
           }}
         />
       )}
+
+      <SealRequestCreateModal
+        open={sealOpen}
+        fixedProject={project}
+        onClose={() => setSealOpen(false)}
+        onCreated={() => setSealOpen(false)}
+      />
     </div>
   );
 }
