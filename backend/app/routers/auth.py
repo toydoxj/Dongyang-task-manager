@@ -57,7 +57,13 @@ def _to_info(u: User) -> UserInfo:
         midas_url=u.midas_url or "",
         has_midas_key=bool(u.midas_key),
         work_dir=u.work_dir or "",
-        last_login_at=u.last_login_at,
+        # DB 컬럼이 naive datetime(timezone X)이지만 저장된 값은 UTC.
+        # 응답 ISO에 +00:00 표기를 부착해야 frontend가 정확히 KST로 변환.
+        last_login_at=(
+            u.last_login_at.replace(tzinfo=timezone.utc)
+            if u.last_login_at and u.last_login_at.tzinfo is None
+            else u.last_login_at
+        ),
     )
 
 
