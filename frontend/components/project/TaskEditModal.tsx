@@ -123,7 +123,11 @@ function Form({
   };
 
   const remove = async (): Promise<void> => {
-    if (!confirm(`"${task.title}" 업무를 보관 처리할까요? (노션 archive)`))
+    if (
+      !confirm(
+        `"${task.title}" 업무를 삭제하시겠습니까?\n노션에서 보관 처리됩니다 (영구 삭제는 노션에서 가능).`,
+      )
+    )
       return;
     setBusy(true);
     try {
@@ -131,7 +135,7 @@ function Form({
       onSaved();
       onClose();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "보관 실패");
+      setError(err instanceof Error ? err.message : "삭제 실패");
     } finally {
       setBusy(false);
     }
@@ -284,8 +288,9 @@ function Form({
             onClick={remove}
             disabled={busy}
             className="text-xs text-red-500 hover:underline disabled:opacity-50"
+            title="노션에서 보관 처리됩니다"
           >
-            보관 (archive)
+            삭제
           </button>
           <div className="flex gap-2">
             <button
