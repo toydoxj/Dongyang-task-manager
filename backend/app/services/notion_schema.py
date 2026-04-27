@@ -91,6 +91,7 @@ SEAL_REQUEST_DB_REQUIRED: dict[str, dict[str, Any]] = {
     "요청일": {"date": {}},
     "팀장처리일": {"date": {}},
     "관리자처리일": {"date": {}},
+    "제출예정일": {"date": {}},
     "비고": {"rich_text": {}},
     "첨부파일": {"files": {}},
 }

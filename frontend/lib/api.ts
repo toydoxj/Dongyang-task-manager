@@ -475,6 +475,7 @@ export interface SealRequestItem {
   requested_at: string | null;
   lead_handled_at: string | null;
   admin_handled_at: string | null;
+  due_date: string | null;
   note: string;
   attachments: SealAttachment[];
   created_time: string | null;

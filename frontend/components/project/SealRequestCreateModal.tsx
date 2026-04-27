@@ -55,6 +55,7 @@ function Form({
   const [projectId, setProjectId] = useState(fixedProject?.id ?? "");
   const [sealType, setSealType] = useState<string>("구조계산서");
   const [title, setTitle] = useState("");
+  const [dueDate, setDueDate] = useState("");
   const [note, setNote] = useState("");
   const [files, setFiles] = useState<File[]>([]);
   const [busy, setBusy] = useState(false);
@@ -77,6 +78,7 @@ function Form({
       fd.append("project_id", projectId);
       fd.append("seal_type", sealType);
       fd.append("title", title);
+      fd.append("due_date", dueDate);
       fd.append("note", note);
       for (const f of files) fd.append("files", f);
       await createSealRequest(fd);
@@ -144,6 +146,15 @@ function Form({
             />
           </Field>
         </div>
+
+        <Field label="제출 예정일 (선택)">
+          <input
+            type="date"
+            value={dueDate}
+            onChange={(e) => setDueDate(e.target.value)}
+            className={inputCls}
+          />
+        </Field>
 
         <Field label="비고">
           <textarea

@@ -121,8 +121,13 @@ export default function SealRequestsPage() {
                     </p>
                     <p className="mt-0.5 truncate text-xs text-zinc-500">
                       {s.seal_type} · {s.requester} ·{" "}
-                      {formatDate(s.requested_at)} ·{" "}
-                      📎 {s.attachments.length}건
+                      {formatDate(s.requested_at)}
+                      {s.due_date && (
+                        <span className="ml-1 text-amber-600 dark:text-amber-400">
+                          · 제출예정 {formatDate(s.due_date)}
+                        </span>
+                      )}
+                      <span className="ml-1">· 📎 {s.attachments.length}건</span>
                     </p>
                   </div>
                   <span
@@ -226,6 +231,10 @@ function DetailModal({
             </span>
           </Info>
           <Info label="요청자" value={`${item.requester} · ${formatDate(item.requested_at)}`} />
+          <Info
+            label="제출 예정일"
+            value={item.due_date ? formatDate(item.due_date) : "—"}
+          />
           <Info
             label="처리"
             value={

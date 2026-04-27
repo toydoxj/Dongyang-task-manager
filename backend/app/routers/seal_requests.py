@@ -57,6 +57,7 @@ class SealRequestItem(BaseModel):
     requested_at: str | None = None
     lead_handled_at: str | None = None
     admin_handled_at: str | None = None
+    due_date: str | None = None
     note: str = ""
     attachments: list[SealAttachment] = []
     created_time: str | None = None
@@ -81,6 +82,7 @@ def _from_notion_page(page: dict[str, Any]) -> SealRequestItem:
     s, _ = P.date_range(props, "요청일")
     lead_s, _ = P.date_range(props, "팀장처리일")
     admin_s, _ = P.date_range(props, "관리자처리일")
+    due_s, _ = P.date_range(props, "제출예정일")
     return SealRequestItem(
         id=page.get("id", ""),
         title=P.title(props, "제목"),
@@ -93,6 +95,7 @@ def _from_notion_page(page: dict[str, Any]) -> SealRequestItem:
         requested_at=s,
         lead_handled_at=lead_s,
         admin_handled_at=admin_s,
+        due_date=due_s,
         note=P.rich_text(props, "비고"),
         attachments=[SealAttachment(**f) for f in P.files(props, "첨부파일")],
         created_time=page.get("created_time"),
@@ -156,6 +159,7 @@ async def create_seal_request(
     project_id: str = Form(..., description="노션 프로젝트 page_id"),
     seal_type: str = Form(..., description="구조계산서/도면/검토서/기타"),
     title: str = Form("", description="제목 (생략 시 'YYYY-MM-DD 요청자 - 유형')"),
+    due_date: str = Form("", description="제출 예정일 (YYYY-MM-DD, 선택)"),
     note: str = Form(""),
     files: list[UploadFile] = File(..., description="첨부 파일 (최소 1개, 다중 가능)"),
     user: User = Depends(get_current_user),
@@ -193,6 +197,11 @@ async def create_seal_request(
         "요청자": {"rich_text": [{"text": {"content": requester}}]},
         "요청일": {"date": {"start": today}},
         "비고": {"rich_text": [{"text": {"content": note}}]},
+        **(
+            {"제출예정일": {"date": {"start": due_date}}}
+            if due_date.strip()
+            else {}
+        ),
         "첨부파일": {
             "files": [
                 {
