@@ -7,10 +7,12 @@ import { useAuth } from "@/components/AuthGuard";
 import SealRequestCreateModal from "@/components/project/SealRequestCreateModal";
 import Modal from "@/components/ui/Modal";
 import LoadingState from "@/components/ui/LoadingState";
+import { authFetch } from "@/lib/auth";
 import {
   approveSealAdmin,
   approveSealLead,
   deleteSealRequest,
+  getSealAttachmentUrl,
   listSealRequests,
   rejectSealRequest,
   type SealRequestItem,
@@ -253,22 +255,39 @@ function DetailModal({
           ) : (
             <ul className="space-y-1">
               {item.attachments.map((f, i) => (
-                <li key={i}>
-                  <a
-                    href={f.url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex items-center gap-2 rounded border border-zinc-200 px-2 py-1 text-xs text-blue-600 hover:bg-zinc-50 dark:border-zinc-800 dark:text-blue-400 dark:hover:bg-zinc-800"
+                <li key={i} className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={() => void openAttachmentInline(item.id, i)}
+                    className="flex flex-1 items-center gap-2 rounded border border-zinc-200 px-2 py-1 text-left text-xs text-blue-600 hover:bg-zinc-50 dark:border-zinc-800 dark:text-blue-400 dark:hover:bg-zinc-800"
+                    title="새 탭에서 미리보기 (PDF/이미지는 inline 표시)"
                   >
                     📎 {f.name}
-                  </a>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      try {
+                        const r = await getSealAttachmentUrl(item.id, i);
+                        const a = document.createElement("a");
+                        a.href = r.url;
+                        a.download = r.name;
+                        a.click();
+                      } catch (e) {
+                        alert(
+                          e instanceof Error ? e.message : "다운로드 실패",
+                        );
+                      }
+                    }}
+                    className="rounded border border-zinc-200 px-2 py-1 text-[10px] text-zinc-500 hover:bg-zinc-50 dark:border-zinc-800 dark:hover:bg-zinc-800"
+                    title="원본 다운로드"
+                  >
+                    ↓
+                  </button>
                 </li>
               ))}
             </ul>
           )}
-          <p className="mt-1 text-[10px] text-zinc-400">
-            노션 호스팅 파일 URL은 1시간 후 만료됩니다. 새로고침 시 갱신.
-          </p>
         </div>
 
         <p className="text-[10px] text-zinc-400">
@@ -340,6 +359,27 @@ function DetailModal({
       </div>
     </Modal>
   );
+}
+
+/** 첨부파일을 backend stream proxy(inline header)로 받아 새 탭에서 미리보기. */
+async function openAttachmentInline(id: string, idx: number): Promise<void> {
+  try {
+    const res = await authFetch(`/api/seal-requests/${id}/preview/${idx}`);
+    if (!res.ok) {
+      const detail = await res
+        .json()
+        .then((d) => (d as { detail?: string }).detail)
+        .catch(() => undefined);
+      throw new Error(detail ?? `${res.status} ${res.statusText}`);
+    }
+    const blob = await res.blob();
+    const blobUrl = URL.createObjectURL(blob);
+    window.open(blobUrl, "_blank", "noopener,noreferrer");
+    // 1분 후 메모리 회수 (브라우저가 다 로드한 후)
+    setTimeout(() => URL.revokeObjectURL(blobUrl), 60_000);
+  } catch (e) {
+    alert(e instanceof Error ? e.message : "미리보기 실패");
+  }
 }
 
 function Info({

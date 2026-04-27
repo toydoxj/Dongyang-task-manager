@@ -311,6 +311,93 @@ async def reject_seal_request(
     return _from_notion_page(updated)
 
 
+@router.get("/{page_id}/download/{idx}")
+async def get_attachment_url(
+    page_id: str,
+    idx: int,
+    _user: User = Depends(get_current_user),
+    notion: NotionService = Depends(get_notion),
+) -> dict[str, str]:
+    """첨부파일 fresh URL 반환 (1시간 만료 우회용 단순 redirect)."""
+    try:
+        page = await notion.get_page(page_id)
+    except NotFoundError as exc:
+        raise HTTPException(status_code=404, detail=exc.message) from exc
+    attachments = P.files(page.get("properties", {}), "첨부파일")
+    if idx < 0 or idx >= len(attachments):
+        raise HTTPException(status_code=404, detail="첨부파일을 찾을 수 없습니다")
+    item = attachments[idx]
+    return {"url": item["url"], "name": item["name"]}
+
+
+@router.get("/{page_id}/preview/{idx}")
+async def preview_attachment(
+    page_id: str,
+    idx: int,
+    _user: User = Depends(get_current_user),
+    notion: NotionService = Depends(get_notion),
+):
+    """첨부파일을 backend가 stream proxy + Content-Disposition: inline.
+
+    노션 signed URL은 'attachment' 헤더라 새 탭 열어도 다운로드됨.
+    여기서 inline으로 변환하면 PDF/이미지가 브라우저에서 바로 미리보기.
+    frontend는 authFetch → blob → URL.createObjectURL 패턴으로 호출.
+    """
+    import httpx
+    from fastapi.responses import StreamingResponse
+
+    try:
+        page = await notion.get_page(page_id)
+    except NotFoundError as exc:
+        raise HTTPException(status_code=404, detail=exc.message) from exc
+    attachments = P.files(page.get("properties", {}), "첨부파일")
+    if idx < 0 or idx >= len(attachments):
+        raise HTTPException(status_code=404, detail="첨부파일을 찾을 수 없습니다")
+    item = attachments[idx]
+    notion_url = item["url"]
+    filename = item["name"] or "file.bin"
+
+    # 노션 storage에서 byte streaming
+    client = httpx.AsyncClient(timeout=60.0)
+    try:
+        upstream = await client.send(
+            client.build_request("GET", notion_url), stream=True
+        )
+    except httpx.HTTPError as exc:
+        await client.aclose()
+        raise HTTPException(
+            status_code=502, detail=f"파일 fetch 실패: {exc}"
+        ) from exc
+    if upstream.status_code >= 400:
+        await upstream.aclose()
+        await client.aclose()
+        raise HTTPException(
+            status_code=upstream.status_code, detail="파일 fetch 실패"
+        )
+
+    media_type = upstream.headers.get(
+        "content-type", "application/octet-stream"
+    )
+
+    async def _iter():
+        try:
+            async for chunk in upstream.aiter_bytes(chunk_size=64 * 1024):
+                yield chunk
+        finally:
+            await upstream.aclose()
+            await client.aclose()
+
+    return StreamingResponse(
+        _iter(),
+        media_type=media_type,
+        headers={
+            # inline 강제 → 브라우저가 PDF/이미지를 바로 미리보기
+            "Content-Disposition": f'inline; filename="{filename}"',
+            "Cache-Control": "private, max-age=300",
+        },
+    )
+
+
 @router.delete("/{page_id}")
 async def delete_seal_request(
     page_id: str,

@@ -531,6 +531,15 @@ export async function rejectSealRequest(
   return jsonOrThrow<SealRequestItem>(res);
 }
 
+/** 첨부파일 fresh URL 가져오기 (노션 signed URL 1시간 만료 우회). */
+export async function getSealAttachmentUrl(
+  id: string,
+  idx: number,
+): Promise<{ url: string; name: string }> {
+  const res = await authFetch(`/api/seal-requests/${id}/download/${idx}`);
+  return jsonOrThrow<{ url: string; name: string }>(res);
+}
+
 export async function deleteSealRequest(id: string): Promise<void> {
   const res = await authFetch(`/api/seal-requests/${id}`, { method: "DELETE" });
   if (!res.ok) {
