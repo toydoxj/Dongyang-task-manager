@@ -15,7 +15,7 @@ import { mutate as globalMutate } from "swr";
 
 import { setProjectStage } from "@/lib/api";
 import type { Project, ProjectListResponse } from "@/lib/domain";
-import { PROJECT_STAGES } from "@/lib/domain";
+import { PROJECT_STAGES, TEAMS } from "@/lib/domain";
 import { formatWon } from "@/lib/format";
 import { keys } from "@/lib/hooks";
 import { cn } from "@/lib/utils";
@@ -47,6 +47,7 @@ const STAGE_DOT: Record<string, string> = {
 export default function StageBoard({ projects }: Props) {
   const [items, setItems] = useState<Project[]>(projects);
   const [err, setErr] = useState<string | null>(null);
+  const [activeTeam, setActiveTeam] = useState<string>("전체");
 
   // 부모가 새 데이터 주면 동기화 (SWR revalidate)
   if (projects !== items && projects.length !== items.length) {
@@ -57,9 +58,22 @@ export default function StageBoard({ projects }: Props) {
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
   );
 
+  // 팀별 카운트 (탭 라벨용) — 미완료 + 그 팀 담당
+  const teamCount = new Map<string, number>();
+  teamCount.set("전체", items.length);
+  for (const team of TEAMS) {
+    teamCount.set(team, items.filter((p) => p.teams.includes(team)).length);
+  }
+
+  // 활성 탭 기준 필터
+  const filteredItems =
+    activeTeam === "전체"
+      ? items
+      : items.filter((p) => p.teams.includes(activeTeam));
+
   const grouped = new Map<string, Project[]>();
   for (const stage of PROJECT_STAGES) grouped.set(stage, []);
-  for (const p of items) {
+  for (const p of filteredItems) {
     const list = grouped.get(p.stage);
     if (list) list.push(p);
   }
@@ -104,8 +118,33 @@ export default function StageBoard({ projects }: Props) {
     }
   }
 
+  const tabs = ["전체", ...TEAMS];
+
   return (
     <div className="space-y-2">
+      {/* 팀별 필터 탭 */}
+      <div className="flex flex-wrap gap-1 border-b border-zinc-200 dark:border-zinc-800">
+        {tabs.map((t) => {
+          const count = teamCount.get(t) ?? 0;
+          const active = activeTeam === t;
+          return (
+            <button
+              key={t}
+              type="button"
+              onClick={() => setActiveTeam(t)}
+              className={cn(
+                "border-b-2 px-3 py-1.5 text-xs transition-colors",
+                active
+                  ? "border-blue-500 text-blue-600 dark:text-blue-400"
+                  : "border-transparent text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300",
+              )}
+            >
+              {t} <span className="ml-1 text-zinc-400">({count})</span>
+            </button>
+          );
+        })}
+      </div>
+
       {err && (
         <p className="rounded-md border border-amber-500/40 bg-amber-500/5 p-2 text-xs text-amber-500">
           {err}
