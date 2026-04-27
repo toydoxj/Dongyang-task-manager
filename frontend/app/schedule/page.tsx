@@ -6,6 +6,7 @@ import { useAuth } from "@/components/AuthGuard";
 import TaskEditModal from "@/components/project/TaskEditModal";
 import LoadingState from "@/components/ui/LoadingState";
 import type { Task } from "@/lib/domain";
+import { TEAMS } from "@/lib/domain";
 import { useTasks } from "@/lib/hooks";
 import { cn } from "@/lib/utils";
 
@@ -14,6 +15,7 @@ export default function SchedulePage() {
   const [year, setYear] = useState(() => new Date().getFullYear());
   const [month, setMonth] = useState(() => new Date().getMonth()); // 0~11
   const [filterCategory, setFilterCategory] = useState<string>("전체");
+  const [filterTeam, setFilterTeam] = useState<string>("전체");
   const [filterAssignee, setFilterAssignee] = useState<string>("전체");
   const [editing, setEditing] = useState<Task | null>(null);
 
@@ -44,12 +46,15 @@ export default function SchedulePage() {
           if (cat !== "휴가") return false;
         }
       }
+      if (filterTeam !== "전체") {
+        if (!t.teams.includes(filterTeam)) return false;
+      }
       if (filterAssignee !== "전체") {
         if (!t.assignees.includes(filterAssignee)) return false;
       }
       return true;
     });
-  }, [allItems, filterCategory, filterAssignee]);
+  }, [allItems, filterCategory, filterTeam, filterAssignee]);
 
   // 해당 월의 셀 (전월 말일 ~ 다음달 초) — 7×6 grid
   const cells = useMemo(() => buildMonthGrid(year, month), [year, month]);
@@ -133,6 +138,18 @@ export default function SchedulePage() {
             <option value="외근">외근</option>
             <option value="출장">출장</option>
             <option value="휴가">휴가</option>
+          </select>
+          <select
+            value={filterTeam}
+            onChange={(e) => setFilterTeam(e.target.value)}
+            className={selectCls}
+          >
+            <option value="전체">팀 — 전체</option>
+            {TEAMS.map((t) => (
+              <option key={t} value={t}>
+                {t}
+              </option>
+            ))}
           </select>
           <select
             value={filterAssignee}
