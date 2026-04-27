@@ -24,8 +24,20 @@ export default function EmployeeWorkSelectorPage() {
     allowed ? ["employees", "active"] : null,
     () => listEmployees(undefined, "active"),
   );
-  const employees = useMemo(() => {
+  // 팀장은 본인 employee의 team과 같은 직원만 필터 (admin은 전체)
+  const myTeam = useMemo(() => {
+    if (user?.role !== "team_lead") return null;
     const items = data?.items ?? [];
+    const me = items.find((e) => e.linked_user_id === user.id);
+    return me?.team || "";
+  }, [data, user]);
+
+  const employees = useMemo(() => {
+    let items = data?.items ?? [];
+    if (myTeam !== null) {
+      // team_lead: 본인 팀만
+      items = items.filter((e) => e.team === myTeam);
+    }
     if (!q) return items;
     const lower = q.toLowerCase();
     return items.filter(
@@ -34,7 +46,7 @@ export default function EmployeeWorkSelectorPage() {
         (e.team ?? "").toLowerCase().includes(lower) ||
         (e.position ?? "").toLowerCase().includes(lower),
     );
-  }, [data, q]);
+  }, [data, q, myTeam]);
 
   if (!user || !allowed) return null;
 
@@ -44,9 +56,20 @@ export default function EmployeeWorkSelectorPage() {
         <h1 className="text-2xl font-semibold">직원 업무</h1>
         <p className="mt-1 text-sm text-zinc-500">
           직원을 선택하면 해당 직원이 보는 「내 업무」 화면을 동일하게 표시합니다.
-          (관리자/팀장 전용)
+          {user.role === "team_lead" && myTeam
+            ? ` (팀장 — ${myTeam} 소속만 표시)`
+            : user.role === "admin"
+              ? " (관리자 — 전체 직원)"
+              : ""}
         </p>
       </header>
+
+      {user.role === "team_lead" && myTeam === "" && (
+        <p className="rounded-md border border-amber-500/40 bg-amber-500/5 p-3 text-sm text-amber-500">
+          본인의 팀(소속) 정보가 직원 명부에 없습니다. 관리자에게 팀 정보를
+          등록해 달라고 요청해 주세요.
+        </p>
+      )}
 
       <input
         type="search"
