@@ -272,10 +272,26 @@ class NotionService:
 
     # ── file_upload (notion-client 미지원, raw httpx) ──
 
+    # 노션 single_part 한도 (실제로는 20MB지만 안전 마진)
+    _SINGLE_PART_LIMIT = 19 * 1024 * 1024
+    # multi_part 권장 chunk (노션: 5MB ~ 20MB, 마지막 part는 더 작아도 OK)
+    _MULTIPART_CHUNK = 8 * 1024 * 1024
+
     async def upload_file(
         self, *, filename: str, content_type: str, data: bytes
     ) -> str:
-        """단일-part 업로드 → file_upload_id 반환."""
+        """파일 업로드 → file_upload_id 반환. 크기에 따라 single/multi 자동 분기."""
+        if len(data) <= self._SINGLE_PART_LIMIT:
+            return await self._upload_single_part(
+                filename=filename, content_type=content_type, data=data
+            )
+        return await self._upload_multi_part(
+            filename=filename, content_type=content_type, data=data
+        )
+
+    async def _upload_single_part(
+        self, *, filename: str, content_type: str, data: bytes
+    ) -> str:
         headers = {
             "Authorization": f"Bearer {self._api_key}",
             "Notion-Version": _NOTION_VERSION,
@@ -312,6 +328,76 @@ class NotionService:
                 send.raise_for_status()
             except httpx.HTTPError as exc:
                 raise NotionApiError(f"file_upload 전송 실패: {exc}") from exc
+        return upload_id
+
+    async def _upload_multi_part(
+        self, *, filename: str, content_type: str, data: bytes
+    ) -> str:
+        """multi_part 업로드 — 8MB chunk로 분할. 노션 한도 5GB."""
+        chunk = self._MULTIPART_CHUNK
+        total = len(data)
+        parts = (total + chunk - 1) // chunk
+        headers = {
+            "Authorization": f"Bearer {self._api_key}",
+            "Notion-Version": _NOTION_VERSION,
+        }
+        await self._limiter.wait()
+        async with httpx.AsyncClient(timeout=600.0) as http:
+            # 1. init
+            try:
+                init = await http.post(
+                    f"{_NOTION_API}/file_uploads",
+                    headers={**headers, "Content-Type": "application/json"},
+                    json={
+                        "mode": "multi_part",
+                        "filename": filename,
+                        "content_type": content_type,
+                        "number_of_parts": parts,
+                    },
+                )
+                init.raise_for_status()
+            except httpx.HTTPError as exc:
+                raise NotionApiError(
+                    f"file_upload(multi) 초기화 실패: {exc}"
+                ) from exc
+            payload = init.json()
+            upload_id = payload.get("id")
+            if not upload_id:
+                raise NotionApiError("file_upload 응답에 id 없음")
+            send_url = (
+                payload.get("upload_url")
+                or f"{_NOTION_API}/file_uploads/{upload_id}/send"
+            )
+
+            # 2. 각 part 업로드 (1-indexed)
+            for i in range(parts):
+                part_data = data[i * chunk : (i + 1) * chunk]
+                await self._limiter.wait()
+                try:
+                    send = await http.post(
+                        send_url,
+                        headers=headers,
+                        files={"file": (filename, part_data, content_type)},
+                        data={"part_number": str(i + 1)},
+                    )
+                    send.raise_for_status()
+                except httpx.HTTPError as exc:
+                    raise NotionApiError(
+                        f"file_upload(multi) part {i + 1}/{parts} 실패: {exc}"
+                    ) from exc
+
+            # 3. complete
+            await self._limiter.wait()
+            try:
+                done = await http.post(
+                    f"{_NOTION_API}/file_uploads/{upload_id}/complete",
+                    headers={**headers, "Content-Type": "application/json"},
+                )
+                done.raise_for_status()
+            except httpx.HTTPError as exc:
+                raise NotionApiError(
+                    f"file_upload(multi) complete 실패: {exc}"
+                ) from exc
         return upload_id
 
     # ── 캐시 제어 (테스트/관리용) ──

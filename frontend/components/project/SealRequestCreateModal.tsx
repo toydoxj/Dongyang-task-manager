@@ -165,7 +165,7 @@ function Form({
           />
         </Field>
 
-        <Field label="첨부파일 (다중 가능, 파일당 ≤20MB)" required>
+        <Field label="첨부파일 (다중 가능, 파일당 ≤200MB)" required>
           <input
             ref={fileInput}
             type="file"

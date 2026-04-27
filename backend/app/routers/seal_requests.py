@@ -36,7 +36,8 @@ router = APIRouter(prefix="/seal-requests", tags=["seal-requests"])
 
 _VALID_TYPES = {"구조계산서", "도면", "검토서", "기타"}
 _VALID_STATUSES = {"요청", "팀장승인", "관리자승인", "완료", "반려"}
-_MAX_FILE_BYTES = 20 * 1024 * 1024  # 단일 part 한도
+# 노션 multi_part API로 자동 분할되므로 5GB까지 가능. 안전 마진 두고 200MB 권장 한도.
+_MAX_FILE_BYTES = 200 * 1024 * 1024
 
 
 class SealAttachment(BaseModel):
@@ -180,7 +181,8 @@ async def create_seal_request(
         data = await f.read()
         if len(data) > _MAX_FILE_BYTES:
             raise HTTPException(
-                status_code=413, detail=f"{f.filename}: 파일 크기 한도 20MB 초과"
+                status_code=413,
+                detail=f"{f.filename}: 파일 크기 한도 {_MAX_FILE_BYTES // (1024 * 1024)}MB 초과",
             )
         upload_id = await notion.upload_file(
             filename=f.filename or "file.bin",
