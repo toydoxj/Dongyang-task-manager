@@ -43,8 +43,9 @@ services:
       - key: CRON_SECRET
         sync: false
       # ── NAVER WORKS OIDC SSO (Phase 1) ──
+      # ENABLED는 운영자가 dashboard에서 toggle (value:로 박으면 재배포가 dashboard 값을 덮어씀)
       - key: WORKS_ENABLED
-        value: "false"
+        sync: false
       - key: WORKS_CLIENT_ID
         sync: false
       - key: WORKS_CLIENT_SECRET
