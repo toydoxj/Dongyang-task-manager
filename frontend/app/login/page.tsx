@@ -1,14 +1,12 @@
 "use client";
 
-import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 
 import { checkAuthStatus } from "@/lib/auth";
 
 import LoginForm from "./LoginForm";
 
 export default function LoginPage() {
-  const router = useRouter();
   const [worksEnabled, setWorksEnabled] = useState(false);
 
   useEffect(() => {
@@ -18,10 +16,14 @@ export default function LoginPage() {
   }, []);
 
   return (
-    <LoginForm
-      isSetup={false}
-      worksEnabled={worksEnabled}
-      onSuccess={() => router.replace("/me")}
-    />
+    <Suspense
+      fallback={
+        <div className="flex min-h-screen items-center justify-center bg-zinc-950 text-sm text-zinc-400">
+          로딩 중...
+        </div>
+      }
+    >
+      <LoginForm isSetup={false} worksEnabled={worksEnabled} />
+    </Suspense>
   );
 }
