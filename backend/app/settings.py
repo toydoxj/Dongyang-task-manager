@@ -34,6 +34,15 @@ class Settings(BaseSettings):
     notion_db_suggestions: str = ""  # 건의사항
     notion_db_seal_requests: str = ""  # 날인요청
 
+    # ── 외부 파일 storage (날인요청 첨부) ──
+    storage_provider: str = "s3"  # 현재는 s3만
+    storage_bucket: str = ""
+    storage_region: str = "ap-northeast-2"
+    storage_endpoint: str = ""  # S3 호환 (R2 등) 사용 시 채움. 빈 값이면 AWS S3 default
+    storage_access_key: str = ""
+    storage_secret_key: str = ""
+    storage_max_file_mb: int = 200
+
     # CORS 허용 origin (콤마 구분 raw string — pydantic_settings가 list를 JSON으로
     # 파싱하려 하므로 str로 받고 cors_origins_list로 변환)
     cors_origins: str = "http://localhost:3000,http://127.0.0.1:3000"

@@ -93,7 +93,8 @@ SEAL_REQUEST_DB_REQUIRED: dict[str, dict[str, Any]] = {
     "관리자처리일": {"date": {}},
     "제출예정일": {"date": {}},
     "비고": {"rich_text": {}},
-    "첨부파일": {"files": {}},
+    "첨부파일": {"files": {}},  # 호환용 — S3 전환 후 비어있을 수 있음
+    "첨부메타": {"rich_text": {}},  # S3 attachments JSON
 }
 
 

@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from datetime import date
 from typing import Any
 
@@ -32,6 +33,7 @@ from app.exceptions import NotFoundError
 from app.models import mirror as M
 from app.models.auth import User
 from app.security import get_current_user, require_admin, require_admin_or_lead
+from app.services import file_storage as storage
 from app.services import notion_props as P
 from app.services.notion import NotionService, get_notion
 from app.settings import get_settings
@@ -40,14 +42,20 @@ router = APIRouter(prefix="/seal-requests", tags=["seal-requests"])
 
 _VALID_TYPES = {"구조계산서", "도면", "검토서", "기타"}
 _VALID_STATUSES = {"요청", "팀장승인", "관리자승인", "완료", "반려"}
-# 노션 multi_part API로 자동 분할되므로 5GB까지 가능. 안전 마진 두고 200MB 권장 한도.
-_MAX_FILE_BYTES = 200 * 1024 * 1024
+
+
+def _max_bytes() -> int:
+    return get_settings().storage_max_file_mb * 1024 * 1024
 
 
 class SealAttachment(BaseModel):
     name: str
-    url: str
-    type: str  # "file" | "external"
+    # idx 기반 안정적 ID (정렬 후 0..N-1). frontend가 download/preview 호출 시 사용.
+    storage_key: str = ""  # S3 key (S3에 저장된 경우)
+    size: int = 0
+    content_type: str = ""
+    # 호환: 기존 노션 files property
+    legacy_url: str = ""
 
 
 class SealRequestItem(BaseModel):
@@ -82,12 +90,47 @@ class RejectBody(BaseModel):
     reason: str = ""
 
 
+def _parse_attachments_meta(props: dict[str, Any]) -> list[SealAttachment]:
+    """첨부메타 rich_text 컬럼의 JSON 파싱. 파싱 실패/빈 값이면 빈 리스트."""
+    raw = P.rich_text(props, "첨부메타")
+    if not raw:
+        return []
+    try:
+        items = json.loads(raw)
+        if not isinstance(items, list):
+            return []
+        out: list[SealAttachment] = []
+        for it in items:
+            if not isinstance(it, dict):
+                continue
+            out.append(
+                SealAttachment(
+                    name=str(it.get("name", "")),
+                    storage_key=str(it.get("key", "")),
+                    size=int(it.get("size", 0) or 0),
+                    content_type=str(it.get("type", "")),
+                )
+            )
+        return out
+    except (ValueError, TypeError):
+        return []
+
+
 def _from_notion_page(page: dict[str, Any]) -> SealRequestItem:
     props = page.get("properties", {})
     s, _ = P.date_range(props, "요청일")
     lead_s, _ = P.date_range(props, "팀장처리일")
     admin_s, _ = P.date_range(props, "관리자처리일")
     due_s, _ = P.date_range(props, "제출예정일")
+
+    # S3 메타 우선, 없으면 노션 files (legacy) fallback
+    attachments = _parse_attachments_meta(props)
+    if not attachments:
+        attachments = [
+            SealAttachment(name=f["name"], legacy_url=f["url"])
+            for f in P.files(props, "첨부파일")
+        ]
+
     return SealRequestItem(
         id=page.get("id", ""),
         title=P.title(props, "제목"),
@@ -102,7 +145,7 @@ def _from_notion_page(page: dict[str, Any]) -> SealRequestItem:
         admin_handled_at=admin_s,
         due_date=due_s,
         note=P.rich_text(props, "비고"),
-        attachments=[SealAttachment(**f) for f in P.files(props, "첨부파일")],
+        attachments=attachments,
         created_time=page.get("created_time"),
         last_edited_time=page.get("last_edited_time"),
     )
@@ -254,24 +297,10 @@ async def create_seal_request(
     requester = user.name or user.username
     today = date.today().isoformat()
     auto_title = title.strip() or f"{today} {requester} - {seal_type}"
+    max_bytes = _max_bytes()
 
-    # 파일 업로드 → file_upload_id 모음
-    upload_ids: list[tuple[str, str]] = []  # (filename, upload_id)
-    for f in files:
-        data = await f.read()
-        if len(data) > _MAX_FILE_BYTES:
-            raise HTTPException(
-                status_code=413,
-                detail=f"{f.filename}: 파일 크기 한도 {_MAX_FILE_BYTES // (1024 * 1024)}MB 초과",
-            )
-        upload_id = await notion.upload_file(
-            filename=f.filename or "file.bin",
-            content_type=f.content_type or "application/octet-stream",
-            data=data,
-        )
-        upload_ids.append((f.filename or "file.bin", upload_id))
-
-    props: dict[str, Any] = {
+    # 1) 노션 페이지 먼저 생성 (page_id 확보 — S3 prefix에 사용)
+    init_props: dict[str, Any] = {
         "제목": {"title": [{"text": {"content": auto_title}}]},
         "프로젝트": {"relation": [{"id": project_id}]},
         "날인유형": {"select": {"name": seal_type}},
@@ -279,25 +308,56 @@ async def create_seal_request(
         "요청자": {"rich_text": [{"text": {"content": requester}}]},
         "요청일": {"date": {"start": today}},
         "비고": {"rich_text": [{"text": {"content": note}}]},
-        **(
-            {"제출예정일": {"date": {"start": due_date}}}
-            if due_date.strip()
-            else {}
-        ),
-        "첨부파일": {
-            "files": [
+    }
+    if due_date.strip():
+        init_props["제출예정일"] = {"date": {"start": due_date}}
+    page = await notion.create_page(_db_id(), init_props)
+    page_id = page["id"]
+
+    # 2) 파일들을 S3에 업로드 (실패 시 페이지는 그대로 유지 — 비고에 기록)
+    attachments_meta: list[dict[str, Any]] = []
+    failed: list[str] = []
+    for f in files:
+        data = await f.read()
+        fname = f.filename or "file.bin"
+        if len(data) > max_bytes:
+            failed.append(f"{fname}: 한도 {max_bytes // (1024 * 1024)}MB 초과")
+            continue
+        try:
+            key = storage.build_key(f"seal-requests/{page_id}", fname)
+            storage.put_object(
+                key=key,
+                data=data,
+                content_type=f.content_type or "application/octet-stream",
+            )
+            attachments_meta.append(
                 {
+                    "key": key,
                     "name": fname,
-                    "type": "file_upload",
-                    "file_upload": {"id": uid},
+                    "size": len(data),
+                    "type": f.content_type or "application/octet-stream",
                 }
-                for fname, uid in upload_ids
+            )
+        except storage.StorageError as exc:
+            failed.append(f"{fname}: {exc}")
+
+    # 3) 첨부메타 + 실패 기록을 노션 page에 update
+    update_props: dict[str, Any] = {
+        "첨부메타": {
+            "rich_text": [
+                {"text": {"content": json.dumps(attachments_meta, ensure_ascii=False)}}
             ]
         },
     }
-
-    page = await notion.create_page(_db_id(), props)
-    return _from_notion_page(page)
+    if failed:
+        fail_note = (
+            f"\n[업로드 실패]\n" + "\n".join(f" - {x}" for x in failed)
+        )
+        update_props["비고"] = {
+            "rich_text": [{"text": {"content": note + fail_note}}]
+        }
+    updated = await notion.update_page(page_id, update_props)
+    return _from_notion_page(updated)
 
 
 async def _set_status_with_handler(
@@ -402,6 +462,22 @@ async def reject_seal_request(
     return _from_notion_page(updated)
 
 
+def _get_attachment_or_404(
+    page: dict[str, Any], idx: int
+) -> SealAttachment:
+    props = page.get("properties", {})
+    items = _parse_attachments_meta(props)
+    if not items:
+        # legacy: 노션 files property fallback
+        items = [
+            SealAttachment(name=f["name"], legacy_url=f["url"])
+            for f in P.files(props, "첨부파일")
+        ]
+    if idx < 0 or idx >= len(items):
+        raise HTTPException(status_code=404, detail="첨부파일을 찾을 수 없습니다")
+    return items[idx]
+
+
 @router.get("/{page_id}/download/{idx}")
 async def get_attachment_url(
     page_id: str,
@@ -410,18 +486,24 @@ async def get_attachment_url(
     notion: NotionService = Depends(get_notion),
     db: Session = Depends(get_db),
 ) -> dict[str, str]:
-    """첨부파일 fresh URL 반환 (1시간 만료 우회용 단순 redirect)."""
+    """다운로드용 URL — S3 presigned 또는 노션 legacy URL."""
     try:
         page = await notion.get_page(page_id)
     except NotFoundError as exc:
         raise HTTPException(status_code=404, detail=exc.message) from exc
     if not _can_access(user, page, db):
         raise HTTPException(status_code=403, detail="해당 요청 접근 권한이 없습니다")
-    attachments = P.files(page.get("properties", {}), "첨부파일")
-    if idx < 0 or idx >= len(attachments):
-        raise HTTPException(status_code=404, detail="첨부파일을 찾을 수 없습니다")
-    item = attachments[idx]
-    return {"url": item["url"], "name": item["name"]}
+    item = _get_attachment_or_404(page, idx)
+    if item.storage_key:
+        try:
+            url = storage.presigned_get_url(
+                key=item.storage_key, filename=item.name
+            )
+        except storage.StorageError as exc:
+            raise HTTPException(status_code=500, detail=str(exc)) from exc
+        return {"url": url, "name": item.name}
+    # legacy
+    return {"url": item.legacy_url, "name": item.name}
 
 
 @router.get("/{page_id}/preview/{idx}")
@@ -447,18 +529,25 @@ async def preview_attachment(
         raise HTTPException(status_code=404, detail=exc.message) from exc
     if not _can_access(user, page, db):
         raise HTTPException(status_code=403, detail="해당 요청 접근 권한이 없습니다")
-    attachments = P.files(page.get("properties", {}), "첨부파일")
-    if idx < 0 or idx >= len(attachments):
-        raise HTTPException(status_code=404, detail="첨부파일을 찾을 수 없습니다")
-    item = attachments[idx]
-    notion_url = item["url"]
-    filename = item["name"] or "file.bin"
+    item = _get_attachment_or_404(page, idx)
 
-    # 노션 storage에서 byte streaming
-    client = httpx.AsyncClient(timeout=60.0)
+    # S3 첨부: presigned inline URL 발급 후 stream proxy
+    if item.storage_key:
+        try:
+            url = storage.presigned_inline_url(
+                key=item.storage_key, filename=item.name
+            )
+        except storage.StorageError as exc:
+            raise HTTPException(status_code=500, detail=str(exc)) from exc
+    else:
+        # legacy: 노션 file URL
+        url = item.legacy_url
+    filename = item.name or "file.bin"
+
+    client = httpx.AsyncClient(timeout=120.0)
     try:
         upstream = await client.send(
-            client.build_request("GET", notion_url), stream=True
+            client.build_request("GET", url), stream=True
         )
     except httpx.HTTPError as exc:
         await client.aclose()
@@ -473,7 +562,7 @@ async def preview_attachment(
         )
 
     media_type = upstream.headers.get(
-        "content-type", "application/octet-stream"
+        "content-type", item.content_type or "application/octet-stream"
     )
 
     async def _iter():
@@ -488,7 +577,6 @@ async def preview_attachment(
         _iter(),
         media_type=media_type,
         headers={
-            # inline 강제 → 브라우저가 PDF/이미지를 바로 미리보기
             "Content-Disposition": f'inline; filename="{filename}"',
             "Cache-Control": "private, max-age=300",
         },
@@ -532,38 +620,51 @@ async def add_attachments(
             detail=f"'{cur_status}' 상태에서는 재업로드 불가 (반려 또는 요청 상태에서만)",
         )
 
-    # 새 파일 노션에 업로드
-    upload_ids: list[tuple[str, str]] = []
+    # 새 파일 S3 업로드 + 기존 메타에 추가
+    existing_meta = _parse_attachments_meta(props)
+    new_meta = [
+        {
+            "key": a.storage_key,
+            "name": a.name,
+            "size": a.size,
+            "type": a.content_type,
+        }
+        for a in existing_meta
+        if a.storage_key
+    ]
+    max_bytes = _max_bytes()
+    failed: list[str] = []
     for f in files:
         data = await f.read()
-        if len(data) > _MAX_FILE_BYTES:
-            raise HTTPException(
-                status_code=413,
-                detail=f"{f.filename}: 파일 크기 한도 {_MAX_FILE_BYTES // (1024 * 1024)}MB 초과",
+        fname = f.filename or "file.bin"
+        if len(data) > max_bytes:
+            failed.append(f"{fname}: 한도 {max_bytes // (1024 * 1024)}MB 초과")
+            continue
+        try:
+            key = storage.build_key(f"seal-requests/{page_id}", fname)
+            storage.put_object(
+                key=key,
+                data=data,
+                content_type=f.content_type or "application/octet-stream",
             )
-        upload_id = await notion.upload_file(
-            filename=f.filename or "file.bin",
-            content_type=f.content_type or "application/octet-stream",
-            data=data,
-        )
-        upload_ids.append((f.filename or "file.bin", upload_id))
-
-    # 기존 첨부 + 새 첨부 합치기 (노션 file_upload는 type='file_upload'로 추가)
-    existing_files: list[dict[str, Any]] = (
-        props.get("첨부파일") or {}
-    ).get("files") or []
-    new_attachments = list(existing_files) + [
-        {
-            "name": fname,
-            "type": "file_upload",
-            "file_upload": {"id": uid},
-        }
-        for fname, uid in upload_ids
-    ]
+            new_meta.append(
+                {
+                    "key": key,
+                    "name": fname,
+                    "size": len(data),
+                    "type": f.content_type or "application/octet-stream",
+                }
+            )
+        except storage.StorageError as exc:
+            failed.append(f"{fname}: {exc}")
 
     today = date.today().isoformat()
     update_props: dict[str, Any] = {
-        "첨부파일": {"files": new_attachments},
+        "첨부메타": {
+            "rich_text": [
+                {"text": {"content": json.dumps(new_meta, ensure_ascii=False)}}
+            ]
+        },
         # 반려 → 요청으로 되돌림 (재처리 시작). 비고에 기록 append.
         "상태": {"select": {"name": "요청"}},
     }
@@ -605,6 +706,10 @@ async def delete_seal_request(
         raise HTTPException(
             status_code=403, detail="본인 글만 삭제 가능 (관리자는 모두 가능)"
         )
+    # S3 cleanup (존재하는 경우)
+    for a in _parse_attachments_meta(page.get("properties", {})):
+        if a.storage_key:
+            storage.delete_object(key=a.storage_key)
     await asyncio.to_thread(
         notion._client.pages.update, page_id=page_id, archived=True
     )

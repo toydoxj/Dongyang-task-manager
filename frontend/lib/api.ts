@@ -459,8 +459,10 @@ export async function deleteSuggestion(id: string): Promise<void> {
 
 export interface SealAttachment {
   name: string;
-  url: string;
-  type: "file" | "external";
+  storage_key?: string;
+  size?: number;
+  content_type?: string;
+  legacy_url?: string;
 }
 
 export interface SealRequestItem {
