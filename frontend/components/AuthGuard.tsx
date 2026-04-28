@@ -20,6 +20,7 @@ type Phase = "loading" | "login" | "setup" | "ready";
 export default function AuthGuard({ children }: { children: React.ReactNode }) {
   const [phase, setPhase] = useState<Phase>("loading");
   const [user, setUser] = useState<UserInfo | null>(null);
+  const [worksEnabled, setWorksEnabled] = useState(false);
 
   const refresh = (): void => {
     void (async () => {
@@ -28,6 +29,7 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
       try {
         const status = await checkAuthStatus();
         needSetup = !status.initialized;
+        setWorksEnabled(!!status.works_enabled);
       } catch {
         // 백엔드가 응답 안 하면 일단 진입은 허용 (네트워크 에러 대비)
         setPhase("ready");
@@ -74,7 +76,11 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
           </div>
         }
       >
-        <LoginForm isSetup={phase === "setup"} onSuccess={refresh} />
+        <LoginForm
+          isSetup={phase === "setup"}
+          worksEnabled={worksEnabled}
+          onSuccess={refresh}
+        />
       </Suspense>
     );
   }

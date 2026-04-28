@@ -23,6 +23,7 @@ export interface UserInfo {
   has_midas_key: boolean;
   work_dir: string;
   last_login_at: string | null;
+  auth_provider?: "password" | "works" | "both";
 }
 
 export const ROLE_LABEL: Record<UserRole, string> = {
@@ -34,6 +35,7 @@ export const ROLE_LABEL: Record<UserRole, string> = {
 export interface AuthStatus {
   initialized: boolean;
   user_count: number;
+  works_enabled?: boolean;
 }
 
 export interface TokenResponse {

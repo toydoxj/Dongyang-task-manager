@@ -2,18 +2,19 @@
 
 import { useState } from "react";
 
-import { login, register, requestJoin } from "@/lib/auth";
+import { login, register, requestJoin, worksLoginUrl } from "@/lib/auth";
 
 interface Props {
   isSetup: boolean;
   onSuccess: () => void;
+  worksEnabled?: boolean;
 }
 
 type Mode = "login" | "setup" | "request";
 
 const COMPANY_EMAIL_DOMAIN = "@dyce.kr";
 
-export default function LoginForm({ isSetup, onSuccess }: Props) {
+export default function LoginForm({ isSetup, onSuccess, worksEnabled }: Props) {
   const [mode, setMode] = useState<Mode>(isSetup ? "setup" : "login");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -139,6 +140,22 @@ export default function LoginForm({ isSetup, onSuccess }: Props) {
           >
             {loading ? "처리 중..." : title}
           </button>
+
+          {mode === "login" && worksEnabled && (
+            <>
+              <div className="flex items-center gap-2 text-[10px] uppercase tracking-wider text-zinc-600">
+                <span className="h-px flex-1 bg-zinc-800" />
+                또는
+                <span className="h-px flex-1 bg-zinc-800" />
+              </div>
+              <a
+                href={worksLoginUrl("/")}
+                className="block w-full rounded-lg border border-emerald-700/40 bg-emerald-600/10 py-2.5 text-center text-sm font-medium text-emerald-300 transition hover:bg-emerald-600/20"
+              >
+                NAVER WORKS로 로그인
+              </a>
+            </>
+          )}
 
           {mode === "login" && (
             <p className="text-center text-xs text-zinc-500">

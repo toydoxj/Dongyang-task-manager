@@ -52,6 +52,15 @@ class Settings(BaseSettings):
     sync_interval_minutes: int = 5
     cron_secret: str = ""
 
+    # ── NAVER WORKS OIDC SSO (Phase 1) ──
+    works_enabled: bool = False  # 롤백 스위치. true면 /auth/works/* 활성
+    works_client_id: str = ""
+    works_client_secret: str = ""
+    works_domain_id: str = ""  # 다중 도메인 차단용 (id_token domain claim 비교)
+    works_redirect_uri: str = ""  # backend callback (env별 다름)
+    works_issuer: str = "https://auth.worksmobile.com"
+    frontend_base_url: str = ""  # callback 후 frontend로 302할 때 사용
+
     @property
     def cors_origins_list(self) -> list[str]:
         return [s.strip() for s in self.cors_origins.split(",") if s.strip()]

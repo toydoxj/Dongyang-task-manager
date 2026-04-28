@@ -1,11 +1,16 @@
 """인증 라우터 — 회원가입(최초 관리자/승인 신청), 로그인, 사용자 관리."""
 from __future__ import annotations
 
+import base64
+import json
+import logging
 from datetime import datetime, timezone
 from typing import Literal
+from urllib.parse import urlencode
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Cookie, Depends, HTTPException, Query, Request, status
+from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -39,9 +44,19 @@ from app.security import (
     require_admin,
     verify_password,
 )
+from app.services import sso_works
 from app.services.employee_link import link_user_to_employee
+from app.settings import get_settings
+
+logger = logging.getLogger("auth")
 
 router = APIRouter(prefix="/auth", tags=["auth"])
+
+# SSO state/nonce 쿠키 — backend 도메인(api.dyce.kr)에만 부착, callback 직후 삭제
+_SSO_STATE_COOKIE = "works_state"
+_SSO_NONCE_COOKIE = "works_nonce"
+_SSO_NEXT_COOKIE = "works_next"
+_SSO_COOKIE_MAX_AGE = 600  # 10분
 
 
 def _to_info(u: User) -> UserInfo:
@@ -64,14 +79,141 @@ def _to_info(u: User) -> UserInfo:
             if u.last_login_at and u.last_login_at.tzinfo is None
             else u.last_login_at
         ),
+        auth_provider=u.auth_provider or "password",
     )
 
 
 @router.get("/status")
 def auth_status(db: Session = Depends(get_db)) -> dict[str, object]:
-    """초기 설정 여부 확인."""
+    """초기 설정 여부 + SSO 활성 여부 (frontend 로그인 화면에서 NAVER 버튼 표시 결정)."""
     count = db.query(User).count()
-    return {"initialized": count > 0, "user_count": count}
+    s = get_settings()
+    return {
+        "initialized": count > 0,
+        "user_count": count,
+        "works_enabled": bool(
+            s.works_enabled and s.works_client_id and s.works_client_secret
+        ),
+    }
+
+
+# ── NAVER WORKS OIDC SSO ──
+
+
+def _is_https(redirect_uri: str) -> bool:
+    return redirect_uri.startswith("https://")
+
+
+@router.get("/works/login")
+async def works_login(next: str = Query("/")) -> RedirectResponse:
+    """NAVER WORKS authorize URL로 302. state/nonce는 쿠키로 보존."""
+    s = get_settings()
+    if not s.works_enabled:
+        raise HTTPException(status_code=503, detail="NAVER WORKS SSO 비활성")
+    if not s.works_client_id or not s.works_redirect_uri:
+        raise HTTPException(status_code=503, detail="WORKS 설정 누락")
+    state, nonce = sso_works.make_state_and_nonce()
+    try:
+        url = await sso_works.authorize_url(s, state, nonce)
+    except sso_works.SSOError as e:
+        raise HTTPException(status_code=502, detail=str(e)) from e
+
+    secure = _is_https(s.works_redirect_uri)
+    resp = RedirectResponse(url=url, status_code=302)
+    cookie_kwargs = {
+        "httponly": True,
+        "secure": secure,
+        "samesite": "lax",
+        "max_age": _SSO_COOKIE_MAX_AGE,
+        "path": "/api/auth/works",
+    }
+    resp.set_cookie(_SSO_STATE_COOKIE, state, **cookie_kwargs)
+    resp.set_cookie(_SSO_NONCE_COOKIE, nonce, **cookie_kwargs)
+    # next 경로는 frontend로 그대로 전달용. 외부 redirect 방지를 위해 / 시작만 허용
+    safe_next = next if next.startswith("/") and not next.startswith("//") else "/"
+    resp.set_cookie(_SSO_NEXT_COOKIE, safe_next, **cookie_kwargs)
+    return resp
+
+
+def _delete_sso_cookies(resp: RedirectResponse, *, secure: bool) -> None:
+    # 동일한 (path, secure, samesite)로 set한 쿠키는 동일 속성으로 삭제해야
+    # 일부 브라우저에서 정상 제거됨.
+    for name in (_SSO_STATE_COOKIE, _SSO_NONCE_COOKIE, _SSO_NEXT_COOKIE):
+        resp.delete_cookie(
+            name, path="/api/auth/works", secure=secure, samesite="lax"
+        )
+
+
+def _frontend_error_redirect(s, message: str) -> RedirectResponse:
+    base = (s.frontend_base_url or "").rstrip("/")
+    if not base:
+        # frontend_base_url 미설정 시 단순 JSON 에러 (E2E 디버깅 편의)
+        raise HTTPException(status_code=400, detail=message)
+    qs = urlencode({"error": message})
+    resp = RedirectResponse(url=f"{base}/login?{qs}", status_code=302)
+    _delete_sso_cookies(resp, secure=_is_https(s.works_redirect_uri))
+    return resp
+
+
+@router.get("/works/callback")
+async def works_callback(
+    request: Request,
+    code: str | None = Query(default=None),
+    state: str | None = Query(default=None),
+    error: str | None = Query(default=None),
+    works_state: str | None = Cookie(default=None, alias=_SSO_STATE_COOKIE),
+    works_nonce: str | None = Cookie(default=None, alias=_SSO_NONCE_COOKIE),
+    works_next: str | None = Cookie(default=None, alias=_SSO_NEXT_COOKIE),
+    db: Session = Depends(get_db),
+) -> RedirectResponse:
+    """NAVER WORKS authorize 응답 처리. 성공 시 frontend로 fragment redirect."""
+    s = get_settings()
+    if not s.works_enabled:
+        raise HTTPException(status_code=503, detail="NAVER WORKS SSO 비활성")
+    if error:
+        return _frontend_error_redirect(s, f"NAVER WORKS 응답 오류: {error}")
+    if not code or not state:
+        return _frontend_error_redirect(s, "code/state 누락")
+    if not works_state or state != works_state:
+        return _frontend_error_redirect(s, "state 불일치 (CSRF 의심)")
+    if not works_nonce:
+        return _frontend_error_redirect(s, "nonce 쿠키 누락 — 다시 시도해 주세요")
+
+    try:
+        user = await sso_works.process_callback(
+            db, code=code, expected_nonce=works_nonce, settings=s
+        )
+    except sso_works.SSOError as e:
+        logger.warning("SSO 처리 실패: %s", e)
+        return _frontend_error_redirect(s, str(e))
+    except Exception:  # noqa: BLE001
+        logger.exception("SSO 처리 중 예외")
+        return _frontend_error_redirect(s, "SSO 처리 중 오류가 발생했습니다")
+
+    sid = uuid4().hex
+    user.session_id = sid
+    user.last_login_at = datetime.now(timezone.utc)
+    db.commit()
+    db.refresh(user)
+
+    token = create_token(user.username, user.role, sid)
+    info = _to_info(user)
+    user_b64 = base64.urlsafe_b64encode(
+        json.dumps(info.model_dump(mode="json"), ensure_ascii=False).encode("utf-8")
+    ).decode("ascii")
+
+    base = (s.frontend_base_url or "").rstrip("/")
+    if not base:
+        raise HTTPException(status_code=500, detail="FRONTEND_BASE_URL 미설정")
+    safe_next = works_next if works_next and works_next.startswith("/") else "/"
+    # fragment(#)에 토큰 전달 — 서버·프록시 로그 노출 회피
+    target = (
+        f"{base}/auth/works/callback#token={token}"
+        f"&user={user_b64}&next={safe_next}"
+    )
+    resp = RedirectResponse(url=target, status_code=302)
+    _delete_sso_cookies(resp, secure=_is_https(s.works_redirect_uri))
+    return resp
 
 
 @router.post("/register", response_model=TokenResponse)

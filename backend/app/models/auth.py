@@ -31,6 +31,14 @@ class User(Base):
         DateTime, default=lambda: datetime.now(timezone.utc)
     )
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # ── NAVER WORKS OIDC SSO (Phase 1) ──
+    # OIDC sub 클레임. SSO 사용자 영구 매칭 키. nullable=password-only 사용자 호환
+    works_user_id: Mapped[str | None] = mapped_column(
+        String, nullable=True, unique=True, index=True
+    )
+    # "password" | "works" | "both"  — 기존 사용자는 마이그레이션으로 "password"
+    auth_provider: Mapped[str] = mapped_column(String, nullable=False, default="password")
+    sso_login_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
 
 # ── Pydantic 스키마 ──
@@ -63,6 +71,8 @@ class UserInfo(BaseModel):
     has_midas_key: bool = False
     work_dir: str = ""
     last_login_at: datetime | None = None
+    # SSO 사용자 식별: frontend가 비번 변경 UI 등 분기에 사용
+    auth_provider: str = "password"
 
 
 class TokenResponse(BaseModel):

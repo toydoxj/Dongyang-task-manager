@@ -103,3 +103,46 @@ export async function requestJoin(
   }
   return (await res.json()) as { status: string; message: string };
 }
+
+// ── NAVER WORKS OIDC SSO ──
+
+export function worksLoginUrl(next: string = "/"): string {
+  const qs = new URLSearchParams({ next }).toString();
+  return `${API_BASE}/api/auth/works/login?${qs}`;
+}
+
+function decodeBase64UrlUtf8(s: string): string {
+  let b64 = s.replace(/-/g, "+").replace(/_/g, "/");
+  while (b64.length % 4) b64 += "=";
+  const bin = atob(b64);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return new TextDecoder("utf-8").decode(bytes);
+}
+
+/** fragment(`#token=...&user=<base64>`)에서 인증 정보를 꺼내 저장. 호출 후 fragment 정리. */
+export function consumeCallbackFragment(): {
+  token: string;
+  user: UserInfo;
+  next: string;
+} | null {
+  if (typeof window === "undefined") return null;
+  const hash = window.location.hash.startsWith("#")
+    ? window.location.hash.slice(1)
+    : window.location.hash;
+  if (!hash) return null;
+  const params = new URLSearchParams(hash);
+  const token = params.get("token");
+  const userB64 = params.get("user");
+  const next = params.get("next") || "/";
+  if (!token || !userB64) return null;
+  try {
+    const user = JSON.parse(decodeBase64UrlUtf8(userB64)) as UserInfo;
+    saveAuth(token, user);
+    // fragment 즉시 제거 (브라우저 history 노출 회피)
+    window.history.replaceState(null, "", window.location.pathname);
+    return { token, user, next };
+  } catch {
+    return null;
+  }
+}

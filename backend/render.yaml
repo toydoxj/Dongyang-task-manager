@@ -7,9 +7,9 @@ services:
     rootDir: backend
     buildCommand: |
       pip install --upgrade pip uv
-      uv sync --frozen --no-dev
-      uv run alembic upgrade head
-    startCommand: uv run uvicorn app.main:app --host 0.0.0.0 --port $PORT
+      env -u VIRTUAL_ENV uv sync --frozen --no-dev
+      env -u VIRTUAL_ENV uv run alembic upgrade head
+    startCommand: env -u VIRTUAL_ENV uv run uvicorn app.main:app --host 0.0.0.0 --port $PORT
     healthCheckPath: /health
     envVars:
       - key: PYTHON_VERSION
@@ -42,3 +42,18 @@ services:
         value: "5"
       - key: CRON_SECRET
         sync: false
+      # ── NAVER WORKS OIDC SSO (Phase 1) ──
+      - key: WORKS_ENABLED
+        value: "false"
+      - key: WORKS_CLIENT_ID
+        sync: false
+      - key: WORKS_CLIENT_SECRET
+        sync: false
+      - key: WORKS_DOMAIN_ID
+        sync: false
+      - key: WORKS_REDIRECT_URI
+        value: https://api.dyce.kr/api/auth/works/callback
+      - key: WORKS_ISSUER
+        value: https://auth.worksmobile.com
+      - key: FRONTEND_BASE_URL
+        value: https://task.dyce.kr
