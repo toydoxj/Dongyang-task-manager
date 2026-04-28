@@ -487,6 +487,96 @@ async def preview_attachment(
     )
 
 
+@router.post("/{page_id}/attachments", response_model=SealRequestItem)
+async def add_attachments(
+    page_id: str,
+    files: list[UploadFile] = File(..., description="추가 첨부파일 (다중 가능)"),
+    user: User = Depends(get_current_user),
+    notion: NotionService = Depends(get_notion),
+    db: Session = Depends(get_db),
+) -> SealRequestItem:
+    """반려된 요청을 보완해 파일을 추가하면서 상태를 '요청'으로 되돌림.
+
+    권한: 작성자 본인 또는 admin/team_lead.
+    상태: '반려' 또는 '요청' 일 때만 (이미 승인 완료된 건은 변경 안 함).
+    """
+    if not files:
+        raise HTTPException(status_code=400, detail="추가할 파일을 선택하세요")
+    try:
+        page = await notion.get_page(page_id)
+    except NotFoundError as exc:
+        raise HTTPException(status_code=404, detail=exc.message) from exc
+    if not _can_access(user, page, db):
+        raise HTTPException(status_code=403, detail="접근 권한이 없습니다")
+
+    props = page.get("properties", {})
+    cur_status = P.select_name(props, "상태")
+    requester = P.rich_text(props, "요청자")
+    is_owner = (user.name or user.username) == requester
+    is_lead_admin = user.role in {"admin", "team_lead"}
+    if not (is_owner or is_lead_admin):
+        raise HTTPException(
+            status_code=403, detail="본인 요청만 보완 업로드 가능"
+        )
+    if cur_status not in {"반려", "요청"}:
+        raise HTTPException(
+            status_code=400,
+            detail=f"'{cur_status}' 상태에서는 재업로드 불가 (반려 또는 요청 상태에서만)",
+        )
+
+    # 새 파일 노션에 업로드
+    upload_ids: list[tuple[str, str]] = []
+    for f in files:
+        data = await f.read()
+        if len(data) > _MAX_FILE_BYTES:
+            raise HTTPException(
+                status_code=413,
+                detail=f"{f.filename}: 파일 크기 한도 {_MAX_FILE_BYTES // (1024 * 1024)}MB 초과",
+            )
+        upload_id = await notion.upload_file(
+            filename=f.filename or "file.bin",
+            content_type=f.content_type or "application/octet-stream",
+            data=data,
+        )
+        upload_ids.append((f.filename or "file.bin", upload_id))
+
+    # 기존 첨부 + 새 첨부 합치기 (노션 file_upload는 type='file_upload'로 추가)
+    existing_files: list[dict[str, Any]] = (
+        props.get("첨부파일") or {}
+    ).get("files") or []
+    new_attachments = list(existing_files) + [
+        {
+            "name": fname,
+            "type": "file_upload",
+            "file_upload": {"id": uid},
+        }
+        for fname, uid in upload_ids
+    ]
+
+    today = date.today().isoformat()
+    update_props: dict[str, Any] = {
+        "첨부파일": {"files": new_attachments},
+        # 반려 → 요청으로 되돌림 (재처리 시작). 비고에 기록 append.
+        "상태": {"select": {"name": "요청"}},
+    }
+    # 반려 상태였으면 비고에 재제출 기록 추가
+    if cur_status == "반려":
+        existing_note = P.rich_text(props, "비고")
+        actor = user.name or user.username
+        new_note = (
+            f"{existing_note}\n[재제출 by {actor} {today}] 파일 {len(files)}개 보완"
+            if existing_note
+            else f"[재제출 by {actor} {today}] 파일 {len(files)}개 보완"
+        )
+        update_props["비고"] = {"rich_text": [{"text": {"content": new_note}}]}
+        # 처리자/처리일 reset (새로 1차 검토부터)
+        update_props["팀장처리자"] = {"rich_text": [{"text": {"content": ""}}]}
+        update_props["팀장처리일"] = {"date": None}
+
+    updated = await notion.update_page(page_id, update_props)
+    return _from_notion_page(updated)
+
+
 @router.delete("/{page_id}")
 async def delete_seal_request(
     page_id: str,

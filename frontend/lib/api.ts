@@ -532,6 +532,20 @@ export async function rejectSealRequest(
   return jsonOrThrow<SealRequestItem>(res);
 }
 
+/** 반려된 요청을 보완해 추가 파일 업로드 (상태 자동으로 '요청'으로 되돌림). */
+export async function addSealAttachments(
+  id: string,
+  files: File[],
+): Promise<SealRequestItem> {
+  const fd = new FormData();
+  for (const f of files) fd.append("files", f);
+  const res = await authFetch(`/api/seal-requests/${id}/attachments`, {
+    method: "POST",
+    body: fd,
+  });
+  return jsonOrThrow<SealRequestItem>(res);
+}
+
 /** 첨부파일 fresh URL 가져오기 (노션 signed URL 1시간 만료 우회). */
 export async function getSealAttachmentUrl(
   id: string,

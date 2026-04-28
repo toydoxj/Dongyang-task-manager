@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import useSWR from "swr";
 
 import { useAuth } from "@/components/AuthGuard";
@@ -9,6 +9,7 @@ import Modal from "@/components/ui/Modal";
 import LoadingState from "@/components/ui/LoadingState";
 import { authFetch } from "@/lib/auth";
 import {
+  addSealAttachments,
   approveSealAdmin,
   approveSealLead,
   deleteSealRequest,
@@ -189,6 +190,7 @@ function DetailModal({
 }) {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const reuploadInput = useRef<HTMLInputElement>(null);
 
   const action = async (fn: () => Promise<unknown>): Promise<void> => {
     setBusy(true);
@@ -201,6 +203,20 @@ function DetailModal({
     } finally {
       setBusy(false);
     }
+  };
+
+  const onReupload = async (list: FileList | null): Promise<void> => {
+    if (!list || list.length === 0) return;
+    if (
+      !confirm(
+        `파일 ${list.length}개를 추가하고 다시 '요청' 상태로 변경합니다. 진행할까요?`,
+      )
+    ) {
+      if (reuploadInput.current) reuploadInput.current.value = "";
+      return;
+    }
+    await action(() => addSealAttachments(item.id, Array.from(list)));
+    if (reuploadInput.current) reuploadInput.current.value = "";
   };
 
   const onApproveLead = (): Promise<void> => action(() => approveSealLead(item.id));
@@ -308,6 +324,22 @@ function DetailModal({
           <p className="rounded-md border border-red-500/40 bg-red-500/5 p-2 text-xs text-red-400">
             {err}
           </p>
+        )}
+
+        {item.status === "반려" && (isOwner || isAdminOrLead) && (
+          <div className="rounded-md border border-amber-500/40 bg-amber-500/5 p-2 text-xs">
+            <p className="mb-1 text-amber-700 dark:text-amber-400">
+              반려된 요청입니다. 파일을 보완해 재업로드하면 다시 &lsquo;요청&rsquo; 상태로 진행됩니다.
+            </p>
+            <input
+              ref={reuploadInput}
+              type="file"
+              multiple
+              onChange={(e) => void onReupload(e.target.files)}
+              disabled={busy}
+              className="block w-full text-xs file:mr-2 file:rounded-md file:border-0 file:bg-amber-500 file:px-3 file:py-1.5 file:text-xs file:text-white hover:file:bg-amber-600"
+            />
+          </div>
         )}
 
         <footer className="flex items-center justify-between gap-2 pt-2">
