@@ -24,8 +24,12 @@ from fastapi import (
     status,
 )
 from pydantic import BaseModel
+from sqlalchemy import select
+from sqlalchemy.orm import Session
 
+from app.db import get_db
 from app.exceptions import NotFoundError
+from app.models import mirror as M
 from app.models.auth import User
 from app.security import get_current_user, require_admin, require_admin_or_lead
 from app.services import notion_props as P
@@ -114,15 +118,83 @@ def _db_id() -> str:
     return db_id
 
 
+def _can_access(user: User, page: dict[str, Any], db: Session) -> bool:
+    """날인요청 페이지 접근 가능 여부.
+
+    허용 조건 (OR):
+    - admin / team_lead
+    - 본인이 요청자
+    - 요청에 연결된 프로젝트의 담당자 또는 담당팀 소속
+    """
+    if user.role in {"admin", "team_lead"}:
+        return True
+    me = user.name or ""
+    if not me:
+        return False
+    props = page.get("properties", {})
+    requester = P.rich_text(props, "요청자")
+    if me == requester:
+        return True
+    project_ids = P.relation_ids(props, "프로젝트")
+    if not project_ids:
+        return False
+    rows = db.execute(
+        select(M.MirrorProject.assignees, M.MirrorProject.teams).where(
+            M.MirrorProject.page_id.in_(project_ids)
+        )
+    ).all()
+    for assignees, teams in rows:
+        if me in (assignees or []):
+            return True
+    return False
+
+
+def _filter_accessible(
+    user: User, pages: list[dict[str, Any]], db: Session
+) -> list[dict[str, Any]]:
+    if user.role in {"admin", "team_lead"}:
+        return pages
+    me = user.name or ""
+    if not me:
+        return []
+    # 한 번에 모든 프로젝트 fetch (N+1 방지)
+    all_project_ids: set[str] = set()
+    for p in pages:
+        for pid in P.relation_ids(p.get("properties", {}), "프로젝트"):
+            all_project_ids.add(pid)
+    project_assignees: dict[str, list[str]] = {}
+    if all_project_ids:
+        rows = db.execute(
+            select(
+                M.MirrorProject.page_id, M.MirrorProject.assignees
+            ).where(M.MirrorProject.page_id.in_(all_project_ids))
+        ).all()
+        project_assignees = {pid: (assigns or []) for pid, assigns in rows}
+
+    out: list[dict[str, Any]] = []
+    for p in pages:
+        props = p.get("properties", {})
+        if me == P.rich_text(props, "요청자"):
+            out.append(p)
+            continue
+        for pid in P.relation_ids(props, "프로젝트"):
+            if me in project_assignees.get(pid, []):
+                out.append(p)
+                break
+    return out
+
+
 @router.get("", response_model=SealListResponse)
 async def list_seal_requests(
-    _user: User = Depends(get_current_user),
+    user: User = Depends(get_current_user),
     notion: NotionService = Depends(get_notion),
+    db: Session = Depends(get_db),
 ) -> SealListResponse:
     pages = await notion.query_all(
         _db_id(),
         sorts=[{"timestamp": "created_time", "direction": "descending"}],
     )
+    pages = _filter_accessible(user, pages, db)
     items = [_from_notion_page(p) for p in pages]
     return SealListResponse(items=items, count=len(items))
 
@@ -326,14 +398,17 @@ async def reject_seal_request(
 async def get_attachment_url(
     page_id: str,
     idx: int,
-    _user: User = Depends(get_current_user),
+    user: User = Depends(get_current_user),
     notion: NotionService = Depends(get_notion),
+    db: Session = Depends(get_db),
 ) -> dict[str, str]:
     """첨부파일 fresh URL 반환 (1시간 만료 우회용 단순 redirect)."""
     try:
         page = await notion.get_page(page_id)
     except NotFoundError as exc:
         raise HTTPException(status_code=404, detail=exc.message) from exc
+    if not _can_access(user, page, db):
+        raise HTTPException(status_code=403, detail="해당 요청 접근 권한이 없습니다")
     attachments = P.files(page.get("properties", {}), "첨부파일")
     if idx < 0 or idx >= len(attachments):
         raise HTTPException(status_code=404, detail="첨부파일을 찾을 수 없습니다")
@@ -345,8 +420,9 @@ async def get_attachment_url(
 async def preview_attachment(
     page_id: str,
     idx: int,
-    _user: User = Depends(get_current_user),
+    user: User = Depends(get_current_user),
     notion: NotionService = Depends(get_notion),
+    db: Session = Depends(get_db),
 ):
     """첨부파일을 backend가 stream proxy + Content-Disposition: inline.
 
@@ -361,6 +437,8 @@ async def preview_attachment(
         page = await notion.get_page(page_id)
     except NotFoundError as exc:
         raise HTTPException(status_code=404, detail=exc.message) from exc
+    if not _can_access(user, page, db):
+        raise HTTPException(status_code=403, detail="해당 요청 접근 권한이 없습니다")
     attachments = P.files(page.get("properties", {}), "첨부파일")
     if idx < 0 or idx >= len(attachments):
         raise HTTPException(status_code=404, detail="첨부파일을 찾을 수 없습니다")
@@ -414,12 +492,15 @@ async def delete_seal_request(
     page_id: str,
     user: User = Depends(get_current_user),
     notion: NotionService = Depends(get_notion),
+    db: Session = Depends(get_db),
 ) -> dict[str, str]:
     """archive — 작성자 본인 또는 admin."""
     try:
         page = await notion.get_page(page_id)
     except NotFoundError as exc:
         raise HTTPException(status_code=404, detail=exc.message) from exc
+    if not _can_access(user, page, db):
+        raise HTTPException(status_code=403, detail="해당 요청 접근 권한이 없습니다")
     requester = P.rich_text(page.get("properties", {}), "요청자")
     is_owner = (user.name or user.username) == requester
     if not (is_owner or user.role == "admin"):
