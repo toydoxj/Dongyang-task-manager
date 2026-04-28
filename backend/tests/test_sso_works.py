@@ -149,9 +149,7 @@ def test_process_callback_happy_path(db, monkeypatch) -> None:
     monkeypatch.setattr(sso_works, "exchange_code", fake_exchange)
     monkeypatch.setattr(sso_works, "fetch_user_info", fake_userinfo)
 
-    user = asyncio.run(
-        sso_works.process_callback(db, code="abc", expected_nonce="nonce-x")
-    )
+    user = asyncio.run(sso_works.process_callback(db, code="abc"))
     db.commit()
     assert user.email == "frank@dyce.kr"
     assert user.works_user_id == "W-100"
@@ -175,6 +173,30 @@ def test_process_callback_rejects_wrong_domain(db, monkeypatch) -> None:
     monkeypatch.setattr(sso_works, "fetch_user_info", fake_userinfo)
 
     with pytest.raises(sso_works.SSOError):
-        asyncio.run(
-            sso_works.process_callback(db, code="c", expected_nonce="n")
-        )
+        asyncio.run(sso_works.process_callback(db, code="c"))
+
+
+def test_signed_state_round_trip() -> None:
+    secret = "test-secret"
+    state, nonce = sso_works.issue_state(secret, "/me")
+    assert nonce
+    assert "." in state
+    data = sso_works.verify_state(secret, state)
+    assert data["n"] == nonce
+    assert data["x"] == "/me"
+
+
+def test_signed_state_tamper_detected() -> None:
+    secret = "test-secret"
+    state, _ = sso_works.issue_state(secret, "/")
+    payload, sig = state.rsplit(".", 1)
+    # 서명을 다른 값으로 교체 → 검증 실패해야 함
+    tampered = f"{payload}.{'a' * len(sig)}"
+    with pytest.raises(sso_works.SSOError):
+        sso_works.verify_state(secret, tampered)
+
+
+def test_signed_state_wrong_secret() -> None:
+    state, _ = sso_works.issue_state("secret-A", "/")
+    with pytest.raises(sso_works.SSOError):
+        sso_works.verify_state("secret-B", state)
