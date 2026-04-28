@@ -87,7 +87,7 @@ export default function SuggestionsPage() {
                       {s.title || "(제목 없음)"}
                     </p>
                     <p className="mt-0.5 truncate text-xs text-zinc-500">
-                      {s.author || "익명"} · {formatDateTime(s.created_time)}
+                      {s.author || "—"} · {formatDateTime(s.created_time)}
                     </p>
                   </div>
                   <span
@@ -273,7 +273,7 @@ function DetailModal({
   };
 
   return (
-    <Modal open onClose={onClose} title={`건의 — ${item.author || "익명"}`} size="lg">
+    <Modal open onClose={onClose} title={`건의 — ${item.author || "—"}`} size="lg">
       <div className="space-y-3">
         <Field label="제목">
           <input
