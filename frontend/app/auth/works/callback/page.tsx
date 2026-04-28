@@ -1,12 +1,11 @@
 "use client";
 
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
 
 import { consumeCallbackFragment } from "@/lib/auth";
 
 export default function WorksCallbackPage() {
-  const router = useRouter();
   const search = useSearchParams();
   const [error, setError] = useState<string | null>(null);
 
@@ -23,8 +22,9 @@ export default function WorksCallbackPage() {
       setError("로그인 정보가 없습니다. 다시 시도해 주세요.");
       return;
     }
-    router.replace(result.next || "/");
-  }, [router, search]);
+    // hard navigate로 AuthGuard를 새로 mount → localStorage 토큰 인식 → ready phase
+    window.location.replace(result.next || "/");
+  }, [search]);
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-zinc-950 px-4">

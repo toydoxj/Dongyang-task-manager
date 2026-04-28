@@ -1,5 +1,6 @@
 "use client";
 
+import { usePathname } from "next/navigation";
 import { createContext, lazy, Suspense, useContext, useEffect, useState } from "react";
 
 import { checkAuthStatus, getUser, isLoggedIn } from "@/lib/auth";
@@ -18,6 +19,10 @@ export const useAuth = (): AuthState => useContext(AuthContext);
 type Phase = "loading" | "login" | "setup" | "ready";
 
 export default function AuthGuard({ children }: { children: React.ReactNode }) {
+  const pathname = usePathname();
+  // SSO callback 페이지는 인증 처리 중이라 AuthGuard 검사 우회
+  const isCallbackPath = pathname?.startsWith("/auth/works/callback") ?? false;
+
   const [phase, setPhase] = useState<Phase>("loading");
   const [user, setUser] = useState<UserInfo | null>(null);
   const [worksEnabled, setWorksEnabled] = useState(false);
@@ -56,8 +61,13 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
   };
 
   useEffect(() => {
+    if (isCallbackPath) return; // callback 페이지가 fragment 처리 + hard navigate
     refresh();
-  }, []);
+  }, [isCallbackPath]);
+
+  if (isCallbackPath) {
+    return <>{children}</>;
+  }
 
   if (phase === "loading") {
     return (
