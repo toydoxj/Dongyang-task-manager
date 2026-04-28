@@ -487,8 +487,12 @@ export interface SealListResponse {
   count: number;
 }
 
-export async function listSealRequests(): Promise<SealListResponse> {
-  const res = await authFetch(`/api/seal-requests`);
+export async function listSealRequests(
+  filters: { projectId?: string } = {},
+): Promise<SealListResponse> {
+  const res = await authFetch(
+    `/api/seal-requests${qs({ project_id: filters.projectId })}`,
+  );
   return jsonOrThrow<SealListResponse>(res);
 }
 

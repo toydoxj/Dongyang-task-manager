@@ -186,6 +186,7 @@ def _filter_accessible(
 
 @router.get("", response_model=SealListResponse)
 async def list_seal_requests(
+    project_id: str | None = None,
     user: User = Depends(get_current_user),
     notion: NotionService = Depends(get_notion),
     db: Session = Depends(get_db),
@@ -194,6 +195,13 @@ async def list_seal_requests(
         _db_id(),
         sorts=[{"timestamp": "created_time", "direction": "descending"}],
     )
+    if project_id:
+        pages = [
+            p
+            for p in pages
+            if project_id
+            in P.relation_ids(p.get("properties", {}), "프로젝트")
+        ]
     pages = _filter_accessible(user, pages, db)
     items = [_from_notion_page(p) for p in pages]
     return SealListResponse(items=items, count=len(items))

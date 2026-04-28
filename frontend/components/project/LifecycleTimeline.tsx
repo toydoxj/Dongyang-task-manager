@@ -2,13 +2,23 @@
 
 import { differenceInDays, format, parseISO } from "date-fns";
 
+import type { SealRequestItem } from "@/lib/api";
 import type { Project, Task } from "@/lib/domain";
 import { formatDate } from "@/lib/format";
 
 interface Props {
   project: Project;
   tasks: Task[];
+  seals?: SealRequestItem[];
 }
+
+const SEAL_COLOR: Record<string, string> = {
+  요청: "bg-yellow-500",
+  팀장승인: "bg-blue-500",
+  관리자승인: "bg-emerald-500",
+  완료: "bg-emerald-600",
+  반려: "bg-red-500",
+};
 
 /**
  * 단순 SVG 타임라인. (vis-timeline 의존성을 피하고 가벼움)
@@ -16,14 +26,20 @@ interface Props {
  * - 현재 시점 표시
  * - 업무TASK 들의 기간(start~end)을 작은 막대로 오버레이
  */
-export default function LifecycleTimeline({ project, tasks }: Props) {
-  // 축 범위 결정
+export default function LifecycleTimeline({ project, tasks, seals = [] }: Props) {
+  // 축 범위 결정 (날인 일자도 포함)
   const dates = [
     project.start_date,
     project.contract_start,
     project.contract_end,
     project.end_date,
     ...tasks.flatMap((t) => [t.start_date, t.end_date, t.actual_end_date]),
+    ...seals.flatMap((s) => [
+      s.requested_at,
+      s.due_date,
+      s.lead_handled_at,
+      s.admin_handled_at,
+    ]),
   ].filter((d): d is string => !!d);
 
   if (dates.length < 2) {
@@ -64,7 +80,7 @@ export default function LifecycleTimeline({ project, tasks }: Props) {
         </p>
       </header>
 
-      <div className="relative h-24">
+      <div className="relative h-32">
         {/* 메인 축 */}
         <div className="absolute left-0 right-0 top-10 h-1 rounded-full bg-zinc-200 dark:bg-zinc-800" />
 
@@ -80,24 +96,84 @@ export default function LifecycleTimeline({ project, tasks }: Props) {
           />
         )}
 
-        {/* TASK 점 */}
+        {/* TASK 점 (메인 축 위) — hover 시 popover */}
         {tasks.map((t) => {
           const r = ratio(t.actual_end_date) ?? ratio(t.end_date) ?? ratio(t.start_date);
           if (r == null) return null;
           return (
             <div
               key={t.id}
-              className="absolute top-9 h-3 w-1.5 -translate-x-1/2 rounded-sm bg-zinc-400/80 dark:bg-zinc-500/80"
+              className="group absolute top-9 h-3 w-1.5 -translate-x-1/2 rounded-sm bg-zinc-400/80 hover:scale-125 dark:bg-zinc-500/80"
               style={{ left: `${r * 100}%` }}
-              title={`${t.title} (${t.status})`}
-            />
+            >
+              <Tooltip>
+                <p className="font-medium">{t.title || "(제목 없음)"}</p>
+                <p className="text-[10px] text-zinc-300">
+                  {t.status} {t.category && `· ${t.category}`}
+                  {t.activity && ` · ${t.activity}`}
+                </p>
+                <p className="text-[10px] text-zinc-300">
+                  {formatDate(t.start_date)} ~ {formatDate(t.end_date)}
+                  {t.actual_end_date && ` (실제 ${formatDate(t.actual_end_date)})`}
+                </p>
+                {t.assignees.length > 0 && (
+                  <p className="text-[10px] text-zinc-300">담당: {t.assignees.join(", ")}</p>
+                )}
+              </Tooltip>
+            </div>
+          );
+        })}
+
+        {/* 날인 트랙 (메인 축 아래) — 요청일 → 처리일까지 막대로 표시 */}
+        {seals.map((s) => {
+          const startR2 = ratio(s.requested_at);
+          // 종료점: 완료일 > 관리자처리일 > 팀장처리일 > 제출예정일
+          const endR2 =
+            ratio(s.admin_handled_at) ??
+            ratio(s.lead_handled_at) ??
+            ratio(s.due_date) ??
+            startR2;
+          if (startR2 == null) return null;
+          const left = startR2;
+          const width = Math.max(0.005, (endR2 ?? startR2) - startR2);
+          const colorCls = SEAL_COLOR[s.status] ?? "bg-zinc-400";
+          return (
+            <div
+              key={s.id}
+              className={`group absolute top-16 h-2 rounded-sm ${colorCls} opacity-80 hover:opacity-100`}
+              style={{ left: `${left * 100}%`, width: `${width * 100}%`, minWidth: "6px" }}
+            >
+              <Tooltip>
+                <p className="font-medium">🔖 {s.title || s.seal_type}</p>
+                <p className="text-[10px] text-zinc-300">
+                  {s.status} · {s.seal_type}
+                </p>
+                <p className="text-[10px] text-zinc-300">
+                  요청 {formatDate(s.requested_at)}
+                  {s.due_date && ` · 제출예정 ${formatDate(s.due_date)}`}
+                </p>
+                {s.requester && (
+                  <p className="text-[10px] text-zinc-300">요청자: {s.requester}</p>
+                )}
+                {s.lead_handler && (
+                  <p className="text-[10px] text-zinc-300">
+                    팀장: {s.lead_handler} ({formatDate(s.lead_handled_at)})
+                  </p>
+                )}
+                {s.admin_handler && (
+                  <p className="text-[10px] text-zinc-300">
+                    관리자: {s.admin_handler} ({formatDate(s.admin_handled_at)})
+                  </p>
+                )}
+              </Tooltip>
+            </div>
           );
         })}
 
         {/* 현재 */}
         {nowR != null && nowR > 0 && nowR < 1 && (
           <div
-            className="absolute top-7 h-7 w-0.5 -translate-x-1/2 bg-red-500"
+            className="absolute top-7 h-12 w-0.5 -translate-x-1/2 bg-red-500"
             style={{ left: `${nowR * 100}%` }}
           >
             <span className="absolute -top-5 left-1/2 -translate-x-1/2 whitespace-nowrap rounded bg-red-500 px-1.5 py-0.5 text-[9px] text-white">
@@ -124,6 +200,36 @@ export default function LifecycleTimeline({ project, tasks }: Props) {
           />
         )}
       </div>
+
+      {/* 범례 */}
+      {seals.length > 0 && (
+        <div className="mt-2 flex flex-wrap gap-2 text-[10px] text-zinc-500">
+          <span>🔖 날인:</span>
+          <Legend color="bg-yellow-500" label="요청" />
+          <Legend color="bg-blue-500" label="팀장승인" />
+          <Legend color="bg-emerald-600" label="완료" />
+          <Legend color="bg-red-500" label="반려" />
+          <span className="ml-auto">{seals.length}건</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Legend({ color, label }: { color: string; label: string }) {
+  return (
+    <span className="flex items-center gap-1">
+      <span className={`inline-block h-2 w-3 rounded-sm ${color}`} />
+      {label}
+    </span>
+  );
+}
+
+/** 마우스 오버 시 표시되는 어두운 popover. group-hover 활용. */
+function Tooltip({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="pointer-events-none absolute bottom-full left-1/2 z-20 mb-2 hidden w-56 -translate-x-1/2 rounded-md bg-zinc-900/95 p-2 text-xs text-zinc-100 shadow-lg group-hover:block dark:bg-zinc-800/95">
+      {children}
     </div>
   );
 }
