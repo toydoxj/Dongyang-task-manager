@@ -122,7 +122,9 @@ async def works_login(next: str = Query("/")) -> RedirectResponse:
         "secure": secure,
         "samesite": "lax",
         "max_age": _SSO_COOKIE_MAX_AGE,
-        "path": "/api/auth/works",
+        # path는 /로 풀어 path-matching 에지 케이스 회피.
+        # cookie 자체가 short-lived(10분) + HttpOnly + 의미가 SSO 한정이라 부담 없음.
+        "path": "/",
     }
     resp.set_cookie(_SSO_STATE_COOKIE, state, **cookie_kwargs)
     resp.set_cookie(_SSO_NONCE_COOKIE, nonce, **cookie_kwargs)
@@ -133,12 +135,8 @@ async def works_login(next: str = Query("/")) -> RedirectResponse:
 
 
 def _delete_sso_cookies(resp: RedirectResponse, *, secure: bool) -> None:
-    # 동일한 (path, secure, samesite)로 set한 쿠키는 동일 속성으로 삭제해야
-    # 일부 브라우저에서 정상 제거됨.
     for name in (_SSO_STATE_COOKIE, _SSO_NONCE_COOKIE, _SSO_NEXT_COOKIE):
-        resp.delete_cookie(
-            name, path="/api/auth/works", secure=secure, samesite="lax"
-        )
+        resp.delete_cookie(name, path="/", secure=secure, samesite="lax")
 
 
 def _frontend_error_redirect(s, message: str) -> RedirectResponse:
@@ -171,8 +169,14 @@ async def works_callback(
         return _frontend_error_redirect(s, f"NAVER WORKS 응답 오류: {error}")
     if not code or not state:
         return _frontend_error_redirect(s, "code/state 누락")
-    if not works_state or state != works_state:
-        return _frontend_error_redirect(s, "state 불일치 (CSRF 의심)")
+    if not works_state:
+        return _frontend_error_redirect(
+            s,
+            "state 쿠키 누락 — 로그인 화면에서 다시 시도해 주세요. "
+            "(브라우저 cookie 차단·시크릿 모드·만료 가능성)",
+        )
+    if state != works_state:
+        return _frontend_error_redirect(s, "state 값 불일치 (CSRF 의심)")
     if not works_nonce:
         return _frontend_error_redirect(s, "nonce 쿠키 누락 — 다시 시도해 주세요")
 
