@@ -190,12 +190,20 @@ def upsert_user(
     works_user_id: str,
     email: str,
     name: str,
+    blocked_emails: set[str] | None = None,
 ) -> tuple[User, bool]:
-    """works_user_id 우선, email fallback. 신규는 자동 active+member."""
+    """works_user_id 우선, email fallback. 신규는 자동 active+member.
+
+    blocked_emails(소문자)에 포함되는 계정은 SSOError로 거부 (마스터/시스템 계정 차단).
+    """
     email_norm = (email or "").strip().lower()
     if not email_norm.endswith(ALLOWED_EMAIL_DOMAIN):
         raise SSOError(
             f"이메일은 회사 계정({ALLOWED_EMAIL_DOMAIN})만 사용 가능합니다"
+        )
+    if blocked_emails and email_norm in blocked_emails:
+        raise SSOError(
+            f"{email_norm}은(는) 사용할 수 없는 계정입니다 (관리자에게 문의하세요)"
         )
 
     user = db.query(User).filter(User.works_user_id == works_user_id).first()
@@ -270,7 +278,11 @@ async def process_callback(
         raise SSOError("NAVER WORKS 응답에 userId/email이 누락되었습니다")
 
     user, _created = upsert_user(
-        db, works_user_id=works_user_id, email=email, name=name
+        db,
+        works_user_id=works_user_id,
+        email=email,
+        name=name,
+        blocked_emails=s.works_blocked_emails_set,
     )
     user.sso_login_at = datetime.now(UTC)
     return user

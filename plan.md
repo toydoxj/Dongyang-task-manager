@@ -1,7 +1,7 @@
 # (주)동양구조 업무관리 앱 — 진행 정리
 
 > 원천 요구사항: `PRD.md`
-> 최종 갱신: 2026-04-28 (NAVER WORKS SSO 도입 결정)
+> 최종 갱신: 2026-04-29 (NAVER WORKS SSO 단독 운영 + 마스터 계정 차단)
 
 ---
 
@@ -153,20 +153,26 @@ Render Web Service (FastAPI + uvicorn, 상시)
 
 ---
 
-## 7. NAVER WORKS SSO 도입 (Phase 0~1 진행 예정)
+## 7. NAVER WORKS SSO (운영 중)
 
-회사 이미 NAVER WORKS 사용 → 사내 SSO 일원화. 본 phase는 identity만 위탁, role/권한은 자체 DB 유지.
+회사 NAVER WORKS 계정 단독 SSO. role/권한은 자체 DB. 도입 상세는 `~/.claude/plans/1-2-lovely-peach.md`.
 
-상세 실행 plan: `~/.claude/plans/1-2-lovely-peach.md`
+### 정책 (2026-04-29 최신)
 
-### 결정사항 (2026-04-28)
-
-- 매핑: 자체 비번 로그인 → NAVER WORKS OIDC SSO. 노션 DB는 그대로 유지(현재 9개 도메인).
+- **로그인은 NAVER WORKS OIDC SSO 단독.** `/auth/login`, `/auth/register`, `/auth/request`, `POST /auth/users` 라우터 제거. LoginForm은 NAVER WORKS 버튼 한 개.
 - role/권한: 자체 DB에서만 관리. NAVER WORKS는 identity만.
-- SSO 신규 사용자: `@dyce.kr` + WORKS `domain_id` 이중 검증 후 자동 `active` + `member`.
-- 기존 자체 비번 로그인: Phase 1 동안 병행. 안정화 후(전 사용자 1회 SSO + 30일 무사고 시) 폐기 검토.
+- SSO 신규 사용자: `@dyce.kr` + `WORKS_DOMAIN_ID` 이중 검증 후 자동 `active` + `member`.
+- **차단 계정**: `WORKS_BLOCKED_EMAILS` 환경변수(콤마 구분)에 등재된 이메일은 SSO 거부. 기본값 `dyce@dyce.kr` (마스터 계정). 기존 DB의 dyce 사용자는 Alembic `l1j2k3l40209`로 `status='rejected'` 강등.
 - 자체 `employees` 테이블: 즉시 폐기 안 함. Directory API 도입은 Phase 2 이후.
 - Bot / Calendar / Drive / Approval / Mail: Phase 1 안정화 결과 보고 별도 계획.
+
+### 운영 토글 (Render dashboard)
+
+| Key | 의미 |
+|---|---|
+| `WORKS_ENABLED` | true/false. SSO 비활성 시 `/auth/works/*`가 503, 프론트는 안내 문구 표시 |
+| `WORKS_BLOCKED_EMAILS` | 차단 이메일 콤마 리스트 (소문자 비교) |
+| `WORKS_CLIENT_ID` / `WORKS_CLIENT_SECRET` / `WORKS_DOMAIN_ID` | NAVER WORKS Developer Console 발급값 |
 
 ### Phase 0 (1주) — 사전 준비
 
@@ -175,22 +181,20 @@ Render Web Service (FastAPI + uvicorn, 상시)
 - Supabase `users` 데이터 점검 (이메일 누락 / `@dyce.kr` 외부 도메인 정리)
 - Render staging 서비스 추가 (스테이징 검증 1주 후 production)
 
-### Phase 1 (2주) — OIDC SSO + 자체 비번 병행
+### 구현 요약 (현재 운영 중)
 
-- `users` 테이블 컬럼 추가: `works_user_id` UNIQUE INDEX, `auth_provider` (`password` / `works` / `both`), `sso_login_at` (Alembic 신규 revision)
-- 신규 모듈 `backend/app/services/sso_works.py`: OIDC discovery, code 교환, JWKS RS256 검증, `upsert_user`
-- 라우터 추가: `/api/auth/works/login` (state·nonce 발급 + 302), `/api/auth/works/callback` (코드 처리 + JWT 발급 + fragment redirect)
-- 프론트: `LoginForm`에 "NAVER WORKS로 로그인" 버튼, `app/auth/works/callback/page.tsx`에서 fragment 파싱 후 `saveAuth`
-- 보안: `email.endswith('@dyce.kr')`, `domain_id`, state CSRF, nonce replay, JWKS 1h TTL + 검증실패 시 1회 refetch, fragment 도착 즉시 `history.replaceState`
-- 검증: pytest `test_sso_works.py` 4 케이스(성공/만료/잘못된 nonce/잘못된 aud) + 기존 password 흐름 회귀 테스트, 스테이징 1주 운영 후 production
-- 롤백: `WORKS_ENABLED=false`로 503 반환 + 프론트 버튼 숨김. 컬럼 nullable이라 downgrade 안전
+- `users` 컬럼: `works_user_id` UNIQUE INDEX, `auth_provider`, `sso_login_at` (Alembic `k0i1j2k30208`)
+- 마스터 계정 강등: Alembic `l1j2k3l40209`로 `dyce@dyce.kr` `status='rejected'`
+- `backend/app/services/sso_works.py`: code 교환 + UserInfo API(`/v1.0/users/me`) 호출 + signed state(HMAC) + `upsert_user(blocked_emails)`
+- 라우터: `/api/auth/works/login`, `/api/auth/works/callback` (cookie 비사용 — signed state)
+- 프론트: `LoginForm`은 NAVER WORKS 버튼 단독, `app/auth/works/callback/page.tsx` + server layout(`force-dynamic`)
+- 보안: `@dyce.kr`, `WORKS_DOMAIN_ID`, signed state HMAC-SHA256 + 10분 TTL, 차단 이메일 리스트, fragment redirect + `history.replaceState`
 
 ### 본 phase에서 하지 않는 것
 
 - Bot / Calendar / Drive / Approval / Mail API
 - Service Account JWK 발급
 - `employees` 폐기 / Directory API 동기
-- 자체 비밀번호 폐기 (병행 운영)
 - Notion 도메인 변경
 
 ---

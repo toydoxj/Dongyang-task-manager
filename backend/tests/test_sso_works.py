@@ -82,6 +82,18 @@ def test_upsert_user_rejects_outside_domain(db) -> None:
         )
 
 
+def test_upsert_user_rejects_blocked_email(db) -> None:
+    """차단 리스트 이메일은 SSOError로 거부."""
+    with pytest.raises(sso_works.SSOError, match="사용할 수 없는 계정"):
+        sso_works.upsert_user(
+            db,
+            works_user_id="W-master",
+            email="dyce@dyce.kr",
+            name="(주)동양구조",
+            blocked_emails={"dyce@dyce.kr"},
+        )
+
+
 def test_upsert_user_username_conflict_suffix(db) -> None:
     db.add(
         User(

@@ -1,6 +1,6 @@
-"""SSO 컬럼 추가 후 자체 비밀번호 흐름 회귀.
+"""SSO 전환 후 password 라우터가 완전히 사라졌는지 + /me·/users 흐름 회귀.
 
-기존 password/JWT 로그인이 그대로 동작하는지 확인. DB/JWT는 conftest.py가 처리.
+password 라우터(/login, /register, /request, /users POST)는 SSO 전용 정책에 따라 제거됨.
 """
 from __future__ import annotations
 
@@ -18,43 +18,22 @@ def _disable_works(monkeypatch):
     yield
 
 
-def test_password_flow_unchanged() -> None:
+def test_password_endpoints_removed() -> None:
+    """자체 비번 흐름 라우터는 존재하지 않아야 함 → 405 또는 404."""
+    with TestClient(app) as client:
+        for path in ("/api/auth/login", "/api/auth/register", "/api/auth/request"):
+            r = client.post(
+                path, json={"username": "x", "password": "y", "email": "x@dyce.kr"}
+            )
+            assert r.status_code in {404, 405}, f"{path}: {r.status_code} {r.text}"
+
+
+def test_status_works_disabled() -> None:
     with TestClient(app) as client:
         r = client.get("/api/auth/status")
         assert r.status_code == 200
         body = r.json()
-        assert body["initialized"] is False
         assert body["works_enabled"] is False
-
-        r = client.post(
-            "/api/auth/register",
-            json={
-                "username": "admin",
-                "password": "secret123",
-                "name": "관리자",
-                "email": "admin@dyce.kr",
-            },
-        )
-        assert r.status_code == 200, r.text
-        data = r.json()
-        assert data["user"]["role"] == "admin"
-        assert data["user"]["auth_provider"] == "password"
-
-        # 로그인 (session_id 갱신 — 마지막 토큰만 유효)
-        r = client.post(
-            "/api/auth/login",
-            json={"username": "admin", "password": "secret123"},
-        )
-        assert r.status_code == 200, r.text
-        token = r.json()["access_token"]
-
-        r = client.get(
-            "/api/auth/me", headers={"Authorization": f"Bearer {token}"}
-        )
-        assert r.status_code == 200
-        me = r.json()
-        assert me["username"] == "admin"
-        assert me["auth_provider"] == "password"
 
 
 def test_works_endpoints_503_when_disabled() -> None:

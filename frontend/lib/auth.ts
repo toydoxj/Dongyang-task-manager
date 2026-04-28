@@ -1,4 +1,4 @@
-import { API_BASE, AuthStatus, TokenResponse, UserInfo } from "./types";
+import { API_BASE, AuthStatus, UserInfo } from "./types";
 
 const TOKEN_KEY = "dy_auth_token";
 const USER_KEY = "dy_auth_user";
@@ -53,55 +53,6 @@ export async function authFetch(
 export async function checkAuthStatus(): Promise<AuthStatus> {
   const res = await fetch(`${API_BASE}/api/auth/status`);
   return (await res.json()) as AuthStatus;
-}
-
-async function postAuth(
-  path: "/api/auth/login" | "/api/auth/register",
-  body: Record<string, string>,
-): Promise<TokenResponse> {
-  const res = await fetch(`${API_BASE}${path}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
-  if (!res.ok) {
-    const d = (await res.json().catch(() => ({}))) as { detail?: string };
-    throw new Error(d.detail ?? `요청 실패 (${res.status})`);
-  }
-  const data = (await res.json()) as TokenResponse;
-  saveAuth(data.access_token, data.user);
-  return data;
-}
-
-export function login(username: string, password: string): Promise<TokenResponse> {
-  return postAuth("/api/auth/login", { username, password });
-}
-
-export function register(
-  username: string,
-  password: string,
-  name: string,
-  email: string,
-): Promise<TokenResponse> {
-  return postAuth("/api/auth/register", { username, password, name, email });
-}
-
-export async function requestJoin(
-  username: string,
-  password: string,
-  name: string,
-  email: string,
-): Promise<{ status: string; message: string }> {
-  const res = await fetch(`${API_BASE}/api/auth/request`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ username, password, name, email }),
-  });
-  if (!res.ok) {
-    const d = (await res.json().catch(() => ({}))) as { detail?: string };
-    throw new Error(d.detail ?? `요청 실패 (${res.status})`);
-  }
-  return (await res.json()) as { status: string; message: string };
 }
 
 // ── NAVER WORKS OIDC SSO ──

@@ -1,4 +1,4 @@
-"""인증 라우터 — 회원가입(최초 관리자/승인 신청), 로그인, 사용자 관리."""
+"""인증 라우터 — NAVER WORKS SSO 전용. /me, /users(admin) 만 노출."""
 from __future__ import annotations
 
 import base64
@@ -14,9 +14,20 @@ from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-VALID_ROLES = {"admin", "team_lead", "member"}
+from app.db import get_db
+from app.models.auth import User, UserInfo, UserUpdateRequest
+from app.security import (
+    create_token,
+    get_current_user,
+    hash_password,
+    require_admin,
+)
+from app.services import sso_works
+from app.services.employee_link import link_user_to_employee
+from app.settings import get_settings
 
-# 회사 이메일 도메인 강제 (직원만 가입 허용)
+VALID_ROLES = {"admin", "team_lead", "member"}
+# 회사 이메일 도메인 강제 (직원만 사용 허용)
 ALLOWED_EMAIL_DOMAIN = "@dyce.kr"
 
 
@@ -26,27 +37,6 @@ def _ensure_company_email(email: str) -> None:
             status_code=400,
             detail=f"이메일은 회사 계정({ALLOWED_EMAIL_DOMAIN})만 사용 가능합니다",
         )
-
-
-from app.db import get_db
-from app.models.auth import (
-    LoginRequest,
-    RegisterRequest,
-    TokenResponse,
-    User,
-    UserInfo,
-    UserUpdateRequest,
-)
-from app.security import (
-    create_token,
-    get_current_user,
-    hash_password,
-    require_admin,
-    verify_password,
-)
-from app.services import sso_works
-from app.services.employee_link import link_user_to_employee
-from app.settings import get_settings
 
 logger = logging.getLogger("auth")
 
@@ -176,62 +166,6 @@ async def works_callback(
     return RedirectResponse(url=target, status_code=302)
 
 
-@router.post("/register", response_model=TokenResponse)
-def register(body: RegisterRequest, db: Session = Depends(get_db)) -> TokenResponse:
-    """최초 1인만 직접 등록(관리자), 이후엔 /auth/request 또는 /auth/users 사용."""
-    if db.query(User).count() > 0:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN, detail="관리자를 통해 등록해주세요"
-        )
-    if db.query(User).filter(User.username == body.username).first():
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT, detail="이미 존재하는 아이디입니다"
-        )
-    _ensure_company_email(str(body.email))
-
-    sid = uuid4().hex
-    user = User(
-        username=body.username,
-        password=hash_password(body.password),
-        name=body.name,
-        email=str(body.email),
-        role="admin",
-        status="active",
-        session_id=sid,
-    )
-    db.add(user)
-    db.commit()
-    db.refresh(user)
-    token = create_token(user.username, user.role, sid)
-    return TokenResponse(access_token=token, user=_to_info(user))
-
-
-@router.post("/login", response_model=TokenResponse)
-def login(body: LoginRequest, db: Session = Depends(get_db)) -> TokenResponse:
-    user = db.query(User).filter(User.username == body.username).first()
-    if not user or not verify_password(body.password, user.password):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="아이디 또는 비밀번호가 올바르지 않습니다",
-        )
-    if user.status == "pending":
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="가입 승인 대기 중입니다. 관리자에게 문의하세요.",
-        )
-    if user.status == "rejected":
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN, detail="가입이 거절되었습니다."
-        )
-
-    sid = uuid4().hex
-    user.session_id = sid
-    user.last_login_at = datetime.now(timezone.utc)
-    db.commit()
-    token = create_token(user.username, user.role, sid)
-    return TokenResponse(access_token=token, user=_to_info(user))
-
-
 @router.get("/me", response_model=UserInfo)
 def get_me(user: User = Depends(get_current_user)) -> UserInfo:
     return _to_info(user)
@@ -257,12 +191,11 @@ def update_me(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> UserInfo:
+    """SSO 전용이라 password 필드는 무시 (이름·이메일·MIDAS 설정만 갱신)."""
     if body.name is not None:
         user.name = body.name
     if body.email is not None:
         user.email = str(body.email)
-    if body.password is not None:
-        user.password = hash_password(body.password)
     if body.notion_user_id is not None:
         user.notion_user_id = body.notion_user_id
     if body.midas_url is not None:
@@ -276,67 +209,7 @@ def update_me(
     return _to_info(user)
 
 
-# ── 관리자/공개 ──
-
-
-@router.post("/request")
-def request_join(body: RegisterRequest, db: Session = Depends(get_db)) -> dict[str, str]:
-    """가입 신청 — 이메일이 직원 명부에 있으면 즉시 자동 승인 + 매칭, 아니면 pending."""
-    if db.query(User).filter(User.username == body.username).first():
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT, detail="이미 존재하는 아이디입니다"
-        )
-    _ensure_company_email(str(body.email))
-    user = User(
-        username=body.username,
-        password=hash_password(body.password),
-        name=body.name,
-        email=str(body.email),
-        role="member",
-        status="pending",
-    )
-    db.add(user)
-    db.flush()  # user.id 확보
-    emp = link_user_to_employee(db, user)
-    if emp is not None:
-        user.status = "active"
-        db.commit()
-        return {
-            "status": "active",
-            "message": f"직원 명부에서 확인되어 자동 승인되었습니다 ({emp.team or emp.position}).",
-        }
-    db.commit()
-    return {
-        "status": "pending",
-        "message": "가입 신청이 완료되었습니다. 관리자 승인을 기다려주세요.",
-    }
-
-
-@router.post("/users", response_model=UserInfo)
-def admin_create_user(
-    body: RegisterRequest,
-    admin: User = Depends(require_admin),
-    db: Session = Depends(get_db),
-) -> UserInfo:
-    if db.query(User).filter(User.username == body.username).first():
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT, detail="이미 존재하는 아이디입니다"
-        )
-    _ensure_company_email(str(body.email))
-    user = User(
-        username=body.username,
-        password=hash_password(body.password),
-        name=body.name,
-        email=str(body.email),
-        role="member",
-        status="active",
-    )
-    db.add(user)
-    db.flush()
-    link_user_to_employee(db, user)
-    db.commit()
-    db.refresh(user)
-    return _to_info(user)
+# ── 관리자 (사용자 관리는 SSO로 자동 생성된 계정에 대해서만) ──
 
 
 @router.get("/users", response_model=list[UserInfo])

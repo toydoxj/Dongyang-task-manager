@@ -64,7 +64,17 @@ class Settings(BaseSettings):
     )
     works_token_endpoint: str = "https://auth.worksmobile.com/oauth2/v2.0/token"
     works_userinfo_endpoint: str = "https://www.worksapis.com/v1.0/users/me"
+    # 콤마 구분 차단 이메일 (마스터·시스템 계정 등). lower-case 비교.
+    works_blocked_emails: str = "dyce@dyce.kr"
     frontend_base_url: str = ""  # callback 후 frontend로 302할 때 사용
+
+    @property
+    def works_blocked_emails_set(self) -> set[str]:
+        return {
+            e.strip().lower()
+            for e in self.works_blocked_emails.split(",")
+            if e.strip()
+        }
 
     @property
     def cors_origins_list(self) -> list[str]:

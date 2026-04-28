@@ -58,3 +58,5 @@ services:
         value: https://auth.worksmobile.com
       - key: FRONTEND_BASE_URL
         value: https://task.dyce.kr
+      - key: WORKS_BLOCKED_EMAILS
+        value: dyce@dyce.kr
