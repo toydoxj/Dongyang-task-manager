@@ -52,13 +52,18 @@ class Settings(BaseSettings):
     sync_interval_minutes: int = 5
     cron_secret: str = ""
 
-    # ── NAVER WORKS OIDC SSO (Phase 1) ──
+    # ── NAVER WORKS OAuth 2.0 SSO (Phase 1) ──
+    # NAVER WORKS는 OIDC discovery 미지원이라 endpoint를 직접 사용.
     works_enabled: bool = False  # 롤백 스위치. true면 /auth/works/* 활성
     works_client_id: str = ""
     works_client_secret: str = ""
-    works_domain_id: str = ""  # 다중 도메인 차단용 (id_token domain claim 비교)
+    works_domain_id: str = ""  # UserInfo API 응답의 domainId 비교 (다중 도메인 차단)
     works_redirect_uri: str = ""  # backend callback (env별 다름)
-    works_issuer: str = "https://auth.worksmobile.com"
+    works_authorize_endpoint: str = (
+        "https://auth.worksmobile.com/oauth2/v2.0/authorize"
+    )
+    works_token_endpoint: str = "https://auth.worksmobile.com/oauth2/v2.0/token"
+    works_userinfo_endpoint: str = "https://www.worksapis.com/v1.0/users/me"
     frontend_base_url: str = ""  # callback 후 frontend로 302할 때 사용
 
     @property

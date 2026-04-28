@@ -113,10 +113,7 @@ async def works_login(next: str = Query("/")) -> RedirectResponse:
     if not s.works_client_id or not s.works_redirect_uri:
         raise HTTPException(status_code=503, detail="WORKS 설정 누락")
     state, nonce = sso_works.make_state_and_nonce()
-    try:
-        url = await sso_works.authorize_url(s, state, nonce)
-    except sso_works.SSOError as e:
-        raise HTTPException(status_code=502, detail=str(e)) from e
+    url = sso_works.authorize_url(s, state, nonce)
 
     secure = _is_https(s.works_redirect_uri)
     resp = RedirectResponse(url=url, status_code=302)

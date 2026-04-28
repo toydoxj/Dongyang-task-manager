@@ -115,28 +115,39 @@ def test_upsert_user_re_login_no_new_row(db) -> None:
 
 
 def test_domain_matches_variants() -> None:
+    assert sso_works._domain_matches({"domainId": "1234567"}, "1234567")
     assert sso_works._domain_matches({"domain_id": "1234567"}, "1234567")
     assert sso_works._domain_matches({"domain": "1234567"}, "1234567")
     assert sso_works._domain_matches({"domainId": 1234567}, "1234567")
-    assert not sso_works._domain_matches({"domain_id": "9999"}, "1234567")
-    assert sso_works._domain_matches({"domain_id": "9999"}, "")
+    assert not sso_works._domain_matches({"domainId": "9999"}, "1234567")
+    assert sso_works._domain_matches({"domainId": "9999"}, "")
+
+
+def test_extract_name_korean() -> None:
+    assert (
+        sso_works._extract_name(
+            {"userName": {"lastName": "홍", "firstName": "길동"}}
+        )
+        == "홍길동"
+    )
+    assert sso_works._extract_name({"displayName": "Park"}) == "Park"
+    assert sso_works._extract_name({}) == ""
 
 
 def test_process_callback_happy_path(db, monkeypatch) -> None:
     async def fake_exchange(_settings, _code):
-        return {"id_token": "fake.id.token"}
+        return {"access_token": "fake-access-token"}
 
-    async def fake_verify(_settings, _id_token, _nonce):
+    async def fake_userinfo(_settings, _access_token):
         return {
-            "sub": "W-100",
+            "userId": "W-100",
             "email": "frank@dyce.kr",
-            "name": "프랭크",
-            "domain_id": "1234567",
-            "nonce": _nonce,
+            "userName": {"lastName": "프", "firstName": "랭크"},
+            "domainId": 1234567,
         }
 
     monkeypatch.setattr(sso_works, "exchange_code", fake_exchange)
-    monkeypatch.setattr(sso_works, "verify_id_token", fake_verify)
+    monkeypatch.setattr(sso_works, "fetch_user_info", fake_userinfo)
 
     user = asyncio.run(
         sso_works.process_callback(db, code="abc", expected_nonce="nonce-x")
@@ -145,18 +156,23 @@ def test_process_callback_happy_path(db, monkeypatch) -> None:
     assert user.email == "frank@dyce.kr"
     assert user.works_user_id == "W-100"
     assert user.status == "active"
+    assert user.name == "프랭크"
     assert user.sso_login_at is not None
 
 
 def test_process_callback_rejects_wrong_domain(db, monkeypatch) -> None:
     async def fake_exchange(_s, _c):
-        return {"id_token": "fake"}
+        return {"access_token": "fake"}
 
-    async def fake_verify(_s, _t, n):
-        return {"sub": "W-200", "email": "x@dyce.kr", "domain_id": "9999", "nonce": n}
+    async def fake_userinfo(_s, _t):
+        return {
+            "userId": "W-200",
+            "email": "x@dyce.kr",
+            "domainId": 9999,
+        }
 
     monkeypatch.setattr(sso_works, "exchange_code", fake_exchange)
-    monkeypatch.setattr(sso_works, "verify_id_token", fake_verify)
+    monkeypatch.setattr(sso_works, "fetch_user_info", fake_userinfo)
 
     with pytest.raises(sso_works.SSOError):
         asyncio.run(
