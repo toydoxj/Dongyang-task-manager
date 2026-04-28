@@ -50,6 +50,13 @@
   5) MasterProjectModal sub-project N+1 → mirror_projects 단일 IN 쿼리
 - 재발 방지: 외부 API에 의존하는 read는 항상 mirror/cache 레이어 우선. 미러 부재 시만 fallback fetch + upsert.
 
+### 2026-04-28 — Codex MCP가 본문 무시하고 일반 응답만 반환
+- 컨텍스트: NAVER WORKS 전환 계획 검토를 Codex MCP(`mcp__codex-cli__codex`, gpt-5.3-codex)에 의뢰
+- 증상: 4000자 분량의 구조화된 계획·질문을 prompt에 담았지만, Codex가 본문을 인식하지 못한 듯 "초안을 붙여달라" 같은 일반 안내만 반복 반환. 두 번 시도, `resetSession=true`도 무효
+- 원인(추정): Codex MCP 세션의 길이 제한 또는 prompt parsing 이슈로 본문이 누락되어 전달되는 것으로 보임
+- 해결: 본 건은 Codex 검토 없이 진행. 사용자에게 상황을 알리고 자체 계획 초안을 먼저 제시한 뒤, 다음 단계에서 재시도 또는 사용자가 외부 GPT에 직접 검토 의뢰하는 방식으로 우회
+- 재발 방지: Codex MCP에 4000자 이상의 prompt를 한 번에 보내지 말 것. 핵심 질문 1~2개로 분할하거나 mcp__codex-cli__review 별도 도구 사용을 우선 검토. Codex가 빈 응답·맥락 무시 응답을 줄 때는 두 번 이상 재시도하지 말고 즉시 차선책으로 전환
+
 ### 2026-04-26 — Packaged 환경에서 노션 토큰 배포 방식
 - 컨텍스트: 사용자 PC마다 .env 직접 두기 불편. NOTION_API_KEY 등 어떻게 배포?
 - 결정: 옵션 A — `backend/.env.production` 파일을 PyInstaller datas에 번들 (사내 도구라 보안 trade-off 수용)
