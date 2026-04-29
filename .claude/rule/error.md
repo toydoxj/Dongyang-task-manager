@@ -50,6 +50,104 @@
   5) MasterProjectModal sub-project N+1 → mirror_projects 단일 IN 쿼리
 - 재발 방지: 외부 API에 의존하는 read는 항상 mirror/cache 레이어 우선. 미러 부재 시만 fallback fetch + upsert.
 
+### 2026-04-29 — NAVER WORKS Drive 폴더 생성: file과 folder는 별도 endpoint
+- 컨텍스트: ensure_project_folder가 [업무관리] sharedrive에 [CODE]프로젝트명 폴더 자동 생성. 처음 `POST /sharedrives/{sd}/files` 사용
+- 증상: NAVER WORKS Drive 웹에서 "유형: 파일", 0KB로 표시. list 응답의 `fileType: "ETC"`. 모든 sub 폴더가 sharedrive root에 평면 배치
+- 원인: NAVER WORKS Drive는 file과 folder 생성 endpoint가 분리되어 있음. `/files`는 일반 파일 업로드용(fileSize·uploadUrl 흐름), 폴더는 별도 path
+- 해결: 공식 spec endpoint 두 개로 분리
+  - root에 폴더: `POST /sharedrives/{sd}/files/createfolder` body=`{"fileName":"..."}`
+  - sub-folder: `POST /sharedrives/{sd}/files/{parentFileId}/createfolder`
+  - 응답 201에 fileId/parentFileId/fileType="FOLDER" 즉시 포함 (PUT 추가 단계 불필요)
+- 재발 방지: NAVER WORKS Drive API 패턴 — file과 folder는 항상 별도 path. 새 작업 시 공식 reference의 endpoint 이름 정확히 확인. `/files`는 file 전용
+
+### 2026-04-29 — NAVER WORKS Drive API spec 페이지가 JS SPA라 raw fetch로 본문 안 보임
+- 컨텍스트: developers.worksmobile.com의 endpoint·body schema 확인 시도
+- 증상: WebFetch·curl 모두 `<title>Developers</title>` 비슷한 SPA 빈 shell만 반환. 본문은 JS 렌더링 후에야 채워짐
+- 원인: 사이트가 React/Vue SPA. raw HTML에 spec 본문 없음
+- 해결: Playwright MCP의 `browser_navigate` + `browser_evaluate`로 실제 브라우저 렌더링 후 `document.querySelector('main').innerText` 추출
+- 재발 방지: NAVER WORKS·NAVER Cloud 등 한국형 SPA 개발자 사이트의 본문이 필요하면 처음부터 Playwright MCP 사용. WebFetch 시간 낭비 금지
+
+### 2026-04-29 — NAVER WORKS Drive API는 user 토큰만 받음 (Service Account JWT 차단)
+- 컨텍스트: `[업무관리]` 공유 드라이브에 폴더 자동 생성 자동화 — Service Account JWT 사용 시도
+- 증상: token 발급은 정상(scope=file 부여), 그러나 모든 Drive API 호출이 `403 {"code":"FORBIDDEN","description":"Not allowed api"}`. JWT의 sub claim에 admin user를 넣어 impersonation 시도해도 `UserId or client_id is not valid` (400)
+- 원인: NAVER WORKS Drive API는 사용자 OAuth 토큰만 인정. Service Account JWT는 Bot/일부 admin API에만 유효. 도메인 위임(domain-wide delegation)도 미지원
+- 해결: admin이 1회 user OAuth 동의 → access_token + refresh_token을 `drive_credentials` (id=1 single row)에 저장 → 만료 60초 전부터 자동 refresh. 주체 admin 1명이 회사 전체 자동화 토큰 보유
+- 재발 방지: NAVER WORKS API 사용 시 처음에 endpoint별 인증 모델 확인. `auth-jwt` 페이지에 사용 가능한 API 명시되어 있음. Drive·Calendar 등 user-facing API는 거의 모두 user 토큰. Bot/일부 admin API만 Service Account 가능
+
+### 2026-04-29 — NAVER WORKS Drive 공유 드라이브 ID는 web URL의 resourceLocation이 아님
+- 컨텍스트: 사용자가 NAVER WORKS Drive 웹의 공유 폴더 URL을 보내고 우리가 sharedrive ID 추출
+- 증상: URL의 `resourceLocation=24101` 을 `WORKS_DRIVE_SHAREDRIVE_ID`로 사용 → Drive API가 `404 DRIVE_FOLDER_NOT_EXIST`
+- 원인: `resourceLocation`은 NAVER WORKS internal storage location code(int32)일 뿐. 실제 sharedrive ID는 `@<숫자>` 형식 (예: `@2001000000536760`). web URL의 `resourceKey` 첫 segment를 base64 디코드하면 그 ID가 나옴
+- 해결: `GET /sharedrives` (인증된 user 토큰)으로 ID 없는 list 호출 → 응답의 `sharedriveId` 필드가 진짜 ID. PoC가 자동 list로 발견하도록
+- 재발 방지: NAVER WORKS Drive web URL의 query는 ID가 아닌 internal code. API용 ID는 항상 `/sharedrives` list로 확인. PoC 스크립트에 list-then-match 패턴 내장
+
+### 2026-04-29 — NAVER WORKS는 OIDC discovery(/.well-known/openid-configuration) 미지원
+- 컨텍스트: SSO 도입 시 `authlib`의 OIDC discovery로 endpoint 자동 검색 시도
+- 증상: 첫 호출 `/.well-known/openid-configuration` → 404 → 예외가 catch되지 않은 채 500 Internal Server Error
+- 원인: NAVER WORKS는 OIDC discovery URI를 표준 path로 노출하지 않음. id_token 검증 등 OIDC 기능을 부분 지원하지만 discovery는 안 함
+- 해결:
+  1. discovery 호출 폐기. authorize/token/userinfo endpoint를 `settings`에 직접 박음 (default값으로 `https://auth.worksmobile.com/oauth2/v2.0/{authorize,token}`, `https://www.worksapis.com/v1.0/users/me`)
+  2. id_token RS256+JWKS 검증 대신 access_token으로 UserInfo API 호출 (단순화)
+- 재발 방지: NAVER WORKS는 표준 OIDC와 부분 호환만. discovery·JWKS 같은 OIDC 부가 기능 의존 금지. endpoint 직접 사용
+
+### 2026-04-29 — Render `value:`로 박은 환경변수가 dashboard 값을 매 빌드마다 덮어씀
+- 컨텍스트: render.yaml에 `WORKS_ENABLED: value: "false"`로 등록. 사용자가 dashboard에서 `true`로 변경
+- 증상: `/api/auth/status` 응답 `works_enabled: false`. dashboard 값이 적용 안 됨
+- 원인: Render Blueprint는 `value:`로 명시한 환경변수가 권위(authoritative). 매 빌드마다 dashboard 값을 render.yaml의 value로 동기화함. 운영자 토글이 무력화됨
+- 해결: 운영자가 토글하는 변수는 `sync: false`로 등록. dashboard 값이 권위가 됨. value:는 항상 일정한 값(예: 도메인 URL)에만 사용
+- 재발 방지: render.yaml 환경변수 분류
+  - `value:` — 변경 일이 없는 정적 설정 (URL, 일정한 라이브러리 버전 등)
+  - `sync: false` — 운영자가 dashboard에서 토글하는 모든 것 (시크릿, ENABLED 플래그 등)
+
+### 2026-04-29 — PEM private key 환경변수 inline은 줄바꿈 손상으로 MalformedFraming
+- 컨텍스트: Service Account JWT 흐름에서 RSA private key를 `WORKS_PRIVATE_KEY` 환경변수에 직접 입력 시도 (Phase 2 초안에서 한 작업, Service Account 폐기로 결국 미사용)
+- 증상: `jose.exceptions.JWKError: Unable to load PEM file ... MalformedFraming`. raw 길이 20자, BEGIN/END 마커 누락
+- 원인: 사용자가 PEM을 .env에 inline 넣을 때 `\n` literal·따옴표·multi-line 처리 등이 dotenv·shell·Render UI 사이에서 깨짐. PEM의 strict 형식(64자 줄바꿈, BEGIN/END 헤더) 보존 어려움
+- 해결: PEM은 파일로 보관 + `WORKS_PRIVATE_KEY_PATH=data/works_sa.key` 같은 path 환경변수만 사용 (.gitignore에 `*.key`/`backend/data/` 등재됨). 또는 코드에서 `_normalize_pem()` 같은 robust 복원 helper
+- 재발 방지: PEM·private key는 환경변수에 inline 금지. 파일 path 또는 시크릿 매니저(AWS Secrets Manager·Vault 등) 권장. Render에서 multi-line value를 다루려면 base64 encode 후 디코드도 가능
+
+### 2026-04-29 — SSO callback의 SameSite=Lax cookie가 cross-site redirect에서 누락
+- 컨텍스트: SSO 흐름에서 state·nonce를 cookie로 보존, callback에서 검증
+- 증상: 사용자가 NAVER WORKS 인증 마치고 우리 callback에 도착하면 `state 쿠키 누락` 에러. 브라우저·시크릿 모드·시간 경과 등 환경에 따라 간헐 재현
+- 원인: NAVER WORKS authorize 페이지(cross-site)에서 우리 callback으로 redirect할 때 SameSite=Lax cookie가 일부 브라우저 정책에서 누락. SameSite=Strict는 100% 거부. None은 third-party cookie 차단 정책 충돌 가능
+- 해결: cookie 자체를 폐기. **HMAC-SHA256 signed state token**으로 전환:
+  - state payload: `{"n":nonce, "t":ts, "x":next, "d":drive?}` → JSON → base64url
+  - signature: `HMAC-SHA256(jwt_secret, payload_b64)` → base64url
+  - state token: `payload.sig`
+  - callback이 sig 검증 + 10분 TTL 확인. cookie 0개로 stateless
+- 재발 방지: OAuth state CSRF 방어에 cookie 의존 금지. signed token이 표준이고 모든 브라우저 환경에서 동작. `next` path도 state에 embed해 cookie 흐름 단순화
+
+### 2026-04-29 — Vercel edge cache가 SSO callback 페이지 옛 SSR을 HIT으로 반환
+- 컨텍스트: Next.js client 컴포넌트로 만든 `/auth/works/callback` 페이지. 빌드 후에도 옛 코드가 보임
+- 증상: 새 빌드 Ready인데 callback 페이지에 옛 fallback 텍스트("로딩 중...") 표시. `curl -i`로 확인 시 `x-vercel-cache: HIT`
+- 원인: callback 페이지의 SSR HTML이 edge cache. 새 빌드 chunk hash가 변경됐지만 cache는 옛 응답 유지. `useSearchParams` 등 dynamic API를 client에서만 호출하면 페이지 자체는 SSG/ISR로 인식돼 cache됨
+- 해결: server layout으로 dynamic 강제
+  ```tsx
+  // app/auth/works/callback/layout.tsx
+  export const dynamic = "force-dynamic";
+  export const revalidate = 0;
+  ```
+  매 요청 fresh, edge cache HIT 차단
+- 재발 방지: SSO callback·webhook receiver 등 fragment·query에 의존하는 페이지는 항상 server layout에서 `force-dynamic` 명시. client `"use client"`만으로는 cache 차단 불충분
+
+### 2026-04-29 — AuthGuard가 SSO callback path를 가로채 LoginForm 재진입
+- 컨텍스트: AuthGuard가 `AppShell`에서 모든 페이지를 감싸는 구조. `isLoggedIn()`이 false면 LoginForm 렌더
+- 증상: SSO 콜백에서 fragment 파싱이 시작되기도 전에 AuthGuard가 phase=login으로 전환 → 사용자가 callback 페이지 못 보고 다시 LoginForm
+- 원인: AuthGuard의 인증 검사가 path 무관하게 작동. callback 페이지의 `useEffect`가 fragment 처리 전에 AuthGuard render가 먼저
+- 해결:
+  1. AuthGuard에 `pathname.startsWith("/auth/works/callback")` 분기 — children passthrough (인증 검사 우회)
+  2. callback 페이지에서 `router.replace("/")`(SPA navigation) 대신 `window.location.replace("/")`(hard reload) 사용 → AuthGuard 새로 mount 보장
+- 재발 방지: 인증 wrapper에는 항상 OAuth callback path whitelist. SPA router는 wrapper 재mount 안 시키므로 인증 phase 전환에는 hard reload 필요
+
+### 2026-04-29 — NAVER WORKS Console redirect URI 슬롯 제한 → SSO callback 1개로 흐름 통합
+- 컨텍스트: SSO callback과 Drive callback을 별도 path로 두려 했으나 Console에 redirect URI 슬롯이 production+staging 정도로 빠듯
+- 해결 패턴: signed state에 mode flag(`d=1`)를 인코딩. login URL `?drive=1`이면 scope에 `file` 추가 + state에 d=1. callback이 state.d를 보고 분기 — 일반 SSO인지 Drive 위임인지
+  ```python
+  state, _ = sso_works.issue_state(secret, next_path, drive=True)
+  scope = "user.read file" if drive else "user.read"
+  ```
+- 재발 방지: 다중 OAuth 흐름이 필요하면 redirect URI 추가 등록 대신 state 안에 mode flag로 분기. 한 callback이 모든 흐름 처리. CSRF 방어는 그대로 (signed state)
+
 ### 2026-04-28 — Codex MCP가 본문 무시하고 일반 응답만 반환
 - 컨텍스트: NAVER WORKS 전환 계획 검토를 Codex MCP(`mcp__codex-cli__codex`, gpt-5.3-codex)에 의뢰
 - 증상: 4000자 분량의 구조화된 계획·질문을 prompt에 담았지만, Codex가 본문을 인식하지 못한 듯 "초안을 붙여달라" 같은 일반 안내만 반복 반환. 두 번 시도, `resetSession=true`도 무효
