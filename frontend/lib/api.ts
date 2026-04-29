@@ -5,6 +5,7 @@ import type {
   CashflowResponse,
   ClientListResponse,
   DriveChildrenResponse,
+  DriveUploadResponse,
   Employee,
   EmployeeCreate,
   EmployeeImportResult,
@@ -585,4 +586,20 @@ export async function listDriveChildren(
     `/api/projects/${encodeURIComponent(projectId)}/drive/children${q}`,
   );
   return jsonOrThrow<DriveChildrenResponse>(res);
+}
+
+export async function uploadDriveFiles(
+  projectId: string,
+  folderId: string | undefined,
+  files: File[] | FileList,
+): Promise<DriveUploadResponse> {
+  const fd = new FormData();
+  const arr = Array.from(files as FileList);
+  for (const f of arr) fd.append("files", f, f.name);
+  const q = qs({ folder_id: folderId });
+  const res = await authFetch(
+    `/api/projects/${encodeURIComponent(projectId)}/drive/upload${q}`,
+    { method: "POST", body: fd },
+  );
+  return jsonOrThrow<DriveUploadResponse>(res);
 }

@@ -3,8 +3,8 @@
 import { useEffect, useState } from "react";
 
 import Modal from "@/components/ui/Modal";
-import { listDriveChildren } from "@/lib/api";
-import type { DriveFileType, DriveItem } from "@/lib/domain";
+import { listDriveChildren, uploadDriveFiles } from "@/lib/api";
+import type { DriveFileType, DriveItem, DriveUploadResultItem } from "@/lib/domain";
 
 interface Props {
   open: boolean;
@@ -76,6 +76,9 @@ export default function DriveExplorerModal({
   const [loading, setLoading] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [dragOver, setDragOver] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState<string>("");
+  const [uploadResults, setUploadResults] = useState<DriveUploadResultItem[]>([]);
 
   const current = stack[stack.length - 1];
 
@@ -132,6 +135,54 @@ export default function DriveExplorerModal({
     }
   };
 
+  // ── 다중 파일 업로드 (drag-drop 또는 file input) ──
+  const uploadMany = async (fileList: File[] | FileList): Promise<void> => {
+    const arr = Array.from(fileList as FileList);
+    if (arr.length === 0) return;
+    setUploadProgress(`업로드 중... (0/${arr.length})`);
+    setUploadResults([]);
+    setError(null);
+    try {
+      // 파일 N개를 한 요청으로 backend에 보냄. backend가 순차 처리.
+      const res = await uploadDriveFiles(
+        projectId,
+        current.fileId ?? undefined,
+        arr,
+      );
+      setUploadResults(res.items);
+      const ok = res.items.filter((r) => !r.error).length;
+      const fail = res.items.length - ok;
+      setUploadProgress(
+        fail === 0 ? `업로드 완료 (${ok}건)` : `업로드 ${ok}건 성공, ${fail}건 실패`,
+      );
+      // 현재 폴더 list 갱신
+      void load(current.fileId, undefined, false);
+      // 4초 후 진행 메시지 제거
+      window.setTimeout(() => setUploadProgress(""), 4000);
+    } catch (e: unknown) {
+      setUploadProgress("");
+      setError(e instanceof Error ? e.message : "업로드 실패");
+    }
+  };
+
+  const onDrop = (e: React.DragEvent<HTMLDivElement>): void => {
+    e.preventDefault();
+    setDragOver(false);
+    const files = e.dataTransfer?.files;
+    if (files && files.length > 0) {
+      void uploadMany(files);
+    }
+  };
+
+  const onPickFiles = (e: React.ChangeEvent<HTMLInputElement>): void => {
+    const files = e.target.files;
+    if (files && files.length > 0) {
+      void uploadMany(files);
+    }
+    // input value 초기화 (같은 파일 재선택 가능)
+    e.target.value = "";
+  };
+
   return (
     <Modal open={open} onClose={onClose} title="🗂️ 프로젝트 폴더" size="lg">
       {/* breadcrumb */}
@@ -163,8 +214,62 @@ export default function DriveExplorerModal({
         </p>
       )}
 
-      {/* file/folder list */}
-      <div className="overflow-hidden rounded-md border border-zinc-200 dark:border-zinc-800">
+      {/* 업로드 영역 — file input + drag&drop 안내 */}
+      <div className="mb-3 flex items-center gap-2 text-xs">
+        <label className="inline-flex cursor-pointer items-center gap-1 rounded-md border border-emerald-700/40 bg-emerald-600/10 px-2.5 py-1 font-medium text-emerald-300 hover:bg-emerald-600/20">
+          ⬆️ 파일 선택
+          <input
+            type="file"
+            multiple
+            className="hidden"
+            onChange={onPickFiles}
+          />
+        </label>
+        <span className="text-zinc-500">
+          또는 아래 영역에 파일 여러 개 드롭
+        </span>
+        {uploadProgress && (
+          <span className="ml-auto text-amber-300">{uploadProgress}</span>
+        )}
+      </div>
+
+      {/* 업로드 결과 (실패 항목만) */}
+      {uploadResults.filter((r) => r.error).length > 0 && (
+        <div className="mb-3 rounded-md border border-red-700/40 bg-red-500/5 p-2 text-xs text-red-300">
+          <p className="mb-1 font-medium">일부 파일 업로드 실패:</p>
+          <ul className="list-disc pl-4">
+            {uploadResults
+              .filter((r) => r.error)
+              .map((r) => (
+                <li key={r.fileName}>
+                  {r.fileName} — {r.error}
+                </li>
+              ))}
+          </ul>
+        </div>
+      )}
+
+      {/* file/folder list — drag&drop 영역 */}
+      <div
+        onDragEnter={(e) => {
+          e.preventDefault();
+          setDragOver(true);
+        }}
+        onDragOver={(e) => {
+          e.preventDefault();
+          if (!dragOver) setDragOver(true);
+        }}
+        onDragLeave={(e) => {
+          // 자식으로 빠져나갈 때 false 되지 않도록 컨테이너 밖일 때만
+          if (e.currentTarget === e.target) setDragOver(false);
+        }}
+        onDrop={onDrop}
+        className={`overflow-hidden rounded-md border-2 transition-colors ${
+          dragOver
+            ? "border-emerald-500 border-dashed bg-emerald-500/5"
+            : "border-zinc-200 dark:border-zinc-800"
+        }`}
+      >
         {loading ? (
           <p className="p-6 text-center text-xs text-zinc-500">로딩 중...</p>
         ) : items.length === 0 ? (

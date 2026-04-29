@@ -93,6 +93,19 @@ export interface DriveChildrenResponse {
   next_cursor: string;
 }
 
+export interface DriveUploadResultItem {
+  fileName: string;
+  fileId: string;
+  fileSize: number;
+  fileType: DriveFileType;
+  webUrl: string;
+  error: string; // 실패 시 메시지, 성공이면 빈 문자열
+}
+
+export interface DriveUploadResponse {
+  items: DriveUploadResultItem[];
+}
+
 export interface Client {
   id: string;
   name: string;

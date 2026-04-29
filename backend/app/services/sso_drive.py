@@ -397,6 +397,96 @@ async def list_children(
     )
 
 
+async def upload_file(
+    parent_file_id: str,
+    file_name: str,
+    content: bytes,
+    *,
+    content_type: str | None = None,
+    settings: Settings | None = None,
+) -> dict[str, Any]:
+    """parent 폴더에 파일 업로드. 2단계 흐름.
+
+    1) POST /sharedrives/{sd}/files/{parent_id} body={fileName, fileSize, suffixOnDuplicate}
+       → {uploadUrl, offset}
+    2) PUT uploadUrl with raw bytes + Bearer + Content-Length
+
+    suffixOnDuplicate=true: 같은 이름이 이미 있으면 NAVER가 자동 번호 추가 (works (1).txt 등)
+    반환: list로 조회한 새 파일 메타 (fileId 포함)
+    """
+    s = settings or get_settings()
+    if not s.works_drive_enabled:
+        raise DriveError("WORKS_DRIVE_ENABLED=false")
+    if not s.works_drive_sharedrive_id:
+        raise DriveError("WORKS_DRIVE_SHAREDRIVE_ID 미설정")
+    if not parent_file_id:
+        raise DriveError("parent_file_id 미지정")
+    if not file_name:
+        raise DriveError("file_name 미지정")
+
+    sd = s.works_drive_sharedrive_id
+    file_size = len(content)
+
+    # 1단계: 메타 등록 → uploadUrl
+    body = await _api(
+        s,
+        "POST",
+        f"/sharedrives/{sd}/files/{parent_file_id}",
+        json={
+            "fileName": file_name,
+            "fileSize": file_size,
+            "suffixOnDuplicate": True,
+        },
+    )
+    upload_url = body.get("uploadUrl") if isinstance(body, dict) else None
+    if not upload_url:
+        raise DriveError(f"업로드 1단계 응답에 uploadUrl 없음: {file_name}")
+
+    # 2단계: uploadUrl에 raw bytes PUT (Bearer 헤더 필수)
+    token = await _get_valid_access_token(s)
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Content-Length": str(file_size),
+    }
+    if content_type:
+        headers["Content-Type"] = content_type
+    async with httpx.AsyncClient(timeout=300.0) as client:  # 큰 파일 대비 5분
+        try:
+            put_resp = await client.put(upload_url, content=content, headers=headers)
+        except httpx.HTTPError as e:
+            raise DriveError(f"파일 업로드 네트워크 오류: {e}") from e
+    if put_resp.status_code >= 400:
+        logger.warning(
+            "uploadUrl PUT 실패: %s %s",
+            put_resp.status_code,
+            put_resp.text[:300],
+        )
+        raise DriveError(f"파일 업로드 실패 ({put_resp.status_code})")
+
+    # 3단계: 메타 추출은 어렵 (suffixOnDuplicate 시 이름 변경됨). list로 가장 최근 매칭 시도.
+    # 이름 prefix 매칭으로 추정. 실패해도 OK (UI는 list 갱신만 하면 됨)
+    try:
+        listing = await list_children(parent_file_id, settings=s, count=200)
+        items = listing.get("files") or []
+        # 동일 이름 또는 prefix 매칭의 가장 최근 modifiedTime
+        candidates = [
+            it
+            for it in items
+            if it.get("fileName") == file_name
+            or (
+                isinstance(it.get("fileName"), str)
+                and it["fileName"].startswith(file_name.rsplit(".", 1)[0])
+            )
+        ]
+        if candidates:
+            return max(
+                candidates, key=lambda it: it.get("modifiedTime", "") or ""
+            )
+    except DriveError:
+        pass
+    return {"fileName": file_name, "fileSize": file_size}
+
+
 def build_file_web_url(file_id: str, resource_location: int | str | None) -> str:
     """NAVER WORKS Drive 파일/폴더 web URL 조립.
 

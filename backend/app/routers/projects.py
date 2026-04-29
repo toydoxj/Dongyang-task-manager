@@ -6,7 +6,16 @@ from datetime import date, timedelta
 from typing import Any
 from urllib.parse import parse_qs, urlparse
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    Depends,
+    File,
+    HTTPException,
+    Query,
+    UploadFile,
+    status,
+)
 from pydantic import BaseModel
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
@@ -576,3 +585,83 @@ async def list_drive_children(
     return DriveChildrenResponse(
         items=items, next_cursor=str(meta.get("nextCursor") or "")
     )
+
+
+class DriveUploadResultItem(BaseModel):
+    fileName: str
+    fileId: str = ""
+    fileSize: int = 0
+    fileType: str = "ETC"
+    webUrl: str = ""
+    error: str = ""
+
+
+class DriveUploadResponse(BaseModel):
+    items: list[DriveUploadResultItem]
+
+
+@router.post(
+    "/{page_id}/drive/upload", response_model=DriveUploadResponse
+)
+async def upload_drive_files(
+    page_id: str,
+    files: list[UploadFile] = File(...),
+    folder_id: str | None = Query(default=None),
+    _user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> DriveUploadResponse:
+    """드래그&드롭으로 들어온 파일 N개를 NAVER WORKS Drive 폴더에 업로드.
+
+    folder_id가 비면 프로젝트 root 폴더. suffixOnDuplicate=true이므로 이름 충돌 시
+    NAVER가 자동 번호 추가. 일부 실패는 result.error로 보고하고 다른 파일은 계속 진행.
+    """
+    s = get_settings()
+    if not s.works_drive_enabled:
+        raise HTTPException(status_code=503, detail="WORKS Drive 비활성")
+
+    row = db.get(M.MirrorProject, page_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="프로젝트를 찾을 수 없습니다")
+    project = project_from_mirror(row)
+
+    parent_id = folder_id or _extract_resource_key(project.drive_url)
+    if not parent_id:
+        raise HTTPException(
+            status_code=422, detail="Drive 폴더가 아직 생성되지 않았습니다"
+        )
+
+    results: list[DriveUploadResultItem] = []
+    for upload in files:
+        name = upload.filename or "untitled"
+        try:
+            content = await upload.read()
+            meta = await sso_drive.upload_file(
+                parent_id,
+                name,
+                content,
+                content_type=upload.content_type or None,
+                settings=s,
+            )
+            file_id = str(meta.get("fileId") or "")
+            results.append(
+                DriveUploadResultItem(
+                    fileName=str(meta.get("fileName") or name),
+                    fileId=file_id,
+                    fileSize=int(meta.get("fileSize") or len(content)),
+                    fileType=str(meta.get("fileType") or "ETC"),
+                    webUrl=sso_drive.build_file_web_url(
+                        file_id, meta.get("resourceLocation")
+                    ),
+                )
+            )
+        except sso_drive.DriveError as e:
+            logger.warning("파일 업로드 실패 %s: %s", name, e)
+            results.append(
+                DriveUploadResultItem(fileName=name, error=str(e))
+            )
+        except Exception as e:  # noqa: BLE001
+            logger.exception("파일 업로드 중 예외 %s", name)
+            results.append(
+                DriveUploadResultItem(fileName=name, error=f"내부 오류: {e}")
+            )
+    return DriveUploadResponse(items=results)
