@@ -16,7 +16,9 @@ class Settings(BaseSettings):
 
     jwt_secret: str = "change-me-in-production"
     jwt_algorithm: str = "HS256"
-    jwt_expire_minutes: int = 1440
+    # 30일. SSO 사용자가 매일 인증 안 해도 되도록 길게.
+    # 다른 기기 로그인 시 session_id 메커니즘이 자동 무효화하므로 risk는 제한적.
+    jwt_expire_minutes: int = 43200
 
     database_url: str = "sqlite:///./data/app.db"
 
