@@ -60,13 +60,11 @@ services:
         value: https://task.dyce.kr
       - key: WORKS_BLOCKED_EMAILS
         value: dyce@dyce.kr
-      # ── NAVER WORKS Drive (Phase 2) ──
+      # ── NAVER WORKS Drive (Phase 2 — admin user-token 위임 방식) ──
       - key: WORKS_DRIVE_ENABLED
         sync: false
-      - key: WORKS_SERVICE_ACCOUNT_ID
-        sync: false
-      - key: WORKS_PRIVATE_KEY
-        sync: false
+      - key: WORKS_DRIVE_REDIRECT_URI
+        value: https://api.dyce.kr/api/admin/drive/callback
       - key: WORKS_DRIVE_SHAREDRIVE_ID
         sync: false
       - key: WORKS_DRIVE_ROOT_FOLDER_ID

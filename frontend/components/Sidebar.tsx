@@ -31,6 +31,7 @@ const NAV: NavItem[] = [
   { href: "/utilities", label: "유틸 런처" },
   { href: "/admin/employees", label: "직원 관리", roles: ["admin"] },
   { href: "/admin/users", label: "사용자 관리", roles: ["admin"] },
+  { href: "/admin/drive", label: "Drive 연결", roles: ["admin"] },
 ];
 
 interface Props {

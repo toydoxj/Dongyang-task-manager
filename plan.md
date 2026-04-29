@@ -202,9 +202,12 @@ Render Web Service (FastAPI + uvicorn, 상시)
 
 상세: `docs/NAVER_WORKS_DRIVE_PLAN.md` + 코드는 `backend/app/services/sso_drive.py`
 
-### 정책 (2026-04-29)
+### 정책 (2026-04-29 갱신 — Service Account → admin user-token 위임)
 
-- **인증**: Service Account (RS256 JWT, `scope=file`). 사용자 동의 0회
+> NAVER WORKS Drive API가 Service Account JWT를 거부 (`Not allowed api`).
+> Drive API는 user 토큰만 받음(공식 문서 명시) → admin 1명이 1회 동의 + 토큰 보관 방식.
+
+- **인증**: admin이 1회 file scope 동의 → access_token + refresh_token 보관 → 자동 갱신
 - **트리거**: 프로젝트 생성 시 BackgroundTasks로 자동 폴더 생성. 실패해도 응답에 영향 X
 - **폴더 구조**: `[업무관리]/[CODE]프로젝트명/{1.건축도면, 2.구조도면, 3.구조계산서, 4.구조해석및설계, 5.문서(심의자료 등), 6.계약서, 7.기타}`
 - **idempotent**: 같은 이름 폴더 있으면 재사용 (URL만 다시 저장)

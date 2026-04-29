@@ -77,7 +77,7 @@ def init_db() -> None:
     운영(Postgres)에서는 모든 테이블 생성.
     """
     # 모든 모델을 import해 Base.metadata에 등록되도록 한다
-    from app.models import auth, employee, mirror  # noqa: F401
+    from app.models import auth, drive_creds, employee, mirror  # noqa: F401
 
     if _is_sqlite:
         tables = [

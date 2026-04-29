@@ -68,13 +68,14 @@ class Settings(BaseSettings):
     works_blocked_emails: str = "dyce@dyce.kr"
 
     # ── NAVER WORKS Drive (Phase 2) ──
-    # 공유 드라이브에 프로젝트별 폴더 자동 생성용. Service Account JWT 인증.
+    # 공유 드라이브 폴더 자동 생성. NAVER WORKS Drive는 user 토큰만 받으므로
+    # admin이 1회 file scope 동의해 받은 토큰을 drive_credentials에 저장 후 재사용.
     works_drive_enabled: bool = False
-    works_service_account_id: str = ""  # Console에서 발급된 service account ID
-    works_private_key: str = ""  # PEM 형태 RSA private key (\\n 포함 한 줄 또는 multiline)
+    works_drive_redirect_uri: str = (
+        "https://api.dyce.kr/api/admin/drive/callback"
+    )
     works_drive_sharedrive_id: str = ""  # 공유 드라이브 자체의 ID
     works_drive_root_folder_id: str = ""  # [업무관리] 루트 폴더의 fileId
-    # 사내 base API. 일반적으로 변경 불요.
     works_api_base: str = "https://www.worksapis.com/v1.0"
 
     frontend_base_url: str = ""  # callback 후 frontend로 302할 때 사용

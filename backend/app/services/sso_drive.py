@@ -1,30 +1,33 @@
-"""NAVER WORKS Drive — 프로젝트별 폴더 자동 생성 (Phase 2).
+"""NAVER WORKS Drive — 프로젝트별 폴더 자동 생성 (Phase 2, user-token 방식).
+
+NAVER WORKS Drive API는 user account 토큰만 받음 (Service Account JWT 미지원).
+admin이 1회 file scope 동의 → access_token + refresh_token을 drive_credentials에 보관 →
+모든 자동 폴더 생성에 재사용 + 만료 시 refresh_token으로 자동 갱신.
 
 흐름:
-1. Service Account JWT(RS256) 자체 서명 → assertion으로 token endpoint POST
-2. access_token 발급 (1h TTL, in-memory 캐시)
-3. 공유 드라이브에 폴더 생성·조회 (idempotent)
-
-설계 원칙:
-- 외부 API 실패가 본 백엔드의 다른 흐름(프로젝트 생성 등)을 막지 않도록 SSOError로 감쌈
-- access_token은 process 단일 캐시 (만료 60초 전 갱신)
-- 폴더 생성은 idempotent — 같은 이름이 부모 아래 이미 있으면 그 fileId 재사용
+1. /api/admin/drive/connect → admin이 NAVER WORKS authorize URL 동의
+2. /api/admin/drive/callback → access_token + refresh_token 저장
+3. ensure_project_folder → DB의 access_token 사용 (만료 60초 전부터 refresh)
 """
 from __future__ import annotations
 
 import asyncio
 import logging
-import time
+from datetime import UTC, datetime, timedelta
 from typing import Any
+from urllib.parse import urlencode
 
 import httpx
-from jose import jwt
+from sqlalchemy.orm import Session
 
+from app.db import SessionLocal
+from app.models.drive_creds import DriveCredential
 from app.settings import Settings, get_settings
 
 logger = logging.getLogger("sso.drive")
 
 _TOKEN_ENDPOINT = "https://auth.worksmobile.com/oauth2/v2.0/token"
+_AUTHORIZE_ENDPOINT = "https://auth.worksmobile.com/oauth2/v2.0/authorize"
 _HTTP_TIMEOUT = 15.0
 _DRIVE_SCOPE = "file"
 # 프로젝트 폴더 하위 7개 sub 폴더 — 회사 표준 (Q7 고정)
@@ -43,98 +46,147 @@ class DriveError(Exception):
     """Drive 흐름 중 사용자에게 노출 가능한 에러."""
 
 
-# ── access_token 캐시 ──
+# ── DB credential helper ──
 
 
-class _TokenCache:
-    def __init__(self) -> None:
-        self._lock = asyncio.Lock()
-        self._token: str = ""
-        self._expires_at: float = 0.0
-
-    async def get(self, settings: Settings) -> str:
-        async with self._lock:
-            now = time.monotonic()
-            if self._token and now < self._expires_at - 60:
-                return self._token
-            token, expires_in = await _request_access_token(settings)
-            self._token = token
-            self._expires_at = now + max(60, int(expires_in))
-            return self._token
-
-    def invalidate(self) -> None:
-        self._token = ""
-        self._expires_at = 0.0
+def _load_creds(db: Session) -> DriveCredential | None:
+    return db.get(DriveCredential, 1)
 
 
-_cache = _TokenCache()
+def save_creds(
+    db: Session,
+    *,
+    access_token: str,
+    refresh_token: str,
+    expires_in: int,
+    scope: str,
+    granted_by_user_id: int | None,
+    granted_by_email: str,
+) -> DriveCredential:
+    """admin 동의 콜백 후 토큰 저장. 항상 id=1 single row upsert."""
+    expires_at = datetime.now(UTC) + timedelta(seconds=max(60, int(expires_in)))
+    row = db.get(DriveCredential, 1)
+    if row is None:
+        row = DriveCredential(id=1)
+        db.add(row)
+    row.access_token = access_token
+    row.refresh_token = refresh_token or row.refresh_token  # 비어있으면 보존
+    row.expires_at = expires_at
+    row.scope = scope or ""
+    row.granted_by_user_id = granted_by_user_id
+    row.granted_by_email = granted_by_email
+    row.updated_at = datetime.now(UTC)
+    return row
 
 
-# ── JWT 발급 + token 교환 ──
+# ── Authorize / token 교환 (admin 동의 흐름) ──
 
 
-def _build_assertion(settings: Settings) -> str:
-    """Service Account JWT(RS256) 발급. payload는 NAVER WORKS spec.
-
-    iss = client_id (Console의 OAuth client id)
-    sub = service account id (Console에서 발급)
-    iat / exp = 표준 OAuth assertion (~1h)
-    """
-    if not settings.works_private_key:
-        raise DriveError("WORKS_PRIVATE_KEY 미설정")
-    if not settings.works_service_account_id:
-        raise DriveError("WORKS_SERVICE_ACCOUNT_ID 미설정")
-    if not settings.works_client_id:
-        raise DriveError("WORKS_CLIENT_ID 미설정")
-
-    now = int(time.time())
-    payload = {
-        "iss": settings.works_client_id,
-        "sub": settings.works_service_account_id,
-        "iat": now,
-        "exp": now + 3600,
+def authorize_url(settings: Settings, state: str) -> str:
+    params = {
+        "response_type": "code",
+        "client_id": settings.works_client_id,
+        "redirect_uri": settings.works_drive_redirect_uri,
+        "scope": _DRIVE_SCOPE,
+        "state": state,
     }
-    # PEM의 줄바꿈이 환경변수로 \n 문자열로 들어오는 경우 복원
-    pem = settings.works_private_key.replace("\\n", "\n")
-    return jwt.encode(payload, pem, algorithm="RS256")
+    return f"{_AUTHORIZE_ENDPOINT}?{urlencode(params)}"
 
 
-async def _request_access_token(settings: Settings) -> tuple[str, int]:
-    """JWT assertion → access_token. 응답 (token, expires_in)."""
-    if not settings.works_client_secret:
-        raise DriveError("WORKS_CLIENT_SECRET 미설정")
-    assertion = _build_assertion(settings)
-    data = {
-        "grant_type": "urn:ietf:params:oauth:grant-type:jwt-bearer",
+async def exchange_code(
+    settings: Settings, code: str
+) -> dict[str, Any]:
+    payload = {
+        "grant_type": "authorization_code",
+        "code": code,
+        "redirect_uri": settings.works_drive_redirect_uri,
         "client_id": settings.works_client_id,
         "client_secret": settings.works_client_secret,
-        "assertion": assertion,
-        "scope": _DRIVE_SCOPE,
     }
     async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT) as client:
         try:
             resp = await client.post(
                 _TOKEN_ENDPOINT,
-                data=data,
+                data=payload,
                 headers={"Content-Type": "application/x-www-form-urlencoded"},
             )
         except httpx.HTTPError as e:
             raise DriveError(f"token endpoint 네트워크 오류: {e}") from e
         if resp.status_code != 200:
             logger.warning(
-                "service account token 발급 실패: %s %s",
-                resp.status_code,
-                resp.text,
+                "drive code 교환 실패: %s %s", resp.status_code, resp.text
+            )
+            raise DriveError(f"토큰 교환 실패 ({resp.status_code})")
+        return resp.json()
+
+
+async def _refresh(settings: Settings, refresh_token: str) -> dict[str, Any]:
+    payload = {
+        "grant_type": "refresh_token",
+        "refresh_token": refresh_token,
+        "client_id": settings.works_client_id,
+        "client_secret": settings.works_client_secret,
+    }
+    async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT) as client:
+        try:
+            resp = await client.post(
+                _TOKEN_ENDPOINT,
+                data=payload,
+                headers={"Content-Type": "application/x-www-form-urlencoded"},
+            )
+        except httpx.HTTPError as e:
+            raise DriveError(f"refresh 네트워크 오류: {e}") from e
+        if resp.status_code != 200:
+            logger.warning(
+                "drive refresh 실패: %s %s", resp.status_code, resp.text
             )
             raise DriveError(
-                f"Service Account 토큰 발급 실패 ({resp.status_code})"
+                f"토큰 갱신 실패 ({resp.status_code}) — admin이 다시 연결해야 합니다"
             )
-        body = resp.json()
-        token = str(body.get("access_token", ""))
-        expires_in = int(body.get("expires_in", 3600))
-        if not token:
-            raise DriveError("토큰 응답에 access_token이 없음")
-        return token, expires_in
+        return resp.json()
+
+
+# ── access_token 사용/갱신 (전역 lock) ──
+
+_token_lock = asyncio.Lock()
+
+
+async def _get_valid_access_token(settings: Settings) -> str:
+    """DB의 access_token이 만료 60초 전이면 refresh. 단일 lock으로 중복 refresh 방지."""
+    async with _token_lock:
+        db = SessionLocal()
+        try:
+            row = _load_creds(db)
+            if row is None or not row.access_token:
+                raise DriveError(
+                    "Drive 자격 미설정 — admin이 /api/admin/drive/connect 로 연결 필요"
+                )
+            now = datetime.now(UTC)
+            if row.expires_at is None:
+                expires_at = now
+            else:
+                ea = row.expires_at
+                expires_at = ea if ea.tzinfo else ea.replace(tzinfo=UTC)
+            if expires_at - now > timedelta(seconds=60):
+                return row.access_token
+            if not row.refresh_token:
+                raise DriveError(
+                    "access_token 만료 + refresh_token 없음 — admin 재연결 필요"
+                )
+            body = await _refresh(settings, row.refresh_token)
+            new_access = body.get("access_token", "")
+            new_refresh = body.get("refresh_token", row.refresh_token)
+            expires_in = int(body.get("expires_in", 3600))
+            scope = str(body.get("scope", row.scope))
+            row.access_token = new_access
+            row.refresh_token = new_refresh
+            row.expires_at = now + timedelta(seconds=max(60, expires_in))
+            row.scope = scope
+            row.updated_at = now
+            db.commit()
+            return new_access
+        finally:
+            db.close()
 
 
 # ── Drive HTTP helper ──
@@ -148,25 +200,41 @@ async def _api(
     params: dict[str, Any] | None = None,
     json: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """access_token을 자동 부착해 worksapis.com에 호출. 401 시 1회 재발급 후 retry."""
     url = f"{settings.works_api_base.rstrip('/')}{path}"
+    token = await _get_valid_access_token(settings)
 
-    async def _call(token: str) -> httpx.Response:
+    async def _call(t: str) -> httpx.Response:
         async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT) as client:
             return await client.request(
                 method,
                 url,
                 params=params,
                 json=json,
-                headers={"Authorization": f"Bearer {token}"},
+                headers={"Authorization": f"Bearer {t}"},
             )
 
-    token = await _cache.get(settings)
     resp = await _call(token)
     if resp.status_code == 401:
-        # 토큰 만료/회수 가능성 → 1회 재시도
-        _cache.invalidate()
-        token = await _cache.get(settings)
+        # 만료/회수 가능성 — refresh 강제 후 재시도
+        async with _token_lock:
+            db = SessionLocal()
+            try:
+                row = _load_creds(db)
+                if row and row.refresh_token:
+                    body = await _refresh(settings, row.refresh_token)
+                    row.access_token = body.get("access_token", row.access_token)
+                    row.refresh_token = body.get(
+                        "refresh_token", row.refresh_token
+                    )
+                    expires_in = int(body.get("expires_in", 3600))
+                    row.expires_at = datetime.now(UTC) + timedelta(
+                        seconds=max(60, expires_in)
+                    )
+                    row.updated_at = datetime.now(UTC)
+                    db.commit()
+                    token = row.access_token
+            finally:
+                db.close()
         resp = await _call(token)
     if resp.status_code >= 400:
         logger.warning(
@@ -191,13 +259,6 @@ async def _api(
 async def find_child_folder(
     settings: Settings, parent_id: str, name: str
 ) -> dict[str, Any] | None:
-    """parent 아래에서 같은 이름의 폴더가 있으면 그 metadata 반환, 없으면 None.
-
-    NAVER WORKS Drive API의 list 호출 path는 PoC에서 확정. 후보:
-    - /sharedrives/{sd}/files/{parent}/children
-    - /sharedrives/{sd}/files?parentFolderId={parent}
-    환경변수로 sharedrive id를 받기 때문에 path는 그에 맞춰 구성.
-    """
     sd = settings.works_drive_sharedrive_id
     if not sd:
         raise DriveError("WORKS_DRIVE_SHAREDRIVE_ID 미설정")
@@ -209,15 +270,12 @@ async def find_child_folder(
             params={"fileType": "folder"},
         )
     except DriveError:
-        # children path가 다를 가능성 → 다른 후보로 fallback (PoC 후 단일 path로 정착)
         body = await _api(
             settings,
             "GET",
             f"/sharedrives/{sd}/files",
             params={"parentFolderId": parent_id, "fileType": "folder"},
         )
-
-    # 응답 schema는 NAVER WORKS spec에 따라 'files' 또는 'items' 둘 중 하나로 옴
     items = body.get("files") or body.get("items") or body.get("children") or []
     for it in items:
         item_name = it.get("fileName") or it.get("name") or ""
@@ -229,11 +287,9 @@ async def find_child_folder(
 async def create_folder(
     settings: Settings, parent_id: str, name: str
 ) -> dict[str, Any]:
-    """parent 아래 폴더 생성. 이미 있으면 그 metadata 반환 (idempotent)."""
     existing = await find_child_folder(settings, parent_id, name)
     if existing is not None:
         return existing
-
     sd = settings.works_drive_sharedrive_id
     body = await _api(
         settings,
@@ -264,19 +320,15 @@ def _extract_id(meta: dict[str, Any]) -> str:
     return ""
 
 
-# ── 외부에 노출되는 high-level API ──
-
-
 async def ensure_project_folder(
     settings: Settings | None,
     *,
     code: str,
     project_name: str,
 ) -> tuple[str, str]:
-    """`[업무관리]/[CODE]프로젝트명/{1.건축도면, ..., 7.기타}` 일괄 생성.
+    """`[업무관리]/[CODE]프로젝트명/{1.~7.}` 일괄 생성.
 
-    이미 존재하는 폴더는 그대로 사용.
-    반환: (root_folder_id, root_folder_url) — 프로젝트 row에 저장할 값.
+    이미 존재하는 폴더는 재사용. 반환: (root_folder_id, root_folder_url).
     """
     s = settings or get_settings()
     if not s.works_drive_enabled:
@@ -297,18 +349,17 @@ async def ensure_project_folder(
     if not project_id:
         raise DriveError("프로젝트 폴더 fileId를 응답에서 추출하지 못함")
 
-    # 7개 sub 폴더 — 직렬 생성 (rate limit 보호)
     for sub in SUB_FOLDERS:
         try:
             await create_folder(s, project_id, sub)
         except DriveError as e:
-            # 일부 sub 폴더 실패해도 메인 폴더는 살아있음 — 로그 후 계속
-            logger.warning("sub 폴더 생성 실패 (%s/%s): %s", folder_name, sub, e)
+            logger.warning(
+                "sub 폴더 생성 실패 (%s/%s): %s", folder_name, sub, e
+            )
 
     return project_id, _extract_url(project_meta)
 
 
 async def list_sharedrives(settings: Settings | None = None) -> dict[str, Any]:
-    """PoC/디버깅용 — 공유 드라이브 목록 조회."""
     s = settings or get_settings()
     return await _api(s, "GET", "/sharedrives")
