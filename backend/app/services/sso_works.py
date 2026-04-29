@@ -50,19 +50,30 @@ def _b64url_decode(s: str) -> bytes:
     return base64.urlsafe_b64decode(s + pad)
 
 
-def issue_state(jwt_secret: str, next_path: str) -> tuple[str, str]:
+def issue_state(
+    jwt_secret: str,
+    next_path: str,
+    *,
+    drive: bool = False,
+    extra: dict[str, Any] | None = None,
+) -> tuple[str, str]:
     """signed state(HMAC) + nonce 발급. cookie 없이도 검증 가능.
 
-    state payload: {nonce, ts, next} → JSON → base64url
+    state payload: {n: nonce, t: ts, x: next, d: 1?, ...extra}
     sig: HMAC-SHA256(secret, payload) → base64url
     state token: payload.sig
+
+    drive=True면 callback에서 Drive 토큰 보관 흐름으로 분기.
     """
     nonce = secrets.token_urlsafe(32)
-    payload = json.dumps(
-        {"n": nonce, "t": int(time.time()), "x": next_path or "/"},
-        separators=(",", ":"),
-        ensure_ascii=False,
-    ).encode("utf-8")
+    body: dict[str, Any] = {"n": nonce, "t": int(time.time()), "x": next_path or "/"}
+    if drive:
+        body["d"] = 1
+    if extra:
+        body.update(extra)
+    payload = json.dumps(body, separators=(",", ":"), ensure_ascii=False).encode(
+        "utf-8"
+    )
     payload_b64 = _b64url_encode(payload)
     sig = hmac.new(
         jwt_secret.encode("utf-8"), payload_b64.encode("ascii"), hashlib.sha256
@@ -95,13 +106,18 @@ def verify_state(jwt_secret: str, state: str) -> dict[str, Any]:
     return data
 
 
-def authorize_url(settings: Settings, state: str) -> str:
-    """NAVER WORKS authorize URL 생성. discovery 호출 없음."""
+def authorize_url(
+    settings: Settings, state: str, *, scope: str = "user.read"
+) -> str:
+    """NAVER WORKS authorize URL 생성. discovery 호출 없음.
+
+    scope 기본은 SSO용 'user.read'. Drive 위임 시 'user.read file'로 호출.
+    """
     params = {
         "response_type": "code",
         "client_id": settings.works_client_id,
         "redirect_uri": settings.works_redirect_uri,
-        "scope": "user.read",  # UserInfo API 호출 권한
+        "scope": scope,
         "state": state,
     }
     return f"{settings.works_authorize_endpoint}?{urlencode(params)}"
@@ -251,10 +267,13 @@ async def process_callback(
     *,
     code: str,
     settings: Settings | None = None,
+    out_tokens: dict[str, Any] | None = None,
 ) -> User:
     """NAVER WORKS callback 흐름 전체. 호출자가 db.commit() 책임.
 
     state 검증은 라우터에서 수행. 본 함수는 token 교환·UserInfo 조회·DB upsert 담당.
+    out_tokens가 주어지면 token endpoint 응답을 그대로 채워 넣음
+    (Drive 위임 흐름에서 access_token/refresh_token 보관용).
     """
     s = settings or get_settings()
     if not s.works_enabled:
@@ -263,6 +282,8 @@ async def process_callback(
         raise SSOError("WORKS 클라이언트 자격이 설정되지 않았습니다")
 
     tokens = await exchange_code(s, code)
+    if out_tokens is not None:
+        out_tokens.update(tokens)
     access_token = tokens.get("access_token", "")
     if not access_token:
         raise SSOError("access_token이 응답에 없습니다")

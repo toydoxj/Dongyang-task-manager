@@ -15,7 +15,6 @@ import asyncio
 import logging
 from datetime import UTC, datetime, timedelta
 from typing import Any
-from urllib.parse import urlencode
 
 import httpx
 from sqlalchemy.orm import Session
@@ -27,9 +26,7 @@ from app.settings import Settings, get_settings
 logger = logging.getLogger("sso.drive")
 
 _TOKEN_ENDPOINT = "https://auth.worksmobile.com/oauth2/v2.0/token"
-_AUTHORIZE_ENDPOINT = "https://auth.worksmobile.com/oauth2/v2.0/authorize"
 _HTTP_TIMEOUT = 15.0
-_DRIVE_SCOPE = "file"
 # 프로젝트 폴더 하위 7개 sub 폴더 — 회사 표준 (Q7 고정)
 SUB_FOLDERS: tuple[str, ...] = (
     "1. 건축도면",
@@ -79,45 +76,9 @@ def save_creds(
     return row
 
 
-# ── Authorize / token 교환 (admin 동의 흐름) ──
-
-
-def authorize_url(settings: Settings, state: str) -> str:
-    params = {
-        "response_type": "code",
-        "client_id": settings.works_client_id,
-        "redirect_uri": settings.works_drive_redirect_uri,
-        "scope": _DRIVE_SCOPE,
-        "state": state,
-    }
-    return f"{_AUTHORIZE_ENDPOINT}?{urlencode(params)}"
-
-
-async def exchange_code(
-    settings: Settings, code: str
-) -> dict[str, Any]:
-    payload = {
-        "grant_type": "authorization_code",
-        "code": code,
-        "redirect_uri": settings.works_drive_redirect_uri,
-        "client_id": settings.works_client_id,
-        "client_secret": settings.works_client_secret,
-    }
-    async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT) as client:
-        try:
-            resp = await client.post(
-                _TOKEN_ENDPOINT,
-                data=payload,
-                headers={"Content-Type": "application/x-www-form-urlencoded"},
-            )
-        except httpx.HTTPError as e:
-            raise DriveError(f"token endpoint 네트워크 오류: {e}") from e
-        if resp.status_code != 200:
-            logger.warning(
-                "drive code 교환 실패: %s %s", resp.status_code, resp.text
-            )
-            raise DriveError(f"토큰 교환 실패 ({resp.status_code})")
-        return resp.json()
+# ── Token refresh ──
+# Drive 위임 토큰의 발급은 SSO 흐름(/auth/works/login?drive=1)이 담당.
+# 본 모듈은 DB에 저장된 토큰을 만료 시 refresh + Drive API 호출만 담당.
 
 
 async def _refresh(settings: Settings, refresh_token: str) -> dict[str, Any]:

@@ -61,10 +61,11 @@ services:
       - key: WORKS_BLOCKED_EMAILS
         value: dyce@dyce.kr
       # ── NAVER WORKS Drive (Phase 2 — admin user-token 위임 방식) ──
+      # SSO callback 1개를 두 흐름이 공유 (NAVER WORKS Console redirect URI 절약).
+      # admin이 /api/admin/drive/connect 호출 → /api/auth/works/login?drive=1로 redirect →
+      # state.d==1 → SSO callback이 admin/scope 검증 후 drive_credentials 저장.
       - key: WORKS_DRIVE_ENABLED
         sync: false
-      - key: WORKS_DRIVE_REDIRECT_URI
-        value: https://api.dyce.kr/api/admin/drive/callback
       - key: WORKS_DRIVE_SHAREDRIVE_ID
         sync: false
       - key: WORKS_DRIVE_ROOT_FOLDER_ID

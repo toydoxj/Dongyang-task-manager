@@ -119,7 +119,7 @@ export default function DriveAdminPage() {
 
         <div className="mt-5">
           <a
-            href={`${API_BASE}/api/admin/drive/connect?next=/admin/drive`}
+            href={`${API_BASE}/api/auth/works/login?drive=1&next=${encodeURIComponent("/admin/drive")}`}
             className="inline-block rounded-lg border border-emerald-700/40 bg-emerald-600/10 px-4 py-2 text-sm font-medium text-emerald-300 transition hover:bg-emerald-600/20"
           >
             {status?.connected

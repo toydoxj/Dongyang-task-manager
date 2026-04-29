@@ -71,9 +71,6 @@ class Settings(BaseSettings):
     # 공유 드라이브 폴더 자동 생성. NAVER WORKS Drive는 user 토큰만 받으므로
     # admin이 1회 file scope 동의해 받은 토큰을 drive_credentials에 저장 후 재사용.
     works_drive_enabled: bool = False
-    works_drive_redirect_uri: str = (
-        "https://api.dyce.kr/api/admin/drive/callback"
-    )
     works_drive_sharedrive_id: str = ""  # 공유 드라이브 자체의 ID
     works_drive_root_folder_id: str = ""  # [업무관리] 루트 폴더의 fileId
     works_api_base: str = "https://www.worksapis.com/v1.0"

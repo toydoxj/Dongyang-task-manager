@@ -22,7 +22,7 @@ from app.security import (
     hash_password,
     require_admin,
 )
-from app.services import sso_works
+from app.services import sso_drive, sso_works
 from app.services.employee_link import link_user_to_employee
 from app.settings import get_settings
 
@@ -89,7 +89,10 @@ def _is_https(redirect_uri: str) -> bool:
 
 
 @router.get("/works/login")
-async def works_login(next: str = Query("/")) -> RedirectResponse:
+async def works_login(
+    next: str = Query("/"),
+    drive: int = Query(default=0, description="1이면 file scope 추가 요청 (Drive 위임)"),
+) -> RedirectResponse:
     """NAVER WORKS authorize URL로 302. state는 HMAC signed (cookie 비사용)."""
     s = get_settings()
     if not s.works_enabled:
@@ -97,8 +100,12 @@ async def works_login(next: str = Query("/")) -> RedirectResponse:
     if not s.works_client_id or not s.works_redirect_uri:
         raise HTTPException(status_code=503, detail="WORKS 설정 누락")
     safe_next = next if next.startswith("/") and not next.startswith("//") else "/"
-    state, _nonce = sso_works.issue_state(s.jwt_secret, safe_next)
-    url = sso_works.authorize_url(s, state)
+    is_drive = drive == 1
+    state, _nonce = sso_works.issue_state(
+        s.jwt_secret, safe_next, drive=is_drive
+    )
+    scope = "user.read file" if is_drive else "user.read"
+    url = sso_works.authorize_url(s, state, scope=scope)
     return RedirectResponse(url=url, status_code=302)
 
 
@@ -134,15 +141,48 @@ async def works_callback(
     safe_next = state_data.get("x", "/")
     if not isinstance(safe_next, str) or not safe_next.startswith("/"):
         safe_next = "/"
+    is_drive_flow = state_data.get("d") == 1
 
+    out_tokens: dict[str, object] = {}
     try:
-        user = await sso_works.process_callback(db, code=code, settings=s)
+        user = await sso_works.process_callback(
+            db, code=code, settings=s, out_tokens=out_tokens
+        )
     except sso_works.SSOError as e:
         logger.warning("SSO 처리 실패: %s", e)
         return _frontend_error_redirect(s, str(e))
     except Exception:  # noqa: BLE001
         logger.exception("SSO 처리 중 예외")
         return _frontend_error_redirect(s, "SSO 처리 중 오류가 발생했습니다")
+
+    # Drive 위임 흐름: admin이 file scope를 동의했고 응답에 file이 포함되면 토큰 보관
+    if is_drive_flow:
+        if user.role != "admin":
+            return _frontend_error_redirect(
+                s, "Drive 위임은 관리자만 가능합니다"
+            )
+        granted_scope = str(out_tokens.get("scope", ""))
+        if "file" not in granted_scope.split():
+            return _frontend_error_redirect(
+                s,
+                f"Drive scope 'file'이 부여되지 않음 (received='{granted_scope}'). "
+                "콘솔에서 'file' scope 체크 + 저장 확인 필요",
+            )
+        try:
+            sso_drive.save_creds(
+                db,
+                access_token=str(out_tokens.get("access_token", "")),
+                refresh_token=str(out_tokens.get("refresh_token", "")),
+                expires_in=int(out_tokens.get("expires_in", 3600) or 3600),
+                scope=granted_scope,
+                granted_by_user_id=user.id,
+                granted_by_email=user.email or "",
+            )
+        except Exception:  # noqa: BLE001
+            logger.exception("Drive 토큰 저장 실패")
+            return _frontend_error_redirect(
+                s, "Drive 토큰 저장 실패"
+            )
 
     sid = uuid4().hex
     user.session_id = sid
@@ -159,6 +199,16 @@ async def works_callback(
     base = (s.frontend_base_url or "").rstrip("/")
     if not base:
         raise HTTPException(status_code=500, detail="FRONTEND_BASE_URL 미설정")
+    # Drive 위임 흐름: drive_connected=1 query를 next 페이지에 붙여 알림
+    if is_drive_flow:
+        sep = "&" if "?" in safe_next else "?"
+        return RedirectResponse(
+            url=(
+                f"{base}/auth/works/callback"
+                f"#token={token}&user={user_b64}&next={safe_next}{sep}drive_connected=1"
+            ),
+            status_code=302,
+        )
     target = (
         f"{base}/auth/works/callback#token={token}"
         f"&user={user_b64}&next={safe_next}"
