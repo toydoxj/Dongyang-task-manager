@@ -220,24 +220,29 @@ async def _api(
 async def find_child_folder(
     settings: Settings, parent_id: str, name: str
 ) -> dict[str, Any] | None:
+    """parent 아래에서 같은 이름 폴더가 있으면 metadata 반환.
+
+    NAVER WORKS Drive API:
+      - sharedrive root list: GET /sharedrives/{sd}/files
+      - 특정 folder children: GET /sharedrives/{sd}/files?parentFolderId={parent}
+        (parent는 별도 fileId(base64url) 또는 sharedrive_id)
+    """
     sd = settings.works_drive_sharedrive_id
     if not sd:
         raise DriveError("WORKS_DRIVE_SHAREDRIVE_ID 미설정")
-    try:
-        body = await _api(
-            settings,
-            "GET",
-            f"/sharedrives/{sd}/files/{parent_id}/children",
-            params={"fileType": "folder"},
-        )
-    except DriveError:
-        body = await _api(
-            settings,
-            "GET",
-            f"/sharedrives/{sd}/files",
-            params={"parentFolderId": parent_id, "fileType": "folder"},
-        )
-    items = body.get("files") or body.get("items") or body.get("children") or []
+    params: dict[str, Any] = {}
+    if parent_id and parent_id != sd:
+        params["parentFolderId"] = parent_id
+    body = await _api(
+        settings, "GET", f"/sharedrives/{sd}/files", params=params
+    )
+    items = (
+        body.get("files")
+        or body.get("items")
+        or body.get("children")
+        or body.get("list")
+        or []
+    )
     for it in items:
         item_name = it.get("fileName") or it.get("name") or ""
         if item_name == name:
@@ -248,29 +253,61 @@ async def find_child_folder(
 async def create_folder(
     settings: Settings, parent_id: str, name: str
 ) -> dict[str, Any]:
+    """parent 아래 폴더 생성. 이미 있으면 메타 반환 (idempotent).
+
+    NAVER WORKS Drive API 2단계 흐름 (PoC로 확정):
+      1) POST /sharedrives/{sd}/files
+         body: {"fileName", "fileSize": 0, "fileType": "folder", "parentFolderId"?}
+         → 응답: {"uploadUrl", "offset"} (fileId 아직 없음)
+      2) PUT {uploadUrl} with empty body + Bearer header → 폴더 commit
+      3) GET /sharedrives/{sd}/files → list에서 같은 이름 매칭으로 fileId 추출
+    """
     existing = await find_child_folder(settings, parent_id, name)
     if existing is not None:
         return existing
     sd = settings.works_drive_sharedrive_id
-    body = await _api(
-        settings,
-        "POST",
-        f"/sharedrives/{sd}/files",
-        json={
-            "fileName": name,
-            "parentFolderId": parent_id,
-            "fileType": "folder",
-        },
-    )
-    return body
+    payload: dict[str, Any] = {
+        "fileName": name,
+        "fileSize": 0,
+        "fileType": "folder",
+    }
+    if parent_id and parent_id != sd:
+        payload["parentFolderId"] = parent_id
 
+    # 1단계: 메타 등록 → uploadUrl 발급
+    body = await _api(settings, "POST", f"/sharedrives/{sd}/files", json=payload)
+    upload_url = body.get("uploadUrl") if isinstance(body, dict) else None
+    if not upload_url:
+        raise DriveError(f"폴더 생성 1단계 응답에 uploadUrl 없음: {name}")
 
-def _extract_url(meta: dict[str, Any]) -> str:
-    for key in ("webUrl", "url", "shareUrl", "fileUrl"):
-        v = meta.get(key)
-        if isinstance(v, str) and v:
-            return v
-    return ""
+    # 2단계: uploadUrl에 빈 body PUT → 폴더 commit
+    token = await _get_valid_access_token(settings)
+    async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT) as client:
+        try:
+            put_resp = await client.put(
+                upload_url,
+                content=b"",
+                headers={
+                    "Content-Length": "0",
+                    "Authorization": f"Bearer {token}",
+                },
+            )
+        except httpx.HTTPError as e:
+            raise DriveError(f"폴더 commit 네트워크 오류: {e}") from e
+    if put_resp.status_code >= 400:
+        logger.warning(
+            "uploadUrl PUT 실패: %s %s", put_resp.status_code, put_resp.text[:300]
+        )
+        raise DriveError(f"폴더 commit 실패 ({put_resp.status_code})")
+
+    # 3단계: list로 메타 추출 (eventual consistency 대비 retry)
+    for delay in (0.0, 0.5, 1.0, 2.0):
+        if delay:
+            await asyncio.sleep(delay)
+        meta = await find_child_folder(settings, parent_id, name)
+        if meta is not None:
+            return meta
+    raise DriveError(f"폴더 commit 후 list 매칭 실패 (timeout): {name}")
 
 
 def _extract_id(meta: dict[str, Any]) -> str:
@@ -278,6 +315,26 @@ def _extract_id(meta: dict[str, Any]) -> str:
         v = meta.get(key)
         if isinstance(v, str) and v:
             return str(v)
+    return ""
+
+
+def _extract_url(meta: dict[str, Any]) -> str:
+    """NAVER WORKS Drive 응답엔 webUrl 키가 없으므로 share URL 패턴으로 조립.
+
+    https://drive.worksmobile.com/drive/web/share/root-folder?resourceKey={fileId}&resourceLocation={loc}
+    """
+    # 응답에 직접 URL 키가 있으면 우선
+    for key in ("webUrl", "url", "shareUrl", "fileUrl"):
+        v = meta.get(key)
+        if isinstance(v, str) and v:
+            return v
+    file_id = _extract_id(meta)
+    location = meta.get("resourceLocation")
+    if file_id and location:
+        return (
+            "https://drive.worksmobile.com/drive/web/share/root-folder"
+            f"?resourceKey={file_id}&resourceLocation={location}"
+        )
     return ""
 
 

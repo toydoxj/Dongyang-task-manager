@@ -1,4 +1,4 @@
-"""NAVER WORKS Drive PoC — admin 위임 토큰이 DB에 저장된 후 동작 검증.
+"""NAVER WORKS Drive PoC - admin 위임 토큰이 DB에 저장된 후 동작 검증.
 
 전제: /api/admin/drive/connect 흐름으로 admin이 한 번 동의 완료
       (drive_credentials 테이블에 row 1개 존재).
@@ -99,44 +99,364 @@ async def main() -> None:
     sd = s.works_drive_sharedrive_id
     target_name = os.environ.get("POC_TARGET_FOLDER_NAME", "[업무관리]")
 
-    print(f"\n[3a] sharedrive 목록 + 다양한 list endpoint 진단...")
-    # 24101은 sharedrive ID가 아닐 가능성 (resourceLocation일 뿐) →
-    # 우선 ID 없는 list 호출로 진짜 sharedrive ID들 확인
-    diag_endpoints = [
-        # sharedrive 자체 list (ID 없음)
-        f"{s.works_api_base}/sharedrives",
-        # 공유 폴더(team folder) list — sharedrive와 다른 개념일 수도
-        f"{s.works_api_base}/sharedfolders",
-        # my drive root (개인 드라이브)
-        f"{s.works_api_base}/drive/files",
-    ]
-    for url in diag_endpoints:
-        code, body = await _try_get(token, url)
-        ok = "[OK]" if 200 <= (code if isinstance(code, int) else 0) < 300 else "[FAIL]"
-        print(f"  {ok} GET {url} -> {code}")
-        if isinstance(code, int) and 200 <= code < 300:
-            print(f"        본문 발췌: {_pretty(body, max_chars=800)}")
-        elif isinstance(code, int) and 400 <= code < 500:
-            snippet = body if isinstance(body, str) else json.dumps(body, ensure_ascii=False)
-            print(f"        body: {snippet[:200]}")
+    print(f"\n[3a] sharedrive 전체 목록...")
+    code, body = await _try_get(token, f"{s.works_api_base}/sharedrives")
+    if not (isinstance(code, int) and 200 <= code < 300):
+        print(f"  [FAIL] {code}")
+        return
+    sharedrives = (body or {}).get("sharedrives") if isinstance(body, dict) else []
+    if not isinstance(sharedrives, list) or not sharedrives:
+        print(f"  [경고] sharedrives 비어 있음. raw: {_pretty(body, max_chars=2000)}")
+        return
+    print(f"  총 {len(sharedrives)}개 sharedrive 발견:")
+    for sd_meta in sharedrives:
+        print(
+            f"    - {sd_meta.get('sharedriveId'):<24} "
+            f"name='{sd_meta.get('name','')}'  "
+            f"hasPerm={sd_meta.get('hasPermission')} "
+            f"perm={sd_meta.get('permissionType','')}"
+        )
 
-    # 위 결과에서 sharedrive 또는 folder ID를 사용자에게 안내
-    print(f"\n[3b] 기존 sharedrive_id={sd} + root_id로 candidate 시도 (참고용)...")
-    root_id = os.environ.get(
-        "WORKS_DRIVE_ROOT_FOLDER_ID", "3472612542255198729"
+    target_name = os.environ.get("POC_TARGET_FOLDER_NAME", "[업무관리]")
+
+    # case 1: sharedrive 자체 이름이 target과 일치 → 그 sharedrive 사용
+    self_match = next(
+        (sd_meta for sd_meta in sharedrives if sd_meta.get("name") == target_name),
+        None,
     )
-    candidates = [
-        f"{s.works_api_base}/sharedrives/{sd}",
-        f"{s.works_api_base}/sharedrives/{sd}/files",
-        f"{s.works_api_base}/sharedrives/{sd}/files/{root_id}/children",
-        # resourceKey 첫 segment(2001000000536760)도 ID 후보로 시도
-        f"{s.works_api_base}/sharedrives/2001000000536760",
-        f"{s.works_api_base}/sharedrives/2001000000536760/files",
-        # files endpoint 자체 (sharedrive 명시 없이)
-        f"{s.works_api_base}/files/{root_id}",
-        f"{s.works_api_base}/drive/files/{root_id}",
-        f"{s.works_api_base}/drive/files/{root_id}/children",
-    ]
+    if self_match:
+        sid = self_match.get("sharedriveId", "")
+        print(
+            f"\n[3b] '{target_name}' 가 sharedrive 자체로 발견: {sid}\n"
+            f"     → root_folder_id로 sharedrive_id 자체를 사용 (NAVER WORKS sharedrive root 패턴)"
+        )
+        print("\n=========================================")
+        print("Render 환경변수에 등록할 값 (확정):")
+        print(f"  WORKS_DRIVE_SHAREDRIVE_ID    = {sid}")
+        print(f"  WORKS_DRIVE_ROOT_FOLDER_ID   = {sid}")
+        print("=========================================")
+        if os.environ.get("RUN_FULL_TEST") == "1":
+            os.environ["WORKS_DRIVE_SHAREDRIVE_ID"] = sid
+            os.environ["WORKS_DRIVE_ROOT_FOLDER_ID"] = sid
+            get_settings.cache_clear()
+            s2 = get_settings()
+            print(f"\n[4] ensure_project_folder 호출 (POST + PUT + list)")
+            try:
+                fid, url = await sso_drive.ensure_project_folder(
+                    s2, code="POC-29B", project_name="테스트프로젝트B"
+                )
+                print(f"  [OK] folderId={fid}")
+                print(f"  [OK] webUrl={url}")
+            except sso_drive.DriveError as e:
+                print(f"  [FAIL] {e}")
+            return
+
+        if os.environ.get("RUN_DIAGNOSTIC") == "1":
+            os.environ["WORKS_DRIVE_SHAREDRIVE_ID"] = sid
+            os.environ["WORKS_DRIVE_ROOT_FOLDER_ID"] = sid
+            get_settings.cache_clear()
+            s2 = get_settings()
+            print(f"\n[4] settings 확인: sd={s2.works_drive_sharedrive_id} root={s2.works_drive_root_folder_id}")
+
+            test_folder = "[POC-29A]테스트프로젝트A"
+            print(f"\n[4-1] 직접 POST /sharedrives/{sid}/files")
+            async with httpx.AsyncClient(timeout=15.0) as c:
+                pr = await c.post(
+                    f"{s2.works_api_base}/sharedrives/{sid}/files",
+                    json={
+                        "fileName": test_folder,
+                        "fileSize": 0,
+                        "fileType": "folder",
+                    },
+                    headers={
+                        "Authorization": f"Bearer {token}",
+                        "Content-Type": "application/json",
+                    },
+                )
+            print(f"    status: {pr.status_code}")
+            print(f"    body: {pr.text[:400]}")
+
+            print(f"\n[4-2] 직접 GET /sharedrives/{sid}/files (1초 대기 후)")
+            await asyncio.sleep(1.0)
+            async with httpx.AsyncClient(timeout=15.0) as c:
+                lr = await c.get(
+                    f"{s2.works_api_base}/sharedrives/{sid}/files",
+                    headers={"Authorization": f"Bearer {token}"},
+                )
+            print(f"    status: {lr.status_code}")
+            try:
+                lb = lr.json()
+                items = lb.get("files") or lb.get("items") or lb.get("list") or []
+                names = [it.get("fileName") or it.get("name") or "?" for it in items]
+                print(f"    root에 보이는 폴더 ({len(items)}개): {names}")
+                match = next(
+                    (it for it in items if (it.get("fileName") or it.get("name")) == test_folder),
+                    None,
+                )
+                if match:
+                    print(f"\n    *** [POC-29A]테스트프로젝트A 발견! ***")
+                    print(json.dumps(match, ensure_ascii=False, indent=2))
+                else:
+                    print(f"    [경고] '{test_folder}' 미발견. 위 list에서 일치 키워드 확인 필요.")
+            except ValueError:
+                print(f"    text: {lr.text[:300]}")
+            return
+
+        if os.environ.get("RUN_PROJECT_TEST") == "1":
+            print(f"\n[4] '{sid}' root에 폴더 생성 - 여러 body schema 시도...")
+            test_name = "POC테스트폴더"
+            create_url = f"{s.works_api_base}/sharedrives/{sid}/files"
+            body_candidates: list[tuple[str, dict]] = [
+                # (label, body)
+                ("v1: fileName+parentFolderId+fileType", {
+                    "fileName": test_name,
+                    "parentFolderId": sid,
+                    "fileType": "folder",
+                }),
+                ("v2: fileName+fileType only", {
+                    "fileName": test_name,
+                    "fileType": "folder",
+                }),
+                ("v3: name+type", {
+                    "name": test_name,
+                    "type": "folder",
+                }),
+                ("v4: fileName only", {
+                    "fileName": test_name,
+                }),
+                ("v5: name only", {
+                    "name": test_name,
+                }),
+                ("v6: folderName only", {
+                    "folderName": test_name,
+                }),
+                # fileSize=0 + 다양한 조합 (응답에서 fileSize 필수 단서)
+                ("v7: fileName+fileSize=0+fileType=folder", {
+                    "fileName": test_name,
+                    "fileSize": 0,
+                    "fileType": "folder",
+                }),
+                ("v8: fileName+fileSize=0", {
+                    "fileName": test_name,
+                    "fileSize": 0,
+                }),
+                ("v9: fileName+fileSize=0+parentFolderId", {
+                    "fileName": test_name,
+                    "fileSize": 0,
+                    "parentFolderId": sid,
+                }),
+                ("v10: fileName+fileSize=0+isFolder", {
+                    "fileName": test_name,
+                    "fileSize": 0,
+                    "isFolder": True,
+                }),
+            ]
+            for label, body in body_candidates:
+                async with httpx.AsyncClient(timeout=15.0) as client:
+                    try:
+                        resp = await client.post(
+                            create_url,
+                            json=body,
+                            headers={
+                                "Authorization": f"Bearer {token}",
+                                "Content-Type": "application/json",
+                            },
+                        )
+                    except httpx.HTTPError as e:
+                        print(f"  [{label}] network error: {e}")
+                        continue
+                ok = "[OK]" if 200 <= resp.status_code < 300 else "[FAIL]"
+                print(f"  {ok} {label} -> {resp.status_code}")
+                snippet = resp.text[:300]
+                print(f"        body: {snippet}")
+                if 200 <= resp.status_code < 300:
+                    print("\n  *** 1단계 성공 (uploadUrl 발급) ***")
+                    print(f"  POST {create_url}")
+                    print(f"  body: {json.dumps(body, ensure_ascii=False)}")
+                    try:
+                        rb = resp.json()
+                    except ValueError:
+                        rb = {"_text": resp.text}
+                    upload_url = rb.get("uploadUrl") if isinstance(rb, dict) else ""
+                    print(f"  응답 키: {list(rb.keys()) if isinstance(rb, dict) else type(rb)}")
+                    if upload_url:
+                        # 2-A단계: PUT with Authorization header
+                        print(f"\n  [2-A] PUT 빈 body + Bearer 헤더...")
+                        async with httpx.AsyncClient(timeout=15.0) as c2:
+                            try:
+                                put_resp = await c2.put(
+                                    upload_url,
+                                    content=b"",
+                                    headers={
+                                        "Content-Length": "0",
+                                        "Authorization": f"Bearer {token}",
+                                    },
+                                )
+                            except httpx.HTTPError as e:
+                                print(f"    network: {e}")
+                                put_resp = None
+                        if put_resp is not None:
+                            print(f"    status: {put_resp.status_code}")
+                            print(f"    body: {put_resp.text[:400]}")
+
+                        # 2-B단계: list 조회로 폴더가 만들어졌는지 확인
+                        print(f"\n  [2-B] list 조회로 폴더 확인...")
+                        list_url = f"{s.works_api_base}/sharedrives/{sid}/files"
+                        async with httpx.AsyncClient(timeout=15.0) as c3:
+                            list_resp = await c3.get(
+                                list_url,
+                                headers={"Authorization": f"Bearer {token}"},
+                            )
+                        if 200 <= list_resp.status_code < 300:
+                            lb = list_resp.json()
+                            items = (
+                                lb.get("files")
+                                or lb.get("items")
+                                or lb.get("list")
+                                or []
+                            )
+                            print(f"    root에 {len(items)}개 항목 보임:")
+                            for it in items[:10]:
+                                print(
+                                    f"      - {it.get('fileName') or it.get('name')} "
+                                    f"(id={it.get('fileId') or it.get('id') or '?'}, "
+                                    f"type={it.get('fileType') or it.get('type') or '?'})"
+                                )
+                            # POC테스트폴더 매칭
+                            match = next(
+                                (
+                                    it
+                                    for it in items
+                                    if (it.get("fileName") or it.get("name")) == test_name
+                                ),
+                                None,
+                            )
+                            if match:
+                                print(f"\n    *** POC테스트폴더 발견! 메타: ***")
+                                print(json.dumps(match, ensure_ascii=False, indent=2))
+                    return
+
+            # /files endpoint가 모두 fail이면 별도 /folders endpoint 시도
+            print(f"\n[5] 별도 /folders endpoint 시도...")
+            folder_endpoints = [
+                f"{s.works_api_base}/sharedrives/{sid}/folders",
+                f"{s.works_api_base}/sharedrives/{sid}/folder",
+                f"{s.works_api_base}/sharedrives/{sid}/files/folder",
+            ]
+            folder_bodies = [
+                {"fileName": test_name},
+                {"fileName": test_name, "parentFolderId": sid},
+                {"name": test_name},
+            ]
+            for fep in folder_endpoints:
+                for fbody in folder_bodies:
+                    async with httpx.AsyncClient(timeout=15.0) as client:
+                        try:
+                            resp = await client.post(
+                                fep,
+                                json=fbody,
+                                headers={
+                                    "Authorization": f"Bearer {token}",
+                                    "Content-Type": "application/json",
+                                },
+                            )
+                        except httpx.HTTPError as e:
+                            print(f"  [{fep}] {fbody} network: {e}")
+                            continue
+                    ok = "[OK]" if 200 <= resp.status_code < 300 else "[FAIL]"
+                    print(
+                        f"  {ok} POST {fep} body={list(fbody.keys())} "
+                        f"-> {resp.status_code} : {resp.text[:200]}"
+                    )
+                    if 200 <= resp.status_code < 300:
+                        print("\n  *** 성공! ***")
+                        print(f"  POST {fep}")
+                        print(f"  body: {json.dumps(fbody, ensure_ascii=False)}")
+                        return
+        return
+
+    # case 2: 다른 sharedrive 안에 sub-folder로 존재할 가능성
+    print(
+        f"\n[3b] 각 sharedrive의 root에서 sub-folder '{target_name}' 검색..."
+    )
+    found_in: list[tuple[str, dict]] = []  # (sharedriveId, folder_meta)
+    for sd_meta in sharedrives:
+        sid = sd_meta.get("sharedriveId", "")
+        if not sid:
+            continue
+        # GET /sharedrives/{id}/files
+        code, files_body = await _try_get(
+            token, f"{s.works_api_base}/sharedrives/{sid}/files"
+        )
+        ok = "[OK]" if 200 <= (code if isinstance(code, int) else 0) < 300 else "[FAIL]"
+        print(f"  {ok} {sid} -> {code}")
+        if not (isinstance(code, int) and 200 <= code < 300):
+            continue
+        items = []
+        if isinstance(files_body, dict):
+            for key in ("files", "items", "children", "folders", "list"):
+                v = files_body.get(key)
+                if isinstance(v, list):
+                    items = v
+                    break
+        for it in items:
+            n = it.get("fileName") or it.get("name") or it.get("folderName") or ""
+            if n == target_name:
+                found_in.append((sid, it))
+                print(f"        --> '{target_name}' 발견!")
+                break
+        if not any(s == sid for s, _ in found_in):
+            names = [
+                it.get("fileName") or it.get("name") or "?" for it in items[:5]
+            ]
+            print(f"        root에 보이는 항목 일부: {names}")
+
+    if not found_in:
+        print(
+            f"\n  [경고] 어느 sharedrive에서도 '{target_name}' 미발견. 권한 또는 위치 문제."
+        )
+        return
+
+    sid, folder_meta = found_in[0]
+    print(f"\n[3c] '{target_name}' 폴더 메타 (sharedrive {sid}):")
+    print(_pretty(folder_meta, max_chars=2000))
+
+    folder_id = ""
+    for ik in ("fileId", "id", "folderId"):
+        v = folder_meta.get(ik)
+        if isinstance(v, str) and v:
+            folder_id = v
+            break
+    folder_url = ""
+    for uk in ("webUrl", "url", "shareUrl", "fileUrl"):
+        v = folder_meta.get(uk)
+        if isinstance(v, str) and v:
+            folder_url = v
+            break
+
+    print("\n=========================================")
+    print("Render 환경변수에 등록할 값 (확정):")
+    print(f"  WORKS_DRIVE_SHAREDRIVE_ID    = {sid}")
+    print(f"  WORKS_DRIVE_ROOT_FOLDER_ID   = {folder_id or '(추출 실패)'}")
+    if folder_url:
+        print(f"  (참고) 폴더 webUrl           = {folder_url}")
+    print("=========================================")
+
+    if os.environ.get("RUN_PROJECT_TEST") == "1" and folder_id:
+        os.environ["WORKS_DRIVE_SHAREDRIVE_ID"] = sid
+        os.environ["WORKS_DRIVE_ROOT_FOLDER_ID"] = folder_id
+        get_settings.cache_clear()
+        s2 = get_settings()
+        print("\n[4] [POC-2604]테스트프로젝트 폴더 생성 시도...")
+        try:
+            fid, url = await sso_drive.ensure_project_folder(
+                s2, code="POC-2604", project_name="테스트프로젝트"
+            )
+            print(f"  [OK] folderId={fid}")
+            print(f"  [OK] webUrl={url or '(URL 키 누락)'}")
+        except sso_drive.DriveError as e:
+            print(f"  [FAIL] {e}")
+    return
 
     success_url = ""
     success_body: dict | list | str | None = None
