@@ -99,7 +99,29 @@ async def main() -> None:
     sd = s.works_drive_sharedrive_id
     target_name = os.environ.get("POC_TARGET_FOLDER_NAME", "[업무관리]")
 
-    print(f"\n[3] sharedrive {sd} 루트 컨텐츠 조회 (여러 path 시도)...")
+    print(f"\n[3a] sharedrive 목록 + 다양한 list endpoint 진단...")
+    # 24101은 sharedrive ID가 아닐 가능성 (resourceLocation일 뿐) →
+    # 우선 ID 없는 list 호출로 진짜 sharedrive ID들 확인
+    diag_endpoints = [
+        # sharedrive 자체 list (ID 없음)
+        f"{s.works_api_base}/sharedrives",
+        # 공유 폴더(team folder) list — sharedrive와 다른 개념일 수도
+        f"{s.works_api_base}/sharedfolders",
+        # my drive root (개인 드라이브)
+        f"{s.works_api_base}/drive/files",
+    ]
+    for url in diag_endpoints:
+        code, body = await _try_get(token, url)
+        ok = "[OK]" if 200 <= (code if isinstance(code, int) else 0) < 300 else "[FAIL]"
+        print(f"  {ok} GET {url} -> {code}")
+        if isinstance(code, int) and 200 <= code < 300:
+            print(f"        본문 발췌: {_pretty(body, max_chars=800)}")
+        elif isinstance(code, int) and 400 <= code < 500:
+            snippet = body if isinstance(body, str) else json.dumps(body, ensure_ascii=False)
+            print(f"        body: {snippet[:200]}")
+
+    # 위 결과에서 sharedrive 또는 folder ID를 사용자에게 안내
+    print(f"\n[3b] 기존 sharedrive_id={sd} + root_id로 candidate 시도 (참고용)...")
     root_id = os.environ.get(
         "WORKS_DRIVE_ROOT_FOLDER_ID", "3472612542255198729"
     )
@@ -107,9 +129,13 @@ async def main() -> None:
         f"{s.works_api_base}/sharedrives/{sd}",
         f"{s.works_api_base}/sharedrives/{sd}/files",
         f"{s.works_api_base}/sharedrives/{sd}/files/{root_id}/children",
-        f"{s.works_api_base}/sharedrives/{sd}/files/{root_id}",
-        f"{s.works_api_base}/sharedrives/{sd}/folders/root/children",
-        f"{s.works_api_base}/sharedrives/{sd}/items",
+        # resourceKey 첫 segment(2001000000536760)도 ID 후보로 시도
+        f"{s.works_api_base}/sharedrives/2001000000536760",
+        f"{s.works_api_base}/sharedrives/2001000000536760/files",
+        # files endpoint 자체 (sharedrive 명시 없이)
+        f"{s.works_api_base}/files/{root_id}",
+        f"{s.works_api_base}/drive/files/{root_id}",
+        f"{s.works_api_base}/drive/files/{root_id}/children",
     ]
 
     success_url = ""
