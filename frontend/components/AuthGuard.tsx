@@ -96,8 +96,9 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
 
   if (phase === "loading") {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-zinc-950 text-sm text-zinc-400">
-        로딩 중...
+      <div className="flex min-h-screen flex-col items-center justify-center gap-2 bg-zinc-950 text-sm text-zinc-400">
+        <p>인증 확인 중...</p>
+        <p className="text-xs text-zinc-600">잠시 후 자동으로 진행됩니다</p>
       </div>
     );
   }

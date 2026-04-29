@@ -24,6 +24,7 @@ export function saveAuth(token: string, user: UserInfo): void {
   localStorage.setItem(USER_KEY, JSON.stringify(user));
   if (typeof window !== "undefined") {
     window.sessionStorage.removeItem("dy_logged_out");
+    window.sessionStorage.removeItem(SILENT_FAILED_KEY);
   }
 }
 
@@ -70,11 +71,21 @@ export function worksLoginUrl(next: string = "/"): string {
 }
 
 /** silent SSO (prompt=none) 시도. NAVER 세션 살아있으면 silent 토큰 발급, 없으면 실패.
- * 결과를 callback 페이지가 postMessage로 부모(여기)에 전달. timeout 8초.
+ * 결과를 callback 페이지가 postMessage로 부모(여기)에 전달. timeout 3초.
+ *
+ * NAVER가 prompt=none을 거부하거나 X-Frame-Options로 iframe 차단 시 timeout으로 빠짐.
+ * fail 후 같은 탭에서 재시도 안 하도록 sessionStorage('dy_silent_failed')에 표시.
  */
+const SILENT_FAILED_KEY = "dy_silent_failed";
+const SILENT_TIMEOUT_MS = 3000;
+
 export function trySilentSSO(next: string = "/"): Promise<UserInfo | null> {
   return new Promise((resolve) => {
     if (typeof window === "undefined") return resolve(null);
+    // 같은 탭에서 한 번 실패했으면 즉시 skip
+    if (window.sessionStorage.getItem(SILENT_FAILED_KEY) === "1") {
+      return resolve(null);
+    }
     const iframe = document.createElement("iframe");
     iframe.style.display = "none";
     iframe.src = `${API_BASE}/api/auth/works/login?silent=1&next=${encodeURIComponent(next)}`;
@@ -88,7 +99,6 @@ export function trySilentSSO(next: string = "/"): Promise<UserInfo | null> {
 
     const onMessage = (e: MessageEvent): void => {
       if (settled) return;
-      // origin 검증 — backend가 frontend origin으로 redirect하므로 같은 origin
       if (e.origin !== window.location.origin) return;
       const data = e.data as
         | { type: "sso_silent_success"; token: string; user: UserInfo }
@@ -102,6 +112,7 @@ export function trySilentSSO(next: string = "/"): Promise<UserInfo | null> {
         resolve(data.user);
       } else if (data.type === "sso_silent_failed") {
         settled = true;
+        window.sessionStorage.setItem(SILENT_FAILED_KEY, "1");
         cleanup();
         resolve(null);
       }
@@ -111,10 +122,12 @@ export function trySilentSSO(next: string = "/"): Promise<UserInfo | null> {
     const timer = window.setTimeout(() => {
       if (!settled) {
         settled = true;
+        // X-Frame-Options 차단·NAVER prompt=none 미지원 등 → 같은 탭에서 재시도 안 함
+        window.sessionStorage.setItem(SILENT_FAILED_KEY, "1");
         cleanup();
         resolve(null);
       }
-    }, 8000);
+    }, SILENT_TIMEOUT_MS);
 
     document.body.appendChild(iframe);
   });
