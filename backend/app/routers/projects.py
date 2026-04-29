@@ -651,11 +651,14 @@ async def stream_drive_file(
     page_id: str,
     file_id: str,
     token: str = Query(..., description="issue-token으로 발급한 JWT"),
+    file_name: str | None = Query(default=None, alias="name"),
 ) -> StreamingResponse:
     """short-lived token으로 인증, NAVER WORKS Drive에서 파일 stream을 받아
-    그대로 forward. signed URL의 cross-IP 제약 우회.
+    그대로 forward. 모든 파일을 attachment로 강제 다운로드.
 
-    Bearer 인증 대신 query token만 받아 navigate·외부 앱(Office) 호환.
+    httpx의 cross-domain redirect는 default로 Authorization 헤더를 strip하므로
+    event_hook으로 매 outbound request에 Bearer 재부착 (apis-storage.worksmobile.com에서
+    401 발생 방지).
     """
     s = get_settings()
     if not s.works_drive_enabled:
@@ -673,14 +676,20 @@ async def stream_drive_file(
         f"{s.works_api_base.rstrip('/')}"
         f"/sharedrives/{sd}/files/{file_id}/download"
     )
-    client = httpx.AsyncClient(timeout=600.0, follow_redirects=True)
+
+    async def _attach_bearer(request: httpx.Request) -> None:
+        request.headers["Authorization"] = f"Bearer {bearer}"
+
+    client = httpx.AsyncClient(
+        timeout=600.0,
+        follow_redirects=True,
+        event_hooks={"request": [_attach_bearer]},
+    )
     try:
-        req = client.build_request(
-            "GET",
-            upstream_url,
-            headers={"Authorization": f"Bearer {bearer}"},
+        resp = await client.send(
+            client.build_request("GET", upstream_url),
+            stream=True,
         )
-        resp = await client.send(req, stream=True)
     except Exception:
         await client.aclose()
         raise
@@ -695,18 +704,24 @@ async def stream_drive_file(
             status_code=502, detail=f"upstream {resp.status_code}"
         )
 
-    forward_headers: dict[str, str] = {}
-    for key in (
-        "content-type",
-        "content-length",
-        "content-disposition",
-        "last-modified",
-        "etag",
-        "cache-control",
-    ):
-        v = resp.headers.get(key)
-        if v:
-            forward_headers[key] = v
+    # 모든 파일을 attachment로 강제 다운로드 (Office protocol/inline 등 분기 폐기).
+    # 사용자가 OS 다운로드 폴더에서 더블클릭 → OS 기본 앱(Office/한글/AutoCAD 등) 자동 launch.
+    forward_headers: dict[str, str] = {
+        "content-type": resp.headers.get("content-type", "application/octet-stream"),
+    }
+    if "content-length" in resp.headers:
+        forward_headers["content-length"] = resp.headers["content-length"]
+    # filename* (RFC 5987 UTF-8) — 한글 파일명 안전
+    safe_name = (file_name or "").replace('"', "")
+    if safe_name:
+        from urllib.parse import quote
+
+        forward_headers["content-disposition"] = (
+            f'attachment; filename="{safe_name}"; '
+            f"filename*=UTF-8''{quote(safe_name)}"
+        )
+    else:
+        forward_headers["content-disposition"] = "attachment"
 
     async def _aclose() -> None:
         await resp.aclose()

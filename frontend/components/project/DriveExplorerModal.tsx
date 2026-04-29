@@ -127,95 +127,22 @@ export default function DriveExplorerModal({
     void load(target.fileId, undefined, false);
   };
 
-  // 확장자별 처리 방식 결정
-  // - office: Microsoft Office Protocol (ms-word:ofe|u|<URL>) → OS Office 데스크톱 앱
-  // - download: 강제 다운로드 (HWP/DWG 등 web protocol 없는 형식)
-  // - browser: 새 탭 native viewer (이미지/PDF/영상/텍스트 자동 inline, 그 외 자동 download)
-  const decideAction = (
-    fileName: string,
-  ): { kind: "office"; scheme: string } | { kind: "download" } | { kind: "browser" } => {
-    const ext = fileName.toLowerCase().split(".").pop() ?? "";
-    const officeMap: Record<string, string> = {
-      docx: "ms-word",
-      doc: "ms-word",
-      docm: "ms-word",
-      dotx: "ms-word",
-      xlsx: "ms-excel",
-      xls: "ms-excel",
-      xlsm: "ms-excel",
-      xlsb: "ms-excel",
-      pptx: "ms-powerpoint",
-      ppt: "ms-powerpoint",
-      pptm: "ms-powerpoint",
-      vsdx: "ms-visio",
-    };
-    if (ext in officeMap) return { kind: "office", scheme: officeMap[ext] };
-    // 한글·CAD·기타 데스크톱 전용 — 다운로드 후 OS 기본 앱이 처리
-    const downloadExts = new Set([
-      "hwp",
-      "hwpx",
-      "dwg",
-      "dxf",
-      "dwf",
-      "rfa",
-      "rvt",  // Revit
-      "skp",  // SketchUp
-      "stl",
-      "step",
-      "stp",
-      "iges",
-      "igs",
-    ]);
-    if (downloadExts.has(ext)) return { kind: "download" };
-    return { kind: "browser" };
-  };
-
+  // 모든 파일 클릭 = 강제 다운로드 → 사용자가 OS 더블클릭으로 기본 앱(Office/한글/
+  // AutoCAD 등) 실행. backend가 Content-Disposition: attachment로 보장.
+  // 임시 폴더 정리는 OS Storage Sense 또는 사용자 설정.
   const openFile = async (it: DriveItem): Promise<void> => {
     setError(null);
-    const action = decideAction(it.fileName);
-
-    // download 방식은 popup 안 띄움. office protocol은 hidden iframe.
-    // browser는 popup blocker 회피용으로 click 직후 빈 탭 발급.
-    let newTab: Window | null = null;
-    if (action.kind === "browser") {
-      newTab = window.open("about:blank", "_blank", "noopener,noreferrer");
-    }
-
     try {
-      const url = await getDriveStreamUrl(projectId, it.fileId);
-
-      if (action.kind === "office") {
-        // ms-word:ofe|u|<URL> → Windows가 Office 데스크톱 앱 launch
-        // ofe = Open For Editing. 시청만 원하면 ofv. 우리는 편집 가능하게 ofe.
-        const protoUrl = `${action.scheme}:ofe|u|${url}`;
-        // hidden iframe으로 protocol handler 호출 (페이지 이동 없이)
-        const iframe = document.createElement("iframe");
-        iframe.style.display = "none";
-        iframe.src = protoUrl;
-        document.body.appendChild(iframe);
-        window.setTimeout(() => {
-          if (iframe.parentNode) document.body.removeChild(iframe);
-        }, 2000);
-      } else if (action.kind === "download") {
-        // 강제 다운로드 → OS 기본 앱이 매핑된 확장자라면 자동 열기 가능
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = it.fileName;
-        a.rel = "noopener noreferrer";
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-      } else {
-        // browser: 새 탭에 navigate. Content-Type 따라 inline 또는 download
-        if (newTab) {
-          newTab.location.href = url;
-        } else {
-          window.location.href = url;
-        }
-      }
+      const url = await getDriveStreamUrl(projectId, it.fileId, it.fileName);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = it.fileName;
+      a.rel = "noopener noreferrer";
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
     } catch (e: unknown) {
-      newTab?.close();
-      setError(e instanceof Error ? e.message : "파일 열기 실패");
+      setError(e instanceof Error ? e.message : "다운로드 실패");
     }
   };
 
@@ -382,37 +309,14 @@ export default function DriveExplorerModal({
                   </span>
                   <span className="flex-1 truncate text-zinc-900 dark:text-zinc-100">
                     {it.fileName}
-                    {it.fileType !== "FOLDER" && (() => {
-                      const action = decideAction(it.fileName);
-                      if (action.kind === "office") {
-                        return (
-                          <span
-                            className="ml-1 text-blue-400"
-                            title="Microsoft Office로 열기"
-                          >
-                            📘
-                          </span>
-                        );
-                      }
-                      if (action.kind === "download") {
-                        return (
-                          <span
-                            className="ml-1 text-zinc-400"
-                            title="다운로드 후 OS 기본 앱(한글/AutoCAD 등)으로 열기"
-                          >
-                            ⬇
-                          </span>
-                        );
-                      }
-                      return (
-                        <span
-                          className="ml-1 text-zinc-400"
-                          title="새 탭에서 열기 (이미지/PDF/영상 inline)"
-                        >
-                          ↗
-                        </span>
-                      );
-                    })()}
+                    {it.fileType !== "FOLDER" && (
+                      <span
+                        className="ml-1 text-zinc-400"
+                        title="다운로드 후 OS 기본 앱으로 열기"
+                      >
+                        ⬇
+                      </span>
+                    )}
                   </span>
                   <span className="w-20 text-right text-zinc-500">
                     {it.fileType === "FOLDER" ? "—" : formatSize(it.fileSize)}

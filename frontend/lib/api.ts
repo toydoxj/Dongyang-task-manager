@@ -600,17 +600,20 @@ export async function getDriveDownloadUrl(
 }
 
 /** short-lived stream token 발급 + backend stream URL 조립.
- * 반환 URL은 Office desktop / browser 새 탭 / a download 모두에서 GET 가능.
+ * 반환 URL은 GET 시 Content-Disposition: attachment로 강제 다운로드.
  */
 export async function getDriveStreamUrl(
   projectId: string,
   fileId: string,
+  fileName?: string,
 ): Promise<string> {
   const res = await authFetch(
     `/api/projects/${encodeURIComponent(projectId)}/drive/issue-token/${encodeURIComponent(fileId)}`,
   );
   const { token } = await jsonOrThrow<{ token: string }>(res);
-  return `${API_BASE}/api/projects/${encodeURIComponent(projectId)}/drive/stream/${encodeURIComponent(fileId)}?token=${encodeURIComponent(token)}`;
+  const params = new URLSearchParams({ token });
+  if (fileName) params.set("name", fileName);
+  return `${API_BASE}/api/projects/${encodeURIComponent(projectId)}/drive/stream/${encodeURIComponent(fileId)}?${params.toString()}`;
 }
 
 export async function uploadDriveFiles(
