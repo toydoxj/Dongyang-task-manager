@@ -107,19 +107,27 @@ def verify_state(jwt_secret: str, state: str) -> dict[str, Any]:
 
 
 def authorize_url(
-    settings: Settings, state: str, *, scope: str = "user.read"
+    settings: Settings,
+    state: str,
+    *,
+    scope: str = "user.read",
+    prompt: str | None = None,
 ) -> str:
     """NAVER WORKS authorize URL 생성. discovery 호출 없음.
 
     scope 기본은 SSO용 'user.read'. Drive 위임 시 'user.read file'로 호출.
+    prompt='none'이면 silent re-auth: NAVER 세션 살아있으면 즉시 callback,
+    없으면 error=login_required 응답. iframe에서 hidden re-auth용.
     """
-    params = {
+    params: dict[str, str] = {
         "response_type": "code",
         "client_id": settings.works_client_id,
         "redirect_uri": settings.works_redirect_uri,
         "scope": scope,
         "state": state,
     }
+    if prompt:
+        params["prompt"] = prompt
     return f"{settings.works_authorize_endpoint}?{urlencode(params)}"
 
 

@@ -3,7 +3,7 @@
 import { usePathname } from "next/navigation";
 import { createContext, lazy, Suspense, useContext, useEffect, useState } from "react";
 
-import { checkAuthStatus, getUser, isLoggedIn } from "@/lib/auth";
+import { checkAuthStatus, getUser, isLoggedIn, trySilentSSO } from "@/lib/auth";
 import type { UserInfo } from "@/lib/types";
 
 const LoginForm = lazy(() => import("@/app/login/LoginForm"));
@@ -37,10 +37,12 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
     void (async () => {
       // setState는 모두 비동기 callback 내부 (effect의 동기 본문이 아님)
       let needSetup = false;
+      let worksOn = false;
       try {
         const status = await checkAuthStatus();
         needSetup = !status.initialized;
-        setWorksEnabled(!!status.works_enabled);
+        worksOn = !!status.works_enabled;
+        setWorksEnabled(worksOn);
         setDriveLocalRoot(status.works_drive_local_root || "");
       } catch {
         // 백엔드가 응답 안 하면 일단 진입은 허용 (네트워크 에러 대비)
@@ -52,6 +54,22 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
         return;
       }
       if (!isLoggedIn()) {
+        // 로그인 안 됐고 SSO 활성 + 사용자가 명시 logout한 게 아니라면 silent SSO 시도
+        // ?error= query가 있거나 sessionStorage에 logged_out flag면 skip
+        const hasError =
+          typeof window !== "undefined" &&
+          new URLSearchParams(window.location.search).has("error");
+        const justLoggedOut =
+          typeof window !== "undefined" &&
+          window.sessionStorage.getItem("dy_logged_out") === "1";
+        if (worksOn && !hasError && !justLoggedOut) {
+          const user = await trySilentSSO(window.location.pathname || "/");
+          if (user) {
+            setUser(user);
+            setPhase("ready");
+            return;
+          }
+        }
         setPhase("login");
         return;
       }

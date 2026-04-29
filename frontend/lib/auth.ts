@@ -22,11 +22,18 @@ export function getUser(): UserInfo | null {
 export function saveAuth(token: string, user: UserInfo): void {
   localStorage.setItem(TOKEN_KEY, token);
   localStorage.setItem(USER_KEY, JSON.stringify(user));
+  if (typeof window !== "undefined") {
+    window.sessionStorage.removeItem("dy_logged_out");
+  }
 }
 
 export function clearAuth(): void {
   localStorage.removeItem(TOKEN_KEY);
   localStorage.removeItem(USER_KEY);
+  // logout 직후 silent SSO 자동 재로그인 방지 (현재 탭 한정)
+  if (typeof window !== "undefined") {
+    window.sessionStorage.setItem("dy_logged_out", "1");
+  }
 }
 
 export function isLoggedIn(): boolean {
@@ -60,6 +67,57 @@ export async function checkAuthStatus(): Promise<AuthStatus> {
 export function worksLoginUrl(next: string = "/"): string {
   const qs = new URLSearchParams({ next }).toString();
   return `${API_BASE}/api/auth/works/login?${qs}`;
+}
+
+/** silent SSO (prompt=none) 시도. NAVER 세션 살아있으면 silent 토큰 발급, 없으면 실패.
+ * 결과를 callback 페이지가 postMessage로 부모(여기)에 전달. timeout 8초.
+ */
+export function trySilentSSO(next: string = "/"): Promise<UserInfo | null> {
+  return new Promise((resolve) => {
+    if (typeof window === "undefined") return resolve(null);
+    const iframe = document.createElement("iframe");
+    iframe.style.display = "none";
+    iframe.src = `${API_BASE}/api/auth/works/login?silent=1&next=${encodeURIComponent(next)}`;
+
+    let settled = false;
+    const cleanup = (): void => {
+      window.removeEventListener("message", onMessage);
+      window.clearTimeout(timer);
+      if (iframe.parentNode) document.body.removeChild(iframe);
+    };
+
+    const onMessage = (e: MessageEvent): void => {
+      if (settled) return;
+      // origin 검증 — backend가 frontend origin으로 redirect하므로 같은 origin
+      if (e.origin !== window.location.origin) return;
+      const data = e.data as
+        | { type: "sso_silent_success"; token: string; user: UserInfo }
+        | { type: "sso_silent_failed"; reason?: string }
+        | undefined;
+      if (!data || typeof data !== "object") return;
+      if (data.type === "sso_silent_success") {
+        settled = true;
+        saveAuth(data.token, data.user);
+        cleanup();
+        resolve(data.user);
+      } else if (data.type === "sso_silent_failed") {
+        settled = true;
+        cleanup();
+        resolve(null);
+      }
+    };
+    window.addEventListener("message", onMessage);
+
+    const timer = window.setTimeout(() => {
+      if (!settled) {
+        settled = true;
+        cleanup();
+        resolve(null);
+      }
+    }, 8000);
+
+    document.body.appendChild(iframe);
+  });
 }
 
 function decodeBase64UrlUtf8(s: string): string {

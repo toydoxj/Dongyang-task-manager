@@ -95,6 +95,11 @@ def _is_https(redirect_uri: str) -> bool:
 async def works_login(
     next: str = Query("/"),
     drive: int = Query(default=0, description="1이면 file scope 추가 요청 (Drive 위임)"),
+    silent: int = Query(
+        default=0,
+        description="1이면 prompt=none으로 silent re-auth (iframe에서 사용). "
+        "NAVER 세션 살아있으면 즉시 callback, 없으면 error=login_required",
+    ),
 ) -> RedirectResponse:
     """NAVER WORKS authorize URL로 302. state는 HMAC signed (cookie 비사용)."""
     s = get_settings()
@@ -104,11 +109,17 @@ async def works_login(
         raise HTTPException(status_code=503, detail="WORKS 설정 누락")
     safe_next = next if next.startswith("/") and not next.startswith("//") else "/"
     is_drive = drive == 1
+    is_silent = silent == 1
+    extra: dict[str, object] = {}
+    if is_silent:
+        extra["s"] = 1
     state, _nonce = sso_works.issue_state(
-        s.jwt_secret, safe_next, drive=is_drive
+        s.jwt_secret, safe_next, drive=is_drive, extra=extra or None
     )
     scope = "user.read file" if is_drive else "user.read"
-    url = sso_works.authorize_url(s, state, scope=scope)
+    url = sso_works.authorize_url(
+        s, state, scope=scope, prompt="none" if is_silent else None
+    )
     return RedirectResponse(url=url, status_code=302)
 
 
@@ -131,15 +142,29 @@ async def works_callback(
     s = get_settings()
     if not s.works_enabled:
         raise HTTPException(status_code=503, detail="NAVER WORKS SSO 비활성")
+
+    # silent SSO는 error 응답을 받아도 frontend의 iframe이 후속 처리해야 하므로
+    # 정상 fragment redirect 형태로 알려주기 위해 state를 먼저 검증
+    state_data: dict[str, object] = {}
+    if state:
+        try:
+            state_data = sso_works.verify_state(s.jwt_secret, state)
+        except sso_works.SSOError as e:
+            return _frontend_error_redirect(s, str(e))
+    is_silent_flow = state_data.get("s") == 1
+
     if error:
+        if is_silent_flow:
+            # iframe parent에 silent 실패를 알릴 수 있도록 frontend callback로 fragment redirect
+            base_ = (s.frontend_base_url or "").rstrip("/")
+            if base_:
+                return RedirectResponse(
+                    url=f"{base_}/auth/works/callback#silent_error={error}",
+                    status_code=302,
+                )
         return _frontend_error_redirect(s, f"NAVER WORKS 응답 오류: {error}")
     if not code or not state:
         return _frontend_error_redirect(s, "code/state 누락")
-
-    try:
-        state_data = sso_works.verify_state(s.jwt_secret, state)
-    except sso_works.SSOError as e:
-        return _frontend_error_redirect(s, str(e))
 
     safe_next = state_data.get("x", "/")
     if not isinstance(safe_next, str) or not safe_next.startswith("/"):
@@ -202,6 +227,7 @@ async def works_callback(
     base = (s.frontend_base_url or "").rstrip("/")
     if not base:
         raise HTTPException(status_code=500, detail="FRONTEND_BASE_URL 미설정")
+    silent_flag = "&silent=1" if is_silent_flow else ""
     # Drive 위임 흐름: drive_connected=1 query를 next 페이지에 붙여 알림
     if is_drive_flow:
         sep = "&" if "?" in safe_next else "?"
@@ -209,12 +235,13 @@ async def works_callback(
             url=(
                 f"{base}/auth/works/callback"
                 f"#token={token}&user={user_b64}&next={safe_next}{sep}drive_connected=1"
+                f"{silent_flag}"
             ),
             status_code=302,
         )
     target = (
         f"{base}/auth/works/callback#token={token}"
-        f"&user={user_b64}&next={safe_next}"
+        f"&user={user_b64}&next={safe_next}{silent_flag}"
     )
     return RedirectResponse(url=target, status_code=302)
 
