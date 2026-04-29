@@ -2,10 +2,12 @@
 from __future__ import annotations
 
 import logging
+import time
 from datetime import date, timedelta
 from typing import Any
 from urllib.parse import parse_qs, urlparse
 
+import httpx
 from fastapi import (
     APIRouter,
     BackgroundTasks,
@@ -16,9 +18,12 @@ from fastapi import (
     UploadFile,
     status,
 )
+from fastapi.responses import StreamingResponse
+from jose import JWTError, jwt
 from pydantic import BaseModel
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
+from starlette.background import BackgroundTask
 
 from app.db import get_db
 from app.exceptions import NotFoundError
@@ -587,32 +592,132 @@ async def list_drive_children(
     )
 
 
-class DriveDownloadResponse(BaseModel):
-    url: str
-    fileName: str = ""
+class DriveStreamTokenResponse(BaseModel):
+    token: str
+    expires_in: int = 300
+
+
+_STREAM_TOKEN_TTL = 300  # 5분
+
+
+def _issue_drive_stream_token(
+    file_id: str, user_id: int, jwt_secret: str
+) -> str:
+    """Drive streaming endpoint 인증용 short-lived JWT.
+
+    URL query로 노출되어도 5분 TTL + file_id 고정이라 재사용 위험 적음.
+    """
+    payload = {
+        "fid": file_id,
+        "uid": user_id,
+        "scope": "drive_stream",
+        "exp": int(time.time()) + _STREAM_TOKEN_TTL,
+    }
+    return jwt.encode(payload, jwt_secret, algorithm="HS256")
+
+
+def _verify_drive_stream_token(token: str, jwt_secret: str) -> dict[str, Any]:
+    try:
+        payload = jwt.decode(token, jwt_secret, algorithms=["HS256"])
+    except JWTError as e:
+        raise HTTPException(status_code=401, detail="invalid stream token") from e
+    if payload.get("scope") != "drive_stream":
+        raise HTTPException(status_code=401, detail="wrong scope")
+    return payload
 
 
 @router.get(
-    "/{page_id}/drive/download/{file_id}", response_model=DriveDownloadResponse
+    "/{page_id}/drive/issue-token/{file_id}",
+    response_model=DriveStreamTokenResponse,
 )
-async def get_drive_download_url(
+async def issue_drive_stream_token(
     page_id: str,
     file_id: str,
-    _user: User = Depends(get_current_user),
+    user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
-) -> DriveDownloadResponse:
-    """파일 임시 다운로드 URL 발급. signed URL은 짧은 TTL이라 그대로 반환."""
+) -> DriveStreamTokenResponse:
+    """Drive 파일 stream용 short-lived JWT 발급."""
     s = get_settings()
     if not s.works_drive_enabled:
         raise HTTPException(status_code=503, detail="WORKS Drive 비활성")
-    row = db.get(M.MirrorProject, page_id)
-    if row is None:
+    if db.get(M.MirrorProject, page_id) is None:
         raise HTTPException(status_code=404, detail="프로젝트를 찾을 수 없습니다")
+    token = _issue_drive_stream_token(file_id, user.id, s.jwt_secret)
+    return DriveStreamTokenResponse(token=token, expires_in=_STREAM_TOKEN_TTL)
+
+
+@router.get("/{page_id}/drive/stream/{file_id}")
+async def stream_drive_file(
+    page_id: str,
+    file_id: str,
+    token: str = Query(..., description="issue-token으로 발급한 JWT"),
+) -> StreamingResponse:
+    """short-lived token으로 인증, NAVER WORKS Drive에서 파일 stream을 받아
+    그대로 forward. signed URL의 cross-IP 제약 우회.
+
+    Bearer 인증 대신 query token만 받아 navigate·외부 앱(Office) 호환.
+    """
+    s = get_settings()
+    if not s.works_drive_enabled:
+        raise HTTPException(status_code=503, detail="WORKS Drive 비활성")
+    payload = _verify_drive_stream_token(token, s.jwt_secret)
+    if payload.get("fid") != file_id:
+        raise HTTPException(status_code=401, detail="token/file_id mismatch")
+
+    sd = s.works_drive_sharedrive_id
+    if not sd:
+        raise HTTPException(status_code=503, detail="WORKS_DRIVE_SHAREDRIVE_ID 미설정")
+
+    bearer = await sso_drive._get_valid_access_token(s)
+    upstream_url = (
+        f"{s.works_api_base.rstrip('/')}"
+        f"/sharedrives/{sd}/files/{file_id}/download"
+    )
+    client = httpx.AsyncClient(timeout=600.0, follow_redirects=True)
     try:
-        url = await sso_drive.get_download_url(file_id, settings=s)
-    except sso_drive.DriveError as e:
-        raise HTTPException(status_code=502, detail=str(e)) from e
-    return DriveDownloadResponse(url=url)
+        req = client.build_request(
+            "GET",
+            upstream_url,
+            headers={"Authorization": f"Bearer {bearer}"},
+        )
+        resp = await client.send(req, stream=True)
+    except Exception:
+        await client.aclose()
+        raise
+
+    if resp.status_code >= 400:
+        body = await resp.aread()
+        await client.aclose()
+        logger.warning(
+            "drive stream upstream %s: %s", resp.status_code, body[:300]
+        )
+        raise HTTPException(
+            status_code=502, detail=f"upstream {resp.status_code}"
+        )
+
+    forward_headers: dict[str, str] = {}
+    for key in (
+        "content-type",
+        "content-length",
+        "content-disposition",
+        "last-modified",
+        "etag",
+        "cache-control",
+    ):
+        v = resp.headers.get(key)
+        if v:
+            forward_headers[key] = v
+
+    async def _aclose() -> None:
+        await resp.aclose()
+        await client.aclose()
+
+    return StreamingResponse(
+        resp.aiter_raw(),
+        status_code=resp.status_code,
+        headers=forward_headers,
+        background=BackgroundTask(_aclose),
+    )
 
 
 class DriveUploadResultItem(BaseModel):

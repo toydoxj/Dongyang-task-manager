@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 
 import Modal from "@/components/ui/Modal";
-import { getDriveDownloadUrl, listDriveChildren, uploadDriveFiles } from "@/lib/api";
+import { getDriveStreamUrl, listDriveChildren, uploadDriveFiles } from "@/lib/api";
 import type { DriveFileType, DriveItem, DriveUploadResultItem } from "@/lib/domain";
 
 interface Props {
@@ -182,7 +182,7 @@ export default function DriveExplorerModal({
     }
 
     try {
-      const { url } = await getDriveDownloadUrl(projectId, it.fileId);
+      const url = await getDriveStreamUrl(projectId, it.fileId);
 
       if (action.kind === "office") {
         // ms-word:ofe|u|<URL> → Windows가 Office 데스크톱 앱 launch

@@ -1,6 +1,7 @@
 // 백엔드 호출 헬퍼 — 인증 토큰 자동 주입 + JSON 파싱 + 에러 메시지 통일.
 
 import { authFetch } from "./auth";
+import { API_BASE } from "./types";
 import type {
   CashflowResponse,
   ClientListResponse,
@@ -596,6 +597,20 @@ export async function getDriveDownloadUrl(
     `/api/projects/${encodeURIComponent(projectId)}/drive/download/${encodeURIComponent(fileId)}`,
   );
   return jsonOrThrow<{ url: string; fileName: string }>(res);
+}
+
+/** short-lived stream token 발급 + backend stream URL 조립.
+ * 반환 URL은 Office desktop / browser 새 탭 / a download 모두에서 GET 가능.
+ */
+export async function getDriveStreamUrl(
+  projectId: string,
+  fileId: string,
+): Promise<string> {
+  const res = await authFetch(
+    `/api/projects/${encodeURIComponent(projectId)}/drive/issue-token/${encodeURIComponent(fileId)}`,
+  );
+  const { token } = await jsonOrThrow<{ token: string }>(res);
+  return `${API_BASE}/api/projects/${encodeURIComponent(projectId)}/drive/stream/${encodeURIComponent(fileId)}?token=${encodeURIComponent(token)}`;
 }
 
 export async function uploadDriveFiles(
