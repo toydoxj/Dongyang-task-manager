@@ -318,6 +318,17 @@ async def ensure_project_folder(
     s = settings or get_settings()
     if not s.works_drive_enabled:
         raise DriveError("WORKS_DRIVE_ENABLED=false")
+    if not s.works_drive_sharedrive_id:
+        raise DriveError("WORKS_DRIVE_SHAREDRIVE_ID 미설정")
+    # NAVER WORKS sharedrive ID는 항상 `@<숫자>` 형식. 24101 같은 정수만 들어왔다면
+    # web URL의 resourceLocation을 잘못 사용한 것 (자주 발생하는 실수)
+    if not s.works_drive_sharedrive_id.startswith("@"):
+        raise DriveError(
+            f"WORKS_DRIVE_SHAREDRIVE_ID 형식 오류: '{s.works_drive_sharedrive_id}'. "
+            "NAVER WORKS sharedrive ID는 '@<숫자>' 형식 (예: @2001000000536760). "
+            "web URL의 resourceLocation 값을 잘못 쓴 것일 수 있음. "
+            "GET /sharedrives 또는 PoC 스크립트로 확인하세요."
+        )
     if not s.works_drive_root_folder_id:
         raise DriveError("WORKS_DRIVE_ROOT_FOLDER_ID 미설정")
 
