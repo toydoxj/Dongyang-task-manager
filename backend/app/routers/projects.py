@@ -706,19 +706,20 @@ async def stream_drive_file(
 
     # 모든 파일을 attachment로 강제 다운로드 (Office protocol/inline 등 분기 폐기).
     # 사용자가 OS 다운로드 폴더에서 더블클릭 → OS 기본 앱(Office/한글/AutoCAD 등) 자동 launch.
+    # NOTE: HTTP 헤더는 latin-1만 허용 → 한글 파일명은 RFC 5987 filename*=UTF-8'' 형식으로
+    # percent-encoded ASCII로 변환 후 전송. filename(legacy)도 같은 percent-encoded 사용.
     forward_headers: dict[str, str] = {
         "content-type": resp.headers.get("content-type", "application/octet-stream"),
     }
     if "content-length" in resp.headers:
         forward_headers["content-length"] = resp.headers["content-length"]
-    # filename* (RFC 5987 UTF-8) — 한글 파일명 안전
-    safe_name = (file_name or "").replace('"', "")
+    safe_name = (file_name or "").replace('"', "").replace("\\", "")
     if safe_name:
         from urllib.parse import quote
 
+        encoded = quote(safe_name, safe="")
         forward_headers["content-disposition"] = (
-            f'attachment; filename="{safe_name}"; '
-            f"filename*=UTF-8''{quote(safe_name)}"
+            f"attachment; filename=\"{encoded}\"; filename*=UTF-8''{encoded}"
         )
     else:
         forward_headers["content-disposition"] = "attachment"
