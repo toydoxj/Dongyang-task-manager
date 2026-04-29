@@ -21,12 +21,34 @@ const STAGE_BADGE: Record<string, string> = {
 };
 
 export default function ProjectHeader({ project }: { project: Project }) {
-  const { user } = useAuth();
+  const { user, driveLocalRoot } = useAuth();
   const [masterOpen, setMasterOpen] = useState(false);
   const [driveBusy, setDriveBusy] = useState(false);
   const [driveError, setDriveError] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
   const masterLabel =
     project.master_project_name || project.master_code || "";
+
+  // NAVER WORKS Drive 탐색기 가상 드라이브 PC 경로
+  // (driveLocalRoot가 비어있으면 탐색기/복사 버튼 비표시)
+  const folderName =
+    project.code && project.name ? `[${project.code}]${project.name}` : "";
+  const localPath =
+    driveLocalRoot && folderName
+      ? `${driveLocalRoot}\\${folderName}`
+      : "";
+
+  const copyLocalPath = async (): Promise<void> => {
+    if (!localPath) return;
+    try {
+      await navigator.clipboard.writeText(localPath);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // clipboard API 차단 시 fallback — alert로 path 보여주기
+      window.prompt("아래 경로를 복사하세요 (Ctrl+C):", localPath);
+    }
+  };
 
   const handleProvisionDrive = async (): Promise<void> => {
     if (driveBusy) return;
@@ -97,15 +119,39 @@ export default function ProjectHeader({ project }: { project: Project }) {
             </span>
           )}
           {project.drive_url ? (
-            <a
-              href={project.drive_url}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-1 rounded-md border border-emerald-700/40 bg-emerald-600/10 px-2.5 py-1 text-xs font-medium text-emerald-300 hover:bg-emerald-600/20"
-              title="WORKS Drive에서 프로젝트 폴더 열기"
-            >
-              📁 WORKS Drive 열기
-            </a>
+            <div className="flex flex-wrap items-center justify-end gap-1.5">
+              {/* C: NAVER WORKS Drive 웹에서 열기 */}
+              <a
+                href={project.drive_url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1 rounded-md border border-emerald-700/40 bg-emerald-600/10 px-2.5 py-1 text-xs font-medium text-emerald-300 hover:bg-emerald-600/20"
+                title="WORKS Drive 웹에서 프로젝트 폴더 열기"
+              >
+                🌐 WORKS Drive
+              </a>
+              {/* A: 탐색기에서 직접 열기 (file://) — Edge/Firefox에서 동작. Chrome 차단 가능 */}
+              {localPath && (
+                <a
+                  href={`file:///${localPath.replace(/\\/g, "/")}`}
+                  className="inline-flex items-center gap-1 rounded-md border border-sky-700/40 bg-sky-600/10 px-2.5 py-1 text-xs font-medium text-sky-300 hover:bg-sky-600/20"
+                  title="WORKS Drive 탐색기 가상 드라이브로 직접 열기 (Edge/Firefox 권장)"
+                >
+                  📂 탐색기
+                </a>
+              )}
+              {/* B: PC 경로 복사 */}
+              {localPath && (
+                <button
+                  type="button"
+                  onClick={copyLocalPath}
+                  className="inline-flex items-center gap-1 rounded-md border border-zinc-400/40 bg-zinc-500/10 px-2.5 py-1 text-xs font-medium text-zinc-300 hover:bg-zinc-500/20"
+                  title={`경로 복사: ${localPath}`}
+                >
+                  {copied ? "✓ 복사됨" : "📋 경로"}
+                </button>
+              )}
+            </div>
           ) : user?.role === "admin" ? (
             <button
               type="button"

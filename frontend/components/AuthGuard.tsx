@@ -11,9 +11,14 @@ const LoginForm = lazy(() => import("@/app/login/LoginForm"));
 interface AuthState {
   user: UserInfo | null;
   refresh: () => void;
+  driveLocalRoot: string;
 }
 
-const AuthContext = createContext<AuthState>({ user: null, refresh: () => {} });
+const AuthContext = createContext<AuthState>({
+  user: null,
+  refresh: () => {},
+  driveLocalRoot: "",
+});
 export const useAuth = (): AuthState => useContext(AuthContext);
 
 type Phase = "loading" | "login" | "setup" | "ready";
@@ -26,6 +31,7 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
   const [phase, setPhase] = useState<Phase>("loading");
   const [user, setUser] = useState<UserInfo | null>(null);
   const [worksEnabled, setWorksEnabled] = useState(false);
+  const [driveLocalRoot, setDriveLocalRoot] = useState("");
 
   const refresh = (): void => {
     void (async () => {
@@ -35,6 +41,7 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
         const status = await checkAuthStatus();
         needSetup = !status.initialized;
         setWorksEnabled(!!status.works_enabled);
+        setDriveLocalRoot(status.works_drive_local_root || "");
       } catch {
         // 백엔드가 응답 안 하면 일단 진입은 허용 (네트워크 에러 대비)
         setPhase("ready");
@@ -96,6 +103,8 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <AuthContext.Provider value={{ user, refresh }}>{children}</AuthContext.Provider>
+    <AuthContext.Provider value={{ user, refresh, driveLocalRoot }}>
+      {children}
+    </AuthContext.Provider>
   );
 }

@@ -78,6 +78,9 @@ def auth_status(db: Session = Depends(get_db)) -> dict[str, object]:
         "works_enabled": bool(
             s.works_enabled and s.works_client_id and s.works_client_secret
         ),
+        # NAVER WORKS Drive 탐색기 가상 드라이브 path (frontend의 "탐색기/경로복사" 버튼용).
+        # 비어있으면 frontend가 두 버튼 숨김.
+        "works_drive_local_root": s.works_drive_local_root,
     }
 
 

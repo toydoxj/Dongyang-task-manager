@@ -74,6 +74,10 @@ class Settings(BaseSettings):
     works_drive_sharedrive_id: str = ""  # 공유 드라이브 자체의 ID
     works_drive_root_folder_id: str = ""  # [업무관리] 루트 폴더의 fileId
     works_api_base: str = "https://www.worksapis.com/v1.0"
+    # NAVER WORKS Drive 탐색기 가상 드라이브 마운트 경로 (옵션).
+    # 설정하면 frontend가 "탐색기에서 열기" / "PC 경로 복사" 버튼을 표시.
+    # 예: "W:\\공유 드라이브\\[업무관리]" 또는 "W:\\[업무관리]"
+    works_drive_local_root: str = ""
 
     frontend_base_url: str = ""  # callback 후 frontend로 302할 때 사용
 

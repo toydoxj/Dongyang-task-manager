@@ -36,6 +36,7 @@ export interface AuthStatus {
   initialized: boolean;
   user_count: number;
   works_enabled?: boolean;
+  works_drive_local_root?: string;
 }
 
 export interface TokenResponse {
