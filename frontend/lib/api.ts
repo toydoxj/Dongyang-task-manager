@@ -4,6 +4,7 @@ import { authFetch } from "./auth";
 import type {
   CashflowResponse,
   ClientListResponse,
+  DriveChildrenResponse,
   Employee,
   EmployeeCreate,
   EmployeeImportResult,
@@ -570,4 +571,18 @@ export async function deleteSealRequest(id: string): Promise<void> {
       .catch(() => undefined);
     throw new Error(detail ?? `${res.status} ${res.statusText}`);
   }
+}
+
+// ── WORKS Drive 임베디드 탐색기 ──
+
+export async function listDriveChildren(
+  projectId: string,
+  folderId?: string,
+  cursor?: string,
+): Promise<DriveChildrenResponse> {
+  const q = qs({ folder_id: folderId, cursor });
+  const res = await authFetch(
+    `/api/projects/${encodeURIComponent(projectId)}/drive/children${q}`,
+  );
+  return jsonOrThrow<DriveChildrenResponse>(res);
 }

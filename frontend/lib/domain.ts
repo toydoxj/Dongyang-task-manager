@@ -69,6 +69,30 @@ export interface ProjectUpdateRequest {
   vat?: number;
 }
 
+export type DriveFileType =
+  | "FOLDER"
+  | "DOC"
+  | "IMAGE"
+  | "VIDEO"
+  | "AUDIO"
+  | "ZIP"
+  | "EXE"
+  | "ETC";
+
+export interface DriveItem {
+  fileId: string;
+  fileName: string;
+  fileType: DriveFileType;
+  fileSize: number;
+  modifiedTime: string;
+  webUrl: string;
+}
+
+export interface DriveChildrenResponse {
+  items: DriveItem[];
+  next_cursor: string;
+}
+
 export interface Client {
   id: string;
   name: string;

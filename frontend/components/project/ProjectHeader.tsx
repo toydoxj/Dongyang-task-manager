@@ -8,6 +8,7 @@ import type { Project } from "@/lib/domain";
 import { formatDate } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
+import DriveExplorerModal from "./DriveExplorerModal";
 import MasterProjectModal from "./MasterProjectModal";
 
 const STAGE_BADGE: Record<string, string> = {
@@ -26,6 +27,7 @@ export default function ProjectHeader({ project }: { project: Project }) {
   const [driveBusy, setDriveBusy] = useState(false);
   const [driveError, setDriveError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [explorerOpen, setExplorerOpen] = useState(false);
   const masterLabel =
     project.master_project_name || project.master_code || "";
 
@@ -37,6 +39,22 @@ export default function ProjectHeader({ project }: { project: Project }) {
     driveLocalRoot && folderName
       ? `${driveLocalRoot}\\${folderName}`
       : "";
+
+  // file:// URL은 RFC 8089 표준: file:///{drive_letter}/{encoded_path}
+  // drive letter('W:')는 보존, path segment만 encodeURIComponent
+  const fileUrl = (() => {
+    if (!localPath) return "";
+    const fwd = localPath.replace(/\\/g, "/");
+    const colon = fwd.indexOf(":");
+    if (colon < 0) return `file:///${fwd}`;
+    const drive = fwd.slice(0, colon + 1); // "W:"
+    const rest = fwd.slice(colon + 1); // "/[업무관리]/..."
+    const encoded = rest
+      .split("/")
+      .map((seg) => (seg ? encodeURIComponent(seg) : seg))
+      .join("/");
+    return `file:///${drive}${encoded}`;
+  })();
 
   const copyLocalPath = async (): Promise<void> => {
     if (!localPath) return;
@@ -120,7 +138,16 @@ export default function ProjectHeader({ project }: { project: Project }) {
           )}
           {project.drive_url ? (
             <div className="flex flex-wrap items-center justify-end gap-1.5">
-              {/* C: NAVER WORKS Drive 웹에서 열기 */}
+              {/* 임베디드 탐색기 모달 (앱 안에서 폴더 보기, 파일 클릭 시 NAVER 외부 탭) */}
+              <button
+                type="button"
+                onClick={() => setExplorerOpen(true)}
+                className="inline-flex items-center gap-1 rounded-md border border-amber-700/40 bg-amber-600/10 px-2.5 py-1 text-xs font-medium text-amber-300 hover:bg-amber-600/20"
+                title="앱 안에서 폴더 트리 탐색"
+              >
+                🗂️ 폴더 보기
+              </button>
+              {/* WORKS Drive 웹에서 열기 */}
               <a
                 href={project.drive_url}
                 target="_blank"
@@ -130,25 +157,15 @@ export default function ProjectHeader({ project }: { project: Project }) {
               >
                 🌐 WORKS Drive
               </a>
-              {/* A: 탐색기에서 직접 열기 (file://) — Edge/Firefox에서 동작. Chrome 차단 가능 */}
-              {localPath && (
-                <a
-                  href={`file:///${localPath.replace(/\\/g, "/")}`}
-                  className="inline-flex items-center gap-1 rounded-md border border-sky-700/40 bg-sky-600/10 px-2.5 py-1 text-xs font-medium text-sky-300 hover:bg-sky-600/20"
-                  title="WORKS Drive 탐색기 가상 드라이브로 직접 열기 (Edge/Firefox 권장)"
-                >
-                  📂 탐색기
-                </a>
-              )}
-              {/* B: PC 경로 복사 */}
+              {/* PC 경로 복사 — 브라우저는 file:// 직접 클릭 차단하므로 경로 복사 → 탐색기에 붙여넣기 */}
               {localPath && (
                 <button
                   type="button"
                   onClick={copyLocalPath}
-                  className="inline-flex items-center gap-1 rounded-md border border-zinc-400/40 bg-zinc-500/10 px-2.5 py-1 text-xs font-medium text-zinc-300 hover:bg-zinc-500/20"
-                  title={`경로 복사: ${localPath}`}
+                  className="inline-flex items-center gap-1 rounded-md border border-sky-700/40 bg-sky-600/10 px-2.5 py-1 text-xs font-medium text-sky-300 hover:bg-sky-600/20"
+                  title={`PC 경로 복사 → 탐색기 주소창(Win+E, Ctrl+L)에 Ctrl+V → Enter\n${localPath}`}
                 >
-                  {copied ? "✓ 복사됨" : "📋 경로"}
+                  {copied ? "✓ 복사됨" : "📂 PC 경로 복사"}
                 </button>
               )}
             </div>
@@ -196,6 +213,13 @@ export default function ProjectHeader({ project }: { project: Project }) {
         open={masterOpen}
         pageId={project.master_project_id || null}
         onClose={() => setMasterOpen(false)}
+      />
+
+      <DriveExplorerModal
+        open={explorerOpen}
+        onClose={() => setExplorerOpen(false)}
+        projectId={project.id}
+        rootLabel={folderName || "프로젝트 폴더"}
       />
     </header>
   );

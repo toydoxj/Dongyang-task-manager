@@ -359,3 +359,54 @@ async def ensure_project_folder(
 async def list_sharedrives(settings: Settings | None = None) -> dict[str, Any]:
     s = settings or get_settings()
     return await _api(s, "GET", "/sharedrives")
+
+
+# ── 외부 노출용 (라우터/UI에서 사용) ──
+
+
+async def list_children(
+    parent_file_id: str,
+    *,
+    settings: Settings | None = None,
+    count: int = 200,
+    cursor: str | None = None,
+    order_by: str = "fileName asc",
+) -> dict[str, Any]:
+    """폴더의 children list — 임베디드 파일 탐색기용.
+
+    NAVER WORKS Drive API: GET /sharedrives/{sd}/files/{parent_file_id}/children
+    응답 schema: {files: [...], responseMetaData: {nextCursor}}
+    """
+    s = settings or get_settings()
+    if not s.works_drive_sharedrive_id:
+        raise DriveError("WORKS_DRIVE_SHAREDRIVE_ID 미설정")
+    if not parent_file_id:
+        raise DriveError("parent_file_id 미지정")
+    sd = s.works_drive_sharedrive_id
+    params: dict[str, Any] = {
+        "count": count,
+        "orderBy": order_by,
+    }
+    if cursor:
+        params["cursor"] = cursor
+    return await _api(
+        s,
+        "GET",
+        f"/sharedrives/{sd}/files/{parent_file_id}/children",
+        params=params,
+    )
+
+
+def build_file_web_url(file_id: str, resource_location: int | str | None) -> str:
+    """NAVER WORKS Drive 파일/폴더 web URL 조립.
+
+    응답에 webUrl 키가 없으므로 share URL 패턴으로 생성.
+    """
+    if not file_id:
+        return ""
+    if resource_location is None:
+        return f"https://drive.worksmobile.com/drive/web/share/root-folder?resourceKey={file_id}"
+    return (
+        "https://drive.worksmobile.com/drive/web/share/root-folder"
+        f"?resourceKey={file_id}&resourceLocation={resource_location}"
+    )

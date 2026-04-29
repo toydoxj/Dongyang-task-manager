@@ -3,8 +3,11 @@ from __future__ import annotations
 
 import logging
 from datetime import date, timedelta
+from typing import Any
+from urllib.parse import parse_qs, urlparse
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
+from pydantic import BaseModel
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
@@ -488,3 +491,88 @@ async def sync_stage_by_tasks(
     )
     get_sync().upsert_page("projects", updated)
     return Project.from_notion_page(updated)
+
+
+# ── WORKS Drive 임베디드 파일 탐색기 ──
+
+
+def _extract_resource_key(drive_url: str) -> str:
+    """drive_url의 query string에서 resourceKey 추출 (= NAVER WORKS Drive root fileId)."""
+    if not drive_url:
+        return ""
+    try:
+        qs = parse_qs(urlparse(drive_url).query)
+    except Exception:  # noqa: BLE001
+        return ""
+    v = qs.get("resourceKey")
+    return v[0] if v else ""
+
+
+class DriveItemDTO(BaseModel):
+    fileId: str
+    fileName: str
+    fileType: str  # FOLDER | DOC | IMAGE | VIDEO | AUDIO | ZIP | EXE | ETC
+    fileSize: int = 0
+    modifiedTime: str = ""
+    webUrl: str = ""
+
+
+class DriveChildrenResponse(BaseModel):
+    items: list[DriveItemDTO]
+    next_cursor: str = ""
+
+
+@router.get("/{page_id}/drive/children", response_model=DriveChildrenResponse)
+async def list_drive_children(
+    page_id: str,
+    folder_id: str | None = Query(default=None),
+    cursor: str | None = Query(default=None),
+    _user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> DriveChildrenResponse:
+    """프로젝트 폴더(또는 그 sub 폴더)의 children list. 임베디드 탐색기용.
+
+    folder_id 미지정 시 프로젝트 root 폴더 (drive_url의 resourceKey).
+    """
+    s = get_settings()
+    if not s.works_drive_enabled:
+        raise HTTPException(status_code=503, detail="WORKS Drive 비활성")
+
+    row = db.get(M.MirrorProject, page_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="프로젝트를 찾을 수 없습니다")
+    project = project_from_mirror(row)
+
+    parent_id = folder_id or _extract_resource_key(project.drive_url)
+    if not parent_id:
+        raise HTTPException(
+            status_code=422,
+            detail="Drive 폴더가 아직 생성되지 않았습니다 (drive_url 없음)",
+        )
+
+    try:
+        body: dict[str, Any] = await sso_drive.list_children(parent_id)
+    except sso_drive.DriveError as e:
+        # 401·token 만료는 sso_drive 내부에서 retry. 그래도 실패면 502.
+        raise HTTPException(status_code=502, detail=str(e)) from e
+
+    files = body.get("files") or []
+    items: list[DriveItemDTO] = []
+    for f in files:
+        loc = f.get("resourceLocation")
+        items.append(
+            DriveItemDTO(
+                fileId=str(f.get("fileId") or ""),
+                fileName=str(f.get("fileName") or ""),
+                fileType=str(f.get("fileType") or "ETC"),
+                fileSize=int(f.get("fileSize") or 0),
+                modifiedTime=str(f.get("modifiedTime") or ""),
+                webUrl=sso_drive.build_file_web_url(
+                    str(f.get("fileId") or ""), loc
+                ),
+            )
+        )
+    meta = body.get("responseMetaData") or {}
+    return DriveChildrenResponse(
+        items=items, next_cursor=str(meta.get("nextCursor") or "")
+    )
