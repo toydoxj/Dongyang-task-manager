@@ -487,6 +487,69 @@ async def upload_file(
     return {"fileName": file_name, "fileSize": file_size}
 
 
+async def get_download_url(
+    file_id: str, *, settings: Settings | None = None
+) -> str:
+    """파일의 임시 다운로드 URL 추출.
+
+    NAVER WORKS API: GET /sharedrives/{sd}/files/{fileId}/download
+    응답: 302 + Location 헤더에 signed URL (짧은 TTL, 인증 불필요).
+    httpx의 follow_redirects=False로 302를 직접 잡아 Location 추출.
+    """
+    s = settings or get_settings()
+    if not s.works_drive_sharedrive_id:
+        raise DriveError("WORKS_DRIVE_SHAREDRIVE_ID 미설정")
+    if not file_id:
+        raise DriveError("file_id 미지정")
+    sd = s.works_drive_sharedrive_id
+    token = await _get_valid_access_token(s)
+    url = f"{s.works_api_base.rstrip('/')}/sharedrives/{sd}/files/{file_id}/download"
+    async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT, follow_redirects=False) as client:
+        try:
+            resp = await client.get(
+                url, headers={"Authorization": f"Bearer {token}"}
+            )
+        except httpx.HTTPError as e:
+            raise DriveError(f"download 네트워크 오류: {e}") from e
+    if resp.status_code == 302:
+        location = resp.headers.get("location") or resp.headers.get("Location")
+        if not location:
+            raise DriveError("download 응답에 Location 헤더가 없습니다")
+        return location
+    if resp.status_code == 401:
+        # token 만료 가능 → 1회 force refresh 후 재시도
+        _cache_invalidate = _refresh  # alias to suppress lint
+        async with _token_lock:
+            db = SessionLocal()
+            try:
+                row = _load_creds(db)
+                if row and row.refresh_token:
+                    body = await _refresh(s, row.refresh_token)
+                    row.access_token = body.get("access_token", row.access_token)
+                    row.refresh_token = body.get(
+                        "refresh_token", row.refresh_token
+                    )
+                    expires_in = int(body.get("expires_in", 3600))
+                    row.expires_at = datetime.now(UTC) + timedelta(
+                        seconds=max(60, expires_in)
+                    )
+                    row.updated_at = datetime.now(UTC)
+                    db.commit()
+                    token = row.access_token
+            finally:
+                db.close()
+        async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT, follow_redirects=False) as client:
+            resp = await client.get(
+                url, headers={"Authorization": f"Bearer {token}"}
+            )
+        if resp.status_code == 302:
+            location = resp.headers.get("location") or resp.headers.get("Location")
+            if location:
+                return location
+    logger.warning("download URL 발급 실패: %s %s", resp.status_code, resp.text[:300])
+    raise DriveError(f"download URL 발급 실패 ({resp.status_code})")
+
+
 def build_file_web_url(file_id: str, resource_location: int | str | None) -> str:
     """NAVER WORKS Drive 파일/폴더 web URL 조립.
 

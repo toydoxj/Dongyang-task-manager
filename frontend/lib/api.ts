@@ -588,6 +588,16 @@ export async function listDriveChildren(
   return jsonOrThrow<DriveChildrenResponse>(res);
 }
 
+export async function getDriveDownloadUrl(
+  projectId: string,
+  fileId: string,
+): Promise<{ url: string; fileName: string }> {
+  const res = await authFetch(
+    `/api/projects/${encodeURIComponent(projectId)}/drive/download/${encodeURIComponent(fileId)}`,
+  );
+  return jsonOrThrow<{ url: string; fileName: string }>(res);
+}
+
 export async function uploadDriveFiles(
   projectId: string,
   folderId: string | undefined,

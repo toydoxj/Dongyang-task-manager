@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 
 import Modal from "@/components/ui/Modal";
-import { listDriveChildren, uploadDriveFiles } from "@/lib/api";
+import { getDriveDownloadUrl, listDriveChildren, uploadDriveFiles } from "@/lib/api";
 import type { DriveFileType, DriveItem, DriveUploadResultItem } from "@/lib/domain";
 
 interface Props {
@@ -127,11 +127,32 @@ export default function DriveExplorerModal({
     void load(target.fileId, undefined, false);
   };
 
+  const openFile = async (it: DriveItem): Promise<void> => {
+    setError(null);
+    // popup blocker 회피 — user click 즉시 빈 탭 열기, 후속 fetch 결과로 location 채움
+    const newTab = window.open("about:blank", "_blank", "noopener,noreferrer");
+    try {
+      const { url } = await getDriveDownloadUrl(projectId, it.fileId);
+      // download attribute 없이 그냥 navigate → 브라우저가 Content-Type 보고 자동 처리:
+      //  · IMAGE/PDF/VIDEO/AUDIO/TEXT → inline 뷰어
+      //  · ZIP/EXE/Office docs 등 → 다운로드
+      if (newTab) {
+        newTab.location.href = url;
+      } else {
+        // popup blocker가 막은 경우 fallback — 같은 탭 navigate
+        window.location.href = url;
+      }
+    } catch (e: unknown) {
+      newTab?.close();
+      setError(e instanceof Error ? e.message : "파일 열기 실패");
+    }
+  };
+
   const onItemClick = (it: DriveItem): void => {
     if (it.fileType === "FOLDER") {
       enterFolder(it);
-    } else if (it.webUrl) {
-      window.open(it.webUrl, "_blank", "noopener,noreferrer");
+    } else {
+      void openFile(it);
     }
   };
 
@@ -291,7 +312,12 @@ export default function DriveExplorerModal({
                   <span className="flex-1 truncate text-zinc-900 dark:text-zinc-100">
                     {it.fileName}
                     {it.fileType !== "FOLDER" && (
-                      <span className="ml-1 text-zinc-400">↗</span>
+                      <span
+                        className="ml-1 text-zinc-400"
+                        title="클릭하면 새 탭에서 열기 (이미지/PDF/영상은 미리보기, 그 외는 다운로드)"
+                      >
+                        ↗
+                      </span>
                     )}
                   </span>
                   <span className="w-20 text-right text-zinc-500">

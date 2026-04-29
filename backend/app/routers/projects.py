@@ -587,6 +587,34 @@ async def list_drive_children(
     )
 
 
+class DriveDownloadResponse(BaseModel):
+    url: str
+    fileName: str = ""
+
+
+@router.get(
+    "/{page_id}/drive/download/{file_id}", response_model=DriveDownloadResponse
+)
+async def get_drive_download_url(
+    page_id: str,
+    file_id: str,
+    _user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> DriveDownloadResponse:
+    """파일 임시 다운로드 URL 발급. signed URL은 짧은 TTL이라 그대로 반환."""
+    s = get_settings()
+    if not s.works_drive_enabled:
+        raise HTTPException(status_code=503, detail="WORKS Drive 비활성")
+    row = db.get(M.MirrorProject, page_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="프로젝트를 찾을 수 없습니다")
+    try:
+        url = await sso_drive.get_download_url(file_id, settings=s)
+    except sso_drive.DriveError as e:
+        raise HTTPException(status_code=502, detail=str(e)) from e
+    return DriveDownloadResponse(url=url)
+
+
 class DriveUploadResultItem(BaseModel):
     fileName: str
     fileId: str = ""
