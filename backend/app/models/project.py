@@ -57,6 +57,8 @@ class Project(BaseModel):
     # 메타
     last_edited_time: str | None = None
     url: str | None = None
+    # NAVER WORKS Drive 폴더 URL (Phase 2 — 자동 생성됨, 노션 'WORKS Drive URL' 컬럼)
+    drive_url: str = ""
 
     @classmethod
     def from_notion_page(cls, page: dict[str, Any]) -> "Project":
@@ -91,6 +93,7 @@ class Project(BaseModel):
             expense_total=P.rollup_value(props, "지출(외주비포함)"),
             last_edited_time=page.get("last_edited_time"),
             url=page.get("url"),
+            drive_url=P.url(props, "WORKS Drive URL"),
         )
 
 

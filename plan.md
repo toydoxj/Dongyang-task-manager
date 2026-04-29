@@ -1,7 +1,7 @@
 # (주)동양구조 업무관리 앱 — 진행 정리
 
 > 원천 요구사항: `PRD.md`
-> 최종 갱신: 2026-04-29 (NAVER WORKS SSO 단독 운영 + 마스터 계정 차단)
+> 최종 갱신: 2026-04-29 (NAVER WORKS SSO 단독 운영 + Drive 폴더 자동 생성)
 
 ---
 
@@ -192,10 +192,52 @@ Render Web Service (FastAPI + uvicorn, 상시)
 
 ### 본 phase에서 하지 않는 것
 
-- Bot / Calendar / Drive / Approval / Mail API
-- Service Account JWK 발급
+- Bot / Calendar / Approval / Mail API
 - `employees` 폐기 / Directory API 동기
 - Notion 도메인 변경
+
+---
+
+## 7.A. NAVER WORKS Drive — 프로젝트별 폴더 자동 생성 (Phase 2, 진행 중)
+
+상세: `docs/NAVER_WORKS_DRIVE_PLAN.md` + 코드는 `backend/app/services/sso_drive.py`
+
+### 정책 (2026-04-29)
+
+- **인증**: Service Account (RS256 JWT, `scope=file`). 사용자 동의 0회
+- **트리거**: 프로젝트 생성 시 BackgroundTasks로 자동 폴더 생성. 실패해도 응답에 영향 X
+- **폴더 구조**: `[업무관리]/[CODE]프로젝트명/{1.건축도면, 2.구조도면, 3.구조계산서, 4.구조해석및설계, 5.문서(심의자료 등), 6.계약서, 7.기타}`
+- **idempotent**: 같은 이름 폴더 있으면 재사용 (URL만 다시 저장)
+- **저장 위치**: 노션 메인 프로젝트 DB의 `WORKS Drive URL` 컬럼 (자동 schema 보강)
+- **재시도**: admin 전용 `POST /api/projects/{id}/works-drive` + `ProjectHeader`의 "📁 Drive 폴더 만들기" 버튼
+
+### 구현 요약
+
+| 영역 | 파일 |
+|---|---|
+| Service Account JWT + token 캐시 + Drive API helper | `backend/app/services/sso_drive.py` |
+| 환경변수 6개 (ENABLED/SA_ID/PRIVATE_KEY/SHAREDRIVE_ID/ROOT_FOLDER_ID/API_BASE) | `backend/app/settings.py`, `backend/render.yaml` |
+| 노션 schema 자동 보강 | `backend/app/services/notion_schema.py` PROJECT_DB_REQUIRED |
+| 프로젝트 생성 hook + admin 재시도 라우터 | `backend/app/routers/projects.py` |
+| URL property 추출 | `backend/app/services/notion_props.py` `url()` |
+| Project DTO `drive_url` 필드 | `backend/app/models/project.py`, `frontend/lib/domain.ts` |
+| "WORKS Drive 열기" / "Drive 폴더 만들기" 버튼 | `frontend/components/project/ProjectHeader.tsx` |
+| PoC 스크립트 (사전 검증용) | `scripts/works_drive_poc.py` |
+
+### 사용자 사전 작업 (필요)
+
+1. NAVER WORKS Developer Console → 앱에 `file` scope 추가
+2. **Service Account 발급** + Private Key (PEM) 다운로드
+3. WORKS 공용 드라이브에 `[업무관리]` 폴더 생성 + 회사 권한 부여
+4. Render 환경변수 6개 등록 (`WORKS_DRIVE_ENABLED=true`, `WORKS_SERVICE_ACCOUNT_ID`, `WORKS_PRIVATE_KEY`, `WORKS_DRIVE_SHAREDRIVE_ID`, `WORKS_DRIVE_ROOT_FOLDER_ID`)
+5. 로컬에서 `scripts/works_drive_poc.py` 실행해 응답 schema 확인
+
+### PoC에서 확정해야 할 항목
+
+- Drive folder 생성 endpoint 정확한 path (`/sharedrives/{sd}/files` vs `/sharedrives/{sd}/files/{parent}/children` 등)
+- 응답 JSON 키 이름 (`fileId`, `webUrl` 등)
+
+PoC 결과로 `sso_drive.py`의 `_api(...)` path와 `_extract_id`/`_extract_url` 키를 단일 path로 정착.
 
 ---
 

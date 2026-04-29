@@ -30,6 +30,7 @@ export interface Project {
   expense_total: number | null;
   last_edited_time: string | null;
   url: string | null;
+  drive_url: string;
 }
 
 export interface ProjectListResponse {

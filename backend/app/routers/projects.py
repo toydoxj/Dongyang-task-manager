@@ -1,9 +1,10 @@
 """/api/projects — read는 mirror, write는 노션 + write-through."""
 from __future__ import annotations
 
+import logging
 from datetime import date, timedelta
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
@@ -19,14 +20,55 @@ from app.models.project import (
     project_create_to_props,
     project_update_to_props,
 )
-from app.security import get_current_user
+from app.security import get_current_user, require_admin
 from app.services import notion_props as P
+from app.services import sso_drive
 from app.services.mirror_dto import project_from_mirror
 from app.services.notion import NotionService, get_notion
 from app.services.sync import get_sync
 from app.settings import get_settings
 
+logger = logging.getLogger("projects")
 router = APIRouter(prefix="/projects", tags=["projects"])
+
+
+# ── WORKS Drive 폴더 자동 provisioning ──
+
+
+async def _provision_drive_folder(
+    notion: NotionService, page_id: str, code: str, name: str
+) -> None:
+    """Drive 폴더 생성 + 노션 'WORKS Drive URL' 갱신 + mirror 갱신.
+
+    background task로 호출. 모든 예외를 catch 해 본 흐름에 영향 X.
+    code/name이 없으면 skip.
+    """
+    s = get_settings()
+    if not s.works_drive_enabled:
+        return
+    if not (code or "").strip() or not (name or "").strip():
+        return
+    try:
+        _fid, url = await sso_drive.ensure_project_folder(
+            s, code=code, project_name=name
+        )
+    except sso_drive.DriveError as e:
+        logger.warning("Drive 폴더 생성 실패 page=%s: %s", page_id, e)
+        return
+    except Exception:  # noqa: BLE001
+        logger.exception("Drive 폴더 provisioning 중 예외 page=%s", page_id)
+        return
+    if not url:
+        logger.info("Drive 폴더 생성됐으나 URL 응답 누락 page=%s", page_id)
+        return
+    try:
+        await notion.update_page(
+            page_id, properties={"WORKS Drive URL": {"url": url}}
+        )
+        updated = await notion.get_page(page_id)
+        get_sync().upsert_page("projects", updated)
+    except Exception:  # noqa: BLE001
+        logger.exception("Drive URL 노션 저장 실패 page=%s", page_id)
 
 
 # ── 담당 변경 이력 (write-only, 노션 기록) ──
@@ -137,6 +179,7 @@ async def list_projects(
 @router.post("", response_model=Project, status_code=status.HTTP_201_CREATED)
 async def create_project(
     body: ProjectCreateRequest,
+    background: BackgroundTasks,
     for_user: str | None = Query(
         default=None,
         description="admin/team_lead가 다른 직원 명의로 프로젝트 생성 시 사용",
@@ -167,6 +210,48 @@ async def create_project(
         body = body.model_copy(update={"assignees": [*body.assignees, target_name]})
 
     page = await notion.create_page(db_id, project_create_to_props(body))
+    get_sync().upsert_page("projects", page)
+    # Drive 폴더 자동 생성 (실패해도 응답엔 영향 없음)
+    background.add_task(
+        _provision_drive_folder, notion, page.get("id"), body.code, body.name
+    )
+    return Project.from_notion_page(page)
+
+
+@router.post("/{page_id}/works-drive", response_model=Project)
+async def retry_works_drive(
+    page_id: str,
+    _admin: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+    notion: NotionService = Depends(get_notion),
+) -> Project:
+    """admin이 누락된/실패한 WORKS Drive 폴더 생성을 다시 시도.
+
+    동기 호출 — 결과를 즉시 응답에 반영. idempotent라 폴더 있으면 URL만 다시 저장.
+    """
+    s = get_settings()
+    if not s.works_drive_enabled:
+        raise HTTPException(status_code=503, detail="WORKS Drive 비활성")
+
+    row = db.get(M.MirrorProject, page_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="프로젝트를 찾을 수 없습니다")
+    project = project_from_mirror(row)
+    if not project.code or not project.name:
+        raise HTTPException(
+            status_code=400, detail="code/name이 비어있어 폴더 생성 불가"
+        )
+    try:
+        _fid, url = await sso_drive.ensure_project_folder(
+            s, code=project.code, project_name=project.name
+        )
+    except sso_drive.DriveError as e:
+        raise HTTPException(status_code=502, detail=str(e)) from e
+    if url:
+        await notion.update_page(
+            page_id, properties={"WORKS Drive URL": {"url": url}}
+        )
+    page = await notion.get_page(page_id)
     get_sync().upsert_page("projects", page)
     return Project.from_notion_page(page)
 

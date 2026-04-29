@@ -61,8 +61,10 @@ TASK_DB_REQUIRED: dict[str, dict[str, Any]] = {
     ),
 }
 
-# 추후 확장: 메인 프로젝트, 마스터 등 다른 DB schema도 여기 추가
-PROJECT_DB_REQUIRED: dict[str, dict[str, Any]] = {}
+# 메인 프로젝트 DB — WORKS Drive 폴더 URL (Phase 2)
+PROJECT_DB_REQUIRED: dict[str, dict[str, Any]] = {
+    "WORKS Drive URL": {"url": {}},
+}
 MASTER_DB_REQUIRED: dict[str, dict[str, Any]] = {}
 CLIENT_DB_REQUIRED: dict[str, dict[str, Any]] = {}
 

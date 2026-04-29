@@ -2,6 +2,8 @@
 
 import { useState } from "react";
 
+import { useAuth } from "@/components/AuthGuard";
+import { authFetch } from "@/lib/auth";
 import type { Project } from "@/lib/domain";
 import { formatDate } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -19,9 +21,37 @@ const STAGE_BADGE: Record<string, string> = {
 };
 
 export default function ProjectHeader({ project }: { project: Project }) {
+  const { user } = useAuth();
   const [masterOpen, setMasterOpen] = useState(false);
+  const [driveBusy, setDriveBusy] = useState(false);
+  const [driveError, setDriveError] = useState<string | null>(null);
   const masterLabel =
     project.master_project_name || project.master_code || "";
+
+  const handleProvisionDrive = async (): Promise<void> => {
+    if (driveBusy) return;
+    setDriveBusy(true);
+    setDriveError(null);
+    try {
+      const res = await authFetch(`/api/projects/${project.id}/works-drive`, {
+        method: "POST",
+      });
+      if (!res.ok) {
+        const d = (await res.json().catch(() => ({}))) as { detail?: string };
+        throw new Error(d.detail ?? `요청 실패 (${res.status})`);
+      }
+      const updated = (await res.json()) as Project;
+      if (updated.drive_url) {
+        window.location.reload();
+      } else {
+        setDriveError("폴더는 생성됐지만 URL을 받지 못했습니다.");
+      }
+    } catch (e: unknown) {
+      setDriveError(e instanceof Error ? e.message : "오류");
+    } finally {
+      setDriveBusy(false);
+    }
+  };
 
   return (
     <header className="rounded-xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900">
@@ -54,17 +84,45 @@ export default function ProjectHeader({ project }: { project: Project }) {
           </p>
         </div>
 
-        {project.stage && (
-          <span
-            className={cn(
-              "rounded-md border px-3 py-1 text-xs font-medium",
-              STAGE_BADGE[project.stage] ??
-                "border-zinc-500/30 bg-zinc-500/15 text-zinc-400",
-            )}
-          >
-            {project.stage}
-          </span>
-        )}
+        <div className="flex flex-col items-end gap-2">
+          {project.stage && (
+            <span
+              className={cn(
+                "rounded-md border px-3 py-1 text-xs font-medium",
+                STAGE_BADGE[project.stage] ??
+                  "border-zinc-500/30 bg-zinc-500/15 text-zinc-400",
+              )}
+            >
+              {project.stage}
+            </span>
+          )}
+          {project.drive_url ? (
+            <a
+              href={project.drive_url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1 rounded-md border border-emerald-700/40 bg-emerald-600/10 px-2.5 py-1 text-xs font-medium text-emerald-300 hover:bg-emerald-600/20"
+              title="WORKS Drive에서 프로젝트 폴더 열기"
+            >
+              📁 WORKS Drive 열기
+            </a>
+          ) : user?.role === "admin" ? (
+            <button
+              type="button"
+              onClick={handleProvisionDrive}
+              disabled={driveBusy}
+              className="inline-flex items-center gap-1 rounded-md border border-zinc-300 px-2.5 py-1 text-xs text-zinc-700 hover:border-zinc-400 hover:bg-zinc-50 disabled:opacity-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
+              title="WORKS Drive 폴더 생성/연결"
+            >
+              {driveBusy ? "생성 중..." : "📁 Drive 폴더 만들기"}
+            </button>
+          ) : null}
+          {driveError && (
+            <p className="text-[10px] text-red-400" title={driveError}>
+              {driveError}
+            </p>
+          )}
+        </div>
       </div>
 
       <dl className="mt-4 grid grid-cols-2 gap-x-4 gap-y-2 text-xs md:grid-cols-4">

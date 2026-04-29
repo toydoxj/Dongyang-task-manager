@@ -66,6 +66,17 @@ class Settings(BaseSettings):
     works_userinfo_endpoint: str = "https://www.worksapis.com/v1.0/users/me"
     # 콤마 구분 차단 이메일 (마스터·시스템 계정 등). lower-case 비교.
     works_blocked_emails: str = "dyce@dyce.kr"
+
+    # ── NAVER WORKS Drive (Phase 2) ──
+    # 공유 드라이브에 프로젝트별 폴더 자동 생성용. Service Account JWT 인증.
+    works_drive_enabled: bool = False
+    works_service_account_id: str = ""  # Console에서 발급된 service account ID
+    works_private_key: str = ""  # PEM 형태 RSA private key (\\n 포함 한 줄 또는 multiline)
+    works_drive_sharedrive_id: str = ""  # 공유 드라이브 자체의 ID
+    works_drive_root_folder_id: str = ""  # [업무관리] 루트 폴더의 fileId
+    # 사내 base API. 일반적으로 변경 불요.
+    works_api_base: str = "https://www.worksapis.com/v1.0"
+
     frontend_base_url: str = ""  # callback 후 frontend로 302할 때 사용
 
     @property

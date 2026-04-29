@@ -60,3 +60,14 @@ services:
         value: https://task.dyce.kr
       - key: WORKS_BLOCKED_EMAILS
         value: dyce@dyce.kr
+      # ── NAVER WORKS Drive (Phase 2) ──
+      - key: WORKS_DRIVE_ENABLED
+        sync: false
+      - key: WORKS_SERVICE_ACCOUNT_ID
+        sync: false
+      - key: WORKS_PRIVATE_KEY
+        sync: false
+      - key: WORKS_DRIVE_SHAREDRIVE_ID
+        sync: false
+      - key: WORKS_DRIVE_ROOT_FOLDER_ID
+        sync: false

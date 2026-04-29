@@ -37,6 +37,12 @@ def number(props: dict[str, Any], name: str) -> float | None:
     return (props.get(name) or {}).get("number")
 
 
+def url(props: dict[str, Any], name: str) -> str:
+    """url 타입 property 추출 — 빈 값이면 빈 문자열."""
+    v = (props.get(name) or {}).get("url")
+    return str(v) if v else ""
+
+
 def checkbox(props: dict[str, Any], name: str) -> bool:
     return bool((props.get(name) or {}).get("checkbox"))
 
