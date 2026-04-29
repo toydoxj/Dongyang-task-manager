@@ -135,18 +135,106 @@ async def main() -> None:
         print(f"  WORKS_DRIVE_SHAREDRIVE_ID    = {sid}")
         print(f"  WORKS_DRIVE_ROOT_FOLDER_ID   = {sid}")
         print("=========================================")
+        if os.environ.get("RUN_LIST_RAW") == "1":
+            # 사용자가 NAVER WORKS Drive 웹에서 직접 만든 폴더의 메타 확인
+            print(f"\n[4] {sid} root list raw 출력 (사용자가 web UI로 만든 폴더 메타 확인용)")
+            async with httpx.AsyncClient(timeout=15.0) as c:
+                r = await c.get(
+                    f"{s.works_api_base}/sharedrives/{sid}/files",
+                    headers={"Authorization": f"Bearer {token}"},
+                )
+            print(f"  status: {r.status_code}")
+            try:
+                rb = r.json()
+                items = rb.get("files") or rb.get("items") or rb.get("list") or []
+                print(f"  총 {len(items)}개 항목:")
+                for it in items:
+                    print(json.dumps(it, ensure_ascii=False, indent=2))
+                    print("  ---")
+            except ValueError:
+                print(f"  text: {r.text[:500]}")
+            return
+
+        if os.environ.get("RUN_FOLDER_DIAGNOSE") == "1":
+            # 진짜 '폴더' 만드는 endpoint 진단 — 기존 흐름은 0byte 파일로 만들어짐
+            # /sharedrives/{sd}/files/folders 가 400(INVALID_PARAMETER) → endpoint 존재.
+            # PoC v7 응답의 parentFileId(base64url)를 root_fileId로 사용 시도
+            test_folder = "POC-29C-폴더진단"
+            root_file_id = "QDIwMDEwMDAwMDA1MzY3NjB8MzQ3MjYxMjU0MjI1NTE5ODcyOXxEfDA"
+            print(f"\n[4] '폴더 전용' endpoint 진단 (sid={sid}, root_fileId={root_file_id[:30]}...)")
+            candidates = [
+                # /files/folders + 다양한 body
+                (f"{s.works_api_base}/sharedrives/{sid}/files/folders",
+                 {"fileName": test_folder, "parentFolderId": root_file_id}),
+                (f"{s.works_api_base}/sharedrives/{sid}/files/folders",
+                 {"fileName": test_folder, "parentFolderId": sid}),
+                (f"{s.works_api_base}/sharedrives/{sid}/files/folders",
+                 {"folderName": test_folder, "parentFolderId": root_file_id}),
+                (f"{s.works_api_base}/sharedrives/{sid}/files/folders",
+                 {"fileName": test_folder}),
+                (f"{s.works_api_base}/sharedrives/{sid}/files/folders",
+                 {"name": test_folder, "parentFolderId": root_file_id}),
+                # path에 parent 명시 패턴
+                (f"{s.works_api_base}/sharedrives/{sid}/files/{root_file_id}/folders",
+                 {"fileName": test_folder}),
+                (f"{s.works_api_base}/sharedrives/{sid}/files/{root_file_id}/folders",
+                 {"folderName": test_folder}),
+                (f"{s.works_api_base}/sharedrives/{sid}/files/{root_file_id}/folders",
+                 {"name": test_folder}),
+                # parent path + /files (folder가 아닌)
+                (f"{s.works_api_base}/sharedrives/{sid}/files/{root_file_id}/files",
+                 {"fileName": test_folder, "fileSize": 0, "fileType": "folder"}),
+            ]
+            for url, body in candidates:
+                async with httpx.AsyncClient(timeout=15.0) as client:
+                    try:
+                        resp = await client.post(
+                            url, json=body,
+                            headers={
+                                "Authorization": f"Bearer {token}",
+                                "Content-Type": "application/json",
+                            },
+                        )
+                    except httpx.HTTPError as e:
+                        print(f"  network: {e}")
+                        continue
+                ok = "[OK]" if 200 <= resp.status_code < 300 else "[FAIL]"
+                print(f"  {ok} POST {url}")
+                print(f"        body keys={list(body.keys())} -> {resp.status_code}")
+                print(f"        resp: {resp.text[:250]}")
+                if 200 <= resp.status_code < 300:
+                    print(f"\n  *** 폴더 전용 endpoint 발견! ***")
+                    print(f"  POST {url}")
+                    print(f"  body: {json.dumps(body, ensure_ascii=False)}")
+                    return
+            return
+
         if os.environ.get("RUN_FULL_TEST") == "1":
             os.environ["WORKS_DRIVE_SHAREDRIVE_ID"] = sid
             os.environ["WORKS_DRIVE_ROOT_FOLDER_ID"] = sid
             get_settings.cache_clear()
             s2 = get_settings()
-            print(f"\n[4] ensure_project_folder 호출 (POST + PUT + list)")
+            print(f"\n[4] ensure_project_folder 호출 (createfolder spec)")
             try:
                 fid, url = await sso_drive.ensure_project_folder(
-                    s2, code="POC-29B", project_name="테스트프로젝트B"
+                    s2, code="POC-29D", project_name="진짜폴더테스트"
                 )
                 print(f"  [OK] folderId={fid}")
                 print(f"  [OK] webUrl={url}")
+                # list로 fileType 확인
+                async with httpx.AsyncClient(timeout=15.0) as c:
+                    lr = await c.get(
+                        f"{s2.works_api_base}/sharedrives/{sid}/files",
+                        headers={"Authorization": f"Bearer {token}"},
+                    )
+                    if 200 <= lr.status_code < 300:
+                        items = lr.json().get("files", [])
+                        match = next(
+                            (it for it in items if it.get("fileName") == "[POC-29D]진짜폴더테스트"),
+                            None,
+                        )
+                        if match:
+                            print(f"  fileType: {match.get('fileType')}")
             except sso_drive.DriveError as e:
                 print(f"  [FAIL] {e}")
             return
