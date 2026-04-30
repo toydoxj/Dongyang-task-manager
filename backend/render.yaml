@@ -74,3 +74,23 @@ services:
       # 비어두면 "탐색기 열기"·"경로 복사" 버튼 비표시.
       - key: WORKS_DRIVE_LOCAL_ROOT
         value: "W:\\[업무관리]"
+
+  # ── 5분 incremental sync 외부 트리거 ──
+  # backend 안의 APScheduler는 worker process에 종속적 (process restart 시 reset).
+  # 별도 cron 서비스가 5분마다 /api/cron/sync 호출해 안정성 확보.
+  # backend cron 엔드포인트는 fire-and-forget(202)이라 호출 자체는 1초 미만.
+  - type: cron
+    name: dy-task-sync-cron
+    runtime: python
+    region: singapore
+    plan: starter
+    rootDir: backend
+    schedule: "*/5 * * * *"
+    buildCommand: pip install httpx
+    startCommand: |
+      python -c "import os, httpx; r = httpx.post('https://api.dyce.kr/api/cron/sync', headers={'Authorization': 'Bearer ' + os.environ['CRON_SECRET']}, timeout=60); print(r.status_code, r.text)"
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.7
+      - key: CRON_SECRET
+        sync: false
