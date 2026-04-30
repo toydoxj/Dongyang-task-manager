@@ -231,7 +231,7 @@ def _from_notion_page(page: dict[str, Any]) -> SealRequestItem:
         due_date=due_s,
         note=P.rich_text(props, "비고"),
         attachments=attachments,
-        real_source=P.rich_text(props, "실제출처"),
+        real_source=P.rich_text(props, "실제출처_텍스트"),
         purpose=P.rich_text(props, "용도"),
         revision=int(rev_n) if isinstance(rev_n, int | float) else None,
         with_safety_cert=P.checkbox(props, "안전확인서포함"),
@@ -636,7 +636,7 @@ async def create_seal_request(
         "비고": {"rich_text": [{"text": {"content": note}}]},
     }
     if real_source.strip():
-        init_props["실제출처"] = {
+        init_props["실제출처_텍스트"] = {
             "rich_text": [{"text": {"content": real_source.strip()}}]
         }
     if seal_type == "구조계산서":
@@ -944,7 +944,7 @@ async def update_seal_request(
             "title": [{"text": {"content": body.title}}]
         }
     if body.real_source is not None:
-        update_props["실제출처"] = {
+        update_props["실제출처_텍스트"] = {
             "rich_text": [{"text": {"content": body.real_source}}]
         }
     if body.purpose is not None:

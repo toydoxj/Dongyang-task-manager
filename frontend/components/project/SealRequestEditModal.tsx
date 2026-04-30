@@ -1,9 +1,14 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 
 import Modal from "@/components/ui/Modal";
-import { updateSealRequest, type SealRequestItem } from "@/lib/api";
+import {
+  addSealAttachments,
+  getSealAttachmentUrl,
+  updateSealRequest,
+  type SealRequestItem,
+} from "@/lib/api";
 
 interface Props {
   item: SealRequestItem;
@@ -14,9 +19,9 @@ interface Props {
 /**
  * 재요청 / 입력 수정 모달.
  *
- * - 반려된 요청을 보완해 다시 제출하거나, 1차검토 중 상태에서 입력값을 수정할 때 사용.
- * - 첨부 파일 추가는 별도 입력(상위 컴포넌트의 reupload input)을 사용.
- * - 검토구분(seal_type)은 변경 불가 — 재등록이 필요하면 취소 후 새로 작성.
+ * docs/request.md: "이전에 기입된 내용이 그대로 나타남(수정가능)" — 텍스트 필드는
+ * prefill하고, 기존 첨부도 목록으로 보여주며 추가 업로드 가능.
+ * 검토구분(seal_type)은 변경 불가 — 재등록이 필요하면 취소 후 새로 작성.
  */
 export default function SealRequestEditModal({ item, onClose, onSaved }: Props) {
   const [title, setTitle] = useState(item.title);
@@ -28,8 +33,27 @@ export default function SealRequestEditModal({ item, onClose, onSaved }: Props) 
   const [summary, setSummary] = useState(item.summary);
   const [docKind, setDocKind] = useState(item.doc_kind);
   const [note, setNote] = useState(item.note);
+  const [pendingFiles, setPendingFiles] = useState<File[]>([]);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const fileInput = useRef<HTMLInputElement>(null);
+
+  const onPickFiles = (list: FileList | null): void => {
+    if (!list) return;
+    const MAX = 200 * 1024 * 1024;
+    const all = Array.from(list);
+    const tooBig = all.filter((f) => f.size > MAX);
+    if (tooBig.length > 0) {
+      alert(
+        `200MB 초과:\n${tooBig
+          .map((f) => `• ${f.name} (${Math.round(f.size / 1024 / 1024)}MB)`)
+          .join("\n")}`,
+      );
+    }
+    const ok = all.filter((f) => f.size <= MAX);
+    if (ok.length > 0) setPendingFiles((prev) => [...prev, ...ok]);
+    if (fileInput.current) fileInput.current.value = "";
+  };
 
   const submit = async (): Promise<void> => {
     if (!dueDate) {
@@ -50,6 +74,10 @@ export default function SealRequestEditModal({ item, onClose, onSaved }: Props) 
         doc_kind: docKind,
         note,
       });
+      // 첨부 추가가 있으면 같이 업로드 (상태가 자동으로 1차검토 중으로 복구)
+      if (pendingFiles.length > 0) {
+        await addSealAttachments(item.id, pendingFiles);
+      }
       onSaved();
     } catch (e) {
       setErr(e instanceof Error ? e.message : "저장 실패");
@@ -175,6 +203,87 @@ export default function SealRequestEditModal({ item, onClose, onSaved }: Props) 
             rows={2}
             className={`${inputCls} resize-y`}
           />
+        </Field>
+
+        <Field label={`기존 첨부 (${item.attachments.length})`}>
+          {item.attachments.length === 0 ? (
+            <p className="text-xs text-zinc-400">첨부 없음</p>
+          ) : (
+            <ul className="space-y-1">
+              {item.attachments.map((f, i) => (
+                <li
+                  key={i}
+                  className="flex items-center gap-2 rounded border border-zinc-200 px-2 py-1 text-xs dark:border-zinc-800"
+                >
+                  <span className="flex-1 truncate" title={f.name}>
+                    📎 {f.name}
+                    {f.size ? (
+                      <span className="ml-1 text-zinc-400">
+                        ({Math.round(f.size / 1024)} KB)
+                      </span>
+                    ) : null}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      try {
+                        const r = await getSealAttachmentUrl(item.id, i);
+                        const a = document.createElement("a");
+                        a.href = r.url;
+                        a.download = r.name;
+                        a.click();
+                      } catch (e) {
+                        alert(
+                          e instanceof Error ? e.message : "다운로드 실패",
+                        );
+                      }
+                    }}
+                    className="rounded border border-zinc-200 px-1.5 py-0.5 text-[10px] text-zinc-500 hover:bg-zinc-50 dark:border-zinc-800 dark:hover:bg-zinc-800"
+                  >
+                    ↓
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </Field>
+
+        <Field label="첨부 추가 (선택, 다중 가능, 파일당 ≤200MB)">
+          <input
+            ref={fileInput}
+            type="file"
+            multiple
+            onChange={(e) => onPickFiles(e.target.files)}
+            className="block w-full text-xs file:mr-2 file:rounded-md file:border-0 file:bg-zinc-100 file:px-3 file:py-1.5 file:text-xs hover:file:bg-zinc-200 dark:file:bg-zinc-800 dark:file:text-zinc-100"
+          />
+          {pendingFiles.length > 0 && (
+            <ul className="mt-2 space-y-1 text-xs">
+              {pendingFiles.map((f, i) => (
+                <li
+                  key={i}
+                  className="flex items-center justify-between rounded border border-amber-300 px-2 py-1 dark:border-amber-700"
+                >
+                  <span className="truncate" title={f.name}>
+                    🆕 {f.name}{" "}
+                    <span className="text-zinc-400">
+                      ({Math.round(f.size / 1024)} KB)
+                    </span>
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setPendingFiles((prev) =>
+                        prev.filter((_, j) => j !== i),
+                      )
+                    }
+                    className="text-zinc-400 hover:text-red-500"
+                  >
+                    ×
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
         </Field>
 
         {err && (
