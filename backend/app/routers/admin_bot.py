@@ -26,17 +26,56 @@ logger = logging.getLogger("admin.bot")
 router = APIRouter(prefix="/admin/bot", tags=["admin-bot"])
 
 
+class PemDiagnostic(BaseModel):
+    """PEM 입력 상태 — secret 본문은 노출하지 않고 구조 metadata만."""
+
+    raw_length: int = 0
+    raw_lines: int = 0
+    raw_has_escape: bool = False           # `\n` 이스케이프 존재
+    raw_has_real_newline: bool = False     # 실제 LF 존재
+    raw_has_cr: bool = False               # CR (Windows 줄바꿈 잔존)
+    raw_first_40: str = ""
+    raw_last_40: str = ""
+    normalized_length: int = 0
+    normalized_lines: int = 0
+    normalized_first_40: str = ""
+    normalized_last_40: str = ""
+    has_begin_marker: bool = False
+    has_end_marker: bool = False
+
+
 class BotTestResponse(BaseModel):
     ok: bool
     enabled: bool
     bot_id: str = ""
     target_user_id: str = ""
     error: str = ""
+    pem_diag: PemDiagnostic | None = None
+
+
+def _pem_diag(raw: str) -> PemDiagnostic:
+    normalized = sso_works_bot._normalize_private_key(raw)
+    return PemDiagnostic(
+        raw_length=len(raw),
+        raw_lines=raw.count("\n") + 1 if raw else 0,
+        raw_has_escape="\\n" in raw,
+        raw_has_real_newline="\n" in raw,
+        raw_has_cr="\r" in raw,
+        raw_first_40=raw[:40],
+        raw_last_40=raw[-40:] if len(raw) > 40 else raw,
+        normalized_length=len(normalized),
+        normalized_lines=normalized.count("\n") + 1 if normalized else 0,
+        normalized_first_40=normalized[:40],
+        normalized_last_40=normalized[-40:] if len(normalized) > 40 else normalized,
+        has_begin_marker="-----BEGIN" in normalized,
+        has_end_marker="-----END" in normalized,
+    )
 
 
 @router.post("/test-message", response_model=BotTestResponse)
 async def send_test_message(
     to: str | None = None,
+    diag: bool = False,
     user: User = Depends(require_admin),
     db: Session = Depends(get_db),
 ) -> BotTestResponse:
@@ -110,6 +149,8 @@ async def send_test_message(
         logger.exception("Bot 테스트 메시지 전송 중 예외")
         raise HTTPException(status_code=500, detail=f"전송 중 예외: {e}") from e
 
+    pem_diag = _pem_diag(s.works_bot_private_key) if (diag or not ok) else None
+
     return BotTestResponse(
         ok=ok,
         enabled=True,
@@ -120,4 +161,5 @@ async def send_test_message(
             if ok
             else "send_text False — backend Logs에서 'Bot send_text 실패' 또는 토큰 오류 확인"
         ),
+        pem_diag=pem_diag,
     )
