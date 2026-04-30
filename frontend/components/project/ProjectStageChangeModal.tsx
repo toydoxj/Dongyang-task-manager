@@ -8,10 +8,11 @@
  * - 종결: stage="종결" + end_date + 용역비/VAT 0
  */
 
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import useSWR from "swr";
 
 import Modal from "@/components/ui/Modal";
-import { updateProject } from "@/lib/api";
+import { getProjectLog, updateProject } from "@/lib/api";
 import type { Project } from "@/lib/domain";
 import { cn } from "@/lib/utils";
 
@@ -35,6 +36,31 @@ export default function ProjectStageChangeModal({
   const [terminationVat, setTerminationVat] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // 이전 완료일 — 가장 최근 '완료 해제' log에서 추출 (재완료 시 default 복원)
+  const { data: logData } = useSWR(["project-log", project.id], () =>
+    getProjectLog(project.id),
+  );
+  const prevEndDate = useMemo<string>(() => {
+    const items = logData?.items ?? [];
+    // 시간순 ascending이라 뒤에서부터 (최신부터) 검색
+    for (let i = items.length - 1; i >= 0; i--) {
+      if (items[i].action === "완료 해제") {
+        const m = items[i].title?.match(/이전 완료일:\s*(\d{4}-\d{2}-\d{2})/);
+        if (m) return m[1];
+      }
+    }
+    return "";
+  }, [logData]);
+
+  // mode가 완료로 바뀔 때 이전 완료일이 있으면 자동 prefill
+  useEffect(() => {
+    if (mode === "완료" && prevEndDate) {
+      setEndDate(prevEndDate);
+    } else if (mode && mode !== "완료") {
+      setEndDate(today);
+    }
+  }, [mode, prevEndDate, today]);
 
   const submit = async (): Promise<void> => {
     if (!mode) return;
@@ -143,9 +169,16 @@ export default function ProjectStageChangeModal({
               </p>
             )}
             {mode === "완료" && (
-              <p className="rounded-md border border-zinc-300 bg-zinc-50 p-2 text-xs text-zinc-600 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-400">
-                완료 시 용역비/VAT는 그대로 유지됩니다. 필요시 별도 편집에서 수정.
-              </p>
+              <div className="space-y-1.5">
+                {prevEndDate && (
+                  <p className="rounded-md border border-amber-500/40 bg-amber-500/5 p-2 text-xs text-amber-700 dark:text-amber-300">
+                    이전 완료일({prevEndDate})이 자동 복원됨. 변경 가능합니다.
+                  </p>
+                )}
+                <p className="rounded-md border border-zinc-300 bg-zinc-50 p-2 text-xs text-zinc-600 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-400">
+                  완료 시 용역비/VAT는 그대로 유지됩니다. 필요시 별도 편집에서 수정.
+                </p>
+              </div>
             )}
           </>
         )}
