@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { useSWRConfig } from "swr";
 
@@ -18,11 +18,30 @@ import { listSealRequests } from "@/lib/api";
 import { keys, useCashflow, useProject, useTasks } from "@/lib/hooks";
 
 export default function ProjectClient({ id }: { id: string }) {
+  const router = useRouter();
   const { mutate } = useSWRConfig();
   const [createOpen, setCreateOpen] = useState(false);
   const [createStatus, setCreateStatus] = useState<string | undefined>(undefined);
   const [editOpen, setEditOpen] = useState(false);
   const [sealOpen, setSealOpen] = useState(false);
+
+  // 어디서 왔든 그 페이지로 돌아가기. history 없으면 /projects로 fallback.
+  const goBack = (): void => {
+    if (typeof window !== "undefined" && window.history.length > 1) {
+      router.back();
+    } else {
+      router.push("/projects");
+    }
+  };
+  const BackButton = (): React.ReactElement => (
+    <button
+      type="button"
+      onClick={goBack}
+      className="text-xs text-zinc-500 hover:underline"
+    >
+      ← 뒤로
+    </button>
+  );
 
   const { data: project, error: projectErr } = useProject(id);
   const { data: tasksData, error: tasksErr } = useTasks({ project_id: id });
@@ -50,9 +69,7 @@ export default function ProjectClient({ id }: { id: string }) {
   if (error) {
     return (
       <div className="space-y-3">
-        <Link href="/projects" className="text-xs text-zinc-500 hover:underline">
-          ← 프로젝트 목록
-        </Link>
+        <BackButton />
         <div className="rounded-md border border-red-500/40 bg-red-500/5 p-3 text-sm text-red-400">
           {error instanceof Error ? error.message : String(error)}
         </div>
@@ -63,9 +80,7 @@ export default function ProjectClient({ id }: { id: string }) {
   if (!project || !tasks || !cashflow) {
     return (
       <div className="space-y-4">
-        <Link href="/projects" className="text-xs text-zinc-500 hover:underline">
-          ← 프로젝트 목록
-        </Link>
+        <BackButton />
         <LoadingState
           message="프로젝트 상세 불러오는 중 (프로젝트·업무·현금흐름)"
           height="h-64"
@@ -77,9 +92,7 @@ export default function ProjectClient({ id }: { id: string }) {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <Link href="/projects" className="text-xs text-zinc-500 hover:underline">
-          ← 프로젝트 목록
-        </Link>
+        <BackButton />
         <div className="flex items-center gap-3">
           <button
             type="button"
