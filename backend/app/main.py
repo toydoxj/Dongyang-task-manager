@@ -14,6 +14,7 @@ from fastapi.staticfiles import StaticFiles
 
 from app.db import init_db
 from app.exceptions import AppError
+from app.routers import admin_bot as admin_bot_router
 from app.routers import admin_calendar as admin_calendar_router
 from app.routers import admin_drive as admin_drive_router
 from app.routers import auth as auth_router
@@ -97,6 +98,7 @@ app.include_router(suggestions_router.router, prefix="/api")
 app.include_router(seal_requests_router.router, prefix="/api")
 app.include_router(admin_drive_router.router, prefix="/api")
 app.include_router(admin_calendar_router.router, prefix="/api")
+app.include_router(admin_bot_router.router, prefix="/api")
 
 
 @app.get("/health")
