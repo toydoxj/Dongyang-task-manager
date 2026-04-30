@@ -5,9 +5,10 @@ read-path는 mirror 테이블만 사용. 노션 변경 후 5분 내 반영 (incr
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 from collections.abc import Callable
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Literal
 
 from sqlalchemy import select
@@ -35,6 +36,11 @@ ALL_KINDS: tuple[SyncKind, ...] = (
     "cashflow",
     "expense",
 )
+
+# incremental query lookback. since를 sync 시작 시각으로 박아도 노션 인덱싱
+# 지연·clock skew로 boundary 페이지가 빠질 수 있어 60초 overlap. upsert가
+# idempotent라 중복 수집은 안전.
+_INCREMENTAL_OVERLAP = timedelta(seconds=60)
 
 
 def _utcnow() -> datetime:
@@ -74,6 +80,21 @@ class NotionSyncService:
         self.notion = notion
         self.session_factory = session_factory
         self.settings = settings or get_settings()
+        # per-kind lock — 수동 /api/cron/sync 와 5분 scheduler가 같은 kind를
+        # 동시 실행해 cursor 충돌하는 일 방지. 직렬화는 kind별로만.
+        self._kind_locks: dict[str, asyncio.Lock] = {}
+
+    def _kind_lock(self, kind: str) -> asyncio.Lock:
+        # __new__로 생성된 인스턴스(테스트)에서 _kind_locks가 없을 수 있어 lazy init.
+        locks = getattr(self, "_kind_locks", None)
+        if locks is None:
+            locks = {}
+            self._kind_locks = locks
+        lock = locks.get(kind)
+        if lock is None:
+            lock = asyncio.Lock()
+            locks[kind] = lock
+        return lock
 
     # ── 진입점 ──
 
@@ -96,38 +117,46 @@ class NotionSyncService:
             logger.warning("sync %s: DB ID 미설정", kind)
             return 0
 
-        since = None if full else self._get_since(kind)
-        filt: dict[str, Any] | None = None
-        if since:
-            filt = {
-                "timestamp": "last_edited_time",
-                "last_edited_time": {"after": since.isoformat()},
-            }
-        # 가장 오래된 것부터 처리하면 부분 실패 시 since 진행 안전
-        sorts = [{"timestamp": "last_edited_time", "direction": "ascending"}]
-        pages = await self.notion.query_all(db_id, filter=filt, sorts=sorts)
+        async with self._kind_lock(kind):
+            # since는 sync 시작 시각으로 갱신해야 진행 도중(start~end) 노션에 추가된
+            # 페이지가 다음 incremental에서 누락되지 않음. 여기서 시작 시각 capture.
+            start_time = _utcnow()
+            since = None if full else self._get_since(kind)
+            filt: dict[str, Any] | None = None
+            if since:
+                filt = {
+                    "timestamp": "last_edited_time",
+                    "last_edited_time": {
+                        "after": (since - _INCREMENTAL_OVERLAP).isoformat()
+                    },
+                }
+            # 가장 오래된 것부터 처리하면 부분 실패 시 since 진행 안전
+            sorts = [{"timestamp": "last_edited_time", "direction": "ascending"}]
+            pages = await self.notion.query_all(db_id, filter=filt, sorts=sorts)
 
-        # 100건 단위로 commit — 단일 transaction이 row lock을 오래 잡으면
-        # /api/projects 같은 동시 read 요청이 hang됨. 작은 배치로 잘라
-        # lock 점유 시간을 줄임.
-        BATCH = 100
-        with self.session_factory() as db:
-            for i, page in enumerate(pages, start=1):
-                self._upsert_one(db, kind, page)
-                if i % BATCH == 0:
-                    db.commit()
-            db.commit()
-
-        # full이면 노션에 없는 미러 row를 archive (삭제 감지)
-        if full:
+            # 100건 단위로 commit — 단일 transaction이 row lock을 오래 잡으면
+            # /api/projects 같은 동시 read 요청이 hang됨. 작은 배치로 잘라
+            # lock 점유 시간을 줄임.
+            BATCH = 100
             with self.session_factory() as db:
-                self._mark_missing_archived(
-                    db, kind, present_ids={p.get("id", "") for p in pages}
-                )
+                for i, page in enumerate(pages, start=1):
+                    self._upsert_one(db, kind, page)
+                    if i % BATCH == 0:
+                        db.commit()
                 db.commit()
 
-        self._record_success(kind, count=len(pages), full=full)
-        return len(pages)
+            # full이면 노션에 없는 미러 row를 archive (삭제 감지)
+            if full:
+                with self.session_factory() as db:
+                    self._mark_missing_archived(
+                        db, kind, present_ids={p.get("id", "") for p in pages}
+                    )
+                    db.commit()
+
+            self._record_success(
+                kind, count=len(pages), full=full, next_since=start_time
+            )
+            return len(pages)
 
     # ── 단건 write-through (라우터에서 호출) ──
 
@@ -471,12 +500,23 @@ class NotionSyncService:
             ).scalar_one_or_none()
             return row.last_incremental_synced_at if row else None
 
-    def _record_success(self, kind: SyncKind, *, count: int, full: bool) -> None:
+    def _record_success(
+        self,
+        kind: SyncKind,
+        *,
+        count: int,
+        full: bool,
+        next_since: datetime | None = None,
+    ) -> None:
+        # next_since: 다음 incremental의 since로 박을 시각. 호출자가 sync 시작
+        # 시각을 넘겨야 진행 도중 추가된 페이지가 누락되지 않음. None이면 fallback
+        # 으로 현재 시각 (호환성).
         now = _utcnow()
+        cursor = next_since or now
         with self.session_factory() as db:
             stmt = pg_insert(M.NotionSyncState).values(
                 db_kind=kind,
-                last_incremental_synced_at=now,
+                last_incremental_synced_at=cursor,
                 last_full_synced_at=now if full else None,
                 last_error="",
                 last_run_count=count,

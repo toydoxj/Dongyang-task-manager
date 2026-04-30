@@ -155,6 +155,28 @@
 - 해결: 본 건은 Codex 검토 없이 진행. 사용자에게 상황을 알리고 자체 계획 초안을 먼저 제시한 뒤, 다음 단계에서 재시도 또는 사용자가 외부 GPT에 직접 검토 의뢰하는 방식으로 우회
 - 재발 방지: Codex MCP에 4000자 이상의 prompt를 한 번에 보내지 말 것. 핵심 질문 1~2개로 분할하거나 mcp__codex-cli__review 별도 도구 사용을 우선 검토. Codex가 빈 응답·맥락 무시 응답을 줄 때는 두 번 이상 재시도하지 말고 즉시 차선책으로 전환
 
+### 2026-04-30 — `/api/cron/sync` 동기 응답이 worker를 1~3분 막아 다른 요청이 502
+- 컨텍스트: Render starter (512MB/0.5 CPU, 단일 worker process)에서 `?full=true` 호출 시 노션 6개 DB reconcile이 1~3분 걸림. 그 동안 frontend의 SWR polling(`/api/seal-requests/pending-count` 등)이 모두 `502 Bad Gateway` + 표면상 CORS 에러
+- 증상: `Access to fetch at ... blocked by CORS policy: No 'Access-Control-Allow-Origin' header` + 502. CORS 자체는 정상이지만 502 응답에 헤더가 안 붙어서 브라우저가 CORS 에러로 표시
+- 원인: cron 엔드포인트가 `await sync.sync_all(...)`를 동기 await 해 worker가 sync 종료까지 점유. uvicorn 단일 worker라 같은 process에서 다른 요청이 줄 서다 timeout
+- 해결:
+  1) cron 엔드포인트를 fire-and-forget으로 — `asyncio.create_task(_run_sync_in_bg(...))` + 즉시 `202 {"status":"started"}` 반환. sync는 background 코루틴으로 진행
+  2) `NotionSyncService`에 per-kind `asyncio.Lock` — 5분 scheduler와 수동 cron이 같은 kind를 동시에 돌려 cursor 충돌하는 문제 차단
+  3) main.py에 `_running_sync: set[str]` — 사용자가 응답 빠르다고 여러 번 호출해도 중복 background task spawn 금지. `_all` 또는 kind별 키. 이미 실행 중이면 `{"status":"already_running"}` 반환
+  4) 결과는 동기 응답에서 빠지므로 Render Logs(`logger=dy.cron`)에서 `manual cron ... done: N` 메시지로 확인
+- 재발 방지: I/O bound라도 1분+ 동기 await가 있는 endpoint는 단일-worker 환경에서 항상 background task로 분리. 또한 멱등하지 않은 트리거는 dedupe set/lock으로 중복 spawn 방어. asyncio.Lock 인스턴스 변수는 `__new__`로 만든 테스트 인스턴스에서도 동작하도록 lazy init (`getattr(self, "_kind_locks", None)` 패턴)
+
+### 2026-04-30 — incremental sync since 갱신 race로 노션 신규 페이지가 mirror에 영구 누락
+- 컨텍스트: 노션 마스터 DB에 새 마스터 추가했는데 5분 incremental sync가 여러 번 돌아도 mirror_master_projects에 안 들어옴. 다른 마스터들은 정상
+- 증상: 프로젝트 상세 ProjectHeader의 ▣ 마스터 라벨 비표시. `master_project_name`이 빈 값 (project mirror에는 master_project_id 정상). 이전에 만들어진 마스터들은 모두 정상 표시
+- 원인: `_record_success`가 since(`last_incremental_synced_at`)를 sync **종료** 시각(`_utcnow()`)으로 박음 + 노션 query는 strict `>` filter (`last_edited_time after since`). sync가 T_start ~ T_end 동안 실행되는 사이 노션에서 페이지가 추가되면 last_edited_time이 T_end보다 작을 수 있음 → 다음 incremental의 `> T_end` filter에서 누락. 이후 그 페이지가 수정되지 않으면 영구 누락
+- 해결:
+  1) `sync_kind` 시작에 `start_time = _utcnow()` capture
+  2) `_record_success`에 `next_since` 매개변수 추가, since 갱신을 시작 시각으로 (종료 시각 아님)
+  3) query filter에 60초 lookback overlap (`since - 60s`) 적용. upsert idempotent라 중복 안전. 노션 인덱싱 지연·clock skew도 함께 방어
+  4) 즉시 복구는 단건 GET API (`/api/master-projects/{id}` 등 mirror miss시 노션 fallback + upsert) 또는 `POST /api/cron/sync/{kind}?full=true`
+- 재발 방지: incremental 동기화 패턴에서 cursor는 항상 sync **시작** 시각 (또는 max(seen.last_edited_time))으로 갱신. 종료 시각 사용 금지. boundary 페이지를 위한 lookback overlap window는 표준 방어책. 외부 source에 strict timestamp filter가 있으면 더더욱 필요
+
 ### 2026-04-26 — Packaged 환경에서 노션 토큰 배포 방식
 - 컨텍스트: 사용자 PC마다 .env 직접 두기 불편. NOTION_API_KEY 등 어떻게 배포?
 - 결정: 옵션 A — `backend/.env.production` 파일을 PyInstaller datas에 번들 (사내 도구라 보안 trade-off 수용)

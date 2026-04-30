@@ -104,25 +104,67 @@ def _verify_cron(authorization: str | None = Header(default=None)) -> None:
         raise HTTPException(status_code=401, detail="invalid cron token")
 
 
-@app.post("/api/cron/sync")
+# 진행 중 manual sync. 중복 호출(사용자가 응답 빠르다고 여러 번 누름)이
+# 여러 sync_all을 동시 spawn해 worker를 더 부하 주는 일을 방지.
+# "_all"은 sync_all 트리거, 그 외는 kind별.
+_running_sync: set[str] = set()
+
+
+async def _run_sync_in_bg(*, kind: str | None, full: bool) -> None:
+    """fire-and-forget으로 sync 실행. 결과는 Render Logs에서 확인."""
+    key = kind or "_all"
+    cron_logger = logging.getLogger("dy.cron")
+    try:
+        sync = get_sync()
+        if kind:
+            n = await sync.sync_kind(kind, full=full)  # type: ignore[arg-type]
+            cron_logger.info(
+                "manual cron %s full=%s done: %d", kind, full, n
+            )
+        else:
+            result = await sync.sync_all(full=full)
+            cron_logger.info(
+                "manual cron sync_all full=%s done: %s", full, result
+            )
+    except Exception:  # noqa: BLE001
+        cron_logger.exception("manual cron sync 실패")
+    finally:
+        _running_sync.discard(key)
+
+
+@app.post("/api/cron/sync", status_code=202)
 async def cron_sync(
     full: bool = False,
     _ok: None = Depends(_verify_cron),
-) -> dict[str, int]:
-    """수동/외부 cron 트리거. Header: Authorization: Bearer $CRON_SECRET."""
-    return await get_sync().sync_all(full=full)
+) -> dict[str, str]:
+    """수동/외부 cron 트리거. Header: Authorization: Bearer $CRON_SECRET.
+
+    무거운 sync가 worker를 막아 다른 요청이 502 되는 문제를 방지하기 위해
+    fire-and-forget으로 실행. 즉시 202 반환, 결과는 Render Logs에서 확인.
+    이미 실행 중이면 중복 spawn 금지(already_running).
+    """
+    if _running_sync:
+        return {"status": "already_running", "active": ",".join(sorted(_running_sync))}
+    _running_sync.add("_all")
+    asyncio.create_task(_run_sync_in_bg(kind=None, full=full))
+    return {"status": "started", "full": str(full).lower()}
 
 
-@app.post("/api/cron/sync/{kind}")
+@app.post("/api/cron/sync/{kind}", status_code=202)
 async def cron_sync_one(
     kind: str,
     full: bool = False,
     _ok: None = Depends(_verify_cron),
-) -> dict[str, int]:
+) -> dict[str, str]:
     if kind not in ALL_KINDS:
         raise HTTPException(status_code=400, detail=f"unknown kind: {kind}")
-    n = await get_sync().sync_kind(kind, full=full)  # type: ignore[arg-type]
-    return {kind: n}
+    # sync_all이 돌고 있으면 그 안에 이 kind도 포함되니 추가 spawn 금지.
+    # 동일 kind가 이미 진행 중일 때도 마찬가지.
+    if "_all" in _running_sync or kind in _running_sync:
+        return {"status": "already_running", "kind": kind}
+    _running_sync.add(kind)
+    asyncio.create_task(_run_sync_in_bg(kind=kind, full=full))
+    return {"status": "started", "kind": kind, "full": str(full).lower()}
 
 
 # 정적 frontend 서빙 (FRONTEND_DIST 환경변수가 설정되었을 때만)
