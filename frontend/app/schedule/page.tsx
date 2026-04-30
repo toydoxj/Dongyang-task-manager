@@ -248,15 +248,6 @@ export default function SchedulePage() {
         .schedule-calendar .fc-day-sat .fc-daygrid-day-number { color: #2563eb; }
         .schedule-calendar .fc-day-sun .fc-col-header-cell-cushion,
         .schedule-calendar .fc-day-sun .fc-daygrid-day-number { color: #dc2626; }
-        .schedule-calendar .fc-day-today { background: rgba(140, 185, 67, 0.06) !important; }
-        .schedule-calendar .fc-daygrid-day.fc-day-today .fc-daygrid-day-number {
-          background: #8cb943;
-          color: #fff;
-          border-radius: 999px;
-          width: 22px; height: 22px;
-          display: inline-flex; align-items: center; justify-content: center;
-          padding: 0;
-        }
         .schedule-calendar .fc-event {
           border: none;
           border-left: 3px solid currentColor;
