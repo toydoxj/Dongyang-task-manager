@@ -104,40 +104,24 @@ services:
     envVars:
       - key: PYTHON_VERSION
         value: 3.12.7
-      # backend web service의 env를 그대로 공유 — dashboard에서 한 번만 설정하면
-      # 모든 cron service가 동일 값을 사용 (reproducible).
-      - fromService:
-          name: dy-task-backend
-          type: web
-          envVarKey: DATABASE_URL
-      - fromService:
-          name: dy-task-backend
-          type: web
-          envVarKey: NOTION_API_KEY
-      - fromService:
-          name: dy-task-backend
-          type: web
-          envVarKey: NOTION_DB_PROJECTS
-      - fromService:
-          name: dy-task-backend
-          type: web
-          envVarKey: NOTION_DB_TASKS
-      - fromService:
-          name: dy-task-backend
-          type: web
-          envVarKey: NOTION_DB_CASHFLOW
-      - fromService:
-          name: dy-task-backend
-          type: web
-          envVarKey: NOTION_DB_EXPENSE
-      - fromService:
-          name: dy-task-backend
-          type: web
-          envVarKey: NOTION_DB_CLIENTS
-      - fromService:
-          name: dy-task-backend
-          type: web
-          envVarKey: NOTION_DB_MASTER
+      # 각 cron service에 backend web과 동일한 값으로 dashboard에서 입력 필요.
+      # (Render Blueprint는 cron type에서 fromService env share 미지원)
+      - key: DATABASE_URL
+        sync: false
+      - key: NOTION_API_KEY
+        sync: false
+      - key: NOTION_DB_PROJECTS
+        sync: false
+      - key: NOTION_DB_TASKS
+        sync: false
+      - key: NOTION_DB_CASHFLOW
+        sync: false
+      - key: NOTION_DB_EXPENSE
+        sync: false
+      - key: NOTION_DB_CLIENTS
+        sync: false
+      - key: NOTION_DB_MASTER
+        sync: false
 
   - type: cron
     name: dy-task-sync-tasks
@@ -153,40 +137,24 @@ services:
     envVars:
       - key: PYTHON_VERSION
         value: 3.12.7
-      # backend web service의 env를 그대로 공유 — dashboard에서 한 번만 설정하면
-      # 모든 cron service가 동일 값을 사용 (reproducible).
-      - fromService:
-          name: dy-task-backend
-          type: web
-          envVarKey: DATABASE_URL
-      - fromService:
-          name: dy-task-backend
-          type: web
-          envVarKey: NOTION_API_KEY
-      - fromService:
-          name: dy-task-backend
-          type: web
-          envVarKey: NOTION_DB_PROJECTS
-      - fromService:
-          name: dy-task-backend
-          type: web
-          envVarKey: NOTION_DB_TASKS
-      - fromService:
-          name: dy-task-backend
-          type: web
-          envVarKey: NOTION_DB_CASHFLOW
-      - fromService:
-          name: dy-task-backend
-          type: web
-          envVarKey: NOTION_DB_EXPENSE
-      - fromService:
-          name: dy-task-backend
-          type: web
-          envVarKey: NOTION_DB_CLIENTS
-      - fromService:
-          name: dy-task-backend
-          type: web
-          envVarKey: NOTION_DB_MASTER
+      # 각 cron service에 backend web과 동일한 값으로 dashboard에서 입력 필요.
+      # (Render Blueprint는 cron type에서 fromService env share 미지원)
+      - key: DATABASE_URL
+        sync: false
+      - key: NOTION_API_KEY
+        sync: false
+      - key: NOTION_DB_PROJECTS
+        sync: false
+      - key: NOTION_DB_TASKS
+        sync: false
+      - key: NOTION_DB_CASHFLOW
+        sync: false
+      - key: NOTION_DB_EXPENSE
+        sync: false
+      - key: NOTION_DB_CLIENTS
+        sync: false
+      - key: NOTION_DB_MASTER
+        sync: false
 
   - type: cron
     name: dy-task-sync-master
@@ -202,40 +170,24 @@ services:
     envVars:
       - key: PYTHON_VERSION
         value: 3.12.7
-      # backend web service의 env를 그대로 공유 — dashboard에서 한 번만 설정하면
-      # 모든 cron service가 동일 값을 사용 (reproducible).
-      - fromService:
-          name: dy-task-backend
-          type: web
-          envVarKey: DATABASE_URL
-      - fromService:
-          name: dy-task-backend
-          type: web
-          envVarKey: NOTION_API_KEY
-      - fromService:
-          name: dy-task-backend
-          type: web
-          envVarKey: NOTION_DB_PROJECTS
-      - fromService:
-          name: dy-task-backend
-          type: web
-          envVarKey: NOTION_DB_TASKS
-      - fromService:
-          name: dy-task-backend
-          type: web
-          envVarKey: NOTION_DB_CASHFLOW
-      - fromService:
-          name: dy-task-backend
-          type: web
-          envVarKey: NOTION_DB_EXPENSE
-      - fromService:
-          name: dy-task-backend
-          type: web
-          envVarKey: NOTION_DB_CLIENTS
-      - fromService:
-          name: dy-task-backend
-          type: web
-          envVarKey: NOTION_DB_MASTER
+      # 각 cron service에 backend web과 동일한 값으로 dashboard에서 입력 필요.
+      # (Render Blueprint는 cron type에서 fromService env share 미지원)
+      - key: DATABASE_URL
+        sync: false
+      - key: NOTION_API_KEY
+        sync: false
+      - key: NOTION_DB_PROJECTS
+        sync: false
+      - key: NOTION_DB_TASKS
+        sync: false
+      - key: NOTION_DB_CASHFLOW
+        sync: false
+      - key: NOTION_DB_EXPENSE
+        sync: false
+      - key: NOTION_DB_CLIENTS
+        sync: false
+      - key: NOTION_DB_MASTER
+        sync: false
 
   - type: cron
     name: dy-task-sync-others
@@ -254,40 +206,24 @@ services:
     envVars:
       - key: PYTHON_VERSION
         value: 3.12.7
-      # backend web service의 env를 그대로 공유 — dashboard에서 한 번만 설정하면
-      # 모든 cron service가 동일 값을 사용 (reproducible).
-      - fromService:
-          name: dy-task-backend
-          type: web
-          envVarKey: DATABASE_URL
-      - fromService:
-          name: dy-task-backend
-          type: web
-          envVarKey: NOTION_API_KEY
-      - fromService:
-          name: dy-task-backend
-          type: web
-          envVarKey: NOTION_DB_PROJECTS
-      - fromService:
-          name: dy-task-backend
-          type: web
-          envVarKey: NOTION_DB_TASKS
-      - fromService:
-          name: dy-task-backend
-          type: web
-          envVarKey: NOTION_DB_CASHFLOW
-      - fromService:
-          name: dy-task-backend
-          type: web
-          envVarKey: NOTION_DB_EXPENSE
-      - fromService:
-          name: dy-task-backend
-          type: web
-          envVarKey: NOTION_DB_CLIENTS
-      - fromService:
-          name: dy-task-backend
-          type: web
-          envVarKey: NOTION_DB_MASTER
+      # 각 cron service에 backend web과 동일한 값으로 dashboard에서 입력 필요.
+      # (Render Blueprint는 cron type에서 fromService env share 미지원)
+      - key: DATABASE_URL
+        sync: false
+      - key: NOTION_API_KEY
+        sync: false
+      - key: NOTION_DB_PROJECTS
+        sync: false
+      - key: NOTION_DB_TASKS
+        sync: false
+      - key: NOTION_DB_CASHFLOW
+        sync: false
+      - key: NOTION_DB_EXPENSE
+        sync: false
+      - key: NOTION_DB_CLIENTS
+        sync: false
+      - key: NOTION_DB_MASTER
+        sync: false
 
   # ── 매일 아침 task 자동 진행 트리거 ──
   # 시작일이 도래한 task를 '진행 중'으로 + 그 프로젝트 진행단계 '진행중'으로.
