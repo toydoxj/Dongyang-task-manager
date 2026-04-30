@@ -116,7 +116,9 @@ async def works_login(
     state, _nonce = sso_works.issue_state(
         s.jwt_secret, safe_next, drive=is_drive, extra=extra or None
     )
-    scope = "user.read file" if is_drive else "user.read"
+    # drive=1 흐름은 Drive(file) + Calendar 권한을 한 번에 동의받음 — 같은
+    # drive_credentials 토큰으로 두 API 모두 호출. 별도 동의 흐름 불필요.
+    scope = "user.read file calendar" if is_drive else "user.read"
     url = sso_works.authorize_url(
         s, state, scope=scope, prompt="none" if is_silent else None
     )
