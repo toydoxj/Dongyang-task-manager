@@ -229,17 +229,27 @@ function Form({
         <div className="grid grid-cols-2 gap-3">
           <Field label="용역비 (VAT 제외)">
             <input
-              type="number"
-              value={amount}
-              onChange={(e) => setAmount(e.target.value)}
+              type="text"
+              inputMode="numeric"
+              value={amount === "" ? "" : Number(amount).toLocaleString("ko-KR")}
+              onChange={(e) => {
+                const digits = e.target.value.replace(/[^\d]/g, "");
+                setAmount(digits);
+              }}
+              placeholder="₩ 0"
               className={inputCls}
             />
           </Field>
           <Field label="VAT">
             <input
-              type="number"
-              value={vat}
-              onChange={(e) => setVat(e.target.value)}
+              type="text"
+              inputMode="numeric"
+              value={vat === "" ? "" : Number(vat).toLocaleString("ko-KR")}
+              onChange={(e) => {
+                const digits = e.target.value.replace(/[^\d]/g, "");
+                setVat(digits);
+              }}
+              placeholder="₩ 0"
               className={inputCls}
             />
           </Field>

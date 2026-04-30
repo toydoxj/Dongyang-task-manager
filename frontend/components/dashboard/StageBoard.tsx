@@ -71,11 +71,25 @@ export default function StageBoard({ projects }: Props) {
       ? items
       : items.filter((p) => p.teams.includes(activeTeam));
 
+  // 완료/타절/종결 그룹은 완료일이 최근 2주(14일) 이내인 것만 표시
+  const TWO_WEEKS_AGO_ISO = (() => {
+    const d = new Date();
+    d.setDate(d.getDate() - 14);
+    return d.toISOString().slice(0, 10);
+  })();
+  const isRecentlyClosed = (p: Project): boolean => {
+    if (!p.end_date) return false;
+    return p.end_date.slice(0, 10) >= TWO_WEEKS_AGO_ISO;
+  };
+  const CLOSED_STAGES = new Set(["완료", "타절", "종결"]);
+
   const grouped = new Map<string, Project[]>();
   for (const stage of PROJECT_STAGES) grouped.set(stage, []);
   for (const p of filteredItems) {
     const list = grouped.get(p.stage);
-    if (list) list.push(p);
+    if (!list) continue;
+    if (CLOSED_STAGES.has(p.stage) && !isRecentlyClosed(p)) continue;
+    list.push(p);
   }
 
   async function handleDragEnd(e: DragEndEvent): Promise<void> {

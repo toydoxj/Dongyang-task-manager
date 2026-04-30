@@ -10,6 +10,7 @@ import { cn } from "@/lib/utils";
 
 import DriveExplorerModal from "./DriveExplorerModal";
 import MasterProjectModal from "./MasterProjectModal";
+import ProjectStageChangeModal from "./ProjectStageChangeModal";
 
 const STAGE_BADGE: Record<string, string> = {
   "진행중": "bg-blue-500/15 text-blue-400 border-blue-500/30",
@@ -28,6 +29,7 @@ export default function ProjectHeader({ project }: { project: Project }) {
   const [driveError, setDriveError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [explorerOpen, setExplorerOpen] = useState(false);
+  const [stageChangeOpen, setStageChangeOpen] = useState(false);
   const masterLabel =
     project.master_project_name || project.master_code || "";
 
@@ -126,15 +128,30 @@ export default function ProjectHeader({ project }: { project: Project }) {
 
         <div className="flex flex-col items-end gap-2">
           {project.stage && (
-            <span
-              className={cn(
-                "rounded-md border px-3 py-1 text-xs font-medium",
-                STAGE_BADGE[project.stage] ??
-                  "border-zinc-500/30 bg-zinc-500/15 text-zinc-400",
+            <div className="flex items-center gap-2">
+              {/* 단계 변경 — 진행중/대기/보류 상태일 때만 노출 */}
+              {(project.stage === "진행중" ||
+                project.stage === "대기" ||
+                project.stage === "보류") && (
+                <button
+                  type="button"
+                  onClick={() => setStageChangeOpen(true)}
+                  className="rounded-md border border-zinc-300 px-2.5 py-1 text-xs hover:bg-zinc-50 dark:border-zinc-700 dark:hover:bg-zinc-800"
+                  title="완료/타절/종결 처리"
+                >
+                  단계변경
+                </button>
               )}
-            >
-              {project.stage}
-            </span>
+              <span
+                className={cn(
+                  "rounded-md border px-3 py-1 text-xs font-medium",
+                  STAGE_BADGE[project.stage] ??
+                    "border-zinc-500/30 bg-zinc-500/15 text-zinc-400",
+                )}
+              >
+                {project.stage}
+              </span>
+            </div>
           )}
           {project.drive_url ? (
             <div className="flex flex-wrap items-center justify-end gap-1.5">
@@ -221,6 +238,17 @@ export default function ProjectHeader({ project }: { project: Project }) {
         projectId={project.id}
         rootLabel={folderName || "프로젝트 폴더"}
       />
+
+      {stageChangeOpen && (
+        <ProjectStageChangeModal
+          project={project}
+          onClose={() => setStageChangeOpen(false)}
+          onSaved={() => {
+            // 변경 후 fresh data — 가장 단순하게 페이지 reload
+            if (typeof window !== "undefined") window.location.reload();
+          }}
+        />
+      )}
     </header>
   );
 }

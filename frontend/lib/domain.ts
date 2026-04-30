@@ -331,6 +331,7 @@ export interface CashflowResponse {
   count: number;
 }
 
+// '이관'은 운영 정책상 제외 — backend는 여전히 받지만 UI dropdown에는 미노출
 export const PROJECT_STAGES = [
   "진행중",
   "대기",
@@ -338,7 +339,6 @@ export const PROJECT_STAGES = [
   "완료",
   "타절",
   "종결",
-  "이관",
 ] as const;
 
 export const TEAMS = [
