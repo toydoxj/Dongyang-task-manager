@@ -24,6 +24,10 @@ interface Props {
   /** 담당자 default. 미지정 시 현재 로그인 사용자. (직원 업무 모드에서 직원 이름 전달) */
   defaultAssignee?: string;
   initialStatus?: string;
+  /** 시작일 prefill (schedule grid에서 빈 날짜 클릭 시). YYYY-MM-DD. */
+  initialStartDate?: string;
+  /** 분류 prefill (schedule context면 '외근' 등). */
+  initialCategory?: string;
   onClose: () => void;
   onCreated: () => void;
 }
@@ -34,17 +38,21 @@ export default function TaskCreateModal({
   projects,
   defaultAssignee,
   initialStatus,
+  initialStartDate,
+  initialCategory,
   onClose,
   onCreated,
 }: Props) {
   if (!open) return null;
   return (
     <Form
-      key={`${projectId}:${initialStatus ?? ""}`}
+      key={`${projectId}:${initialStatus ?? ""}:${initialStartDate ?? ""}:${initialCategory ?? ""}`}
       projectId={projectId}
       projects={projects}
       defaultAssignee={defaultAssignee}
       initialStatus={initialStatus}
+      initialStartDate={initialStartDate}
+      initialCategory={initialCategory}
       onClose={onClose}
       onCreated={onCreated}
     />
@@ -56,6 +64,8 @@ function Form({
   projects,
   defaultAssignee,
   initialStatus,
+  initialStartDate,
+  initialCategory,
   onClose,
   onCreated,
 }: {
@@ -63,6 +73,8 @@ function Form({
   projects?: Project[];
   defaultAssignee?: string;
   initialStatus?: string;
+  initialStartDate?: string;
+  initialCategory?: string;
   onClose: () => void;
   onCreated: () => void;
 }) {
@@ -70,12 +82,14 @@ function Form({
   const today = new Date().toISOString().slice(0, 10);
   const [title, setTitle] = useState("");
   const [status, setStatus] = useState(initialStatus || "시작 전");
-  const [start, setStart] = useState(today);
-  const [end, setEnd] = useState("");
+  const [start, setStart] = useState(initialStartDate || today);
+  const [end, setEnd] = useState(initialStartDate || "");
   const [priority, setPriority] = useState("");
   const [difficulty, setDifficulty] = useState("");
-  // 프로젝트 컨텍스트가 있으면 default '프로젝트', 없으면 미분류
-  const [category, setCategory] = useState(projectId ? "프로젝트" : "");
+  // 프로젝트 컨텍스트가 있으면 default '프로젝트', 그 외 initialCategory 우선, 없으면 미분류
+  const [category, setCategory] = useState(
+    projectId ? "프로젝트" : initialCategory || "",
+  );
   const [activity, setActivity] = useState("");
   // 분류=프로젝트 + projectId 미지정인 경우(=/me에서 새 업무) 사용자가 dropdown으로 선택
   const [pickedProjectId, setPickedProjectId] = useState(projectId);
