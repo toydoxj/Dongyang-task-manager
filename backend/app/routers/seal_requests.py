@@ -59,6 +59,27 @@ def _max_bytes() -> int:
     return get_settings().storage_max_file_mb * 1024 * 1024
 
 
+async def _read_with_limit(f: UploadFile, max_bytes: int) -> bytes | None:
+    """`UploadFile`을 chunk 단위로 읽고 max_bytes 초과 시 즉시 중단 + None 반환.
+
+    `await f.read()`로 통째 로드하면 큰 파일에서 단일 worker 메모리가 폭증하고
+    Render starter plan에서 OOM/timeout으로 worker가 죽으며 502 cascade 발생.
+    1MB chunk로 누적하면서 한도 초과 즉시 stop.
+    """
+    chunks: list[bytes] = []
+    total = 0
+    chunk_size = 1024 * 1024
+    while True:
+        chunk = await f.read(chunk_size)
+        if not chunk:
+            break
+        total += len(chunk)
+        if total > max_bytes:
+            return None
+        chunks.append(chunk)
+    return b"".join(chunks)
+
+
 # ── 응답 스키마 ──
 
 
@@ -394,20 +415,26 @@ def _project_summary_from_db(
     return code, name, drive_url, _extract_resource_key(drive_url)
 
 
-async def _create_linked_task(
+async def _create_linked_task_bg(
     notion: NotionService,
     *,
+    seal_page_id: str,
     project_id: str,
     title: str,
     requester_name: str,
     today_iso: str,
     due_iso: str,
-) -> str:
-    """노션 TASK DB에 row 1개 생성. 반환: task page_id (실패 시 빈 문자열)."""
+) -> None:
+    """노션 TASK DB row 생성 + SealRequest의 연결TASK 컬럼 update.
+
+    response 흐름과 분리된 background — 실패해도 사용자 등록은 완료되어 있음.
+    노션 task DB schema 미스, 노션 API timeout 등이 endpoint 응답을 막지 않게
+    fire-and-forget으로 호출.
+    """
     s = get_settings()
     if not s.notion_db_tasks:
         logger.warning("notion_db_tasks 미설정 — 자동 task 생성 skip")
-        return ""
+        return
     props: dict[str, Any] = {
         "제목": {"title": [{"text": {"content": title}}]},
         "프로젝트": {"relation": [{"id": project_id}]},
@@ -415,15 +442,18 @@ async def _create_linked_task(
         "진행 단계": {"select": {"name": "진행 중"}},
         "기간": {"date": {"start": today_iso, "end": due_iso}},
     }
-    # 담당자는 multi_select(이름) — Project DTO에서 같은 패턴 사용
     if requester_name:
         props["담당자"] = {"multi_select": [{"name": requester_name}]}
     try:
         page = await notion.create_page(s.notion_db_tasks, props)
-        return str(page.get("id", ""))
+        task_id = str(page.get("id", ""))
+        if task_id:
+            await notion.update_page(
+                seal_page_id,
+                {"연결TASK": {"rich_text": [{"text": {"content": task_id}}]}},
+            )
     except Exception as e:  # noqa: BLE001
-        logger.warning("자동 task 생성 실패: %s", e)
-        return ""
+        logger.warning("자동 task 생성/연결 실패: %s", e)
 
 
 async def _sync_linked_task(
@@ -624,11 +654,11 @@ async def create_seal_request(
                 )
             if day_folder_id:
                 for f in files:
-                    data = await f.read()
                     fname = f.filename or "file.bin"
-                    if len(data) > max_bytes:
+                    data = await _read_with_limit(f, max_bytes)
+                    if data is None:
                         failed.append(
-                            f"{fname}: 한도 {max_bytes // (1024 * 1024)}MB 초과"
+                            f"{fname}: 한도 {max_bytes // (1024 * 1024)}MB 초과 (업로드 중단)"
                         )
                         continue
                     try:
@@ -666,20 +696,25 @@ async def create_seal_request(
         }
     await notion.update_page(page_id, update_props)
 
-    # 6) 자동 TASK 생성
-    task_id = await _create_linked_task(
-        notion,
-        project_id=project_id,
-        title=auto_title,
-        requester_name=requester,
-        today_iso=today_iso,
-        due_iso=due_iso,
-    )
-    if task_id:
-        await notion.update_page(
-            page_id,
-            {"연결TASK": {"rich_text": [{"text": {"content": task_id}}]}},
+    # 6) 자동 TASK 생성 — fire-and-forget. 노션 task DB schema 미스 또는 노션 API
+    #    timeout이 endpoint 응답을 막지 않게 background로 분리. 실패는 logger warn.
+    try:
+        loop = asyncio.get_running_loop()
+        task = loop.create_task(
+            _create_linked_task_bg(
+                notion,
+                seal_page_id=page_id,
+                project_id=project_id,
+                title=auto_title,
+                requester_name=requester,
+                today_iso=today_iso,
+                due_iso=due_iso,
+            )
         )
+        _bg_tasks.add(task)
+        task.add_done_callback(_bg_tasks.discard)
+    except RuntimeError:
+        pass  # 테스트 컨텍스트 등 — silent skip
 
     # 7) Bot 알림 — 1차 처리자(팀장 또는 admin)에게
     project_label = f"[{code}] {project_name}".strip("[] ") or project_name or project_id
@@ -699,7 +734,8 @@ async def create_seal_request(
         for adm in _find_admins(db, exclude_user_id=user.id):
             _bot_send(_resolve_works_id(adm), msg)
 
-    # 최신 page를 다시 fetch — '연결TASK', '첨부폴더URL' 반영된 상태로 응답
+    # 응답 — 자동 TASK는 background라 페이지에 아직 미반영. final fetch는 첨부메타/
+    # 폴더URL 변경분을 정확한 read 형식으로 가져오기 위해 한 번만 호출.
     final = await notion.get_page(page_id)
     return _from_notion_page(final)
 

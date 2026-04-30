@@ -153,7 +153,17 @@ function Form({
 
   const onPickFiles = (list: FileList | null): void => {
     if (!list) return;
-    setFiles((prev) => [...prev, ...Array.from(list)]);
+    const MAX_BYTES = 200 * 1024 * 1024;
+    const all = Array.from(list);
+    const tooBig = all.filter((f) => f.size > MAX_BYTES);
+    const ok = all.filter((f) => f.size <= MAX_BYTES);
+    if (tooBig.length > 0) {
+      const detail = tooBig
+        .map((f) => `• ${f.name} (${Math.round(f.size / 1024 / 1024)}MB)`)
+        .join("\n");
+      alert(`200MB 초과 파일은 첨부할 수 없습니다:\n${detail}`);
+    }
+    if (ok.length > 0) setFiles((prev) => [...prev, ...ok]);
     if (fileInput.current) fileInput.current.value = "";
   };
 

@@ -80,7 +80,18 @@ app.add_middleware(
 
 
 @app.exception_handler(AppError)
-async def app_error_handler(_: Request, exc: AppError) -> JSONResponse:
+async def app_error_handler(req: Request, exc: AppError) -> JSONResponse:
+    # 5xx로 변환되는 AppError(특히 NotionApiError 502)는 frontend에서 502로만 보여
+    # 운영 trace가 어렵다. 본문을 logger.warning으로 한 줄 남겨 Render Logs에서
+    # search 가능하게 한다. 4xx는 운영 사용자 에러라 noise만 늘어나서 제외.
+    if exc.status_code >= 500:
+        logging.getLogger("app.error").warning(
+            "%s on %s %s — %s",
+            exc.error_code,
+            req.method,
+            req.url.path,
+            exc.message,
+        )
     return JSONResponse(
         status_code=exc.status_code,
         content={"error_code": exc.error_code, "message": exc.message},
