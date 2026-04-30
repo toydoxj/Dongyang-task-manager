@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 
 import { useAuth } from "@/components/AuthGuard";
 import Modal from "@/components/ui/Modal";
-import { archiveTask, assignMe, updateTask } from "@/lib/api";
+import { archiveTask, assignMe, updateProject, updateTask } from "@/lib/api";
 import type { Project, Task } from "@/lib/domain";
 import {
   ACTIVITY_TYPES,
@@ -121,19 +121,25 @@ function Form({
     const alreadyAssigned =
       targetName && p.assignees.includes(targetName);
     if (!alreadyAssigned && targetName) {
-      let setToWaiting = false;
-      if (p.stage !== "진행중") {
-        const ok = confirm(
-          `이 프로젝트의 현재 진행단계는 "${p.stage || "(미설정)"}" 입니다.\n` +
-            `${targetName} 담당으로 추가하면서 진행단계를 "대기"로 변경합니다. 계속하시겠습니까?`,
-        );
-        if (!ok) return;
-        setToWaiting = true;
-      }
+      // 프로젝트 진행단계가 "진행중"이 아니고 task 상태가 "시작 전"이면 → "대기"
+      // (assignMe의 setToWaiting=true 사용)
+      // task 상태가 "진행 중"이면 → 별도 updateProject로 "진행중"
+      // 그 외엔 진행단계 변경 없이 담당자만 추가
+      const needSetWaiting =
+        p.stage !== "진행중" && status === "시작 전";
+      const needSetActive =
+        p.stage !== "진행중" && status === "진행 중";
       setBusy(true);
       try {
         const forUser = targetName !== myName ? targetName : undefined;
-        await assignMe(p.id, { setToWaiting, forUser });
+        await assignMe(p.id, {
+          setToWaiting: needSetWaiting,
+          forUser,
+        });
+        if (needSetActive) {
+          // assignMe 후 별도 호출로 "진행중"
+          await updateProject(p.id, { stage: "진행중" });
+        }
       } catch (e) {
         setError(
           e instanceof Error
@@ -402,7 +408,8 @@ function Form({
               </div>
               <p className="text-[10px] text-zinc-500">
                 담당자({firstAssignee || "본인"}) 기준. 미담당 프로젝트 선택 시
-                자동으로 그 직원이 담당으로 추가됩니다.
+                자동으로 담당 추가 — task 상태가 시작 전이면 진행단계 "대기",
+                진행 중이면 "진행중"으로 자동 설정.
               </p>
             </div>
           </Field>
