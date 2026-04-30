@@ -71,6 +71,28 @@ def test_empty_returns_empty() -> None:
 
 
 def test_unknown_format_passthrough() -> None:
-    """BEGIN/END 마커가 없으면 그대로 반환 (cryptography가 에러 메시지 띄우도록)."""
-    raw = "not a pem at all"
+    """base64조차 아닌 임의 문자열은 그대로 반환 (cryptography가 에러 메시지 띄우도록)."""
+    raw = "not a pem at all!"  # `!`는 base64 alphabet 외
     assert _normalize_private_key(raw) == raw
+
+
+def test_marker_missing_multiline_body() -> None:
+    """BEGIN/END 마커 누락 + base64 본문만 multi-line으로 들어온 케이스 (실제 운영
+    사고). PKCS#8 PRIVATE KEY로 가정하고 마커 자동 추가 + 64자 wrap."""
+    raw = "\n".join(_BODY_LINES)
+    out = _normalize_private_key(raw)
+    assert out.startswith("-----BEGIN PRIVATE KEY-----\n")
+    assert out.endswith("-----END PRIVATE KEY-----\n")
+    # 본문은 64자 단위 wrap된 expected와 동일
+    inner = out.split("-----BEGIN PRIVATE KEY-----\n")[1].split("\n-----END")[0]
+    assert inner == "\n".join(
+        _BODY_PLAIN[i : i + 64] for i in range(0, len(_BODY_PLAIN), 64)
+    )
+
+
+def test_marker_missing_single_line_body() -> None:
+    """마커 누락 + base64 본문이 공백 평탄화된 single-line 케이스."""
+    raw = " ".join(_BODY_LINES)  # space로 합쳐짐
+    out = _normalize_private_key(raw)
+    assert out.startswith("-----BEGIN PRIVATE KEY-----\n")
+    assert out.endswith("-----END PRIVATE KEY-----\n")

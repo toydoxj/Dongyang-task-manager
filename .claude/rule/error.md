@@ -251,3 +251,10 @@
 - 원인: Render env 입력 UI가 multi-line 지원하긴 하지만, paste 과정에서 PEM의 줄바꿈이 공백/탭으로 squash되는 케이스 발생. cryptography는 base64 본문 사이의 공백을 줄바꿈으로 인식 못 해 framing 에러
 - 해결: `sso_works_bot._normalize_private_key`를 강화 — (1) 정상 multi-line / (2) `\n` 이스케이프 single-line / (3) 공백 평탄화 single-line 3종 모두 정규화. BEGIN/END 마커를 regex로 잡고 본문의 모든 공백을 제거 후 64자 단위 wrap으로 표준 PEM 재구성. 테스트 6종 추가
 - 재발 방지: secret 환경변수에 multi-line 값이 들어가야 하는 모든 곳(JWT private key, certificate, multi-line config)은 입력 형태에 무관한 정규화 함수 + 명시적 unit test 동반. paste 사고를 코드 레이어에서 흡수하면 운영자 트러블슈팅 시간이 절약됨
+
+### 2026-04-30 — Render env에 PEM의 BEGIN/END 마커 라인이 누락됨
+- 컨텍스트: 위 PEM 줄바꿈 평탄화 fix(`fcc3d41`) 후에도 `MalformedFraming` 지속. test endpoint에 PEM 진단 metadata 추가(`77f08bf`)해 확인
+- 증상: 진단 응답에 `has_begin_marker:false, has_end_marker:false`. raw가 `MIIEvgIBADAN...`(=base64 본문 첫 글자)로 시작 → BEGIN/END 마커 라인 자체가 입력에 없음
+- 원인: 운영자가 `.key` 파일을 열어 본문만 복사했거나, Render env 입력 시 마커 라인이 잘림. base64만으로는 cryptography가 PEM으로 인식 못 함
+- 해결: `_normalize_private_key`에 case (4) 추가 — 마커가 없고 본문이 base64 alphabet만으로 구성되어 있으면 PKCS#8 `PRIVATE KEY`로 가정하고 헤더/푸터 자동 wrap. NAVER WORKS Service Account 키는 PKCS#8 표준이라 안전한 가정
+- 재발 방지: secret 입력 robustness는 짐작 가능한 모든 paste 패턴(이스케이프/공백 평탄화/마커 누락/본문만)을 흡수하는 정규화 + 단위 테스트로 잠금. 또한 진단 응답(secret 본문 노출 X, 구조 metadata만)을 admin endpoint에 두어 다음 사고도 즉시 진단 가능

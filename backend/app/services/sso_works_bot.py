@@ -39,18 +39,23 @@ _token_cache: dict[str, Any] = {"value": "", "expires_at": 0.0}
 _token_lock = asyncio.Lock()
 
 
+_BASE64_RE = re.compile(r"^[A-Za-z0-9+/=]+$")
+
+
 def _normalize_private_key(raw: str) -> str:
     """다양한 형태로 들어온 PEM을 cryptography가 받아들이는 표준 형태로 복원.
 
     Render env / dotenv의 multi-line 지원 한계 때문에 운영자가 다음 중 한 가지로
-    PEM을 입력하는 경우가 잦다 — 셋 다 같은 표준 PEM으로 정규화한다:
+    PEM을 입력하는 경우가 잦다 — 모두 같은 표준 PEM으로 정규화한다:
 
     1) 정상 multi-line — 줄마다 base64 64자 + LF, BEGIN/END 마커 양 끝
     2) `\\n` 이스케이프 single-line — `-----BEGIN PRIVATE KEY-----\\nMIIE...\\n-----END...`
     3) 공백 평탄화 single-line — `-----BEGIN PRIVATE KEY----- MIIE Awg... -----END...`
        (paste 과정에서 multi-line이 공백/탭으로 squash된 경우)
+    4) BEGIN/END 마커 누락 — base64 본문만 들어옴. PKCS#8 PRIVATE KEY로 가정하고
+       마커 자동 추가 (NAVER WORKS Service Account 키는 PKCS#8 표준).
 
-    cryptography의 `MalformedFraming` 에러는 (3) 형태에서 자주 발생한다.
+    cryptography의 `MalformedFraming` 에러는 (3)/(4) 형태에서 발생한다.
     """
     raw = (raw or "").strip()
     if not raw:
@@ -58,15 +63,32 @@ def _normalize_private_key(raw: str) -> str:
     # (2) 명시적 이스케이프 — 줄바꿈이 진짜 없는 경우만
     if "\\n" in raw and "\n" not in raw:
         raw = raw.replace("\\n", "\n")
-    # (1)과 (2 처리 후) 이미 multi-line이고 첫 줄과 마지막 줄이 BEGIN/END면 그대로
+
+    has_begin = "-----BEGIN" in raw
+    has_end = "-----END" in raw
+
+    # (4) 마커 누락 — base64만 있다고 가정하고 PKCS#8 PRIVATE KEY로 wrapping
+    if not has_begin and not has_end:
+        body = re.sub(r"\s+", "", raw)
+        if _BASE64_RE.match(body):
+            wrapped = "\n".join(body[i : i + 64] for i in range(0, len(body), 64))
+            return (
+                "-----BEGIN PRIVATE KEY-----\n"
+                f"{wrapped}\n"
+                "-----END PRIVATE KEY-----\n"
+            )
+        return raw  # base64도 아니면 그대로 — cryptography가 명확한 에러를 띄우게
+
+    # (1) 마커 + multi-line 정상 → trailing newline만 보장
     if "\n" in raw:
         return raw + ("\n" if not raw.endswith("\n") else "")
-    # (3) single-line — BEGIN/END 마커 인식 후 본문을 64자 wrap
+
+    # (3) 마커 + single-line 평탄화 — 본문을 64자 wrap
     m = _PEM_RE.match(raw)
     if not m:
-        return raw  # 알 수 없는 형식 — 그대로 반환해 cryptography가 에러 메시지 띄우게
+        return raw
     header = m.group("header").strip()
-    body = re.sub(r"\s+", "", m.group("body"))  # 모든 공백/탭/CR 제거
+    body = re.sub(r"\s+", "", m.group("body"))
     footer = m.group("footer").strip()
     wrapped = "\n".join(body[i : i + 64] for i in range(0, len(body), 64))
     return f"{header}\n{wrapped}\n{footer}\n"
