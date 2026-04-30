@@ -494,6 +494,7 @@ export async function deleteSuggestion(id: string): Promise<void> {
 
 export interface SealAttachment {
   name: string;
+  drive_file_id?: string;
   storage_key?: string;
   size?: number;
   content_type?: string;
@@ -515,8 +516,31 @@ export interface SealRequestItem {
   due_date: string | null;
   note: string;
   attachments: SealAttachment[];
+  // docs/request.md 추가 컬럼
+  real_source: string;
+  purpose: string;
+  revision: number | null;
+  with_safety_cert: boolean;
+  summary: string;
+  doc_no: string;
+  doc_kind: string;
+  folder_url: string;
+  reject_reason: string;
+  linked_task_id: string;
   created_time: string | null;
   last_edited_time: string | null;
+}
+
+export interface SealUpdateBody {
+  title?: string;
+  real_source?: string;
+  purpose?: string;
+  revision?: number;
+  with_safety_cert?: boolean;
+  summary?: string;
+  doc_kind?: string;
+  note?: string;
+  due_date?: string;
 }
 
 export interface SealListResponse {
@@ -573,7 +597,20 @@ export async function rejectSealRequest(
   return jsonOrThrow<SealRequestItem>(res);
 }
 
-/** 반려된 요청을 보완해 추가 파일 업로드 (상태 자동으로 '요청'으로 되돌림). */
+/** 재요청용 텍스트 필드 update (반려 또는 1차검토 중일 때만). */
+export async function updateSealRequest(
+  id: string,
+  body: SealUpdateBody,
+): Promise<SealRequestItem> {
+  const res = await authFetch(`/api/seal-requests/${id}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  return jsonOrThrow<SealRequestItem>(res);
+}
+
+/** 반려된 요청을 보완해 추가 파일 업로드 (상태 자동으로 '1차검토 중'으로 되돌림). */
 export async function addSealAttachments(
   id: string,
   files: File[],

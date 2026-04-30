@@ -14,11 +14,16 @@ interface Props {
 }
 
 const SEAL_COLOR: Record<string, string> = {
+  // 신 옵션 (docs/request.md)
+  "1차검토 중": "bg-yellow-500",
+  "2차검토 중": "bg-blue-500",
+  승인: "bg-emerald-600",
+  반려: "bg-red-500",
+  // 호환 (옛 옵션 — read 시점에 정규화되지만 fallback 용)
   요청: "bg-yellow-500",
   팀장승인: "bg-blue-500",
   관리자승인: "bg-emerald-500",
   완료: "bg-emerald-600",
-  반려: "bg-red-500",
 };
 
 const LOG_COLOR: Record<string, string> = {
@@ -248,9 +253,9 @@ export default function LifecycleTimeline({
       {seals.length > 0 && (
         <div className="mt-2 flex flex-wrap gap-2 text-[10px] text-zinc-500">
           <span>🔖 날인:</span>
-          <Legend color="bg-yellow-500" label="요청" />
-          <Legend color="bg-blue-500" label="팀장승인" />
-          <Legend color="bg-emerald-600" label="완료" />
+          <Legend color="bg-yellow-500" label="1차검토 중" />
+          <Legend color="bg-blue-500" label="2차검토 중" />
+          <Legend color="bg-emerald-600" label="승인" />
           <Legend color="bg-red-500" label="반려" />
           <span className="ml-auto">{seals.length}건</span>
         </div>

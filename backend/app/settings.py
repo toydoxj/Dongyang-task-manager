@@ -91,6 +91,16 @@ class Settings(BaseSettings):
     works_calendar_enabled: bool = False
     works_shared_calendar_id: str = ""
 
+    # ── NAVER WORKS Bot (Phase 4 — 날인요청 알림) ──
+    # Bot은 Drive와 별개의 인증 흐름 (Service Account JWT, RS256).
+    # Developer Console → App에 Bot 등록 + Service Account 생성 + Private Key(PEM) 발급.
+    # WORKS_BOT_PRIVATE_KEY는 PEM 전체를 그대로 (\\n 포함). Render는 multiline 환경변수
+    # 지원하므로 그대로 붙여넣기.
+    works_bot_enabled: bool = False
+    works_bot_id: str = ""  # 콘솔에서 발급된 Bot ID
+    works_bot_service_account_id: str = ""  # 예: xxxxx.serviceaccount@<domain>
+    works_bot_private_key: str = ""  # PEM 전체
+
     frontend_base_url: str = ""  # callback 후 frontend로 302할 때 사용
 
     @property
@@ -119,3 +129,21 @@ def validate_runtime_settings() -> None:
             "JWT_SECRET 환경변수가 설정되지 않았습니다 — "
             "Render Environment 또는 .env에 임의의 secret 입력 필요"
         )
+    # Bot 알림이 켜져 있는데 자격이 없으면 startup 실패. 켜지 않았으면 무시.
+    if s.works_bot_enabled:
+        missing = [
+            k
+            for k, v in {
+                "WORKS_BOT_ID": s.works_bot_id,
+                "WORKS_BOT_SERVICE_ACCOUNT_ID": s.works_bot_service_account_id,
+                "WORKS_BOT_PRIVATE_KEY": s.works_bot_private_key,
+                "WORKS_CLIENT_ID": s.works_client_id,
+                "WORKS_CLIENT_SECRET": s.works_client_secret,
+            }.items()
+            if not v
+        ]
+        if missing:
+            raise RuntimeError(
+                "WORKS_BOT_ENABLED=true인데 다음 환경변수가 누락됨: "
+                + ", ".join(missing)
+            )

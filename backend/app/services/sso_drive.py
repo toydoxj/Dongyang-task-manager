@@ -364,6 +364,36 @@ async def list_sharedrives(settings: Settings | None = None) -> dict[str, Any]:
     return await _api(s, "GET", "/sharedrives")
 
 
+async def ensure_review_folder(
+    project_root_file_id: str,
+    ymd: str,
+    *,
+    settings: Settings | None = None,
+) -> tuple[str, str]:
+    """프로젝트 폴더 → '0. 검토자료' → 'YYYYMMDD' idempotent 생성.
+
+    docs/request.md: 날인요청 첨부는 `0.검토자료\\YYYYMMDD\\` 하위에 저장.
+    하루에 여러 요청이 오면 같은 일자 폴더 재사용.
+
+    반환: (day_folder_id, day_folder_web_url) — upload_file의 parent로 사용.
+    """
+    s = settings or get_settings()
+    if not project_root_file_id:
+        raise DriveError("project_root_file_id 미지정")
+    if not ymd:
+        raise DriveError("ymd 미지정")
+    # docs/request.md: 폴더명 정확히 "0.검토자료" (공백 없음)
+    review = await create_folder(s, project_root_file_id, "0.검토자료")
+    review_id = _extract_id(review)
+    if not review_id:
+        raise DriveError("0. 검토자료 폴더 fileId 추출 실패")
+    day = await create_folder(s, review_id, ymd)
+    day_id = _extract_id(day)
+    if not day_id:
+        raise DriveError(f"{ymd} 폴더 fileId 추출 실패")
+    return day_id, _extract_url(day)
+
+
 # ── 외부 노출용 (라우터/UI에서 사용) ──
 
 

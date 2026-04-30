@@ -4,7 +4,7 @@ import { useMemo, useRef, useState } from "react";
 import useSWR from "swr";
 
 import { useAuth } from "@/components/AuthGuard";
-import SealRequestCreateModal from "@/components/project/SealRequestCreateModal";
+import SealRequestEditModal from "@/components/project/SealRequestEditModal";
 import Modal from "@/components/ui/Modal";
 import LoadingState from "@/components/ui/LoadingState";
 import { authFetch } from "@/lib/auth";
@@ -21,13 +21,13 @@ import {
 import { formatDate, formatDateTime } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
-const STATUS_TABS = ["전체", "요청", "팀장승인", "완료", "반려"] as const;
+const STATUS_TABS = ["전체", "1차검토 중", "2차검토 중", "승인", "반려"] as const;
 type StatusTab = (typeof STATUS_TABS)[number];
 
 const STATUS_COLOR: Record<string, string> = {
-  요청: "bg-yellow-500/15 text-yellow-700 dark:text-yellow-400",
-  팀장승인: "bg-blue-500/15 text-blue-700 dark:text-blue-400",
-  완료: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400",
+  "1차검토 중": "bg-yellow-500/15 text-yellow-700 dark:text-yellow-400",
+  "2차검토 중": "bg-blue-500/15 text-blue-700 dark:text-blue-400",
+  승인: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400",
   반려: "bg-red-500/15 text-red-700 dark:text-red-400",
 };
 
@@ -38,18 +38,28 @@ export default function SealRequestsPage() {
   const myName = user?.name || user?.username || "";
 
   const [tab, setTab] = useState<StatusTab>("전체");
-  const [createOpen, setCreateOpen] = useState(false);
   const [selected, setSelected] = useState<SealRequestItem | null>(null);
 
+  // docs/request.md: 일반직원은 날인요청 페이지 접근 불가
+  if (user && !isAdminOrLead) {
+    return (
+      <div className="rounded-md border border-amber-500/40 bg-amber-500/5 p-6 text-center text-sm text-amber-600 dark:text-amber-400">
+        날인요청 페이지는 팀장/관리자만 접근할 수 있습니다.
+        <br />
+        본인 요청 진행상황은 프로젝트 상세에서 확인하세요.
+      </div>
+    );
+  }
+
   const { data, error, isLoading, mutate } = useSWR(
-    user ? ["seal-requests"] : null,
+    user && isAdminOrLead ? ["seal-requests"] : null,
     () => listSealRequests(),
   );
 
   const all = useMemo(() => data?.items ?? [], [data]);
   const counts = useMemo(() => {
     const c: Record<string, number> = { 전체: all.length };
-    for (const s of ["요청", "팀장승인", "완료", "반려"]) {
+    for (const s of ["1차검토 중", "2차검토 중", "승인", "반려"]) {
       c[s] = all.filter((x) => x.status === s).length;
     }
     return c;
@@ -63,17 +73,10 @@ export default function SealRequestsPage() {
         <div>
           <h1 className="text-2xl font-semibold">날인요청</h1>
           <p className="mt-1 text-sm text-zinc-500">
-            기술사 날인이 필요한 산출물을 요청합니다. 팀장 1차 승인 → 관리자 최종
-            승인 흐름.
+            기술사 날인이 필요한 산출물을 검토합니다. 1차검토(팀장) → 2차검토(관리자) 흐름.
+            새 요청은 프로젝트 상세에서만 등록 가능합니다.
           </p>
         </div>
-        <button
-          type="button"
-          onClick={() => setCreateOpen(true)}
-          className="rounded-md bg-zinc-900 px-3 py-1.5 text-sm text-white hover:bg-zinc-700 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300"
-        >
-          + 새 요청
-        </button>
       </header>
 
       <div className="flex gap-1 border-b border-zinc-200 dark:border-zinc-800">
@@ -134,7 +137,7 @@ export default function SealRequestsPage() {
                   <span
                     className={cn(
                       "shrink-0 rounded-md px-2 py-0.5 text-[11px] font-medium",
-                      STATUS_COLOR[s.status] ?? STATUS_COLOR["요청"],
+                      STATUS_COLOR[s.status] ?? STATUS_COLOR["1차검토 중"],
                     )}
                   >
                     {s.status}
@@ -145,15 +148,6 @@ export default function SealRequestsPage() {
           ))}
         </ul>
       )}
-
-      <SealRequestCreateModal
-        open={createOpen}
-        onClose={() => setCreateOpen(false)}
-        onCreated={() => {
-          setCreateOpen(false);
-          void mutate();
-        }}
-      />
 
       {selected && (
         <DetailModal
@@ -190,6 +184,7 @@ function DetailModal({
 }) {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [editOpen, setEditOpen] = useState(false);
   const reuploadInput = useRef<HTMLInputElement>(null);
 
   const action = async (fn: () => Promise<unknown>): Promise<void> => {
@@ -209,7 +204,7 @@ function DetailModal({
     if (!list || list.length === 0) return;
     if (
       !confirm(
-        `파일 ${list.length}개를 추가하고 다시 '요청' 상태로 변경합니다. 진행할까요?`,
+        `파일 ${list.length}개를 추가하고 다시 '1차검토 중' 상태로 변경합니다. 진행할까요?`,
       )
     ) {
       if (reuploadInput.current) reuploadInput.current.value = "";
@@ -240,7 +235,7 @@ function DetailModal({
             <span
               className={cn(
                 "rounded-md px-2 py-0.5 text-[11px] font-medium",
-                STATUS_COLOR[item.status] ?? STATUS_COLOR["요청"],
+                STATUS_COLOR[item.status] ?? STATUS_COLOR["1차검토 중"],
               )}
             >
               {item.status}
@@ -263,6 +258,56 @@ function DetailModal({
             }
           />
         </div>
+
+        {/* docs/request.md 추가 정보 — 채워진 것만 노출 */}
+        {(item.real_source ||
+          item.purpose ||
+          item.revision !== null ||
+          item.with_safety_cert ||
+          item.summary ||
+          item.doc_no ||
+          item.doc_kind) && (
+          <div className="grid grid-cols-2 gap-3 rounded-md border border-zinc-200 p-2 dark:border-zinc-800">
+            {item.real_source && <Info label="실제출처" value={item.real_source} />}
+            {item.purpose && <Info label="용도" value={item.purpose} />}
+            {item.revision !== null && (
+              <Info label="Revision" value={`rev${item.revision}`} />
+            )}
+            {item.with_safety_cert && (
+              <Info label="안전확인서" value="포함" />
+            )}
+            {item.doc_no && <Info label="문서번호" value={item.doc_no} />}
+            {item.doc_kind && <Info label="문서종류" value={item.doc_kind} />}
+            {item.summary && (
+              <div className="col-span-2">
+                <p className="text-xs text-zinc-500">내용요약</p>
+                <p className="mt-0.5 whitespace-pre-wrap text-sm">{item.summary}</p>
+              </div>
+            )}
+          </div>
+        )}
+
+        {item.reject_reason && (
+          <div>
+            <p className="mb-1 text-xs text-red-500">반려 사유</p>
+            <p className="whitespace-pre-wrap rounded-md border border-red-300 bg-red-50 p-2 text-xs text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-300">
+              {item.reject_reason}
+            </p>
+          </div>
+        )}
+
+        {item.folder_url && (
+          <p className="text-xs">
+            <a
+              href={item.folder_url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-blue-600 hover:underline dark:text-blue-400"
+            >
+              📂 Works Drive 폴더 열기
+            </a>
+          </p>
+        )}
 
         {item.note && (
           <div>
@@ -329,16 +374,26 @@ function DetailModal({
         {item.status === "반려" && (isOwner || isAdminOrLead) && (
           <div className="rounded-md border border-amber-500/40 bg-amber-500/5 p-2 text-xs">
             <p className="mb-1 text-amber-700 dark:text-amber-400">
-              반려된 요청입니다. 파일을 보완해 재업로드하면 다시 &lsquo;요청&rsquo; 상태로 진행됩니다.
+              반려된 요청입니다. 입력 정보를 수정하거나 파일을 보완해 재요청하면 다시 &lsquo;1차검토 중&rsquo; 상태로 진행됩니다.
             </p>
-            <input
-              ref={reuploadInput}
-              type="file"
-              multiple
-              onChange={(e) => void onReupload(e.target.files)}
-              disabled={busy}
-              className="block w-full text-xs file:mr-2 file:rounded-md file:border-0 file:bg-amber-500 file:px-3 file:py-1.5 file:text-xs file:text-white hover:file:bg-amber-600"
-            />
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setEditOpen(true)}
+                disabled={busy}
+                className="rounded-md bg-amber-500 px-3 py-1.5 text-xs text-white hover:bg-amber-600 disabled:opacity-50"
+              >
+                ✏️ 입력 내용 수정 / 재요청
+              </button>
+              <input
+                ref={reuploadInput}
+                type="file"
+                multiple
+                onChange={(e) => void onReupload(e.target.files)}
+                disabled={busy}
+                className="block flex-1 text-xs file:mr-2 file:rounded-md file:border-0 file:bg-amber-500 file:px-3 file:py-1.5 file:text-xs file:text-white hover:file:bg-amber-600"
+              />
+            </div>
           </div>
         )}
 
@@ -356,7 +411,7 @@ function DetailModal({
             )}
           </div>
           <div className="flex flex-wrap justify-end gap-2">
-            {isAdminOrLead && item.status === "요청" && (
+            {isAdminOrLead && item.status === "1차검토 중" && (
               <button
                 type="button"
                 onClick={() => void onApproveLead()}
@@ -366,7 +421,7 @@ function DetailModal({
                 팀장 승인 (1차)
               </button>
             )}
-            {isAdmin && item.status === "팀장승인" && (
+            {isAdmin && item.status === "2차검토 중" && (
               <button
                 type="button"
                 onClick={() => void onApproveAdmin()}
@@ -377,7 +432,7 @@ function DetailModal({
               </button>
             )}
             {isAdminOrLead &&
-              (item.status === "요청" || item.status === "팀장승인") && (
+              (item.status === "1차검토 중" || item.status === "2차검토 중") && (
                 <button
                   type="button"
                   onClick={() => void onReject()}
@@ -398,6 +453,16 @@ function DetailModal({
           </div>
         </footer>
       </div>
+      {editOpen && (
+        <SealRequestEditModal
+          item={item}
+          onClose={() => setEditOpen(false)}
+          onSaved={() => {
+            setEditOpen(false);
+            onChanged();
+          }}
+        />
+      )}
     </Modal>
   );
 }

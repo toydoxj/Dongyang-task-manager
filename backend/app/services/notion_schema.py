@@ -69,22 +69,29 @@ MASTER_DB_REQUIRED: dict[str, dict[str, Any]] = {}
 CLIENT_DB_REQUIRED: dict[str, dict[str, Any]] = {}
 
 # 날인요청 DB
+# 신 옵션(1차검토 중 / 2차검토 중 / 승인)을 운영 표준으로 채택하되, 노션은 select option을
+# 자동 제거하지 않으므로 옛 옵션(요청/팀장승인/관리자승인/완료/도면/검토서)이 그대로
+# 남아 기존 row를 깨뜨리지 않음. read 시 seal_logic.normalize_*가 신 옵션으로 매핑.
 SEAL_REQUEST_DB_REQUIRED: dict[str, dict[str, Any]] = {
     "날인유형": _select(
         [
             ("구조계산서", "blue"),
-            ("도면", "green"),
-            ("검토서", "purple"),
+            ("구조안전확인서", "green"),
+            ("구조검토서", "purple"),
+            ("구조도면", "orange"),
+            ("보고서", "pink"),
             ("기타", "gray"),
         ]
     ),
     "상태": _select(
         [
-            ("요청", "yellow"),
-            ("팀장승인", "blue"),
-            ("관리자승인", "green"),
-            ("완료", "green"),
+            ("1차검토 중", "yellow"),
+            ("2차검토 중", "blue"),
+            ("승인", "green"),
             ("반려", "red"),
+            # 구조검토서의 중간 문서번호를 취소했을 때 — 흔적 row를 잠그기 위한
+            # 전용 sentinel. PATCH/attachments는 이 상태에서 거부됨.
+            ("취소", "gray"),
         ]
     ),
     "요청자": {"rich_text": {}},
@@ -95,8 +102,19 @@ SEAL_REQUEST_DB_REQUIRED: dict[str, dict[str, Any]] = {
     "관리자처리일": {"date": {}},
     "제출예정일": {"date": {}},
     "비고": {"rich_text": {}},
-    "첨부파일": {"files": {}},  # 호환용 — S3 전환 후 비어있을 수 있음
-    "첨부메타": {"rich_text": {}},  # S3 attachments JSON
+    "첨부파일": {"files": {}},  # 호환용 — Drive 전환 후 비어있을 수 있음
+    "첨부메타": {"rich_text": {}},  # S3 + Works Drive attachments JSON
+    # ── docs/request.md 추가 컬럼 ──
+    "실제출처": {"rich_text": {}},
+    "용도": {"rich_text": {}},
+    "Revision": {"number": {}},
+    "안전확인서포함": {"checkbox": {}},
+    "내용요약": {"rich_text": {}},
+    "문서번호": {"rich_text": {}},  # 구조검토서: YY-의견-NNN
+    "문서종류": {"rich_text": {}},  # 기타 유형 전용
+    "첨부폴더URL": {"url": {}},  # Works Drive 일자 폴더 web URL
+    "반려사유": {"rich_text": {}},  # 비고와 분리해 read 단순화
+    "연결TASK": {"rich_text": {}},  # 자동 생성한 노션 TASK page_id (lifecycle 동기화)
 }
 
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 
 import { useAuth } from "@/components/AuthGuard";
 import Modal from "@/components/ui/Modal";
@@ -8,7 +8,15 @@ import { createSealRequest } from "@/lib/api";
 import type { Project } from "@/lib/domain";
 import { useProjects } from "@/lib/hooks";
 
-const SEAL_TYPES = ["구조계산서", "도면", "검토서", "기타"] as const;
+const SEAL_TYPES = [
+  "구조계산서",
+  "구조안전확인서",
+  "구조검토서",
+  "구조도면",
+  "보고서",
+  "기타",
+] as const;
+type SealType = (typeof SEAL_TYPES)[number];
 
 interface Props {
   open: boolean;
@@ -45,7 +53,6 @@ function Form({
   onCreated: () => void;
 }) {
   const { user } = useAuth();
-  // 고정 프로젝트가 없으면 본인 담당 프로젝트 dropdown
   const { data: projectData } = useProjects(
     !fixedProject && user?.name ? { mine: true } : undefined,
     !fixedProject,
@@ -53,22 +60,70 @@ function Form({
   const myProjects = projectData?.items ?? [];
 
   const [projectId, setProjectId] = useState(fixedProject?.id ?? "");
-  const [sealType, setSealType] = useState<string>("구조계산서");
+  const [sealType, setSealType] = useState<SealType>("구조계산서");
   const [title, setTitle] = useState("");
   const [dueDate, setDueDate] = useState("");
   const [note, setNote] = useState("");
   const [files, setFiles] = useState<File[]>([]);
+  // 조건부 필드
+  const [realSource, setRealSource] = useState("");
+  const [purpose, setPurpose] = useState("");
+  const [revision, setRevision] = useState(0);
+  const [withSafetyCert, setWithSafetyCert] = useState(false);
+  const [summary, setSummary] = useState("");
+  const [docKind, setDocKind] = useState("");
+
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
+
+  const selectedProject = useMemo<Project | null>(() => {
+    if (fixedProject) return fixedProject;
+    return myProjects.find((p) => p.id === projectId) ?? null;
+  }, [fixedProject, myProjects, projectId]);
+
+  const titlePreview = useMemo(() => {
+    if (title.trim()) return title.trim();
+    const code = (selectedProject?.code || "?").trim();
+    switch (sealType) {
+      case "구조계산서":
+        return `${code}_구조계산서_rev${revision || 0}_${purpose || "?"}`;
+      case "구조안전확인서":
+        return `${code}_구조안전확인서_${purpose || "?"}`;
+      case "구조검토서":
+        return `${code}_(자동발급)_구조검토서`;
+      case "구조도면":
+        return `${code}_구조도면_${purpose || "?"}`;
+      case "보고서":
+        return `${code}_보고서`;
+      case "기타":
+        return `${code}_${docKind || "기타"}`;
+    }
+  }, [title, selectedProject, sealType, revision, purpose, docKind]);
 
   const submit = async (): Promise<void> => {
     if (!projectId) {
       setErr("프로젝트를 선택하세요");
       return;
     }
-    if (files.length === 0) {
-      setErr("첨부파일을 1개 이상 추가하세요");
+    if (!dueDate) {
+      setErr("제출 예정일은 필수입니다");
+      return;
+    }
+    if (sealType === "구조계산서" && !purpose.trim()) {
+      setErr("구조계산서: 용도를 입력하세요");
+      return;
+    }
+    if (sealType === "구조안전확인서" && !purpose.trim()) {
+      setErr("구조안전확인서: 용도를 입력하세요");
+      return;
+    }
+    if (sealType === "구조도면" && !purpose.trim()) {
+      setErr("구조도면: 용도를 입력하세요");
+      return;
+    }
+    if (sealType === "기타" && !docKind.trim()) {
+      setErr("기타: 문서종류를 입력하세요");
       return;
     }
     setBusy(true);
@@ -80,6 +135,12 @@ function Form({
       fd.append("title", title);
       fd.append("due_date", dueDate);
       fd.append("note", note);
+      fd.append("real_source", realSource);
+      fd.append("purpose", purpose);
+      fd.append("revision", String(revision || 0));
+      fd.append("with_safety_cert", withSafetyCert ? "true" : "false");
+      fd.append("summary", summary);
+      fd.append("doc_kind", docKind);
       for (const f of files) fd.append("files", f);
       await createSealRequest(fd);
       onCreated();
@@ -123,10 +184,10 @@ function Form({
         </Field>
 
         <div className="grid grid-cols-2 gap-3">
-          <Field label="날인유형" required>
+          <Field label="검토구분" required>
             <select
               value={sealType}
-              onChange={(e) => setSealType(e.target.value)}
+              onChange={(e) => setSealType(e.target.value as SealType)}
               className={inputCls}
             >
               {SEAL_TYPES.map((t) => (
@@ -136,36 +197,129 @@ function Form({
               ))}
             </select>
           </Field>
-          <Field label="제목 (선택)">
+          <Field label="제출 예정일" required>
             <input
-              type="text"
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              placeholder="비워두면 자동 생성"
+              type="date"
+              value={dueDate}
+              onChange={(e) => setDueDate(e.target.value)}
               className={inputCls}
             />
           </Field>
         </div>
 
-        <Field label="제출 예정일 (선택)">
+        <Field label="실제출처 (발주처와 다른 경우만)">
           <input
-            type="date"
-            value={dueDate}
-            onChange={(e) => setDueDate(e.target.value)}
+            type="text"
+            value={realSource}
+            onChange={(e) => setRealSource(e.target.value)}
+            placeholder="비워두면 프로젝트의 발주처 사용"
             className={inputCls}
           />
+        </Field>
+
+        {/* 검토구분별 조건부 필드 */}
+        {sealType === "구조계산서" && (
+          <div className="grid grid-cols-3 gap-3 rounded-md border border-zinc-200 p-2 dark:border-zinc-800">
+            <Field label="Revision">
+              <input
+                type="number"
+                value={revision}
+                min={0}
+                onChange={(e) => setRevision(Number(e.target.value) || 0)}
+                className={inputCls}
+              />
+            </Field>
+            <Field label="용도" required>
+              <input
+                type="text"
+                value={purpose}
+                onChange={(e) => setPurpose(e.target.value)}
+                placeholder="예: 허가용 / 실시설계 / 착공용"
+                className={inputCls}
+              />
+            </Field>
+            <label className="mt-5 flex items-center gap-2 text-xs">
+              <input
+                type="checkbox"
+                checked={withSafetyCert}
+                onChange={(e) => setWithSafetyCert(e.target.checked)}
+              />
+              구조안전확인서 포함
+            </label>
+          </div>
+        )}
+
+        {sealType === "구조안전확인서" && (
+          <Field label="용도" required>
+            <input
+              type="text"
+              value={purpose}
+              onChange={(e) => setPurpose(e.target.value)}
+              placeholder="예: 허가용 / 실시설계 / 착공용"
+              className={inputCls}
+            />
+          </Field>
+        )}
+
+        {sealType === "구조검토서" && (
+          <Field label="내용요약">
+            <textarea
+              value={summary}
+              onChange={(e) => setSummary(e.target.value)}
+              rows={3}
+              placeholder="검토 의견 요약"
+              className={`${inputCls} resize-y`}
+            />
+          </Field>
+        )}
+
+        {sealType === "구조도면" && (
+          <Field label="용도" required>
+            <input
+              type="text"
+              value={purpose}
+              onChange={(e) => setPurpose(e.target.value)}
+              placeholder="예: 허가용 / 실시설계 / 착공용"
+              className={inputCls}
+            />
+          </Field>
+        )}
+
+        {sealType === "기타" && (
+          <Field label="문서종류" required>
+            <input
+              type="text"
+              value={docKind}
+              onChange={(e) => setDocKind(e.target.value)}
+              placeholder="예: 공사관리계획"
+              className={inputCls}
+            />
+          </Field>
+        )}
+
+        <Field label="제목 (생략 시 자동 생성)">
+          <input
+            type="text"
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            placeholder={titlePreview}
+            className={inputCls}
+          />
+          <p className="mt-0.5 text-[10px] text-zinc-400">
+            미리보기: <span className="font-mono">{titlePreview}</span>
+          </p>
         </Field>
 
         <Field label="비고">
           <textarea
             value={note}
             onChange={(e) => setNote(e.target.value)}
-            rows={3}
+            rows={2}
             className={`${inputCls} resize-y`}
           />
         </Field>
 
-        <Field label="첨부파일 (다중 가능, 파일당 ≤200MB)" required>
+        <Field label="첨부파일 (선택, 다중 가능, 파일당 ≤200MB)">
           <input
             ref={fileInput}
             type="file"

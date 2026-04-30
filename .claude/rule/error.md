@@ -236,3 +236,11 @@
 - 우선순위: `BACKEND_DATA_DIR/.env` (사용자 override) > `exe_dir/.env` > 번들 `.env.production` (기본값)
 - JWT_SECRET은 첫 실행 시 user_dir에 자동 생성/저장 (`secrets.token_urlsafe(64)`)
 - 재발 방지: `.env.production`은 .gitignore 처리, 빌드자만 보유. 토큰 유출 시 노션 통합 토큰 재발급으로 대응 가능
+
+### 2026-05-01 — 날인요청 시나리오 정착 (검토구분 6종 + Works Drive + Bot 알림)
+- 컨텍스트: docs/request.md 명세를 코드에 반영. 기존 4종(구조계산서/도면/검토서/기타) → 6종(구조계산서/구조안전확인서/구조검토서/구조도면/보고서/기타). 상태값 doc 명세(1차검토 중/2차검토 중/승인/반려)로 통일. S3 → NAVER WORKS Drive (`0. 검토자료/YYYYMMDD/`). 단계별 Bot 알림. 자동 TASK row 연동
+- 패턴: 노션 select 옵션은 schema에서 자동 제거 불가 → 신 옵션을 schema에 추가 + read 시점에 `seal_logic.normalize_status`/`normalize_type`로 옛 옵션을 신 옵션으로 양방향 매핑. 마이그레이션 없이 호환
+- 패턴: `python-jose[cryptography]`로 RS256 JWT 서명 (PyJWT 추가 설치 불필요). `from jose import jwt as jose_jwt; jose_jwt.encode(claim, pem_private_key, algorithm="RS256")`. PEM 환경변수에 single-line `\n` 이스케이프가 들어와도 동작하도록 `key.replace("\n","\n")` 호환 처리
+- 패턴: 외부 서비스 호출(Bot send_text, 자동 task 생성, task 동기화)은 fire-and-forget — 호출자 트랜잭션을 절대 막지 않음. `asyncio.create_task` + `_bg_tasks: set` 강 참조 + `add_done_callback(_bg_tasks.discard)` 으로 GC 누수 방지
+- 패턴: 구조검토서 문서번호 발급(`{YY}-의견-{NNN}`)은 노션 default `archived=False` filter가 자동 적용 → 마지막 번호 archive 시 다음 발급에서 재사용 (별도 회수 로직 불필요). 중간 번호 취소는 archive하지 않고 `[날인취소]` prefix + 첨부 비움으로 흔적 남김 (sequence 깨짐 방지)
+- 재발 방지: 노션 select enum 변경 시 schema 자동 추가 + read 정규화 함수 쌍을 항상 같이 도입. 외부 알림은 어떤 경우에도 사용자 트랜잭션 차단 금지. JWT 서명 라이브러리는 이미 있는 것을 우선 활용 (python-jose / PyJWT 중복 의존 회피)
