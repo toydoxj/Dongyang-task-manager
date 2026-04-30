@@ -258,3 +258,11 @@
 - 원인: 운영자가 `.key` 파일을 열어 본문만 복사했거나, Render env 입력 시 마커 라인이 잘림. base64만으로는 cryptography가 PEM으로 인식 못 함
 - 해결: `_normalize_private_key`에 case (4) 추가 — 마커가 없고 본문이 base64 alphabet만으로 구성되어 있으면 PKCS#8 `PRIVATE KEY`로 가정하고 헤더/푸터 자동 wrap. NAVER WORKS Service Account 키는 PKCS#8 표준이라 안전한 가정
 - 재발 방지: secret 입력 robustness는 짐작 가능한 모든 paste 패턴(이스케이프/공백 평탄화/마커 누락/본문만)을 흡수하는 정규화 + 단위 테스트로 잠금. 또한 진단 응답(secret 본문 노출 X, 구조 metadata만)을 admin endpoint에 두어 다음 사고도 즉시 진단 가능
+
+### 2026-04-30 — 노션 select 옵션 누락 자동 보강 미동작 (NOTION_API_ERROR 502)
+- 컨텍스트: 날인요청 schema에 신 옵션(`1차검토 중`/`2차검토 중`/`승인`/`취소`)을 추가했는데 운영에서 backend가 그 옵션으로 query/write 시도 → 노션 "select option not found" → NotionApiError → frontend 502
+- 증상: Render Logs에 `NOTION_API_ERROR on GET /api/seal-requests/pending-count — select option "2차검토 중" not found for property "상태". Available options: "요청", "팀장승인", "관리자승인", "완료", "반려"`
+- 원인: `notion_schema._ensure_db`가 **컬럼 자체 누락 시에만** 추가. 기존 select 컬럼의 누락 옵션은 비교/patch 안 함. 노션은 select option `update_data_source_schema`에서 부분 patch가 아닌 전체 list 교체 방식이라 기존 옵션 보존이 까다로움
+- 해결: `_missing_select_options` 헬퍼 추가. 기존 옵션(id 포함) + 누락 옵션을 union해 전체 list로 patch. `_ensure_db`가 컬럼 추가 + 옵션 보강 둘 다 처리. logger도 `노션 schema 옵션 보강 [...]` / `노션 schema 컬럼 추가 [...]`로 분리해 운영 가시성 향상
+- 응급 처치: 사용자가 노션 DB에서 누락 옵션을 수동 추가 (5분). 코드 fix는 다음 backend 재배포 시 동일 사고 자동 방어
+- 재발 방지: select enum 추가 시 schema 보강 함수가 옵션 union까지 처리하는지 항상 확인. `_ensure_db` 처럼 schema 자동 적용 코드는 단위 테스트로 (a) 컬럼 누락 (b) 옵션 누락 (c) 옵션 일부 동일 (d) 변경 없음 4가지 경로 cover

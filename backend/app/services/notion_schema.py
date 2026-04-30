@@ -134,6 +134,30 @@ SUGGESTION_DB_REQUIRED: dict[str, dict[str, Any]] = {
 }
 
 
+def _missing_select_options(
+    existing_prop: dict[str, Any], required_prop: dict[str, Any]
+) -> list[dict[str, Any]] | None:
+    """기존 select property에 누락된 옵션이 있으면 union 결과(전체 옵션 list) 반환.
+
+    노션 update_data_source_schema는 select options 부분 patch가 아니라 **전체 list
+    교체** 방식. 기존 옵션 + 누락 옵션을 합쳐 다시 보낸다. None이면 보강 불필요.
+    """
+    if "select" not in required_prop:
+        return None
+    if existing_prop.get("type") not in (None, "select"):
+        return None
+    existing_opts = (existing_prop.get("select") or {}).get("options") or []
+    required_opts = (required_prop.get("select") or {}).get("options") or []
+    existing_names = {o.get("name") for o in existing_opts if o.get("name")}
+    missing = [
+        o for o in required_opts if o.get("name") and o["name"] not in existing_names
+    ]
+    if not missing:
+        return None
+    # 기존 옵션 보존(id 포함) + 누락 옵션 append. id가 없는 옵션은 노션이 새로 발급.
+    return list(existing_opts) + missing
+
+
 async def _ensure_db(
     notion: NotionService,
     db_id: str,
@@ -141,7 +165,11 @@ async def _ensure_db(
     *,
     label: str,
 ) -> int:
-    """단일 DB의 누락 컬럼 추가. 반환: 추가된 컬럼 수."""
+    """단일 DB의 누락 컬럼 + 누락 select 옵션 보강. 반환: 변경된 property 수.
+
+    - 컬럼 자체 누락 → 새 property 추가
+    - select 컬럼 존재하지만 옵션 일부 누락 → 옵션 union으로 patch
+    """
     if not db_id or not required:
         return 0
     try:
@@ -150,17 +178,33 @@ async def _ensure_db(
         logger.warning("schema check %s 실패: %s", label, exc)
         return 0
     existing = ds.get("properties") or {}
-    missing = {k: v for k, v in required.items() if k not in existing}
-    if not missing:
+    patch: dict[str, dict[str, Any]] = {}
+    new_columns: list[str] = []
+    option_patches: list[str] = []
+    for name, spec in required.items():
+        if name not in existing:
+            patch[name] = spec
+            new_columns.append(name)
+            continue
+        union = _missing_select_options(existing[name], spec)
+        if union is not None:
+            patch[name] = {"select": {"options": union}}
+            option_patches.append(name)
+    if not patch:
         return 0
     try:
-        await notion.update_data_source_schema(db_id, properties=missing)
-        logger.info(
-            "노션 schema 자동 추가 [%s]: %s",
-            label,
-            ", ".join(missing.keys()),
-        )
-        return len(missing)
+        await notion.update_data_source_schema(db_id, properties=patch)
+        if new_columns:
+            logger.info(
+                "노션 schema 컬럼 추가 [%s]: %s", label, ", ".join(new_columns)
+            )
+        if option_patches:
+            logger.info(
+                "노션 schema 옵션 보강 [%s]: %s",
+                label,
+                ", ".join(option_patches),
+            )
+        return len(patch)
     except NotionApiError as exc:
         logger.warning("schema update %s 실패: %s", label, exc)
         return 0
