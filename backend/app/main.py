@@ -109,6 +109,11 @@ def _verify_cron(authorization: str | None = Header(default=None)) -> None:
 # "_all"은 sync_all 트리거, 그 외는 kind별.
 _running_sync: set[str] = set()
 
+# asyncio.create_task의 결과를 강한 참조로 보관. event loop은 weak ref만
+# 잡으므로 reference 없으면 mid-execution에서 GC되어 sync 끊김.
+# (공식 asyncio.create_task 문서의 경고)
+_bg_tasks: set[asyncio.Task[None]] = set()
+
 
 async def _run_sync_in_bg(*, kind: str | None, full: bool) -> None:
     """fire-and-forget으로 sync 실행. 결과는 Render Logs에서 확인."""
@@ -132,6 +137,13 @@ async def _run_sync_in_bg(*, kind: str | None, full: bool) -> None:
         _running_sync.discard(key)
 
 
+def _spawn_bg_sync(*, kind: str | None, full: bool) -> None:
+    """create_task + 강한 참조 유지. done 시 set에서 자동 제거."""
+    task = asyncio.create_task(_run_sync_in_bg(kind=kind, full=full))
+    _bg_tasks.add(task)
+    task.add_done_callback(_bg_tasks.discard)
+
+
 @app.post("/api/cron/sync", status_code=202)
 async def cron_sync(
     full: bool = False,
@@ -146,7 +158,7 @@ async def cron_sync(
     if _running_sync:
         return {"status": "already_running", "active": ",".join(sorted(_running_sync))}
     _running_sync.add("_all")
-    asyncio.create_task(_run_sync_in_bg(kind=None, full=full))
+    _spawn_bg_sync(kind=None, full=full)
     return {"status": "started", "full": str(full).lower()}
 
 
@@ -163,7 +175,7 @@ async def cron_sync_one(
     if "_all" in _running_sync or kind in _running_sync:
         return {"status": "already_running", "kind": kind}
     _running_sync.add(kind)
-    asyncio.create_task(_run_sync_in_bg(kind=kind, full=full))
+    _spawn_bg_sync(kind=kind, full=full)
     return {"status": "started", "kind": kind, "full": str(full).lower()}
 
 

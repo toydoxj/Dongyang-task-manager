@@ -155,6 +155,22 @@
 - 해결: 본 건은 Codex 검토 없이 진행. 사용자에게 상황을 알리고 자체 계획 초안을 먼저 제시한 뒤, 다음 단계에서 재시도 또는 사용자가 외부 GPT에 직접 검토 의뢰하는 방식으로 우회
 - 재발 방지: Codex MCP에 4000자 이상의 prompt를 한 번에 보내지 말 것. 핵심 질문 1~2개로 분할하거나 mcp__codex-cli__review 별도 도구 사용을 우선 검토. Codex가 빈 응답·맥락 무시 응답을 줄 때는 두 번 이상 재시도하지 말고 즉시 차선책으로 전환
 
+### 2026-04-30 — `asyncio.create_task` 결과를 참조 안 잡으면 mid-execution에서 GC됨
+- 컨텍스트: cron 엔드포인트를 fire-and-forget으로 분리하면서 `asyncio.create_task(_run_sync_in_bg(...))` 사용. 반환값 무시
+- 증상: 첫 호출 `{"status":"started"}` 정상 응답인데 Render Logs에 `manual cron ... done: N` 메시지가 영영 안 나옴. 두 번째 호출 시 `already_running` 아닌 또 `started` 응답 (즉 `_running_sync` set이 비어있음). 실제 mirror upsert는 안 됨
+- 원인: Python asyncio docs 공식 경고 — "The event loop only keeps weak references to tasks. A task that isn't referenced elsewhere may be garbage collected at any time, even before it's done." 우리 코드가 task 객체를 어디에도 보관 안 함 → mid-await GC. coroutine.close() → GeneratorExit가 finally는 돌리지만(그래서 `_running_sync`는 정리됨) 실제 sync 작업은 끊김
+- 해결:
+  ```python
+  _bg_tasks: set[asyncio.Task] = set()
+
+  def _spawn_bg_sync(*, kind, full):
+      task = asyncio.create_task(_run_sync_in_bg(kind=kind, full=full))
+      _bg_tasks.add(task)
+      task.add_done_callback(_bg_tasks.discard)
+  ```
+  완료 시 콜백으로 자동 제거되어 메모리 누수도 없음
+- 재발 방지: `asyncio.create_task(...)` 결과는 항상 어딘가에 보관. fire-and-forget 패턴은 `set + add_done_callback(set.discard)` 표준 idiom 사용. lint rule(`RUF006`)이 ruff에 있어 활성화 권장: `asyncio-dangling-task`
+
 ### 2026-04-30 — `/api/cron/sync` 동기 응답이 worker를 1~3분 막아 다른 요청이 502
 - 컨텍스트: Render starter (512MB/0.5 CPU, 단일 worker process)에서 `?full=true` 호출 시 노션 6개 DB reconcile이 1~3분 걸림. 그 동안 frontend의 SWR polling(`/api/seal-requests/pending-count` 등)이 모두 `502 Bad Gateway` + 표면상 CORS 에러
 - 증상: `Access to fetch at ... blocked by CORS policy: No 'Access-Control-Allow-Origin' header` + 502. CORS 자체는 정상이지만 502 응답에 헤더가 안 붙어서 브라우저가 CORS 에러로 표시
