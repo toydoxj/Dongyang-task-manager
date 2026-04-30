@@ -80,13 +80,19 @@ export default function MyPage() {
   };
 
   const refreshProjects = (): void => {
-    void mutate(keys.projects(fetchFilters));
-    void mutate(keys.projects({ stage: "진행중" }));
+    // 모든 projects cache 무효화 — 다른 곳에서 변경된 상태(예: TaskEditModal에서
+    // 프로젝트 담당 추가)도 즉시 반영. SWR이 자동 revalidate.
+    void mutate(
+      (key) => Array.isArray(key) && key[0] === "projects",
+      undefined,
+      { revalidate: true },
+    );
   };
 
-  /** 본인 담당 해제 시: SWR 캐시에서 그 프로젝트를 즉시 제거 + 백그라운드 revalidate */
+  /** 본인 담당 해제 시: SWR 캐시에서 그 프로젝트를 즉시 제거 + 모든 projects 캐시 revalidate */
   const handleUnassigned = (projectId: string): void => {
     if (!effectiveName) return;
+    // (1) 현재 보고있는 list에서 즉시 제거 (optimistic)
     void mutate<ProjectListResponse>(
       keys.projects(fetchFilters),
       (old) =>
@@ -99,7 +105,16 @@ export default function MyPage() {
           : old,
       { revalidate: true },
     );
-    void mutate(keys.projects({ stage: "진행중" }));
+    // (2) 다른 곳에서 본 projects 캐시(진행중/검색 등)도 무효화
+    void mutate(
+      (key) =>
+        Array.isArray(key) &&
+        key[0] === "projects" &&
+        // 현재 list는 이미 위에서 처리했으므로 중복 revalidate 회피
+        JSON.stringify(key[1]) !== JSON.stringify(fetchFilters ?? null),
+      undefined,
+      { revalidate: true },
+    );
   };
 
   if (isViewingOther && !allowedToView) {
