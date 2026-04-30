@@ -39,11 +39,16 @@ function Form({
 }) {
   const [title, setTitle] = useState(task.title ?? "");
   const [status, setStatus] = useState(task.status || "시작 전");
-  // datetime-local input은 'YYYY-MM-DDTHH:mm' 형식. 기존 ISO datetime이면 잘라서 사용.
+  // datetime-local input은 'YYYY-MM-DDTHH:mm' (timezone 없는 wall clock).
+  // 노션은 UTC ISO('+00:00' 또는 'Z')로 저장하므로 KST로 변환 후 잘라야 한다.
+  // (변환 없이 slice만 하면 UTC 00:00 → input에 12 AM으로 표시되는 버그)
   const normalizeForInput = (s: string | null): string => {
     if (!s) return "";
-    if (s.includes("T")) return s.slice(0, 16); // YYYY-MM-DDTHH:mm
-    return s;
+    if (!s.includes("T")) return s;
+    const d = new Date(s);
+    if (Number.isNaN(d.getTime())) return s.slice(0, 16);
+    const kstMs = d.getTime() + 9 * 60 * 60 * 1000;
+    return new Date(kstMs).toISOString().slice(0, 16);
   };
   const [start, setStart] = useState(normalizeForInput(task.start_date));
   const [end, setEnd] = useState(normalizeForInput(task.end_date));
