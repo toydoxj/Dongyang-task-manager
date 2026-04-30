@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import Modal from "@/components/ui/Modal";
 import {
@@ -9,6 +9,7 @@ import {
   updateSealRequest,
   type SealRequestItem,
 } from "@/lib/api";
+import { useClients } from "@/lib/hooks";
 
 interface Props {
   item: SealRequestItem;
@@ -24,9 +25,20 @@ interface Props {
  * 검토구분(seal_type)은 변경 불가 — 재등록이 필요하면 취소 후 새로 작성.
  */
 export default function SealRequestEditModal({ item, onClose, onSaved }: Props) {
+  const { data: clientData } = useClients(true);
+  const clients = clientData?.items ?? [];
+
   const [title, setTitle] = useState(item.title);
   const [dueDate, setDueDate] = useState(item.due_date ?? "");
-  const [realSource, setRealSource] = useState(item.real_source);
+  const [realSourceName, setRealSourceName] = useState("");
+  // clients 데이터가 늦게 로드되므로 mount 후 한 번 prefill (초기 빈 값에서 채움)
+  useEffect(() => {
+    if (!realSourceName && item.real_source_id && clients.length > 0) {
+      const c = clients.find((x) => x.id === item.real_source_id);
+      if (c) setRealSourceName(c.name);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [clients.length]);
   const [purpose, setPurpose] = useState(item.purpose);
   const [revision, setRevision] = useState(item.revision ?? 0);
   const [withSafetyCert, setWithSafetyCert] = useState(item.with_safety_cert);
@@ -63,10 +75,13 @@ export default function SealRequestEditModal({ item, onClose, onSaved }: Props) 
     setBusy(true);
     setErr(null);
     try {
+      const matched = clients.find(
+        (c) => c.name.trim() === realSourceName.trim(),
+      );
       await updateSealRequest(item.id, {
         title,
         due_date: dueDate,
-        real_source: realSource,
+        real_source_id: matched?.id ?? "",
         purpose,
         revision,
         with_safety_cert: withSafetyCert,
@@ -118,10 +133,19 @@ export default function SealRequestEditModal({ item, onClose, onSaved }: Props) 
         <Field label="실제출처 (발주처와 다른 경우만)">
           <input
             type="text"
-            value={realSource}
-            onChange={(e) => setRealSource(e.target.value)}
+            list="dy-clients-seal-edit"
+            value={realSourceName}
+            onChange={(e) => setRealSourceName(e.target.value)}
+            placeholder="거래처 검색"
             className={inputCls}
           />
+          <datalist id="dy-clients-seal-edit">
+            {clients.map((c) => (
+              <option key={c.id} value={c.name}>
+                {c.category}
+              </option>
+            ))}
+          </datalist>
         </Field>
 
         {isCalc && (

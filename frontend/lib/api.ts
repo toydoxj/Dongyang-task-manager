@@ -517,7 +517,8 @@ export interface SealRequestItem {
   note: string;
   attachments: SealAttachment[];
   // docs/request.md 추가 컬럼
-  real_source: string;
+  // 실제출처: 거래처 DB relation. 이름은 frontend useClients hook으로 lookup.
+  real_source_id: string;
   purpose: string;
   revision: number | null;
   with_safety_cert: boolean;

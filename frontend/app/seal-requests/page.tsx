@@ -8,6 +8,7 @@ import SealRequestEditModal from "@/components/project/SealRequestEditModal";
 import Modal from "@/components/ui/Modal";
 import LoadingState from "@/components/ui/LoadingState";
 import { authFetch } from "@/lib/auth";
+import { useClients } from "@/lib/hooks";
 import {
   addSealAttachments,
   approveSealAdmin,
@@ -167,6 +168,14 @@ export default function SealRequestsPage() {
 }
 
 
+function resolveClientName(
+  id: string,
+  clients: { id: string; name: string }[] | undefined,
+): string {
+  if (!id || !clients) return id;
+  return clients.find((c) => c.id === id)?.name ?? id;
+}
+
 function DetailModal({
   item,
   isAdmin,
@@ -182,6 +191,8 @@ function DetailModal({
   onClose: () => void;
   onChanged: () => void;
 }) {
+  const { data: clientData } = useClients(true);
+  const clients = clientData?.items ?? [];
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [editOpen, setEditOpen] = useState(false);
@@ -260,7 +271,7 @@ function DetailModal({
         </div>
 
         {/* docs/request.md 추가 정보 — 채워진 것만 노출 */}
-        {(item.real_source ||
+        {(item.real_source_id ||
           item.purpose ||
           item.revision !== null ||
           item.with_safety_cert ||
@@ -268,7 +279,9 @@ function DetailModal({
           item.doc_no ||
           item.doc_kind) && (
           <div className="grid grid-cols-2 gap-3 rounded-md border border-zinc-200 p-2 dark:border-zinc-800">
-            {item.real_source && <Info label="실제출처" value={item.real_source} />}
+            {item.real_source_id && (
+              <Info label="실제출처" value={resolveClientName(item.real_source_id, clients)} />
+            )}
             {item.purpose && <Info label="용도" value={item.purpose} />}
             {item.revision !== null && (
               <Info label="Revision" value={`rev${item.revision}`} />

@@ -6,7 +6,7 @@ import { useAuth } from "@/components/AuthGuard";
 import Modal from "@/components/ui/Modal";
 import { createSealRequest } from "@/lib/api";
 import type { Project } from "@/lib/domain";
-import { useProjects } from "@/lib/hooks";
+import { useClients, useProjects } from "@/lib/hooks";
 
 const SEAL_TYPES = [
   "구조계산서",
@@ -58,6 +58,8 @@ function Form({
     !fixedProject,
   );
   const myProjects = projectData?.items ?? [];
+  const { data: clientData } = useClients(true);
+  const clients = clientData?.items ?? [];
 
   const [projectId, setProjectId] = useState(fixedProject?.id ?? "");
   const [sealType, setSealType] = useState<SealType>("구조계산서");
@@ -66,7 +68,8 @@ function Form({
   const [note, setNote] = useState("");
   const [files, setFiles] = useState<File[]>([]);
   // 조건부 필드
-  const [realSource, setRealSource] = useState("");
+  // 실제출처는 거래처명 입력 → datalist 매칭 시 client.id로 변환해 server에 전송
+  const [realSourceName, setRealSourceName] = useState("");
   const [purpose, setPurpose] = useState("");
   const [revision, setRevision] = useState(0);
   const [withSafetyCert, setWithSafetyCert] = useState(false);
@@ -81,6 +84,17 @@ function Form({
     if (fixedProject) return fixedProject;
     return myProjects.find((p) => p.id === projectId) ?? null;
   }, [fixedProject, myProjects, projectId]);
+
+  // 프로젝트의 발주처 — relation 매칭 우선, 못 찾으면 client_text(임시) fallback
+  const projectClientLabel = useMemo<string>(() => {
+    if (!selectedProject) return "";
+    const ids = selectedProject.client_relation_ids ?? [];
+    const names = ids
+      .map((id) => clients.find((c) => c.id === id)?.name)
+      .filter((n): n is string => !!n);
+    if (names.length > 0) return names.join(", ");
+    return selectedProject.client_text ?? "";
+  }, [selectedProject, clients]);
 
   const titlePreview = useMemo(() => {
     if (title.trim()) return title.trim();
@@ -135,7 +149,12 @@ function Form({
       fd.append("title", title);
       fd.append("due_date", dueDate);
       fd.append("note", note);
-      fd.append("real_source", realSource);
+      // 거래처명 → 매칭되는 page_id로 변환. 매칭 실패 시 ""(현재는 무시).
+      // 거래처 자동 추가 흐름은 후속 작업에서 통합 처리.
+      const matchedClient = clients.find(
+        (c) => c.name.trim() === realSourceName.trim(),
+      );
+      fd.append("real_source_id", matchedClient?.id ?? "");
       fd.append("purpose", purpose);
       fd.append("revision", String(revision || 0));
       fd.append("with_safety_cert", withSafetyCert ? "true" : "false");
@@ -218,13 +237,26 @@ function Form({
         </div>
 
         <Field label="실제출처 (발주처와 다른 경우만)">
+          {projectClientLabel && (
+            <p className="mb-1 text-[11px] text-zinc-500">
+              프로젝트 발주처: <span className="font-medium">{projectClientLabel}</span>
+            </p>
+          )}
           <input
             type="text"
-            value={realSource}
-            onChange={(e) => setRealSource(e.target.value)}
-            placeholder="비워두면 프로젝트의 발주처 사용"
+            list="dy-clients-seal-create"
+            value={realSourceName}
+            onChange={(e) => setRealSourceName(e.target.value)}
+            placeholder="거래처 검색 — 비워두면 위 발주처 사용"
             className={inputCls}
           />
+          <datalist id="dy-clients-seal-create">
+            {clients.map((c) => (
+              <option key={c.id} value={c.name}>
+                {c.category}
+              </option>
+            ))}
+          </datalist>
         </Field>
 
         {/* 검토구분별 조건부 필드 */}

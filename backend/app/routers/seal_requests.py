@@ -109,7 +109,9 @@ class SealRequestItem(BaseModel):
     note: str = ""
     attachments: list[SealAttachment] = []
     # ── docs/request.md 추가 컬럼 ──
-    real_source: str = ""        # 실제출처
+    # 실제출처: 거래처 DB(notion_db_clients) relation. 단일 선택. 이름은 frontend가
+    # useClients로 resolve.
+    real_source_id: str = ""
     purpose: str = ""            # 용도
     revision: int | None = None  # Revision (구조계산서)
     with_safety_cert: bool = False  # 안전확인서포함 (구조계산서)
@@ -140,10 +142,11 @@ class SealUpdateBody(BaseModel):
     """재요청 시 텍스트 필드 일괄 수정.
 
     None인 필드는 변경 안 함. 빈 문자열은 'clear' 신호.
+    real_source_id: 거래처 page_id. ""면 relation 비움.
     """
 
     title: str | None = None
-    real_source: str | None = None
+    real_source_id: str | None = None
     purpose: str | None = None
     revision: int | None = None
     with_safety_cert: bool | None = None
@@ -209,6 +212,8 @@ def _from_notion_page(page: dict[str, Any]) -> SealRequestItem:
     raw_type = P.select_name(props, "날인유형")
     raw_status = P.select_name(props, "상태")
     rev_n = P.number(props, "Revision")
+    real_source_ids = P.relation_ids(props, "실제출처")
+    real_source_id = real_source_ids[0] if real_source_ids else ""
     # title prop은 DB마다 이름이 다를 수 있어 type='title'인 컬럼을 찾는다.
     title_text = ""
     for v in props.values():
@@ -231,7 +236,7 @@ def _from_notion_page(page: dict[str, Any]) -> SealRequestItem:
         due_date=due_s,
         note=P.rich_text(props, "비고"),
         attachments=attachments,
-        real_source=P.rich_text(props, "실제출처_텍스트"),
+        real_source_id=real_source_id,
         purpose=P.rich_text(props, "용도"),
         revision=int(rev_n) if isinstance(rev_n, int | float) else None,
         with_safety_cert=P.checkbox(props, "안전확인서포함"),
@@ -576,7 +581,9 @@ async def create_seal_request(
     due_date: str = Form(..., description="제출 예정일 (YYYY-MM-DD, 필수)"),
     title: str = Form("", description="제목 (생략 시 자동 생성)"),
     note: str = Form(""),
-    real_source: str = Form("", description="실제출처 (발주처와 다른 경우만)"),
+    real_source_id: str = Form(
+        "", description="실제출처 거래처 page_id (발주처와 다른 경우만)"
+    ),
     purpose: str = Form("", description="용도 — 구조계산서/구조안전확인서/구조도면"),
     revision: int = Form(0, description="Revision — 구조계산서"),
     with_safety_cert: bool = Form(False, description="안전확인서포함 — 구조계산서"),
@@ -635,9 +642,9 @@ async def create_seal_request(
         "제출예정일": {"date": {"start": due_iso}},
         "비고": {"rich_text": [{"text": {"content": note}}]},
     }
-    if real_source.strip():
-        init_props["실제출처_텍스트"] = {
-            "rich_text": [{"text": {"content": real_source.strip()}}]
+    if real_source_id.strip():
+        init_props["실제출처"] = {
+            "relation": [{"id": real_source_id.strip()}]
         }
     if seal_type == "구조계산서":
         init_props["Revision"] = {"number": int(revision or 0)}
@@ -943,10 +950,12 @@ async def update_seal_request(
         update_props[title_prop] = {
             "title": [{"text": {"content": body.title}}]
         }
-    if body.real_source is not None:
-        update_props["실제출처_텍스트"] = {
-            "rich_text": [{"text": {"content": body.real_source}}]
-        }
+    if body.real_source_id is not None:
+        update_props["실제출처"] = (
+            {"relation": []}
+            if body.real_source_id == ""
+            else {"relation": [{"id": body.real_source_id}]}
+        )
     if body.purpose is not None:
         update_props["용도"] = {
             "rich_text": [{"text": {"content": body.purpose}}]

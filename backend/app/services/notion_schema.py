@@ -105,9 +105,8 @@ SEAL_REQUEST_DB_REQUIRED: dict[str, dict[str, Any]] = {
     "첨부파일": {"files": {}},  # 호환용 — Drive 전환 후 비어있을 수 있음
     "첨부메타": {"rich_text": {}},  # S3 + Works Drive attachments JSON
     # ── docs/request.md 추가 컬럼 ──
-    # `실제출처`(relation)가 노션 DB에 이미 있는 환경 호환 — 직접 입력 텍스트는
-    # 별도 컬럼명 `실제출처_텍스트`로 분리.
-    "실제출처_텍스트": {"rich_text": {}},
+    # `실제출처`는 노션에 이미 거래처 DB와 연결된 relation 컬럼으로 존재. schema에
+    # 명시하지 않고 그대로 사용한다(read는 relation_ids, write는 relation 형식).
     "용도": {"rich_text": {}},
     "Revision": {"number": {}},
     "안전확인서포함": {"checkbox": {}},
