@@ -13,12 +13,40 @@ from __future__ import annotations
 import argparse
 import asyncio
 import logging
+import os
 import sys
 
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(name)s] %(levelname)s: %(message)s",
 )
+
+
+_KIND_ENV = {
+    "projects": "NOTION_DB_PROJECTS",
+    "tasks": "NOTION_DB_TASKS",
+    "clients": "NOTION_DB_CLIENTS",
+    "master": "NOTION_DB_MASTER",
+    "cashflow": "NOTION_DB_CASHFLOW",
+    "expense": "NOTION_DB_EXPENSE",
+}
+
+
+def assert_required_env(kind: str) -> None:
+    """cron 실행 전 필수 env 검증. 누락 시 0건 사일런트 성공 차단."""
+    common = ["DATABASE_URL", "NOTION_API_KEY"]
+    if kind:
+        required = common + [_KIND_ENV[kind]]
+    else:
+        # full sync_all — 모든 kind의 DB ID 필요
+        required = common + list(_KIND_ENV.values())
+    missing = [k for k in required if not os.environ.get(k)]
+    if missing:
+        raise RuntimeError(
+            f"필수 환경변수 누락: {', '.join(missing)}. "
+            "Render cron service의 Environment 탭에서 backend web service와 "
+            "동일한 값을 입력하세요."
+        )
 
 
 async def main() -> int:
@@ -35,7 +63,16 @@ async def main() -> int:
     )
     args = parser.parse_args()
 
-    # 늦은 import — 인자 파싱 실패 시 backend 모듈 로딩 비용 회피
+    # env 누락 시 즉시 fail — sync_kind가 0건 성공으로 끝나는 사일런트 실패 차단
+    if args.kind and args.kind not in _KIND_ENV:
+        print(
+            f"unknown kind: {args.kind}. allowed: {sorted(_KIND_ENV.keys())}",
+            file=sys.stderr,
+        )
+        return 2
+    assert_required_env(args.kind)
+
+    # 늦은 import — env 검증 실패 시 backend 모듈 로딩 비용 회피
     from app.services.sync import ALL_KINDS, get_sync
 
     sync = get_sync()

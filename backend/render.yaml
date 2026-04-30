@@ -36,8 +36,10 @@ services:
         sync: false
       - key: CORS_ORIGINS
         value: https://task.dyce.kr,http://localhost:3000
+      # 외부 cron service들이 sync 처리하므로 web 내부 APScheduler 영구 비활성.
+      # render.yaml에 value:로 박아 dashboard toggle이 매 빌드마다 덮어써지지 않게 고정.
       - key: SYNC_ENABLED
-        value: "true"
+        value: "false"
       - key: SYNC_INTERVAL_MINUTES
         value: "5"
       - key: CRON_SECRET
@@ -208,6 +210,40 @@ services:
         value: 3.12.7
       # 각 cron service에 backend web과 동일한 값으로 dashboard에서 입력 필요.
       # (Render Blueprint는 cron type에서 fromService env share 미지원)
+      - key: DATABASE_URL
+        sync: false
+      - key: NOTION_API_KEY
+        sync: false
+      - key: NOTION_DB_PROJECTS
+        sync: false
+      - key: NOTION_DB_TASKS
+        sync: false
+      - key: NOTION_DB_CASHFLOW
+        sync: false
+      - key: NOTION_DB_EXPENSE
+        sync: false
+      - key: NOTION_DB_CLIENTS
+        sync: false
+      - key: NOTION_DB_MASTER
+        sync: false
+
+  # ── 새벽 full reconcile (archive 정리) ──
+  # incremental 5분 cron은 변경분만 처리 — 노션에서 archive된 row를 mirror에서
+  # 정리(_mark_missing_archived)하지 않음. 매일 새벽 1회 full sync로 보강.
+  - type: cron
+    name: dy-task-sync-full
+    runtime: python
+    region: singapore
+    plan: starter
+    rootDir: backend
+    schedule: "0 18 * * *"            # UTC 18:00 = KST 03:00
+    buildCommand: |
+      pip install --upgrade pip uv
+      env -u VIRTUAL_ENV uv sync --frozen --no-dev
+    startCommand: env -u VIRTUAL_ENV uv run python -m app.scripts.sync_once --full
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.7
       - key: DATABASE_URL
         sync: false
       - key: NOTION_API_KEY

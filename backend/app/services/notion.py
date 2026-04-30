@@ -162,7 +162,7 @@ class NotionService:
         filter: dict[str, Any] | None = None,
         sorts: list[dict[str, Any]] | None = None,
     ) -> list[dict[str, Any]]:
-        """페이지네이션 자동 처리, 모든 결과 누적."""
+        """페이지네이션 자동 처리, 모든 결과 누적 (backward compat)."""
         results: list[dict[str, Any]] = []
         cursor: str | None = None
         while True:
@@ -174,6 +174,30 @@ class NotionService:
                 break
             cursor = page.get("next_cursor")
         return results
+
+    async def iter_query_pages(
+        self,
+        db_id: str,
+        *,
+        filter: dict[str, Any] | None = None,
+        sorts: list[dict[str, Any]] | None = None,
+    ):
+        """100개 단위 batch yield — sync_kind streaming용.
+
+        query_all과 달리 메모리에 전체 누적 안 함. 한 batch 받자마자 호출자가
+        upsert → 다음 batch fetch. 큰 DB(1000+ 페이지)에서 첫 반영 시간 단축.
+        """
+        cursor: str | None = None
+        while True:
+            page = await self.query_database(
+                db_id, filter=filter, sorts=sorts, start_cursor=cursor
+            )
+            results = page.get("results", []) or []
+            if results:
+                yield results
+            if not page.get("has_more"):
+                break
+            cursor = page.get("next_cursor")
 
     # ── 페이지 ──
 

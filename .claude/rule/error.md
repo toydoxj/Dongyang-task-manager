@@ -164,6 +164,23 @@
   2) `Project.from_notion_page`의 `drive_url` 추출 시 `/share/root-folder?` → `/share/folder?` 자동 정규화 — 노션에 이미 저장된 잘못된 URL도 응답 시점에 회복 (마이그레이션 스크립트 불필요)
 - 재발 방지: NAVER WORKS Drive web URL 패턴 — `share/folder`는 폴더, `share/root-folder`는 sharedrive 루트. 응답에 webUrl 키 없을 때 직접 조립할 때는 항상 folder. PoC로 실제 폴더 URL 1개 확인하면 5초
 
+### 2026-04-30 — sync 구조 후속 보강 (외부 리뷰 권장사항)
+- 컨텍스트: web worker 격리 + cron 분리 1차 적용 후 외부 코드 리뷰에서 6개 잔존 문제 지적
+- 문제·해결 묶음:
+  1) **render.yaml SYNC_ENABLED `value: "true"` 박혀있어 dashboard toggle 무력화** — `value: "false"`로 변경. 이전 error.md(2026-04-29 Render value vs sync: false) 패턴의 반대 적용 — 운영자 토글 불필요한 변수는 value로 박는 게 맞음
+  2) **full reconcile cron 누락** — incremental cron만으론 archive(`_mark_missing_archived`) 정리 안 됨. 새 cron `dy-task-sync-full` (KST 03:00) 추가
+  3) **sync_once.py env 사일런트 실패** — sync_kind는 db_id 없으면 0건 성공 처리. `assert_required_env(kind)` 추가해 cron exit 1 + 명확 메시지
+  4) **JWT_SECRET 기본값** — `change-me-in-production`이 운영 누락 시 사용. `validate_runtime_settings()` 추가, lifespan에서 즉시 RuntimeError
+  5) **lifespan init_db 무조건** — 운영은 alembic 처리. `auto_create_tables: bool = False` 추가, 운영에선 호출 skip
+  6) **query_all 전체 누적** — 큰 DB(1000+ 페이지) 시 메모리 + 첫 반영 시간 길음. `iter_query_pages` async generator 추가, sync_kind를 batch streaming(100개씩 받자마자 thread pool upsert)으로 리팩터
+- 재발 방지:
+  - render.yaml의 운영자 토글 안 하는 env는 항상 `value:`로 명시 (dashboard 덮어쓰기 회피)
+  - full reconcile은 incremental과 별개 cron으로 운영 (single point of truth 원칙)
+  - cron entrypoint(`sync_once.py`)에 필수 env 검증 — 사일런트 실패가 운영 침묵 사고로 이어짐
+  - 모든 secret default는 위험 값(`change-me-in-production` 등)으로 두고 startup 시 차단 — 운영 환경변수 누락 즉시 fail
+  - `init_db()`/Base.metadata.create_all 같은 자동 schema 생성은 dev/test 전용 토글 뒤로
+  - 대용량 외부 API → DB sync는 streaming(generator) 패턴 — 메모리 누적 + 첫 반영 시간 동시 개선
+
 ### 2026-04-30 — sync가 web worker 안에서 돌아 사용자 API가 5~22초 지연
 - 컨텍스트: 외부 cron이 `/api/cron/sync` 호출 → fire-and-forget 202 즉시 응답 + DB upsert는 thread pool 분리. 이 상태에서도 `/api/auth/status`(5초+), `/api/projects?assignee=...`(15~88초) 같은 단순 요청이 timeout/502
 - 증상: cron 5분 사이클마다 task.dyce.kr 화면이 잠깐 죽고 SWR retry 폭주

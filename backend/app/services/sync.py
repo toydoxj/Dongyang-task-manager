@@ -132,46 +132,53 @@ class NotionSyncService:
                 }
             # 가장 오래된 것부터 처리하면 부분 실패 시 since 진행 안전
             sorts = [{"timestamp": "last_edited_time", "direction": "ascending"}]
-            pages = await self.notion.query_all(db_id, filter=filt, sorts=sorts)
 
-            # SQLAlchemy 세션 작업은 sync I/O라 그대로 호출하면 event loop을 막음
-            # (200+ 페이지 upsert면 5~30초). thread pool로 분리해 다른 요청이
-            # 502/timeout 안 되도록.
-            await asyncio.to_thread(
-                self._upsert_pages_sync, kind, pages, full
-            )
+            # batch streaming — 100개씩 받아 즉시 thread pool에서 upsert.
+            # 메모리 누적 회피 + 첫 반영 시간 단축 + event loop은 batch 사이 yield.
+            total = 0
+            present_ids: set[str] = set()
+            async for batch in self.notion.iter_query_pages(
+                db_id, filter=filt, sorts=sorts
+            ):
+                total += len(batch)
+                if full:
+                    present_ids.update(p.get("id", "") for p in batch)
+                await asyncio.to_thread(
+                    self._upsert_pages_batch_sync, kind, batch
+                )
+
+            # full이면 노션에 없는 미러 row를 archive (삭제 감지)
+            if full:
+                await asyncio.to_thread(
+                    self._mark_missing_archived_sync, kind, present_ids
+                )
 
             self._record_success(
-                kind, count=len(pages), full=full, next_since=start_time
+                kind, count=total, full=full, next_since=start_time
             )
-            return len(pages)
+            return total
 
-    def _upsert_pages_sync(
+    def _upsert_pages_batch_sync(
         self,
         kind: SyncKind,
-        pages: list[dict[str, Any]],
-        full: bool,
+        batch: list[dict[str, Any]],
     ) -> None:
-        """sync_kind의 DB 쓰기 부분만 thread pool에서 실행되도록 분리.
-
-        100건 단위 commit으로 row lock 점유 시간을 짧게 유지 (/api/projects 동시
-        read 요청이 hang 안 되도록).
-        """
-        BATCH = 100
+        """batch 단위 upsert + commit. session 짧게 점유해 /api/projects 등
+        동시 read 요청이 hang 안 되도록."""
         with self.session_factory() as db:
-            for i, page in enumerate(pages, start=1):
+            for page in batch:
                 self._upsert_one(db, kind, page)
-                if i % BATCH == 0:
-                    db.commit()
             db.commit()
 
-        # full이면 노션에 없는 미러 row를 archive (삭제 감지)
-        if full:
-            with self.session_factory() as db:
-                self._mark_missing_archived(
-                    db, kind, present_ids={p.get("id", "") for p in pages}
-                )
-                db.commit()
+    def _mark_missing_archived_sync(
+        self,
+        kind: SyncKind,
+        present_ids: set[str],
+    ) -> None:
+        """full sync 시 노션에 없는 미러 row 일괄 archive."""
+        with self.session_factory() as db:
+            self._mark_missing_archived(db, kind, present_ids=present_ids)
+            db.commit()
 
     # ── 단건 write-through (라우터에서 호출) ──
 

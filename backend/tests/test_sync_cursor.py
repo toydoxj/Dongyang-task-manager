@@ -31,21 +31,26 @@ class _FakeSession:
 
 
 def _build_service(prev_since: datetime | None) -> tuple[NotionSyncService, dict]:
-    """sync_kind 의존성을 모두 mock한 NotionSyncService 인스턴스 생성."""
+    """sync_kind 의존성을 모두 mock한 NotionSyncService 인스턴스 생성.
+
+    sync_kind는 streaming(iter_query_pages) 사용 — async generator로 mock.
+    """
     captured: dict[str, Any] = {}
     notion = MagicMock()
 
-    async def _query_capture(
+    async def _iter_capture(
         db_id: str,
         *,
         filter: dict[str, Any] | None = None,
         sorts: list[dict[str, Any]] | None = None,
-    ) -> list[dict]:
+    ):
         captured["filter"] = filter
         captured["sorts"] = sorts
-        return []
+        # 비어있는 결과 — async generator라 yield 없이 종료
+        return
+        yield  # 도달 안 함, async generator 표시용
 
-    notion.query_all = _query_capture
+    notion.iter_query_pages = _iter_capture
 
     svc = NotionSyncService.__new__(NotionSyncService)
     svc.notion = notion

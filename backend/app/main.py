@@ -36,8 +36,15 @@ settings = get_settings()
 
 @asynccontextmanager
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+    from app.settings import validate_runtime_settings
+
+    # JWT_SECRET 등 위험한 default 차단 — 누락 시 즉시 startup fail
+    validate_runtime_settings()
+
     startup_task: asyncio.Task[None] | None = None
-    init_db()
+    # 운영은 alembic이 schema 처리. dev/test에서만 init_db() 자동 실행.
+    if settings.auto_create_tables:
+        init_db()
     # 노션 schema 자동 보강은 백그라운드로 실행해 헬스체크 지연을 피한다.
     async def _ensure_schemas_background() -> None:
         try:

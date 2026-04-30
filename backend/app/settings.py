@@ -21,6 +21,9 @@ class Settings(BaseSettings):
     jwt_expire_minutes: int = 43200
 
     database_url: str = "sqlite:///./data/app.db"
+    # 운영은 alembic이 schema 처리. dev/test에서만 init_db() 자동 실행.
+    # AUTO_CREATE_TABLES=true env 또는 .env로 켤 수 있음.
+    auto_create_tables: bool = False
 
     backend_host: str = "127.0.0.1"
     backend_port: int = 8000
@@ -106,3 +109,13 @@ class Settings(BaseSettings):
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:
     return Settings()
+
+
+def validate_runtime_settings() -> None:
+    """운영 시작 시 위험한 default 차단. lifespan 진입에 호출."""
+    s = get_settings()
+    if not s.jwt_secret or s.jwt_secret == "change-me-in-production":
+        raise RuntimeError(
+            "JWT_SECRET 환경변수가 설정되지 않았습니다 — "
+            "Render Environment 또는 .env에 임의의 secret 입력 필요"
+        )
