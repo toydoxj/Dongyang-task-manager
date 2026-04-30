@@ -2,7 +2,7 @@
 
 import { differenceInDays, format, parseISO } from "date-fns";
 
-import type { SealRequestItem } from "@/lib/api";
+import type { ProjectLogEntry, SealRequestItem } from "@/lib/api";
 import type { Project, Task } from "@/lib/domain";
 import { formatDate } from "@/lib/format";
 
@@ -10,6 +10,7 @@ interface Props {
   project: Project;
   tasks: Task[];
   seals?: SealRequestItem[];
+  logs?: ProjectLogEntry[];
 }
 
 const SEAL_COLOR: Record<string, string> = {
@@ -20,14 +21,25 @@ const SEAL_COLOR: Record<string, string> = {
   반려: "bg-red-500",
 };
 
+const LOG_COLOR: Record<string, string> = {
+  "담당 추가": "bg-emerald-500",
+  "담당 제거": "bg-zinc-500",
+  "완료 해제": "bg-amber-500",
+};
+
 /**
  * 단순 SVG 타임라인. (vis-timeline 의존성을 피하고 가벼움)
  * - 가로 축: 수주(시작일) → 계약기간 → 완료
  * - 현재 시점 표시
  * - 업무TASK 들의 기간(start~end)을 작은 막대로 오버레이
  */
-export default function LifecycleTimeline({ project, tasks, seals = [] }: Props) {
-  // 축 범위 결정 (날인 일자도 포함)
+export default function LifecycleTimeline({
+  project,
+  tasks,
+  seals = [],
+  logs = [],
+}: Props) {
+  // 축 범위 결정 (날인·log 일자도 포함)
   const dates = [
     project.start_date,
     project.contract_start,
@@ -40,6 +52,7 @@ export default function LifecycleTimeline({ project, tasks, seals = [] }: Props)
       s.lead_handled_at,
       s.admin_handled_at,
     ]),
+    ...logs.map((l) => l.event_at),
   ].filter((d): d is string => !!d);
 
   if (dates.length < 2) {
@@ -80,7 +93,7 @@ export default function LifecycleTimeline({ project, tasks, seals = [] }: Props)
         </p>
       </header>
 
-      <div className="relative h-32">
+      <div className="relative h-40">
         {/* 메인 축 */}
         <div className="absolute left-0 right-0 top-10 h-1 rounded-full bg-zinc-200 dark:bg-zinc-800" />
 
@@ -170,10 +183,40 @@ export default function LifecycleTimeline({ project, tasks, seals = [] }: Props)
           );
         })}
 
+        {/* log 트랙 (메인 축 더 아래) — 담당 추가/제거/완료 해제 등 이벤트 */}
+        {logs.map((l) => {
+          const r = ratio(l.event_at);
+          if (r == null) return null;
+          const colorCls = LOG_COLOR[l.action] ?? "bg-purple-500";
+          return (
+            <div
+              key={l.id}
+              className={`group absolute top-24 h-2 w-2 -translate-x-1/2 rounded-full ${colorCls} opacity-90 hover:scale-150`}
+              style={{ left: `${r * 100}%` }}
+            >
+              <Tooltip>
+                <p className="font-medium">📋 {l.action || "이벤트"}</p>
+                <p className="text-[10px] text-zinc-300">
+                  {l.title || "(제목 없음)"}
+                </p>
+                <p className="text-[10px] text-zinc-300">
+                  {formatDate(l.event_at)}
+                  {l.target && ` · 대상: ${l.target}`}
+                </p>
+                {l.actor && (
+                  <p className="text-[10px] text-zinc-300">
+                    변경자: {l.actor}
+                  </p>
+                )}
+              </Tooltip>
+            </div>
+          );
+        })}
+
         {/* 현재 */}
         {nowR != null && nowR > 0 && nowR < 1 && (
           <div
-            className="absolute top-7 h-12 w-0.5 -translate-x-1/2 bg-red-500"
+            className="absolute top-7 h-20 w-0.5 -translate-x-1/2 bg-red-500"
             style={{ left: `${nowR * 100}%` }}
           >
             <span className="absolute -top-5 left-1/2 -translate-x-1/2 whitespace-nowrap rounded bg-red-500 px-1.5 py-0.5 text-[9px] text-white">
@@ -210,6 +253,15 @@ export default function LifecycleTimeline({ project, tasks, seals = [] }: Props)
           <Legend color="bg-emerald-600" label="완료" />
           <Legend color="bg-red-500" label="반려" />
           <span className="ml-auto">{seals.length}건</span>
+        </div>
+      )}
+      {logs.length > 0 && (
+        <div className="mt-1 flex flex-wrap gap-2 text-[10px] text-zinc-500">
+          <span>📋 이벤트:</span>
+          <Legend color="bg-emerald-500" label="담당 추가" />
+          <Legend color="bg-zinc-500" label="담당 제거" />
+          <Legend color="bg-amber-500" label="완료 해제" />
+          <span className="ml-auto">{logs.length}건</span>
         </div>
       )}
     </div>

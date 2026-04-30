@@ -14,7 +14,7 @@ import TaskKanban from "@/components/project/TaskKanban";
 import LoadingState from "@/components/ui/LoadingState";
 import useSWR from "swr";
 
-import { listSealRequests } from "@/lib/api";
+import { getProjectLog, listSealRequests } from "@/lib/api";
 import { keys, useCashflow, useProject, useTasks } from "@/lib/hooks";
 
 export default function ProjectClient({ id }: { id: string }) {
@@ -52,6 +52,10 @@ export default function ProjectClient({ id }: { id: string }) {
     listSealRequests({ projectId: id }),
   );
   const seals = sealsData?.items ?? [];
+  const { data: logData } = useSWR(["project-log", id], () =>
+    getProjectLog(id),
+  );
+  const logs = logData?.items ?? [];
 
   const error = projectErr ?? tasksErr ?? cashflowErr;
   const tasks = tasksData?.items;
@@ -122,7 +126,12 @@ export default function ProjectClient({ id }: { id: string }) {
       </div>
 
       <ProjectHeader project={project} />
-      <LifecycleTimeline project={project} tasks={tasks} seals={seals} />
+      <LifecycleTimeline
+        project={project}
+        tasks={tasks}
+        seals={seals}
+        logs={logs}
+      />
 
       <TaskKanban tasks={tasks} onChanged={refreshTasks} onCreate={openCreate} />
 

@@ -121,6 +121,27 @@ export async function syncProjectStage(pageId: string): Promise<Project> {
   return jsonOrThrow<Project>(res);
 }
 
+export interface ProjectLogEntry {
+  id: string;
+  event_at: string;
+  title: string;
+  action: string;
+  target: string;
+  actor: string;
+}
+
+export interface ProjectLogResponse {
+  items: ProjectLogEntry[];
+  count: number;
+}
+
+export async function getProjectLog(
+  pageId: string,
+): Promise<ProjectLogResponse> {
+  const res = await authFetch(`/api/projects/${pageId}/log`);
+  return jsonOrThrow<ProjectLogResponse>(res);
+}
+
 export async function setProjectStage(
   pageId: string,
   stage: string,

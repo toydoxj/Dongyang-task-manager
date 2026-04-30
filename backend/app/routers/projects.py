@@ -473,6 +473,59 @@ async def unassign_me(
     return project
 
 
+# ── 프로젝트 변경 이력(assign log) 조회 ──
+
+
+class ProjectLogEntry(BaseModel):
+    id: str
+    event_at: str  # ISO datetime (노션 created_time)
+    title: str
+    action: str
+    target: str
+    actor: str
+
+
+class ProjectLogResponse(BaseModel):
+    items: list[ProjectLogEntry]
+    count: int
+
+
+@router.get("/{page_id}/log", response_model=ProjectLogResponse)
+async def get_project_log(
+    page_id: str,
+    _user: User = Depends(get_current_user),
+    notion: NotionService = Depends(get_notion),
+) -> ProjectLogResponse:
+    """assign log DB에서 그 프로젝트와 관련된 이벤트 시간순 반환."""
+    db_id = get_settings().notion_db_assign_log
+    if not db_id:
+        return ProjectLogResponse(items=[], count=0)
+    filt = {
+        "property": "프로젝트",
+        "relation": {"contains": page_id},
+    }
+    sorts = [{"timestamp": "created_time", "direction": "ascending"}]
+    try:
+        pages = await notion.query_all(db_id, filter=filt, sorts=sorts)
+    except Exception:  # noqa: BLE001
+        logger.exception("assign log 조회 실패 page_id=%s", page_id)
+        return ProjectLogResponse(items=[], count=0)
+    items: list[ProjectLogEntry] = []
+    for p in pages:
+        props = p.get("properties", {})
+        items.append(
+            ProjectLogEntry(
+                id=p.get("id", ""),
+                event_at=p.get("created_time", ""),
+                title=P.title(props, "이벤트"),
+                action=P.select_name(props, "작업"),
+                target=P.rich_text(props, "대상 담당자"),
+                actor=P.rich_text(props, "변경자"),
+            )
+        )
+    return ProjectLogResponse(items=items, count=len(items))
+
+
 # ── 진행단계 자동 sync (mirror_tasks 기반으로 N+1 제거) ──
 
 
