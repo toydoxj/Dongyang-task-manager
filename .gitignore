@@ -21,7 +21,8 @@ htmlcov/
 
 # uv
 .python-version
-uv.lock
+# uv.lock은 reproducible build를 위해 commit (Render cron container 등 fresh
+# 환경이 같은 의존성 사용하도록). 보통 표준 권장도 commit.
 
 # ==========================================
 # Node / Next.js / Electron
