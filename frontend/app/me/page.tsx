@@ -89,10 +89,13 @@ export default function MyPage() {
     );
   };
 
-  /** 본인 담당 해제 시: SWR 캐시에서 그 프로젝트를 즉시 제거 + 모든 projects 캐시 revalidate */
+  /** 본인 담당 해제 시: 현재 list에서 즉시 제거 + 다른 캐시는 invalidate만 */
   const handleUnassigned = (projectId: string): void => {
     if (!effectiveName) return;
-    // (1) 현재 보고있는 list에서 즉시 제거 (optimistic)
+    // (1) 현재 list에서 optimistic 제거. revalidate=false — backend 재호출이
+    //     stale 응답을 돌려보내 그 프로젝트가 다시 나타나는 race를 방지.
+    //     unassignMe 호출이 mirror upsert까지 마치고 응답하므로 backend는
+    //     최신 상태이지만, SWR의 dedupingInterval/inflight 충돌 가능.
     void mutate<ProjectListResponse>(
       keys.projects(fetchFilters),
       (old) =>
@@ -103,17 +106,16 @@ export default function MyPage() {
               count: Math.max(0, old.count - 1),
             }
           : old,
-      { revalidate: true },
+      { revalidate: false },
     );
-    // (2) 다른 곳에서 본 projects 캐시(진행중/검색 등)도 무효화
+    // (2) 다른 페이지 캐시는 invalidate만 — 다른 페이지 진입 시 자동 fetch
     void mutate(
       (key) =>
         Array.isArray(key) &&
         key[0] === "projects" &&
-        // 현재 list는 이미 위에서 처리했으므로 중복 revalidate 회피
         JSON.stringify(key[1]) !== JSON.stringify(fetchFilters ?? null),
       undefined,
-      { revalidate: true },
+      { revalidate: false },
     );
   };
 
