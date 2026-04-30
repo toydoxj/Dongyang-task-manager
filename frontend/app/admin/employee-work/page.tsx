@@ -35,7 +35,6 @@ export default function EmployeeWorkSelectorPage() {
   const employees = useMemo(() => {
     let items = data?.items ?? [];
     if (myTeam !== null) {
-      // team_lead: 본인 팀만
       items = items.filter((e) => e.team === myTeam);
     }
     if (!q) return items;
@@ -47,6 +46,61 @@ export default function EmployeeWorkSelectorPage() {
         (e.position ?? "").toLowerCase().includes(lower),
     );
   }, [data, q, myTeam]);
+
+  // 팀 표시 순서 (본부 → 관리 → 진단 → 구조1~4 → 그 외)
+  const TEAM_ORDER = [
+    "본부",
+    "관리팀",
+    "진단팀",
+    "구조1팀",
+    "구조2팀",
+    "구조3팀",
+    "구조4팀",
+  ];
+  // 직급 정렬 순서 (높은 순)
+  const POSITION_ORDER = [
+    "사장",
+    "부사장",
+    "전무",
+    "상무",
+    "이사",
+    "실장",
+    "차장",
+    "과장",
+    "대리",
+    "기사",
+    "사원",
+  ];
+  const teamOrder = (t: string): number => {
+    const idx = TEAM_ORDER.indexOf(t);
+    return idx === -1 ? TEAM_ORDER.length : idx;
+  };
+  const positionOrder = (p: string): number => {
+    const idx = POSITION_ORDER.indexOf(p);
+    return idx === -1 ? POSITION_ORDER.length : idx;
+  };
+
+  // 팀별 그룹핑 + 직급순 정렬
+  const grouped = useMemo(() => {
+    const map = new Map<string, typeof employees>();
+    for (const e of employees) {
+      const team = e.team || "기타";
+      if (!map.has(team)) map.set(team, []);
+      map.get(team)!.push(e);
+    }
+    // 각 팀 내부 — 직급 순 → 이름 순
+    for (const arr of map.values()) {
+      arr.sort((a, b) => {
+        const dp = positionOrder(a.position) - positionOrder(b.position);
+        if (dp !== 0) return dp;
+        return a.name.localeCompare(b.name, "ko");
+      });
+    }
+    // 팀 정렬
+    return Array.from(map.entries()).sort(
+      ([a], [b]) => teamOrder(a) - teamOrder(b),
+    );
+  }, [employees]);
 
   if (!user || !allowed) return null;
 
@@ -88,29 +142,41 @@ export default function EmployeeWorkSelectorPage() {
       {isLoading && !data ? (
         <LoadingState message="직원 명부 불러오는 중" height="h-32" />
       ) : (
-        <ul className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
-          {employees.map((e) => (
-            <li key={e.id}>
-              <Link
-                href={`/me?as=${encodeURIComponent(e.name)}`}
-                className={cn(
-                  "block rounded-lg border border-zinc-200 bg-white px-3 py-2.5 text-sm transition-colors hover:bg-zinc-50",
-                  "dark:border-zinc-800 dark:bg-zinc-900 dark:hover:bg-zinc-800",
-                )}
-              >
-                <p className="font-medium">{e.name}</p>
-                <p className="mt-0.5 text-[11px] text-zinc-500">
-                  {[e.team, e.position].filter(Boolean).join(" · ") || "—"}
-                </p>
-              </Link>
-            </li>
+        <div className="space-y-5">
+          {grouped.map(([team, members]) => (
+            <section key={team}>
+              <h2 className="mb-2 flex items-baseline gap-2 text-sm font-semibold text-zinc-700 dark:text-zinc-300">
+                {team}
+                <span className="text-[10px] font-normal text-zinc-500">
+                  {members.length}명
+                </span>
+              </h2>
+              <ul className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                {members.map((e) => (
+                  <li key={e.id}>
+                    <Link
+                      href={`/me?as=${encodeURIComponent(e.name)}`}
+                      className={cn(
+                        "block rounded-lg border border-zinc-200 bg-white px-3 py-2.5 text-sm transition-colors hover:bg-zinc-50",
+                        "dark:border-zinc-800 dark:bg-zinc-900 dark:hover:bg-zinc-800",
+                      )}
+                    >
+                      <p className="font-medium">{e.name}</p>
+                      <p className="mt-0.5 text-[11px] text-zinc-500">
+                        {[e.team, e.position].filter(Boolean).join(" · ") || "—"}
+                      </p>
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            </section>
           ))}
-          {employees.length === 0 && data && (
-            <li className="col-span-full text-center text-xs text-zinc-500">
+          {grouped.length === 0 && data && (
+            <p className="text-center text-xs text-zinc-500">
               {q ? "검색 결과가 없습니다" : "활성 직원이 없습니다"}
-            </li>
+            </p>
           )}
-        </ul>
+        </div>
       )}
     </div>
   );
