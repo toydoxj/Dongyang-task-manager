@@ -63,7 +63,9 @@ async def list_tasks(
 
         stmt = stmt.where(
             or_(
-                M.MirrorTask.category.in_(["외근", "출장", "휴가"]),
+                M.MirrorTask.category.in_(
+                    ["외근", "출장", "휴가", "휴가(연차)"]
+                ),
                 M.MirrorTask.activity.in_(["외근", "출장"]),
             )
         )

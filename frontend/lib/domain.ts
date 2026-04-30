@@ -310,6 +310,7 @@ export interface TaskUpdateRequest {
   assignees?: string[];
   teams?: string[];
   note?: string;
+  project_ids?: string[];
 }
 
 export interface CashflowEntry {
@@ -359,20 +360,20 @@ export const TASK_DIFFICULTIES = [
   "매우낮음",
 ] as const;
 
+// 새 분류 체계 — 외근/출장은 활동(activity)으로만, 휴가는 휴가(연차) 1개로 통합
 export const TASK_CATEGORIES = [
   "프로젝트",
+  "영업(서비스)",
   "개인업무",
   "사내잡무",
   "교육",
-  "서비스",
-  "외근",
-  "출장",
-  "휴가",
+  "휴가(연차)",
 ] as const;
 export type TaskCategory = (typeof TASK_CATEGORIES)[number];
 
-/** 시간(시:분)까지 지정해야 하는 일정 분류. */
-export const TIME_BASED_CATEGORIES: readonly string[] = ["외근", "출장", "휴가"];
+/** 시간(시:분)까지 지정해야 하는 일정 분류. 휴가/연차는 종일 처리라 분류는 모두 date-only.
+ * 시간 기반은 활동(외근/출장)에서만 결정. */
+export const TIME_BASED_CATEGORIES: readonly string[] = [];
 
 /** 활동 유형 — 분류와 독립. 프로젝트 task의 외근/출장 표시용. */
 export const ACTIVITY_TYPES = ["사무실", "외근", "출장"] as const;
@@ -389,16 +390,16 @@ export function isTimeBasedTask(category?: string, activity?: string): boolean {
   );
 }
 
-/** /me 일정 카드에 표시되어야 할 task인지 — 분류=외근/출장/휴가 OR 활동=외근/출장 */
+/** /me 일정 카드에 표시되어야 할 task인지 — 분류=외근/출장/휴가/휴가(연차) OR 활동=외근/출장 */
 export function isScheduleTask(category?: string, activity?: string): boolean {
   return (
-    (category != null && TIME_BASED_CATEGORIES.includes(category)) ||
+    (category != null && SCHEDULE_CATEGORIES.includes(category as never)) ||
     (activity != null && TIME_BASED_ACTIVITIES.includes(activity))
   );
 }
 
-/** 일정 카드(외근/출장/휴가)에 표시할 분류. */
-export const SCHEDULE_CATEGORIES = ["외근", "출장", "휴가"] as const;
+/** 일정 카드(외근/출장/휴가)에 표시할 분류. 옛 표기와 새 표기 모두 호환. */
+export const SCHEDULE_CATEGORIES = ["외근", "출장", "휴가", "휴가(연차)"] as const;
 
 /** 기타 업무(프로젝트도 일정도 아닌)에 묶을 분류. */
 export const NON_PROJECT_WORK_CATEGORIES = [

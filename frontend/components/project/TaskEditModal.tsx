@@ -13,6 +13,7 @@ import {
   TASK_PRIORITIES,
   TASK_STATUSES,
 } from "@/lib/domain";
+import { useProjects } from "@/lib/hooks";
 
 interface Props {
   task: Task | null;
@@ -59,9 +60,16 @@ function Form({
   const [activity, setActivity] = useState(task.activity ?? "");
   const [assignees, setAssignees] = useState(task.assignees.join(", "));
   const [note, setNote] = useState(task.note ?? "");
+  const [projectId, setProjectId] = useState(task.project_ids[0] ?? "");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const isTimeBased = isTimeBasedTask(category, activity);
+  // 분류=프로젝트일 때만 dropdown 노출 — 분류 변경에 lazy fetch
+  const { data: projectsData } = useProjects(
+    undefined,
+    category === "프로젝트",
+  );
+  const projects = projectsData?.items ?? [];
 
   const syncDateTimeFormat = (wasTime: boolean, nowTime: boolean): void => {
     if (wasTime === nowTime) return;
@@ -102,6 +110,17 @@ function Form({
       const wasDifficulty = task.difficulty ?? "";
       const wasCategory = task.category ?? "";
       const wasActivity = task.activity ?? "";
+      const wasProjectId = task.project_ids[0] ?? "";
+      // 분류=프로젝트면 project_ids 동기화. 분류가 프로젝트가 아니면 비우기.
+      let projectIdsParam: string[] | undefined;
+      if (category === "프로젝트") {
+        if (projectId !== wasProjectId) {
+          projectIdsParam = projectId ? [projectId] : [];
+        }
+      } else if (wasProjectId) {
+        // 분류가 프로젝트에서 다른 것으로 바뀌었으면 relation 비우기
+        projectIdsParam = [];
+      }
       await updateTask(task.id, {
         title,
         status,
@@ -117,6 +136,7 @@ function Form({
           .map((s) => s.trim())
           .filter(Boolean),
         note,
+        project_ids: projectIdsParam,
       });
       onSaved();
       onClose();
@@ -218,6 +238,24 @@ function Form({
             </select>
           </Field>
         </div>
+
+        {category === "프로젝트" && (
+          <Field label="프로젝트">
+            <select
+              value={projectId}
+              onChange={(e) => setProjectId(e.target.value)}
+              className={inputCls}
+            >
+              <option value="">— 선택</option>
+              {projects.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.code ? `[${p.code}] ` : ""}
+                  {p.name || "(제목 없음)"}
+                </option>
+              ))}
+            </select>
+          </Field>
+        )}
 
         <Field label="난이도">
           <select

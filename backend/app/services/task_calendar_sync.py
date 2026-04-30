@@ -32,7 +32,7 @@ logger = logging.getLogger("task.calendar")
 
 KST = timezone(timedelta(hours=9))
 
-_SCHEDULE_CATEGORIES = {"외근", "출장", "휴가"}
+_SCHEDULE_CATEGORIES = {"외근", "출장", "휴가", "휴가(연차)"}
 _SCHEDULE_ACTIVITIES = {"외근", "출장"}
 
 

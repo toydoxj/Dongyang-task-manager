@@ -91,6 +91,8 @@ class TaskUpdateRequest(BaseModel):
     assignees: list[str] | None = None
     teams: list[str] | None = None
     note: str | None = None
+    # 프로젝트 relation 변경 — 빈 list면 비우기, None이면 변경 안 함
+    project_ids: list[str] | None = None
 
 
 class TaskListResponse(BaseModel):
@@ -261,4 +263,6 @@ def task_update_to_props(req: TaskUpdateRequest) -> dict[str, Any]:
         props["담당팀"] = _multi_select(req.teams)
     if req.note is not None:
         props["비고"] = _rich_text(req.note)
+    if req.project_ids is not None:
+        props["프로젝트"] = _relation(req.project_ids)
     return props

@@ -248,6 +248,14 @@ export default function SchedulePage() {
         .schedule-calendar .fc-day-sat .fc-daygrid-day-number { color: #2563eb; }
         .schedule-calendar .fc-day-sun .fc-col-header-cell-cushion,
         .schedule-calendar .fc-day-sun .fc-daygrid-day-number { color: #dc2626; }
+        /* 오늘 — 강조는 날짜 숫자만 bold */
+        .schedule-calendar .fc-day-today { background: transparent !important; }
+        .schedule-calendar .fc-day-today .fc-daygrid-day-number { font-weight: 800; color: #0f172a; }
+        @media (prefers-color-scheme: dark) {
+          .schedule-calendar .fc-day-today .fc-daygrid-day-number { color: #f4f4f5; }
+        }
+        /* 월 view 칸 높이 — default 약 5em → 1.5배 */
+        .schedule-calendar .fc-daygrid-day-frame { min-height: 7.5em; padding: 2px; }
         .schedule-calendar .fc-event {
           border: none;
           border-left: 3px solid currentColor;
