@@ -26,13 +26,9 @@ const NAV: NavItem[] = [
     label: "직원 업무",
     roles: ["admin", "team_lead"],
   },
-  // 직원 일정은 NAVER WORKS Calendar 공유 캘린더로 이동 (단방향 동기화).
-  // 등록·수정은 그대로 task.dyce.kr에서, 보기·알림은 NAVER WORKS Calendar에서.
-  {
-    href: "https://calendar.worksmobile.com/",
-    label: "직원 일정",
-    external: true,
-  },
+  // 직원 일정은 task.dyce.kr 내부 FullCalendar에서 보기. 등록은 grid에서.
+  // NAVER WORKS Calendar 공유 캘린더에는 backend가 단방향 자동 동기화.
+  { href: "/schedule", label: "직원 일정" },
   { href: "/suggestions", label: "건의사항" },
   { href: "/seal-requests", label: "날인요청" },
   { href: "/utilities", label: "유틸 런처" },
