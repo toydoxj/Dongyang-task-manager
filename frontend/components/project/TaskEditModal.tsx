@@ -64,12 +64,16 @@ function Form({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const isTimeBased = isTimeBasedTask(category, activity);
-  // 분류=프로젝트일 때만 dropdown 노출 — 분류 변경에 lazy fetch
+  // 분류=프로젝트일 때만 fetch — ProjectImportModal과 동일 패턴(진행중만, 47건 정도)
   const { data: projectsData } = useProjects(
-    undefined,
+    { stage: "진행중" },
     category === "프로젝트",
   );
   const projects = projectsData?.items ?? [];
+  // 현재 task가 이미 다른 단계의 프로젝트를 가리키면 dropdown에서 사라지지 않도록
+  // 그 항목을 fallback으로 보여주는 라벨 (id만으로 표시)
+  const wasProjectId = task.project_ids[0] ?? "";
+  const wasProjectInList = projects.some((p) => p.id === wasProjectId);
 
   const syncDateTimeFormat = (wasTime: boolean, nowTime: boolean): void => {
     if (wasTime === nowTime) return;
@@ -246,7 +250,15 @@ function Form({
               onChange={(e) => setProjectId(e.target.value)}
               className={inputCls}
             >
-              <option value="">— 선택</option>
+              <option value="">
+                {projectsData ? "— 선택 (진행중)" : "프로젝트 불러오는 중…"}
+              </option>
+              {/* 진행중에 없는 옛 프로젝트는 별도 표시 (이전 선택 보존용) */}
+              {wasProjectId && !wasProjectInList && (
+                <option value={wasProjectId}>
+                  (현재 선택 — 진행중 외 프로젝트)
+                </option>
+              )}
               {projects.map((p) => (
                 <option key={p.id} value={p.id}>
                   {p.code ? `[${p.code}] ` : ""}
@@ -254,6 +266,9 @@ function Form({
                 </option>
               ))}
             </select>
+            <p className="mt-1 text-[10px] text-zinc-500">
+              진행중 프로젝트만 표시됩니다.
+            </p>
           </Field>
         )}
 
