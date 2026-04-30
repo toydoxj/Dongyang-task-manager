@@ -10,24 +10,31 @@ PoC 검증 완료 후 P1 본격 작업의 인프라.
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from fastapi import APIRouter, Body, Depends, HTTPException
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
-from app.db import get_db
+from app.db import SessionLocal, get_db
+from app.models import mirror as M
 from app.models.auth import User
 from app.models.employee import Employee
 from app.security import require_admin
-from app.services import sso_calendar
+from app.services import sso_calendar, task_calendar_sync
+from app.services.mirror_dto import task_from_mirror
 from app.settings import get_settings
 
 logger = logging.getLogger("admin.calendar")
 router = APIRouter(prefix="/admin/calendar", tags=["admin-calendar"])
+
+# fire-and-forget background task GC 방어 (asyncio.create_task가 GC되면 mid-execution 끊김)
+_bg_tasks: set[asyncio.Task[None]] = set()
+_running_backfill = False
 
 
 class CreateSharedRequest(BaseModel):
@@ -219,3 +226,78 @@ async def test_event(
     return TestEventResponse(
         target_user_id=target_user_id, event_id=event_id, raw=resp
     )
+
+
+# ── 기존 task 일괄 동기화 (P2 backfill) ──
+
+
+class BackfillResponse(BaseModel):
+    status: str  # started / already_running
+    candidate_count: int  # backfill 대상 task 수
+
+
+def _list_schedule_tasks_from_mirror() -> list[Any]:
+    """mirror_tasks에서 schedule(외근/출장/휴가) task만 골라 Task DTO로 반환."""
+    with SessionLocal() as db:
+        rows = (
+            db.execute(
+                select(M.MirrorTask)
+                .where(M.MirrorTask.archived.is_(False))
+                .where(
+                    or_(
+                        M.MirrorTask.category.in_(["외근", "출장", "휴가"]),
+                        M.MirrorTask.activity.in_(["외근", "출장"]),
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        return [task_from_mirror(r) for r in rows]
+
+
+async def _run_backfill_in_bg() -> None:
+    global _running_backfill
+    bf_logger = logging.getLogger("admin.calendar.backfill")
+    success = 0
+    failed = 0
+    try:
+        tasks = _list_schedule_tasks_from_mirror()
+        bf_logger.info("backfill 시작: %d 건", len(tasks))
+        for task in tasks:
+            try:
+                await task_calendar_sync.sync_task(task)
+                success += 1
+            except Exception:  # noqa: BLE001
+                bf_logger.exception("backfill 실패 task=%s", task.id)
+                failed += 1
+        bf_logger.info(
+            "backfill done: success=%d, failed=%d, total=%d",
+            success,
+            failed,
+            len(tasks),
+        )
+    finally:
+        _running_backfill = False
+
+
+@router.post("/backfill", response_model=BackfillResponse, status_code=202)
+async def backfill(
+    _admin: User = Depends(require_admin),
+) -> BackfillResponse:
+    """기존 노션 schedule task들을 일괄 calendar 동기화.
+
+    fire-and-forget — 응답 즉시 202, 진행은 background. 결과는 Render Logs(`admin.calendar.backfill`)에서 확인.
+    중복 호출 방지: 진행 중이면 already_running.
+    """
+    global _running_backfill
+    candidates = _list_schedule_tasks_from_mirror()
+    if _running_backfill:
+        return BackfillResponse(
+            status="already_running", candidate_count=len(candidates)
+        )
+    _running_backfill = True
+    task = asyncio.create_task(_run_backfill_in_bg())
+    _bg_tasks.add(task)
+    task.add_done_callback(_bg_tasks.discard)
+    return BackfillResponse(status="started", candidate_count=len(candidates))
