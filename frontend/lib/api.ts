@@ -399,6 +399,17 @@ export async function uploadEmployees(
   return jsonOrThrow<EmployeeImportResult>(res);
 }
 
+export async function reorderEmployees(
+  items: Array<{ id: number; sort_order: number }>,
+): Promise<{ updated: number }> {
+  const res = await authFetch(`/api/admin/employees/reorder`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ items }),
+  });
+  return jsonOrThrow<{ updated: number }>(res);
+}
+
 export async function deleteMasterImage(
   pageId: string,
   blockId: string,

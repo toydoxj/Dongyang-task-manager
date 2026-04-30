@@ -23,6 +23,9 @@ class Employee(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     name: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    # 사용자가 admin UI 드래그로 지정한 정렬 순서 (작은 값 먼저). default 0.
+    # 같은 값이면 이름순 fallback.
+    sort_order: Mapped[int] = mapped_column(Integer, default=0, nullable=False, index=True)
     position: Mapped[str] = mapped_column(String, default="")  # 직급
     team: Mapped[str] = mapped_column(String, default="")  # 소속(부서/팀)
     degree: Mapped[str] = mapped_column(String, default="")
@@ -53,6 +56,7 @@ class EmployeeOut(BaseModel):
 
     id: int
     name: str
+    sort_order: int = 0
     position: str = ""
     team: str = ""
     degree: str = ""

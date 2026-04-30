@@ -1,6 +1,21 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import {
+  closestCenter,
+  DndContext,
+  type DragEndEvent,
+  PointerSensor,
+  useSensor,
+  useSensors,
+} from "@dnd-kit/core";
+import {
+  arrayMove,
+  SortableContext,
+  useSortable,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
+import { useEffect, useMemo, useRef, useState } from "react";
 import useSWR from "swr";
 
 import { useAuth } from "@/components/AuthGuard";
@@ -8,6 +23,7 @@ import {
   createEmployee,
   deleteEmployee,
   listEmployees,
+  reorderEmployees,
   resignEmployee,
   restoreEmployee,
   updateEmployee,
@@ -100,6 +116,38 @@ export default function EmployeesAdminPage() {
     }
   }
 
+  // DnD — active view + 검색 없음일 때만 활성화 (퇴사자/검색 결과는 정렬 의미 없음)
+  const dndEnabled = view === "active" && !debouncedQ;
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+  );
+  const items = data?.items ?? [];
+  const itemIds = useMemo(() => items.map((e) => e.id), [items]);
+  // optimistic: 드래그 중에 list 표시 순서 보존
+  const [localOrder, setLocalOrder] = useState<Employee[] | null>(null);
+  const displayItems = localOrder ?? items;
+
+  async function handleDragEnd(e: DragEndEvent) {
+    if (!dndEnabled) return;
+    const { active, over } = e;
+    if (!over || active.id === over.id) return;
+    const oldIdx = items.findIndex((it) => it.id === Number(active.id));
+    const newIdx = items.findIndex((it) => it.id === Number(over.id));
+    if (oldIdx < 0 || newIdx < 0) return;
+    const moved = arrayMove(items, oldIdx, newIdx);
+    setLocalOrder(moved);
+    try {
+      await reorderEmployees(
+        moved.map((emp, idx) => ({ id: emp.id, sort_order: idx })),
+      );
+      await mutate();
+      setLocalOrder(null);
+    } catch (err) {
+      setErrMsg(err instanceof Error ? err.message : "정렬 저장 실패");
+      setLocalOrder(null);
+    }
+  }
+
   return (
     <main className="space-y-4 p-6">
       <header className="flex flex-wrap items-center justify-between gap-3">
@@ -188,74 +236,98 @@ export default function EmployeesAdminPage() {
       )}
 
       <div className="overflow-x-auto rounded-md border border-zinc-200 dark:border-zinc-800">
-        <table className="w-full text-sm">
-          <thead className="bg-zinc-50 text-left text-xs text-zinc-500 dark:bg-zinc-900">
-            <tr>
-              <th className="px-3 py-2">이름</th>
-              <th className="px-3 py-2">직급</th>
-              <th className="px-3 py-2">소속</th>
-              <th className="px-3 py-2">학위</th>
-              <th className="px-3 py-2">자격</th>
-              <th className="px-3 py-2">등급</th>
-              <th className="px-3 py-2">이메일</th>
-              <th className="px-3 py-2">계정</th>
-              <th className="px-3 py-2">퇴사일</th>
-              <th className="px-3 py-2 text-right">관리</th>
-            </tr>
-          </thead>
-          <tbody>
-            {adding && (
-              <NewRow
-                onSaved={async () => {
-                  setAdding(false);
-                  await mutate();
-                }}
-                onCancel={() => setAdding(false)}
-                onError={setErrMsg}
-              />
-            )}
-            {isLoading && !data && (
+        <DndContext
+          sensors={sensors}
+          collisionDetection={closestCenter}
+          onDragEnd={handleDragEnd}
+        >
+          <table className="w-full text-sm">
+            <thead className="bg-zinc-50 text-left text-xs text-zinc-500 dark:bg-zinc-900">
               <tr>
-                <td colSpan={10} className="px-3 py-8 text-center text-xs text-zinc-500">
-                  불러오는 중…
-                </td>
+                <th className="w-8 px-2 py-2"></th>
+                <th className="px-3 py-2">이름</th>
+                <th className="px-3 py-2">직급</th>
+                <th className="px-3 py-2">소속</th>
+                <th className="px-3 py-2">학위</th>
+                <th className="px-3 py-2">자격</th>
+                <th className="px-3 py-2">등급</th>
+                <th className="px-3 py-2">이메일</th>
+                <th className="px-3 py-2">계정</th>
+                <th className="px-3 py-2">퇴사일</th>
+                <th className="px-3 py-2 text-right">관리</th>
               </tr>
-            )}
-            {data?.items.map((emp) =>
-              editId === emp.id ? (
-                <EditRow
-                  key={emp.id}
-                  emp={emp}
+            </thead>
+            <tbody>
+              {adding && (
+                <NewRow
                   onSaved={async () => {
-                    setEditId(null);
+                    setAdding(false);
                     await mutate();
                   }}
-                  onCancel={() => setEditId(null)}
+                  onCancel={() => setAdding(false)}
                   onError={setErrMsg}
                 />
-              ) : (
-                <ViewRow
-                  key={emp.id}
-                  emp={emp}
-                  onEdit={() => setEditId(emp.id)}
-                  onDelete={() => void onDelete(emp.id)}
-                  onResign={() => void onResign(emp.id)}
-                  onRestore={() => void onRestore(emp.id)}
-                />
-              ),
-            )}
-            {data && data.items.length === 0 && (
-              <tr>
-                <td colSpan={10} className="px-3 py-8 text-center text-xs text-zinc-500">
-                  {view === "resigned"
-                    ? "퇴사자 없음"
-                    : "직원이 없습니다. 우상단 \"엑셀 업로드\"로 일괄 등록하세요."}
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
+              )}
+              {isLoading && !data && (
+                <tr>
+                  <td
+                    colSpan={11}
+                    className="px-3 py-8 text-center text-xs text-zinc-500"
+                  >
+                    불러오는 중…
+                  </td>
+                </tr>
+              )}
+              <SortableContext
+                items={itemIds}
+                strategy={verticalListSortingStrategy}
+              >
+                {displayItems.map((emp) =>
+                  editId === emp.id ? (
+                    <EditRow
+                      key={emp.id}
+                      emp={emp}
+                      onSaved={async () => {
+                        setEditId(null);
+                        await mutate();
+                      }}
+                      onCancel={() => setEditId(null)}
+                      onError={setErrMsg}
+                    />
+                  ) : (
+                    <SortableRow
+                      key={emp.id}
+                      emp={emp}
+                      dndEnabled={dndEnabled}
+                      onEdit={() => setEditId(emp.id)}
+                      onDelete={() => void onDelete(emp.id)}
+                      onResign={() => void onResign(emp.id)}
+                      onRestore={() => void onRestore(emp.id)}
+                    />
+                  ),
+                )}
+              </SortableContext>
+              {data && data.items.length === 0 && (
+                <tr>
+                  <td
+                    colSpan={11}
+                    className="px-3 py-8 text-center text-xs text-zinc-500"
+                  >
+                    {view === "resigned"
+                      ? "퇴사자 없음"
+                      : "직원이 없습니다. 우상단 \"엑셀 업로드\"로 일괄 등록하세요."}
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </DndContext>
       </div>
+      {dndEnabled && data && data.items.length > 1 && (
+        <p className="text-[11px] text-zinc-500">
+          ⋮⋮ 핸들을 드래그해 순서를 변경할 수 있습니다.
+        </p>
+      )}
 
       {data && (
         <p className="text-xs text-zinc-500">총 {data.count}명</p>
@@ -268,27 +340,52 @@ const cellCls = "px-3 py-2 align-top";
 const inputCls =
   "w-full rounded border border-zinc-300 bg-white px-2 py-1 text-xs dark:border-zinc-700 dark:bg-zinc-950";
 
-function ViewRow({
+function SortableRow({
   emp,
+  dndEnabled,
   onEdit,
   onDelete,
   onResign,
   onRestore,
 }: {
   emp: Employee;
+  dndEnabled: boolean;
   onEdit: () => void;
   onDelete: () => void;
   onResign: () => void;
   onRestore: () => void;
 }) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
+    useSortable({ id: emp.id, disabled: !dndEnabled });
+  const style: React.CSSProperties = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+  };
   const resigned = !!emp.resigned_at;
   return (
     <tr
+      ref={setNodeRef}
+      style={style}
       className={cn(
         "border-t border-zinc-200 hover:bg-zinc-50 dark:border-zinc-800 dark:hover:bg-zinc-900",
         resigned && "text-zinc-400 dark:text-zinc-500",
       )}
     >
+      <td className="w-8 px-2 py-2 text-center">
+        {dndEnabled ? (
+          <button
+            type="button"
+            {...attributes}
+            {...listeners}
+            className="cursor-grab text-zinc-400 hover:text-zinc-700 active:cursor-grabbing dark:hover:text-zinc-200"
+            title="드래그로 순서 변경"
+            aria-label="드래그 핸들"
+          >
+            ⋮⋮
+          </button>
+        ) : null}
+      </td>
       <td className={cellCls}>{emp.name}</td>
       <td className={cellCls}>{emp.position || "—"}</td>
       <td className={cellCls}>{emp.team || "—"}</td>
@@ -391,6 +488,7 @@ function EditRow({
 
   return (
     <tr className="border-t border-zinc-200 bg-blue-500/5 dark:border-zinc-800">
+      <td className="w-8 px-2 py-2" />
       {(
         ["name", "position", "team", "degree", "license", "grade", "email"] as const
       ).map((k) => (
@@ -464,6 +562,7 @@ function NewRow({
 
   return (
     <tr className="border-t border-zinc-200 bg-emerald-500/5 dark:border-zinc-800">
+      <td className="w-8 px-2 py-2" />
       {(
         ["name", "position", "team", "degree", "license", "grade", "email"] as const
       ).map((k) => (

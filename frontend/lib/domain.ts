@@ -182,6 +182,7 @@ export interface MasterOptions {
 export interface Employee {
   id: number;
   name: string;
+  sort_order: number;
   position: string;
   team: string;
   degree: string;

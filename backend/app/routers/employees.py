@@ -4,7 +4,8 @@ from __future__ import annotations
 from datetime import date as Date
 from typing import Literal
 
-from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
+from fastapi import APIRouter, Body, Depends, File, HTTPException, Query, UploadFile, status
+from pydantic import BaseModel
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
@@ -81,7 +82,12 @@ def list_employees(
             Employee.resigned_at.desc(), Employee.name.asc()
         )
     else:
-        stmt = stmt.order_by(Employee.team.asc(), Employee.name.asc())
+        # admin 지정 순서 우선, 같은 값이면 이름순
+        stmt = stmt.order_by(
+            Employee.sort_order.asc(),
+            Employee.team.asc(),
+            Employee.name.asc(),
+        )
     rows = db.execute(stmt).scalars().all()
     return EmployeeListResponse(
         items=[EmployeeOut.model_validate(r) for r in rows], count=len(rows)
@@ -117,6 +123,32 @@ def restore_employee(
     db.commit()
     db.refresh(emp)
     return EmployeeOut.model_validate(emp)
+
+
+class ReorderItem(BaseModel):
+    id: int
+    sort_order: int
+
+
+class ReorderRequest(BaseModel):
+    items: list[ReorderItem]
+
+
+@router.post("/reorder")
+def reorder_employees(
+    body: ReorderRequest = Body(...),
+    _admin: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+) -> dict[str, int]:
+    """admin이 드래그로 정렬 변경 시 한 번에 모든 sort_order update."""
+    n = 0
+    for item in body.items:
+        emp = db.get(Employee, item.id)
+        if emp:
+            emp.sort_order = item.sort_order
+            n += 1
+    db.commit()
+    return {"updated": n}
 
 
 @router.post("", response_model=EmployeeOut, status_code=status.HTTP_201_CREATED)
