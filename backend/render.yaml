@@ -72,8 +72,9 @@ services:
         sync: false
       # NAVER WORKS Drive 탐색기 가상 드라이브 마운트 경로 (옵션, 사내 표준 경로).
       # 비어두면 "탐색기 열기"·"경로 복사" 버튼 비표시.
+      # W: 드라이브에 NAVER WORKS Drive 마운트 시 '공용 드라이브\[업무관리]' 경로 사용.
       - key: WORKS_DRIVE_LOCAL_ROOT
-        value: "W:\\[업무관리]"
+        value: "W:\\공용 드라이브\\[업무관리]"
 
   # ── 5분 incremental sync 외부 트리거 ──
   # backend 안의 APScheduler는 worker process에 종속적 (process restart 시 reset).

@@ -288,7 +288,10 @@ def _extract_id(meta: dict[str, Any]) -> str:
 def _extract_url(meta: dict[str, Any]) -> str:
     """NAVER WORKS Drive 응답엔 webUrl 키가 없으므로 share URL 패턴으로 조립.
 
-    https://drive.worksmobile.com/drive/web/share/root-folder?resourceKey={fileId}&resourceLocation={loc}
+    https://drive.worksmobile.com/drive/web/share/folder?resourceKey={fileId}&resourceLocation={loc}
+
+    ※ `share/root-folder`는 sharedrive 자체의 root만 가리키고 resourceKey가 무시됨.
+    하위 폴더의 web URL은 `share/folder`를 사용해야 함.
     """
     # 응답에 직접 URL 키가 있으면 우선
     for key in ("webUrl", "url", "shareUrl", "fileUrl"):
@@ -299,7 +302,7 @@ def _extract_url(meta: dict[str, Any]) -> str:
     location = meta.get("resourceLocation")
     if file_id and location:
         return (
-            "https://drive.worksmobile.com/drive/web/share/root-folder"
+            "https://drive.worksmobile.com/drive/web/share/folder"
             f"?resourceKey={file_id}&resourceLocation={location}"
         )
     return ""
@@ -554,12 +557,13 @@ def build_file_web_url(file_id: str, resource_location: int | str | None) -> str
     """NAVER WORKS Drive 파일/폴더 web URL 조립.
 
     응답에 webUrl 키가 없으므로 share URL 패턴으로 생성.
+    `share/folder`를 사용 — root-folder는 sharedrive root로만 가서 resourceKey가 무시됨.
     """
     if not file_id:
         return ""
     if resource_location is None:
-        return f"https://drive.worksmobile.com/drive/web/share/root-folder?resourceKey={file_id}"
+        return f"https://drive.worksmobile.com/drive/web/share/folder?resourceKey={file_id}"
     return (
-        "https://drive.worksmobile.com/drive/web/share/root-folder"
+        "https://drive.worksmobile.com/drive/web/share/folder"
         f"?resourceKey={file_id}&resourceLocation={resource_location}"
     )

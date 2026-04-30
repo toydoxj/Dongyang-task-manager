@@ -155,6 +155,15 @@
 - 해결: 본 건은 Codex 검토 없이 진행. 사용자에게 상황을 알리고 자체 계획 초안을 먼저 제시한 뒤, 다음 단계에서 재시도 또는 사용자가 외부 GPT에 직접 검토 의뢰하는 방식으로 우회
 - 재발 방지: Codex MCP에 4000자 이상의 prompt를 한 번에 보내지 말 것. 핵심 질문 1~2개로 분할하거나 mcp__codex-cli__review 별도 도구 사용을 우선 검토. Codex가 빈 응답·맥락 무시 응답을 줄 때는 두 번 이상 재시도하지 말고 즉시 차선책으로 전환
 
+### 2026-04-30 — NAVER WORKS Drive `share/root-folder` URL이 sharedrive root로 redirect (resourceKey 무시)
+- 컨텍스트: 프로젝트 폴더 자동 생성 후 노션에 share URL 저장. 사용자가 "WORKS Drive" 버튼 클릭 → 그 프로젝트 폴더가 아닌 [업무관리] 루트 폴더로 이동
+- 증상: URL은 `https://drive.worksmobile.com/drive/web/share/root-folder?resourceKey=...&resourceLocation=24101` 인데 NAVER가 resourceKey 무시하고 sharedrive 자체 root만 보여줌
+- 원인: `share/root-folder` path는 sharedrive 자체의 root를 의미하는 endpoint. 하위 폴더의 web URL은 `share/folder`를 사용해야 resourceKey가 적용됨. 우리 `_extract_url`/`build_file_web_url`이 둘 다 `root-folder`로 만들고 있었음
+- 해결:
+  1) `sso_drive._extract_url` / `build_file_web_url` 모두 `share/folder`로 변경 (새로 만들 폴더는 정상)
+  2) `Project.from_notion_page`의 `drive_url` 추출 시 `/share/root-folder?` → `/share/folder?` 자동 정규화 — 노션에 이미 저장된 잘못된 URL도 응답 시점에 회복 (마이그레이션 스크립트 불필요)
+- 재발 방지: NAVER WORKS Drive web URL 패턴 — `share/folder`는 폴더, `share/root-folder`는 sharedrive 루트. 응답에 webUrl 키 없을 때 직접 조립할 때는 항상 folder. PoC로 실제 폴더 URL 1개 확인하면 5초
+
 ### 2026-04-30 — `asyncio.create_task` 결과를 참조 안 잡으면 mid-execution에서 GC됨
 - 컨텍스트: cron 엔드포인트를 fire-and-forget으로 분리하면서 `asyncio.create_task(_run_sync_in_bg(...))` 사용. 반환값 무시
 - 증상: 첫 호출 `{"status":"started"}` 정상 응답인데 Render Logs에 `manual cron ... done: N` 메시지가 영영 안 나옴. 두 번째 호출 시 `already_running` 아닌 또 `started` 응답 (즉 `_running_sync` set이 비어있음). 실제 mirror upsert는 안 됨

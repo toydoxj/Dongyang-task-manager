@@ -93,7 +93,12 @@ class Project(BaseModel):
             expense_total=P.rollup_value(props, "지출(외주비포함)"),
             last_edited_time=page.get("last_edited_time"),
             url=page.get("url"),
-            drive_url=P.url(props, "WORKS Drive URL"),
+            # NAVER WORKS Drive URL의 path가 'share/root-folder'면 sharedrive root로
+            # redirect되어 resourceKey가 무시됨. 'share/folder'로 정규화해 정확한
+            # 폴더로 이동하도록 함. 기존 노션에 저장된 잘못된 URL을 자동 회복.
+            drive_url=P.url(props, "WORKS Drive URL").replace(
+                "/share/root-folder?", "/share/folder?"
+            ),
         )
 
 
