@@ -222,16 +222,29 @@ async def delete_event(
 
 
 async def create_calendar(
-    settings: Settings, *, name: str, description: str = ""
+    settings: Settings,
+    *,
+    name: str,
+    description: str = "",
+    is_public: bool = True,
+    members: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
-    """공유 캘린더 생성. 응답에서 calendarId 추출해 환경변수에 저장.
+    """공유 캘린더 생성. 응답의 calendarId를 환경변수에 저장.
 
-    POST /calendars
-    body: {"summary": "...", "description": "..."}
+    POST /calendars body:
+      calendarName  (str, required, max 50)
+      description   (str, max 1000)
+      isPublic      (bool, default false) — true면 회사 도메인 전체 조회 가능
+      members       (list, optional) — id/type/role 지정. isPublic=true면 비워둬도 OK
     """
-    body: dict[str, Any] = {"summary": name}
+    body: dict[str, Any] = {
+        "calendarName": name[:50],
+        "isPublic": bool(is_public),
+    }
     if description:
-        body["description"] = description
+        body["description"] = description[:1000]
+    if members:
+        body["members"] = members
     return await _api(settings, "POST", "/calendars", json=body)
 
 
