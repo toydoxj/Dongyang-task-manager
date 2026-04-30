@@ -82,14 +82,23 @@ function Form({
   const today = new Date().toISOString().slice(0, 10);
   const [title, setTitle] = useState("");
   const [status, setStatus] = useState(initialStatus || "시작 전");
-  const [start, setStart] = useState(initialStartDate || today);
-  const [end, setEnd] = useState(initialStartDate || "");
+  // 첫 mount 시 prefill 형식을 분류와 일치 — time-based(외근/출장)면 T09:00,
+  // date-based(휴가/프로젝트 등)면 date only. input type과 일치해야 표시됨.
+  const initialCat = projectId ? "프로젝트" : initialCategory || "";
+  const initialIsTime = isTimeBasedTask(initialCat, "");
+  const baseDate = initialStartDate || today;
+  const startDefault =
+    initialIsTime && !baseDate.includes("T") ? `${baseDate}T09:00` : baseDate;
+  const endDefault = !initialStartDate
+    ? ""
+    : initialIsTime && !initialStartDate.includes("T")
+      ? `${initialStartDate}T18:00`
+      : initialStartDate;
+  const [start, setStart] = useState(startDefault);
+  const [end, setEnd] = useState(endDefault);
   const [priority, setPriority] = useState("");
   const [difficulty, setDifficulty] = useState("");
-  // 프로젝트 컨텍스트가 있으면 default '프로젝트', 그 외 initialCategory 우선, 없으면 미분류
-  const [category, setCategory] = useState(
-    projectId ? "프로젝트" : initialCategory || "",
-  );
+  const [category, setCategory] = useState(initialCat);
   const [activity, setActivity] = useState("");
   // 분류=프로젝트 + projectId 미지정인 경우(=/me에서 새 업무) 사용자가 dropdown으로 선택
   const [pickedProjectId, setPickedProjectId] = useState(projectId);
