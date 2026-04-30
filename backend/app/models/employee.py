@@ -29,6 +29,10 @@ class Employee(Base):
     license: Mapped[str] = mapped_column(String, default="")
     grade: Mapped[str] = mapped_column(String, default="")  # 등급(특/고/중/초)
     email: Mapped[str] = mapped_column(String, default="", index=True)
+    # NAVER WORKS user id (UUID 형식). admin이 /users API 동기화로 채움.
+    # SSO 로그인하면 User.works_user_id에도 저장되지만, 미로그인 직원도 cover하기 위해
+    # Employee에도 별도 보관. Calendar API path에 사용.
+    works_user_id: Mapped[str] = mapped_column(String, default="", index=True)
     # 계정과 연결되면 채워짐 (회원가입 시 자동 매칭 또는 admin 수동)
     linked_user_id: Mapped[int | None] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True
@@ -55,6 +59,7 @@ class EmployeeOut(BaseModel):
     license: str = ""
     grade: str = ""
     email: str = ""
+    works_user_id: str = ""
     linked_user_id: int | None = None
     resigned_at: date | None = None
 

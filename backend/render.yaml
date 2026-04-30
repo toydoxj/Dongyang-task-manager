@@ -75,6 +75,13 @@ services:
       # W: 드라이브에 NAVER WORKS Drive 마운트 시 '공용 드라이브\[업무관리]' 경로 사용.
       - key: WORKS_DRIVE_LOCAL_ROOT
         value: "W:\\공용 드라이브\\[업무관리]"
+      # ── NAVER WORKS Calendar (Phase 3 — task 동기화) ──
+      # Drive와 같은 OAuth 토큰 사용 (scope에 'calendar' 포함). 별도 자격 증명 불필요.
+      # 공유 캘린더 ID는 /api/admin/calendar/create-shared-calendar 호출 후 dashboard에 저장.
+      - key: WORKS_CALENDAR_ENABLED
+        sync: false
+      - key: WORKS_SHARED_CALENDAR_ID
+        sync: false
 
   # ── 5분 incremental sync 외부 트리거 ──
   # backend 안의 APScheduler는 worker process에 종속적 (process restart 시 reset).

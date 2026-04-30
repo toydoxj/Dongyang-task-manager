@@ -81,6 +81,13 @@ class Settings(BaseSettings):
     # 예: "W:\\공유 드라이브\\[업무관리]" 또는 "W:\\[업무관리]"
     works_drive_local_root: str = ""
 
+    # ── NAVER WORKS Calendar (Phase 3 — task 동기화) ──
+    # 회사 공유 캘린더 ID. /api/admin/calendar/create-shared-calendar로 1회 생성 후
+    # 응답의 calendar_id를 Render env에 저장. Drive와 같은 토큰(scope: file calendar)
+    # 사용하므로 별도 자격 증명 불필요.
+    works_calendar_enabled: bool = False
+    works_shared_calendar_id: str = ""
+
     frontend_base_url: str = ""  # callback 후 frontend로 302할 때 사용
 
     @property
