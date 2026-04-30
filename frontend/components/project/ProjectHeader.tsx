@@ -129,19 +129,15 @@ export default function ProjectHeader({ project }: { project: Project }) {
         <div className="flex flex-col items-end gap-2">
           {project.stage && (
             <div className="flex items-center gap-2">
-              {/* 단계 변경 — 진행중/대기/보류 상태일 때만 노출 */}
-              {(project.stage === "진행중" ||
-                project.stage === "대기" ||
-                project.stage === "보류") && (
-                <button
-                  type="button"
-                  onClick={() => setStageChangeOpen(true)}
-                  className="rounded-md border border-zinc-300 px-2.5 py-1 text-xs hover:bg-zinc-50 dark:border-zinc-700 dark:hover:bg-zinc-800"
-                  title="완료/타절/종결 처리"
-                >
-                  단계변경
-                </button>
-              )}
+              {/* 단계변경 — 모든 단계에서 노출 (완료/타절/종결 변경, 완료일 수정 등) */}
+              <button
+                type="button"
+                onClick={() => setStageChangeOpen(true)}
+                className="rounded-md border border-zinc-300 px-2.5 py-1 text-xs hover:bg-zinc-50 dark:border-zinc-700 dark:hover:bg-zinc-800"
+                title="완료/타절/종결 처리"
+              >
+                단계변경
+              </button>
               <span
                 className={cn(
                   "rounded-md border px-3 py-1 text-xs font-medium",
