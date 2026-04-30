@@ -14,6 +14,7 @@ interface NavItem {
   href: string;
   label: string;
   roles?: UserRole[]; // 미지정 시 모든 사용자 접근 가능
+  external?: boolean; // true면 새 탭으로 열기 (next/link 대신 <a target="_blank">)
 }
 
 const NAV: NavItem[] = [
@@ -25,7 +26,13 @@ const NAV: NavItem[] = [
     label: "직원 업무",
     roles: ["admin", "team_lead"],
   },
-  { href: "/schedule", label: "직원 일정" },
+  // 직원 일정은 NAVER WORKS Calendar 공유 캘린더로 이동 (단방향 동기화).
+  // 등록·수정은 그대로 task.dyce.kr에서, 보기·알림은 NAVER WORKS Calendar에서.
+  {
+    href: "https://calendar.worksmobile.com/",
+    label: "직원 일정",
+    external: true,
+  },
   { href: "/suggestions", label: "건의사항" },
   { href: "/seal-requests", label: "날인요청" },
   { href: "/utilities", label: "유틸 런처" },
@@ -110,20 +117,38 @@ export default function Sidebar({ mobileOpen, onCloseMobile }: Props) {
         {NAV.filter(
           (n) => !n.roles || (user?.role && n.roles.includes(user.role)),
         ).map((n) => {
-          const active = pathname === n.href || pathname.startsWith(`${n.href}/`);
+          const active =
+            !n.external &&
+            (pathname === n.href || pathname.startsWith(`${n.href}/`));
           const showBadge =
             n.href === "/seal-requests" && showSealBadge && sealCount > 0;
+          const itemClass = cn(
+            "flex items-center justify-between rounded-md px-3 py-2 text-sm transition-colors",
+            active
+              ? "bg-zinc-800 text-white"
+              : "text-zinc-400 hover:bg-zinc-900 hover:text-zinc-100",
+          );
+          if (n.external) {
+            return (
+              <a
+                key={n.href}
+                href={n.href}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={onCloseMobile}
+                className={itemClass}
+              >
+                <span>{n.label}</span>
+                <span className="text-xs text-zinc-500">↗</span>
+              </a>
+            );
+          }
           return (
             <Link
               key={n.href}
               href={n.href}
               onClick={onCloseMobile}
-              className={cn(
-                "flex items-center justify-between rounded-md px-3 py-2 text-sm transition-colors",
-                active
-                  ? "bg-zinc-800 text-white"
-                  : "text-zinc-400 hover:bg-zinc-900 hover:text-zinc-100",
-              )}
+              className={itemClass}
             >
               <span>{n.label}</span>
               {showBadge && (
