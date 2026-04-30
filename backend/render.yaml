@@ -83,24 +83,138 @@ services:
       - key: WORKS_SHARED_CALENDAR_ID
         sync: false
 
-  # ── 5분 incremental sync 외부 트리거 ──
-  # backend 안의 APScheduler는 worker process에 종속적 (process restart 시 reset).
-  # 별도 cron 서비스가 5분마다 /api/cron/sync 호출해 안정성 확보.
-  # backend cron 엔드포인트는 fire-and-forget(202)이라 호출 자체는 1초 미만.
+  # ── kind별 incremental sync — web worker 격리 ──
+  # 이전: 외부 cron이 web /api/cron/sync 호출 → web worker 안에서 sync 진행.
+  #       사용자 API 응답이 sync 시간만큼 지연되는 문제(502/timeout) 발생.
+  # 새:   별도 cron container에서 `python -m app.scripts.sync_once`를 직접 실행.
+  #       web service는 사용자 API만 처리, 자원 완전 격리.
+  # kind별 빈도 차등 + schedule 분산으로 동시 부하 회피.
+  # web service의 SYNC_ENABLED는 dashboard에서 false로 설정 — 내부 APScheduler 비활성.
   - type: cron
-    name: dy-task-sync-cron
+    name: dy-task-sync-projects
     runtime: python
     region: singapore
     plan: starter
     rootDir: backend
-    schedule: "*/5 * * * *"
-    buildCommand: pip install httpx
-    startCommand: |
-      python -c "import os, httpx; r = httpx.post('https://api.dyce.kr/api/cron/sync', headers={'Authorization': 'Bearer ' + os.environ['CRON_SECRET']}, timeout=60); print(r.status_code, r.text)"
+    schedule: "*/5 * * * *"          # 매 5분 :00
+    buildCommand: |
+      pip install --upgrade pip uv
+      env -u VIRTUAL_ENV uv sync --frozen --no-dev
+    startCommand: env -u VIRTUAL_ENV uv run python -m app.scripts.sync_once --kind projects
     envVars:
       - key: PYTHON_VERSION
         value: 3.12.7
-      - key: CRON_SECRET
+      - key: DATABASE_URL
+        sync: false
+      - key: NOTION_API_KEY
+        sync: false
+      - key: NOTION_DB_PROJECTS
+        sync: false
+      - key: NOTION_DB_TASKS
+        sync: false
+      - key: NOTION_DB_CASHFLOW
+        sync: false
+      - key: NOTION_DB_EXPENSE
+        sync: false
+      - key: NOTION_DB_CLIENTS
+        sync: false
+      - key: NOTION_DB_MASTER
+        sync: false
+
+  - type: cron
+    name: dy-task-sync-tasks
+    runtime: python
+    region: singapore
+    plan: starter
+    rootDir: backend
+    schedule: "2-59/5 * * * *"        # 매 5분 :02 (projects와 2분 오프셋)
+    buildCommand: |
+      pip install --upgrade pip uv
+      env -u VIRTUAL_ENV uv sync --frozen --no-dev
+    startCommand: env -u VIRTUAL_ENV uv run python -m app.scripts.sync_once --kind tasks
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.7
+      - key: DATABASE_URL
+        sync: false
+      - key: NOTION_API_KEY
+        sync: false
+      - key: NOTION_DB_PROJECTS
+        sync: false
+      - key: NOTION_DB_TASKS
+        sync: false
+      - key: NOTION_DB_CASHFLOW
+        sync: false
+      - key: NOTION_DB_EXPENSE
+        sync: false
+      - key: NOTION_DB_CLIENTS
+        sync: false
+      - key: NOTION_DB_MASTER
+        sync: false
+
+  - type: cron
+    name: dy-task-sync-master
+    runtime: python
+    region: singapore
+    plan: starter
+    rootDir: backend
+    schedule: "*/30 * * * *"          # 30분마다 :00
+    buildCommand: |
+      pip install --upgrade pip uv
+      env -u VIRTUAL_ENV uv sync --frozen --no-dev
+    startCommand: env -u VIRTUAL_ENV uv run python -m app.scripts.sync_once --kind master
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.7
+      - key: DATABASE_URL
+        sync: false
+      - key: NOTION_API_KEY
+        sync: false
+      - key: NOTION_DB_PROJECTS
+        sync: false
+      - key: NOTION_DB_TASKS
+        sync: false
+      - key: NOTION_DB_CASHFLOW
+        sync: false
+      - key: NOTION_DB_EXPENSE
+        sync: false
+      - key: NOTION_DB_CLIENTS
+        sync: false
+      - key: NOTION_DB_MASTER
+        sync: false
+
+  - type: cron
+    name: dy-task-sync-others
+    runtime: python
+    region: singapore
+    plan: starter
+    rootDir: backend
+    schedule: "15,45 * * * *"         # 30분마다 :15/:45 — clients+cashflow+expense 순차
+    buildCommand: |
+      pip install --upgrade pip uv
+      env -u VIRTUAL_ENV uv sync --frozen --no-dev
+    startCommand: |
+      env -u VIRTUAL_ENV uv run python -m app.scripts.sync_once --kind clients && \
+      env -u VIRTUAL_ENV uv run python -m app.scripts.sync_once --kind cashflow && \
+      env -u VIRTUAL_ENV uv run python -m app.scripts.sync_once --kind expense
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.7
+      - key: DATABASE_URL
+        sync: false
+      - key: NOTION_API_KEY
+        sync: false
+      - key: NOTION_DB_PROJECTS
+        sync: false
+      - key: NOTION_DB_TASKS
+        sync: false
+      - key: NOTION_DB_CASHFLOW
+        sync: false
+      - key: NOTION_DB_EXPENSE
+        sync: false
+      - key: NOTION_DB_CLIENTS
+        sync: false
+      - key: NOTION_DB_MASTER
         sync: false
 
   # ── 매일 아침 task 자동 진행 트리거 ──

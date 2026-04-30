@@ -164,6 +164,17 @@
   2) `Project.from_notion_page`의 `drive_url` 추출 시 `/share/root-folder?` → `/share/folder?` 자동 정규화 — 노션에 이미 저장된 잘못된 URL도 응답 시점에 회복 (마이그레이션 스크립트 불필요)
 - 재발 방지: NAVER WORKS Drive web URL 패턴 — `share/folder`는 폴더, `share/root-folder`는 sharedrive 루트. 응답에 webUrl 키 없을 때 직접 조립할 때는 항상 folder. PoC로 실제 폴더 URL 1개 확인하면 5초
 
+### 2026-04-30 — sync가 web worker 안에서 돌아 사용자 API가 5~22초 지연
+- 컨텍스트: 외부 cron이 `/api/cron/sync` 호출 → fire-and-forget 202 즉시 응답 + DB upsert는 thread pool 분리. 이 상태에서도 `/api/auth/status`(5초+), `/api/projects?assignee=...`(15~88초) 같은 단순 요청이 timeout/502
+- 증상: cron 5분 사이클마다 task.dyce.kr 화면이 잠깐 죽고 SWR retry 폭주
+- 원인: DB upsert를 thread로 분리했지만 노션 API 호출(0.4초 rate limit, 6 DB × 100 페이지+) 자체는 web worker의 event loop이 점유. HTTP connection pool, CPU도 같은 process가 공유. 또한 sync_all이 6개 DB를 한 번에 처리해 부하 집중
+- 해결:
+  1) **sync를 web worker 밖으로 — 별도 cron container에서 `python -m app.scripts.sync_once`** 직접 실행. web service는 사용자 API만 처리
+  2) kind별 빈도 차등 — projects/tasks 5분, master/clients/cashflow/expense 30분, 시간 엇갈리게(`*/5`, `2-59/5`, `*/30`, `15,45`)
+  3) web service의 `SYNC_ENABLED=false`로 내부 APScheduler 비활성 — 외부 cron이 유일한 트리거
+  4) `/api/cron/sync?full=true`는 KST 7~22시 차단 (안전망)
+- 재발 방지: 무거운 백그라운드 작업은 web worker와 분리된 container/worker에서. fire-and-forget도 결국 같은 process라 자원 공유 — 진짜 격리는 별도 container. backend/app/scripts/* 패턴 사용해 module로 호출(`python -m app.scripts.X`). render cron의 envVars는 web service와 동일하게 share
+
 ### 2026-04-30 — `asyncio.create_task` 결과를 참조 안 잡으면 mid-execution에서 GC됨
 - 컨텍스트: cron 엔드포인트를 fire-and-forget으로 분리하면서 `asyncio.create_task(_run_sync_in_bg(...))` 사용. 반환값 무시
 - 증상: 첫 호출 `{"status":"started"}` 정상 응답인데 Render Logs에 `manual cron ... done: N` 메시지가 영영 안 나옴. 두 번째 호출 시 `already_running` 아닌 또 `started` 응답 (즉 `_running_sync` set이 비어있음). 실제 mirror upsert는 안 됨

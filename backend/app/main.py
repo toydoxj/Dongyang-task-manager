@@ -151,12 +151,27 @@ async def cron_sync(
     full: bool = False,
     _ok: None = Depends(_verify_cron),
 ) -> dict[str, str]:
-    """수동/외부 cron 트리거. Header: Authorization: Bearer $CRON_SECRET.
+    """수동 트리거 (외부 cron은 더 이상 이 endpoint를 호출하지 않고
+    `python -m app.scripts.sync_once --kind <kind>`를 별도 cron container에서 실행).
 
     무거운 sync가 worker를 막아 다른 요청이 502 되는 문제를 방지하기 위해
     fire-and-forget으로 실행. 즉시 202 반환, 결과는 Render Logs에서 확인.
     이미 실행 중이면 중복 spawn 금지(already_running).
+
+    full sync는 KST 7~22시(업무시간)에는 차단 — 새벽에만 허용.
     """
+    if full:
+        from datetime import datetime, timedelta, timezone
+
+        kst = datetime.now(timezone(timedelta(hours=9)))
+        if 7 <= kst.hour <= 22:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    "full sync는 KST 7~22시(업무시간)에 실행할 수 없습니다. "
+                    "새벽에 다시 시도하세요."
+                ),
+            )
     if _running_sync:
         return {"status": "already_running", "active": ",".join(sorted(_running_sync))}
     _running_sync.add("_all")
