@@ -186,6 +186,9 @@ function StageColumn({ stage, items }: { stage: string; items: Project[] }) {
     disabled: isAutoStage, // 진행중 컬럼은 drop 차단
   });
   const total = items.reduce((s, p) => s + (p.contract_amount ?? 0), 0);
+  const [expanded, setExpanded] = useState(false);
+  const VISIBLE = 50;
+  const visibleItems = expanded ? items : items.slice(0, VISIBLE);
 
   return (
     <div
@@ -222,12 +225,20 @@ function StageColumn({ stage, items }: { stage: string; items: Project[] }) {
             비어있음
           </li>
         )}
-        {items.slice(0, 50).map((p) => (
+        {visibleItems.map((p) => (
           <ProjectCard key={p.id} project={p} />
         ))}
-        {items.length > 50 && (
-          <li className="px-2 py-2 text-center text-[10px] text-zinc-400">
-            … {items.length - 50}건 더
+        {items.length > VISIBLE && (
+          <li>
+            <button
+              type="button"
+              onClick={() => setExpanded((v) => !v)}
+              className="w-full rounded-md py-1.5 text-center text-[10px] text-zinc-500 hover:bg-zinc-100 hover:text-zinc-700 dark:hover:bg-zinc-800 dark:hover:text-zinc-300"
+            >
+              {expanded
+                ? "▲ 접기"
+                : `▼ ${items.length - VISIBLE}건 더 보기`}
+            </button>
           </li>
         )}
       </ul>
