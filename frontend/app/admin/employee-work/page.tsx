@@ -80,10 +80,10 @@ export default function EmployeeWorkSelectorPage() {
     return idx === -1 ? POSITION_ORDER.length : idx;
   };
 
-  // 팀별 그룹핑 + 직급순 정렬. TEAM_ORDER에 정의된 팀은 비어있어도 컬럼 노출.
+  // 팀별 그룹핑 — admin이 지정한 sort_order 우선, 같은 값이면 직급순 → 이름순.
+  // TEAM_ORDER에 정의된 팀은 비어있어도 컬럼 노출.
   const grouped = useMemo(() => {
     const map = new Map<string, typeof employees>();
-    // 모든 알려진 팀을 빈 list로 초기화
     for (const team of TEAM_ORDER) map.set(team, []);
     for (const e of employees) {
       const team = e.team || "기타";
@@ -92,6 +92,10 @@ export default function EmployeeWorkSelectorPage() {
     }
     for (const arr of map.values()) {
       arr.sort((a, b) => {
+        // 1) 사용자가 드래그로 지정한 순서 우선
+        const so = (a.sort_order ?? 0) - (b.sort_order ?? 0);
+        if (so !== 0) return so;
+        // 2) 같은 sort_order면 직급 → 이름 fallback
         const dp = positionOrder(a.position) - positionOrder(b.position);
         if (dp !== 0) return dp;
         return a.name.localeCompare(b.name, "ko");
