@@ -209,9 +209,16 @@ def _from_notion_page(page: dict[str, Any]) -> SealRequestItem:
     raw_type = P.select_name(props, "날인유형")
     raw_status = P.select_name(props, "상태")
     rev_n = P.number(props, "Revision")
+    # title prop은 DB마다 이름이 다를 수 있어 type='title'인 컬럼을 찾는다.
+    title_text = ""
+    for v in props.values():
+        if isinstance(v, dict) and v.get("type") == "title":
+            arr = v.get("title") or []
+            title_text = arr[0].get("plain_text", "") if arr else ""
+            break
     return SealRequestItem(
         id=page.get("id", ""),
-        title=P.title(props, "제목"),
+        title=title_text,
         project_ids=P.relation_ids(props, "프로젝트"),
         seal_type=SL.normalize_type(raw_type),
         status=SL.normalize_status(raw_status) or "1차검토 중",
@@ -247,6 +254,30 @@ def _db_id() -> str:
             detail="NOTION_DB_SEAL_REQUESTS 미설정",
         )
     return db_id
+
+
+# title property 이름은 노션 DB마다 다를 수 있어(`제목`/`이름`/`Name` 등) 동적 탐지.
+# 첫 호출 시 schema query → cache. 운영 중 변경되는 일은 거의 없으므로 process
+# lifetime 동안 cache 유지.
+_title_prop_name: str | None = None
+
+
+async def _get_title_prop_name(notion: NotionService) -> str:
+    """날인요청 DB의 title type property 이름. 첫 호출에 schema query, 이후 cache."""
+    global _title_prop_name
+    if _title_prop_name is not None:
+        return _title_prop_name
+    try:
+        ds = await notion.get_data_source(_db_id())
+    except Exception as e:  # noqa: BLE001
+        logger.warning("title prop 탐지 실패 — `제목` fallback: %s", e)
+        return "제목"
+    for name, spec in (ds.get("properties") or {}).items():
+        if isinstance(spec, dict) and spec.get("type") == "title":
+            _title_prop_name = name
+            return name
+    logger.warning("날인요청 DB에 title type property 없음 — `제목` fallback")
+    return "제목"
 
 
 def _extract_resource_key(drive_url: str) -> str:
@@ -593,8 +624,9 @@ async def create_seal_request(
     max_bytes = _max_bytes()
 
     # 3) 노션 page 먼저 생성 (page_id 확보)
+    title_prop = await _get_title_prop_name(notion)
     init_props: dict[str, Any] = {
-        "제목": {"title": [{"text": {"content": auto_title}}]},
+        title_prop: {"title": [{"text": {"content": auto_title}}]},
         "프로젝트": {"relation": [{"id": project_id}]},
         "날인유형": {"select": {"name": seal_type}},
         "상태": {"select": {"name": "1차검토 중"}},
@@ -907,7 +939,10 @@ async def update_seal_request(
 
     update_props: dict[str, Any] = {}
     if body.title is not None:
-        update_props["제목"] = {"title": [{"text": {"content": body.title}}]}
+        title_prop = await _get_title_prop_name(notion)
+        update_props[title_prop] = {
+            "title": [{"text": {"content": body.title}}]
+        }
     if body.real_source is not None:
         update_props["실제출처"] = {
             "rich_text": [{"text": {"content": body.real_source}}]
@@ -1271,14 +1306,20 @@ async def delete_seal_request(
 
     if keep_with_marker:
         # 흔적 남김: 제목 prefix + 상태 '취소' (재요청 차단) + 첨부메타 비움
-        cur_title = P.title(props, "제목")
+        cur_title = ""
+        for v in props.values():
+            if isinstance(v, dict) and v.get("type") == "title":
+                arr = v.get("title") or []
+                cur_title = arr[0].get("plain_text", "") if arr else ""
+                break
         new_title = (
             cur_title if cur_title.startswith("[날인취소] ") else f"[날인취소] {cur_title}"
         )
+        title_prop = await _get_title_prop_name(notion)
         await notion.update_page(
             page_id,
             {
-                "제목": {"title": [{"text": {"content": new_title}}]},
+                title_prop: {"title": [{"text": {"content": new_title}}]},
                 "상태": {"select": {"name": "취소"}},
                 "반려사유": {
                     "rich_text": [
