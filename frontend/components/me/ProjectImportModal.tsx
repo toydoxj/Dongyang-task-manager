@@ -46,8 +46,9 @@ export default function ProjectImportModal({
     if (searchMode) {
       if (!allData) return [];
       const q = trimmed.toLowerCase();
+      // 검색 모드: 본인 미담당 + (이미 담당이지만 완료된 프로젝트도 = 재활성화 케이스)
       return allData.items
-        .filter((p) => !p.assignees.includes(myName))
+        .filter((p) => !p.assignees.includes(myName) || p.completed)
         .filter((p) => `${p.code} ${p.name}`.toLowerCase().includes(q))
         .slice(0, 100);
     }
@@ -136,34 +137,51 @@ export default function ProjectImportModal({
                 : `진행중 ${candidates.length}건 표시`}
             </p>
             <ul className="max-h-[60vh] divide-y divide-zinc-200 overflow-y-auto rounded-md border border-zinc-200 dark:divide-zinc-800 dark:border-zinc-800">
-              {candidates.map((p) => (
-                <li key={p.id}>
-                  <button
-                    type="button"
-                    onClick={() => handleAssign(p)}
-                    disabled={busyId === p.id}
-                    className={cn(
-                      "flex w-full items-center justify-between gap-3 px-3 py-2 text-left transition-colors hover:bg-zinc-50 dark:hover:bg-zinc-800/50",
-                      busyId === p.id && "opacity-50",
-                    )}
-                  >
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-medium" title={p.name}>
-                        {p.name || "(제목 없음)"}
-                      </p>
-                      <p className="mt-0.5 text-[11px] text-zinc-500">
-                        {p.code} · {p.stage || "—"} · {p.teams.join(", ") || "—"} ·{" "}
-                        {p.assignees.length > 0
-                          ? `현재 ${p.assignees.length}명 담당`
-                          : "담당자 없음"}
-                      </p>
-                    </div>
-                    <span className="shrink-0 text-xs text-zinc-500">
-                      {busyId === p.id ? "추가중…" : "+ 본인 담당 추가"}
-                    </span>
-                  </button>
-                </li>
-              ))}
+              {candidates.map((p) => {
+                const isMineCompleted =
+                  p.completed && p.assignees.includes(myName);
+                return (
+                  <li key={p.id}>
+                    <button
+                      type="button"
+                      onClick={() => handleAssign(p)}
+                      disabled={busyId === p.id}
+                      className={cn(
+                        "flex w-full items-center justify-between gap-3 px-3 py-2 text-left transition-colors hover:bg-zinc-50 dark:hover:bg-zinc-800/50",
+                        busyId === p.id && "opacity-50",
+                      )}
+                    >
+                      <div className="min-w-0 flex-1">
+                        <p
+                          className="truncate text-sm font-medium"
+                          title={p.name}
+                        >
+                          {p.name || "(제목 없음)"}
+                          {p.completed && (
+                            <span className="ml-1.5 rounded bg-zinc-200 px-1.5 py-0.5 text-[10px] text-zinc-600 dark:bg-zinc-700 dark:text-zinc-300">
+                              완료
+                            </span>
+                          )}
+                        </p>
+                        <p className="mt-0.5 text-[11px] text-zinc-500">
+                          {p.code} · {p.stage || "—"} ·{" "}
+                          {p.teams.join(", ") || "—"} ·{" "}
+                          {p.assignees.length > 0
+                            ? `현재 ${p.assignees.length}명 담당`
+                            : "담당자 없음"}
+                        </p>
+                      </div>
+                      <span className="shrink-0 text-xs text-zinc-500">
+                        {busyId === p.id
+                          ? "추가중…"
+                          : isMineCompleted
+                            ? "↻ 재활성화"
+                            : "+ 본인 담당 추가"}
+                      </span>
+                    </button>
+                  </li>
+                );
+              })}
             </ul>
           </>
         )}
