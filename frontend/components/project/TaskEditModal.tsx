@@ -1,10 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 
+import { useAuth } from "@/components/AuthGuard";
 import Modal from "@/components/ui/Modal";
-import { archiveTask, updateTask } from "@/lib/api";
-import type { Task } from "@/lib/domain";
+import { archiveTask, assignMe, updateTask } from "@/lib/api";
+import type { Project, Task } from "@/lib/domain";
 import {
   ACTIVITY_TYPES,
   isTimeBasedTask,
@@ -14,6 +15,7 @@ import {
   TASK_STATUSES,
 } from "@/lib/domain";
 import { useProjects } from "@/lib/hooks";
+import { cn } from "@/lib/utils";
 
 interface Props {
   task: Task | null;
@@ -64,16 +66,69 @@ function Form({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const isTimeBased = isTimeBasedTask(category, activity);
-  // 분류=프로젝트일 때만 fetch — ProjectImportModal과 동일 패턴(진행중만, 47건 정도)
-  const { data: projectsData } = useProjects(
-    { stage: "진행중" },
+  const { user } = useAuth();
+  const myName = user?.name ?? "";
+  // 본인 담당 진행중 프로젝트 — 기본 list (빠름)
+  const { data: mineData } = useProjects(
+    { mine: true, stage: "진행중" },
     category === "프로젝트",
   );
-  const projects = projectsData?.items ?? [];
-  // 현재 task가 이미 다른 단계의 프로젝트를 가리키면 dropdown에서 사라지지 않도록
-  // 그 항목을 fallback으로 보여주는 라벨 (id만으로 표시)
-  const wasProjectId = task.project_ids[0] ?? "";
-  const wasProjectInList = projects.some((p) => p.id === wasProjectId);
+  // 검색 모드: 전체 (1500+ 첫 호출만 5~15초)
+  const [projectQuery, setProjectQuery] = useState("");
+  const trimmedQ = projectQuery.trim();
+  const searchMode = trimmedQ.length > 0;
+  const { data: allData } = useProjects(
+    undefined,
+    category === "프로젝트" && searchMode,
+  );
+  const candidates = useMemo<Project[]>(() => {
+    if (searchMode) {
+      if (!allData) return [];
+      const q = trimmedQ.toLowerCase();
+      return allData.items
+        .filter((p) => `${p.code} ${p.name}`.toLowerCase().includes(q))
+        .slice(0, 30);
+    }
+    if (!mineData) return [];
+    return mineData.items.filter((p) => !p.completed);
+  }, [searchMode, mineData, allData, trimmedQ]);
+  // 현재 선택된 프로젝트의 표시 라벨 — 검색 결과나 mine list에 있으면 그 데이터로,
+  // 없으면 task의 project_ids만 알려진 상태로 (옛 task 등)
+  const selectedProject = useMemo<Project | null>(() => {
+    if (!projectId) return null;
+    const fromMine = mineData?.items.find((p) => p.id === projectId);
+    if (fromMine) return fromMine;
+    const fromAll = allData?.items.find((p) => p.id === projectId);
+    return fromAll ?? null;
+  }, [projectId, mineData, allData]);
+
+  const handlePickProject = async (p: Project): Promise<void> => {
+    if (busy) return;
+    // 본인 미담당 프로젝트면 assignMe 호출 후 task 매핑
+    const alreadyAssigned = myName && p.assignees.includes(myName);
+    if (!alreadyAssigned && myName) {
+      let setToWaiting = false;
+      if (p.stage !== "진행중") {
+        const ok = confirm(
+          `이 프로젝트의 현재 진행단계는 "${p.stage || "(미설정)"}" 입니다.\n` +
+            `본인 담당으로 추가하면서 진행단계를 "대기"로 변경합니다. 계속하시겠습니까?`,
+        );
+        if (!ok) return;
+        setToWaiting = true;
+      }
+      setBusy(true);
+      try {
+        await assignMe(p.id, { setToWaiting });
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "프로젝트 담당 추가 실패");
+        setBusy(false);
+        return;
+      }
+      setBusy(false);
+    }
+    setProjectId(p.id);
+    setProjectQuery("");
+  };
 
   const syncDateTimeFormat = (wasTime: boolean, nowTime: boolean): void => {
     if (wasTime === nowTime) return;
@@ -245,30 +300,86 @@ function Form({
 
         {category === "프로젝트" && (
           <Field label="프로젝트">
-            <select
-              value={projectId}
-              onChange={(e) => setProjectId(e.target.value)}
-              className={inputCls}
-            >
-              <option value="">
-                {projectsData ? "— 선택 (진행중)" : "프로젝트 불러오는 중…"}
-              </option>
-              {/* 진행중에 없는 옛 프로젝트는 별도 표시 (이전 선택 보존용) */}
-              {wasProjectId && !wasProjectInList && (
-                <option value={wasProjectId}>
-                  (현재 선택 — 진행중 외 프로젝트)
-                </option>
+            <div className="space-y-2">
+              {/* 현재 선택 표시 */}
+              {projectId && (
+                <div className="flex items-center justify-between rounded-md border border-zinc-200 bg-zinc-50 px-2.5 py-1.5 text-xs dark:border-zinc-700 dark:bg-zinc-800">
+                  <span className="truncate">
+                    ✓{" "}
+                    {selectedProject
+                      ? `${selectedProject.code ? `[${selectedProject.code}] ` : ""}${selectedProject.name || "(제목 없음)"}`
+                      : "(현재 선택)"}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setProjectId("")}
+                    className="text-zinc-500 hover:text-red-500"
+                    title="선택 해제"
+                  >
+                    ✕
+                  </button>
+                </div>
               )}
-              {projects.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.code ? `[${p.code}] ` : ""}
-                  {p.name || "(제목 없음)"}
-                </option>
-              ))}
-            </select>
-            <p className="mt-1 text-[10px] text-zinc-500">
-              진행중 프로젝트만 표시됩니다.
-            </p>
+              {/* 검색 input — 빈 검색이면 본인 담당 진행중, 검색어 있으면 전체 */}
+              <input
+                type="search"
+                placeholder="검색어 없으면 본인 담당, 검색하면 전체"
+                value={projectQuery}
+                onChange={(e) => setProjectQuery(e.target.value)}
+                className={inputCls}
+              />
+              <div className="max-h-44 divide-y divide-zinc-200 overflow-y-auto rounded-md border border-zinc-200 dark:divide-zinc-800 dark:border-zinc-700">
+                {searchMode && !allData && (
+                  <p className="p-3 text-center text-[11px] text-zinc-500">
+                    전체 프로젝트 불러오는 중 (5~15초)…
+                  </p>
+                )}
+                {!searchMode && !mineData && (
+                  <p className="p-3 text-center text-[11px] text-zinc-500">
+                    내 담당 프로젝트 불러오는 중…
+                  </p>
+                )}
+                {(searchMode ? allData : mineData) &&
+                  candidates.length === 0 && (
+                    <p className="p-3 text-center text-[11px] text-zinc-500">
+                      {searchMode
+                        ? "검색 결과 없음"
+                        : "본인 담당 진행중 프로젝트 없음 — 검색해서 선택"}
+                    </p>
+                  )}
+                {candidates.map((p) => {
+                  const mineP =
+                    !!myName && p.assignees.includes(myName);
+                  const isSelected = p.id === projectId;
+                  return (
+                    <button
+                      key={p.id}
+                      type="button"
+                      onClick={() => handlePickProject(p)}
+                      disabled={busy}
+                      className={cn(
+                        "flex w-full items-center justify-between gap-2 px-2.5 py-1.5 text-left text-xs transition-colors",
+                        isSelected
+                          ? "bg-blue-50 dark:bg-blue-900/20"
+                          : "hover:bg-zinc-50 dark:hover:bg-zinc-800/50",
+                        busy && "opacity-50",
+                      )}
+                    >
+                      <span className="min-w-0 flex-1 truncate">
+                        {p.code ? `[${p.code}] ` : ""}
+                        {p.name || "(제목 없음)"}
+                      </span>
+                      <span className="shrink-0 text-[10px] text-zinc-500">
+                        {mineP ? "본인 담당" : `+ 본인 추가`}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+              <p className="text-[10px] text-zinc-500">
+                미담당 프로젝트 선택 시 자동으로 본인 담당이 추가됩니다.
+              </p>
+            </div>
           </Field>
         )}
 
