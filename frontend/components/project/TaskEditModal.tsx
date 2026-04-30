@@ -63,6 +63,11 @@ function Form({
   const [assignees, setAssignees] = useState(task.assignees.join(", "));
   const [note, setNote] = useState(task.note ?? "");
   const [projectId, setProjectId] = useState(task.project_ids[0] ?? "");
+  // 사용자가 검색→클릭한 프로젝트의 정보를 별도 cache —
+  // 검색 input 비운 후 SWR allData가 사라져도 칩이 즉시 표시되도록.
+  const [pickedProjectCache, setPickedProjectCache] = useState<Project | null>(
+    null,
+  );
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const isTimeBased = isTimeBasedTask(category, activity);
@@ -104,15 +109,15 @@ function Form({
         !p.completed && (p.stage === "진행중" || p.stage === "대기"),
     );
   }, [searchMode, mineData, allData, trimmedQ]);
-  // 현재 선택된 프로젝트의 표시 라벨 — 검색 결과나 mine list에 있으면 그 데이터로,
-  // 없으면 task의 project_ids만 알려진 상태로 (옛 task 등)
+  // 현재 선택된 프로젝트의 표시 라벨 — 클릭한 cache 우선 → mine → 검색 list 순.
   const selectedProject = useMemo<Project | null>(() => {
     if (!projectId) return null;
+    if (pickedProjectCache?.id === projectId) return pickedProjectCache;
     const fromMine = mineData?.items.find((p) => p.id === projectId);
     if (fromMine) return fromMine;
     const fromAll = allData?.items.find((p) => p.id === projectId);
     return fromAll ?? null;
-  }, [projectId, mineData, allData]);
+  }, [projectId, pickedProjectCache, mineData, allData]);
 
   const handlePickProject = async (p: Project): Promise<void> => {
     if (busy) return;
@@ -152,6 +157,7 @@ function Form({
       setBusy(false);
     }
     setProjectId(p.id);
+    setPickedProjectCache(p);
     setProjectQuery("");
   };
 
