@@ -335,6 +335,7 @@ async def assign_me(
     props = page.get("properties", {})
     current = P.multi_select_names(props, "담당자")
     current_stage = P.select_name(props, "진행단계")
+    current_completed = P.checkbox(props, "완료")
     needs_assign = target_name not in current
     needs_stage = set_to_waiting and current_stage != "진행중"
 
@@ -349,6 +350,11 @@ async def assign_me(
         }
     if needs_stage:
         update_props["진행단계"] = {"select": {"name": "대기"}}
+        # 가져오기로 다시 활성화 — '완료' 표시·'완료일'도 함께 해제
+        # (mine list filter가 !completed 라 안 풀면 me 페이지에 안 보임)
+        if current_completed:
+            update_props["완료"] = {"checkbox": False}
+            update_props["완료일"] = {"date": None}
 
     updated = await notion.update_page(page_id, update_props)
     get_sync().upsert_page("projects", updated)
