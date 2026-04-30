@@ -38,6 +38,8 @@ export default function MyPage() {
     projectId: string;
     status?: string;
   } | null>(null);
+  // '해야할 일' 섹션 접기 (사용자가 자주 보는 영역이라 default 펼침)
+  const [todoCollapsed, setTodoCollapsed] = useState(false);
 
   // 다른 직원 보기 모드면 mine 대신 assignee=name 으로 fetch
   const fetchFilters = effectiveName
@@ -169,28 +171,34 @@ export default function MyPage() {
         </div>
       )}
 
-      <section>
-        <div className="mb-2 flex items-center justify-between">
-          <h2 className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
+      <section className="rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
+        <button
+          type="button"
+          onClick={() => setTodoCollapsed((v) => !v)}
+          className="flex w-full items-center justify-between gap-2 text-left"
+          aria-expanded={!todoCollapsed}
+        >
+          <h2 className="flex items-center gap-2 text-sm font-medium text-zinc-700 dark:text-zinc-300">
+            <span className="text-zinc-400">{todoCollapsed ? "▶" : "▼"}</span>
             해야할 일
           </h2>
-          <button
-            type="button"
-            onClick={() => setTaskCreate({ projectId: "" })}
-            className="rounded-md bg-zinc-900 px-2.5 py-1 text-xs text-white hover:bg-zinc-700 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300"
-          >
-            + 새 업무
-          </button>
-        </div>
-        {tasks == null ? (
-          <LoadingState message="내 업무 TASK 불러오는 중" height="h-32" />
-        ) : (
-          <TodayTasks
-            tasks={tasks}
-            projects={projects ?? []}
-            onClickTask={setEditing}
-            onDeleteTask={handleDeleteTask}
-          />
+          <span className="text-[10px] text-zinc-500">
+            {todoCollapsed ? "펼치기" : "접기"}
+          </span>
+        </button>
+        {!todoCollapsed && (
+          <div className="mt-3">
+            {tasks == null ? (
+              <LoadingState message="내 업무 TASK 불러오는 중" height="h-32" />
+            ) : (
+              <TodayTasks
+                tasks={tasks}
+                projects={projects ?? []}
+                onClickTask={setEditing}
+                onDeleteTask={handleDeleteTask}
+              />
+            )}
+          </div>
         )}
       </section>
 
@@ -302,9 +310,18 @@ export default function MyPage() {
           <h2 className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
             기타 업무 (프로젝트 외)
           </h2>
-          <span className="text-[11px] text-zinc-500">
-            카드를 끌어 상태 변경 · ✕ 로 삭제
-          </span>
+          <div className="flex items-center gap-2">
+            <span className="text-[11px] text-zinc-500">
+              카드를 끌어 상태 변경 · ✕ 로 삭제
+            </span>
+            <button
+              type="button"
+              onClick={() => setTaskCreate({ projectId: "" })}
+              className="rounded-md bg-zinc-900 px-2.5 py-1 text-xs text-white hover:bg-zinc-700 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300"
+            >
+              + 새 업무
+            </button>
+          </div>
         </div>
         {tasks == null ? (
           <LoadingState message="불러오는 중" height="h-32" />
