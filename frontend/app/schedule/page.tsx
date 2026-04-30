@@ -201,15 +201,93 @@ export default function SchedulePage() {
         </div>
       )}
 
-      {/* FullCalendar 폰트 미세 조정 — default가 약간 큼 */}
+      {/* 참조(_reference/schedule)의 디자인 톤을 FullCalendar에 적용 */}
       <style>{`
-        .schedule-calendar .fc { font-size: 0.82rem; }
-        .schedule-calendar .fc-toolbar-title { font-size: 1.05rem; }
-        .schedule-calendar .fc-button { font-size: 0.78rem; padding: 0.25rem 0.55rem; }
+        .schedule-calendar .fc {
+          font-size: 0.82rem;
+          font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        }
+        .schedule-calendar .fc-toolbar-title { font-size: 1.05rem; font-weight: 700; letter-spacing: -0.3px; }
+        .schedule-calendar .fc-button-primary {
+          background: #fff;
+          color: #475569;
+          border: 1px solid #cbd5e1;
+          font-size: 0.78rem;
+          font-weight: 500;
+          padding: 0.3rem 0.7rem;
+          border-radius: 6px;
+          box-shadow: none;
+        }
+        .schedule-calendar .fc-button-primary:hover {
+          background: #f8fafc;
+          color: #0f172a;
+          border-color: #94a3b8;
+        }
+        .schedule-calendar .fc-button-primary:not(:disabled).fc-button-active,
+        .schedule-calendar .fc-button-primary:not(:disabled):active {
+          background: #8cb943;
+          color: #fff;
+          border-color: #8cb943;
+        }
+        .schedule-calendar .fc-button-primary:disabled {
+          background: #f1f5f9;
+          color: #94a3b8;
+          border-color: #e2e8f0;
+        }
+        .schedule-calendar .fc-col-header-cell {
+          background: #f8fafc;
+          font-weight: 600;
+        }
         .schedule-calendar .fc-col-header-cell-cushion,
-        .schedule-calendar .fc-daygrid-day-number { font-size: 0.78rem; }
+        .schedule-calendar .fc-daygrid-day-number {
+          font-size: 0.78rem;
+          color: #475569;
+          padding: 6px 8px;
+        }
+        .schedule-calendar .fc-day-sat .fc-col-header-cell-cushion,
+        .schedule-calendar .fc-day-sat .fc-daygrid-day-number { color: #2563eb; }
+        .schedule-calendar .fc-day-sun .fc-col-header-cell-cushion,
+        .schedule-calendar .fc-day-sun .fc-daygrid-day-number { color: #dc2626; }
+        .schedule-calendar .fc-day-today { background: rgba(140, 185, 67, 0.06) !important; }
+        .schedule-calendar .fc-daygrid-day.fc-day-today .fc-daygrid-day-number {
+          background: #8cb943;
+          color: #fff;
+          border-radius: 999px;
+          width: 22px; height: 22px;
+          display: inline-flex; align-items: center; justify-content: center;
+          padding: 0;
+        }
+        .schedule-calendar .fc-event {
+          border: none;
+          border-left: 3px solid currentColor;
+          border-radius: 4px;
+          padding: 2px 6px;
+          background: color-mix(in srgb, currentColor 12%, white);
+          color: var(--fc-event-bg-color, #475569);
+          box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+          transition: transform 0.1s, box-shadow 0.2s;
+        }
+        .schedule-calendar .fc-event:hover {
+          transform: translateY(-1px);
+          box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
         .schedule-calendar .fc-event-title,
-        .schedule-calendar .fc-event-time { font-size: 0.72rem; }
+        .schedule-calendar .fc-event-time {
+          font-size: 0.72rem;
+          color: #1f2937;
+          font-weight: 500;
+        }
+        .schedule-calendar .fc-daygrid-event-dot { display: none; }
+        .schedule-calendar .fc-daygrid-day-frame { padding: 2px; }
+        @media (prefers-color-scheme: dark) {
+          .schedule-calendar .fc-button-primary { background: #18181b; color: #d4d4d8; border-color: #3f3f46; }
+          .schedule-calendar .fc-button-primary:hover { background: #27272a; color: #fff; border-color: #52525b; }
+          .schedule-calendar .fc-col-header-cell { background: #18181b; }
+          .schedule-calendar .fc-col-header-cell-cushion,
+          .schedule-calendar .fc-daygrid-day-number { color: #a1a1aa; }
+          .schedule-calendar .fc-event-title,
+          .schedule-calendar .fc-event-time { color: #f4f4f5; }
+        }
       `}</style>
 
       <TaskEditModal
@@ -269,14 +347,16 @@ function taskToEvent(task: Task): FCEvent | null {
 }
 
 function colorFor(tag: string): string {
+  // 참조 (_reference/schedule/style.css) 디자인의 카테고리 컬러 팔레트:
+  //   출장=blue, 외근=amber, 휴가=red, 기본=gray
   switch (tag) {
     case "외근":
-      return "#f97316"; // orange-500
+      return "#f59e0b"; // amber-500
     case "출장":
-      return "#ef4444"; // red-500
+      return "#0ea5e9"; // sky-500
     case "휴가":
-      return "#ec4899"; // pink-500
+      return "#ef4444"; // red-500
     default:
-      return "#71717a"; // zinc-500
+      return "#64748b"; // slate-500
   }
 }
