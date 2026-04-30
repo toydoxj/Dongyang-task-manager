@@ -68,12 +68,20 @@ function Form({
   const isTimeBased = isTimeBasedTask(category, activity);
   const { user } = useAuth();
   const myName = user?.name ?? "";
-  // 본인 담당 진행중 프로젝트 — 기본 list (빠름)
+  // dropdown 기준 사람 = task의 담당자(첫 명). 비어있으면 본인.
+  const firstAssignee = useMemo(() => {
+    const names = assignees
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean);
+    return names[0] ?? myName;
+  }, [assignees, myName]);
+  // 그 담당자 진행중+대기 프로젝트 — dropdown용 (빠름)
   const { data: mineData } = useProjects(
-    { mine: true, stage: "진행중" },
-    category === "프로젝트",
+    firstAssignee ? { assignee: firstAssignee } : undefined,
+    category === "프로젝트" && Boolean(firstAssignee),
   );
-  // 검색 모드: 전체 (1500+ 첫 호출만 5~15초)
+  // 검색 모드: 전체 (1500+ 첫 호출만 5~15초). 검색 시에만 fetch.
   const [projectQuery, setProjectQuery] = useState("");
   const trimmedQ = projectQuery.trim();
   const searchMode = trimmedQ.length > 0;
@@ -90,7 +98,11 @@ function Form({
         .slice(0, 30);
     }
     if (!mineData) return [];
-    return mineData.items.filter((p) => !p.completed);
+    // 진행중 + 대기만, 완료/타절/종결/이관 제외
+    return mineData.items.filter(
+      (p) =>
+        !p.completed && (p.stage === "진행중" || p.stage === "대기"),
+    );
   }, [searchMode, mineData, allData, trimmedQ]);
   // 현재 선택된 프로젝트의 표시 라벨 — 검색 결과나 mine list에 있으면 그 데이터로,
   // 없으면 task의 project_ids만 알려진 상태로 (옛 task 등)
@@ -104,23 +116,30 @@ function Form({
 
   const handlePickProject = async (p: Project): Promise<void> => {
     if (busy) return;
-    // 본인 미담당 프로젝트면 assignMe 호출 후 task 매핑
-    const alreadyAssigned = myName && p.assignees.includes(myName);
-    if (!alreadyAssigned && myName) {
+    // 담당자 기준 — 그 사람이 미담당이면 assignMe 호출 (본인이면 그냥, 다른 사람이면 forUser)
+    const targetName = firstAssignee;
+    const alreadyAssigned =
+      targetName && p.assignees.includes(targetName);
+    if (!alreadyAssigned && targetName) {
       let setToWaiting = false;
       if (p.stage !== "진행중") {
         const ok = confirm(
           `이 프로젝트의 현재 진행단계는 "${p.stage || "(미설정)"}" 입니다.\n` +
-            `본인 담당으로 추가하면서 진행단계를 "대기"로 변경합니다. 계속하시겠습니까?`,
+            `${targetName} 담당으로 추가하면서 진행단계를 "대기"로 변경합니다. 계속하시겠습니까?`,
         );
         if (!ok) return;
         setToWaiting = true;
       }
       setBusy(true);
       try {
-        await assignMe(p.id, { setToWaiting });
+        const forUser = targetName !== myName ? targetName : undefined;
+        await assignMe(p.id, { setToWaiting, forUser });
       } catch (e) {
-        setError(e instanceof Error ? e.message : "프로젝트 담당 추가 실패");
+        setError(
+          e instanceof Error
+            ? e.message
+            : "프로젝트 담당 추가 실패 (다른 직원 명의는 admin/팀장만 가능)",
+        );
         setBusy(false);
         return;
       }
@@ -320,10 +339,10 @@ function Form({
                   </button>
                 </div>
               )}
-              {/* 검색 input — 빈 검색이면 본인 담당 진행중, 검색어 있으면 전체 */}
+              {/* 검색 input — 빈 검색이면 담당자 진행중/대기, 검색어 있으면 전체 */}
               <input
                 type="search"
-                placeholder="검색어 없으면 본인 담당, 검색하면 전체"
+                placeholder={`검색어 없으면 ${firstAssignee || "본인"} 담당, 검색하면 전체`}
                 value={projectQuery}
                 onChange={(e) => setProjectQuery(e.target.value)}
                 className={inputCls}
@@ -344,12 +363,12 @@ function Form({
                     <p className="p-3 text-center text-[11px] text-zinc-500">
                       {searchMode
                         ? "검색 결과 없음"
-                        : "본인 담당 진행중 프로젝트 없음 — 검색해서 선택"}
+                        : `${firstAssignee || "본인"} 담당 진행중·대기 프로젝트 없음 — 검색해서 선택`}
                     </p>
                   )}
                 {candidates.map((p) => {
-                  const mineP =
-                    !!myName && p.assignees.includes(myName);
+                  const targetAssigned =
+                    !!firstAssignee && p.assignees.includes(firstAssignee);
                   const isSelected = p.id === projectId;
                   return (
                     <button
@@ -368,16 +387,22 @@ function Form({
                       <span className="min-w-0 flex-1 truncate">
                         {p.code ? `[${p.code}] ` : ""}
                         {p.name || "(제목 없음)"}
+                        <span className="ml-1 text-[10px] text-zinc-500">
+                          · {p.stage || "—"}
+                        </span>
                       </span>
                       <span className="shrink-0 text-[10px] text-zinc-500">
-                        {mineP ? "본인 담당" : `+ 본인 추가`}
+                        {targetAssigned
+                          ? `${firstAssignee} 담당`
+                          : `+ ${firstAssignee || "본인"} 추가`}
                       </span>
                     </button>
                   );
                 })}
               </div>
               <p className="text-[10px] text-zinc-500">
-                미담당 프로젝트 선택 시 자동으로 본인 담당이 추가됩니다.
+                담당자({firstAssignee || "본인"}) 기준. 미담당 프로젝트 선택 시
+                자동으로 그 직원이 담당으로 추가됩니다.
               </p>
             </div>
           </Field>
