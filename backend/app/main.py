@@ -181,6 +181,43 @@ async def cron_sync_one(
     return {"status": "started", "kind": kind, "full": str(full).lower()}
 
 
+# task 시작일 도래 자동 진행 — 매일 아침 cron으로 호출
+_running_auto_progress = False
+
+
+async def _run_auto_progress_in_bg() -> None:
+    global _running_auto_progress
+    cron_logger = logging.getLogger("dy.cron")
+    try:
+        from app.services.notion import get_notion
+        from app.services.task_auto_progress import auto_progress_tasks
+
+        result = await auto_progress_tasks(get_notion())
+        cron_logger.info("auto-progress done: %s", result)
+    except Exception:  # noqa: BLE001
+        cron_logger.exception("auto-progress 실패")
+    finally:
+        _running_auto_progress = False
+
+
+@app.post("/api/cron/auto-progress", status_code=202)
+async def cron_auto_progress(
+    _ok: None = Depends(_verify_cron),
+) -> dict[str, str]:
+    """task 시작일 도래 시 '진행 중' + 프로젝트 진행단계 '진행중' 자동 처리.
+
+    매일 아침 외부 cron이 호출. fire-and-forget 202.
+    """
+    global _running_auto_progress
+    if _running_auto_progress:
+        return {"status": "already_running"}
+    _running_auto_progress = True
+    task = asyncio.create_task(_run_auto_progress_in_bg())
+    _bg_tasks.add(task)
+    task.add_done_callback(_bg_tasks.discard)
+    return {"status": "started"}
+
+
 # 정적 frontend 서빙 (FRONTEND_DIST 환경변수가 설정되었을 때만)
 # — 반드시 라우터 등록 뒤에 와야 /api/* 가 가려지지 않는다.
 _frontend_dist = os.environ.get("FRONTEND_DIST", "")

@@ -102,3 +102,22 @@ services:
         value: 3.12.7
       - key: CRON_SECRET
         sync: false
+
+  # ── 매일 아침 task 자동 진행 트리거 ──
+  # 시작일이 도래한 task를 '진행 중'으로 + 그 프로젝트 진행단계 '진행중'으로.
+  # KST 09:00 = UTC 00:00. Render cron은 UTC 기준.
+  - type: cron
+    name: dy-task-auto-progress-cron
+    runtime: python
+    region: singapore
+    plan: starter
+    rootDir: backend
+    schedule: "0 0 * * *"
+    buildCommand: pip install httpx
+    startCommand: |
+      python -c "import os, httpx; r = httpx.post('https://api.dyce.kr/api/cron/auto-progress', headers={'Authorization': 'Bearer ' + os.environ['CRON_SECRET']}, timeout=60); print(r.status_code, r.text)"
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.7
+      - key: CRON_SECRET
+        sync: false
