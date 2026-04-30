@@ -47,15 +47,15 @@ export default function EmployeeWorkSelectorPage() {
     );
   }, [data, q, myTeam]);
 
-  // 팀 표시 순서 (본부 → 관리 → 진단 → 구조1~4 → 그 외)
+  // 팀 표시 순서 (가로 컬럼: 본부 → 구조1~4 → 진단 → 관리)
   const TEAM_ORDER = [
     "본부",
-    "관리팀",
-    "진단팀",
     "구조1팀",
     "구조2팀",
     "구조3팀",
     "구조4팀",
+    "진단팀",
+    "관리팀",
   ];
   // 직급 정렬 순서 (높은 순)
   const POSITION_ORDER = [
@@ -80,15 +80,16 @@ export default function EmployeeWorkSelectorPage() {
     return idx === -1 ? POSITION_ORDER.length : idx;
   };
 
-  // 팀별 그룹핑 + 직급순 정렬
+  // 팀별 그룹핑 + 직급순 정렬. TEAM_ORDER에 정의된 팀은 비어있어도 컬럼 노출.
   const grouped = useMemo(() => {
     const map = new Map<string, typeof employees>();
+    // 모든 알려진 팀을 빈 list로 초기화
+    for (const team of TEAM_ORDER) map.set(team, []);
     for (const e of employees) {
       const team = e.team || "기타";
       if (!map.has(team)) map.set(team, []);
       map.get(team)!.push(e);
     }
-    // 각 팀 내부 — 직급 순 → 이름 순
     for (const arr of map.values()) {
       arr.sort((a, b) => {
         const dp = positionOrder(a.position) - positionOrder(b.position);
@@ -96,7 +97,6 @@ export default function EmployeeWorkSelectorPage() {
         return a.name.localeCompare(b.name, "ko");
       });
     }
-    // 팀 정렬
     return Array.from(map.entries()).sort(
       ([a], [b]) => teamOrder(a) - teamOrder(b),
     );
@@ -142,28 +142,38 @@ export default function EmployeeWorkSelectorPage() {
       {isLoading && !data ? (
         <LoadingState message="직원 명부 불러오는 중" height="h-32" />
       ) : (
-        <div className="space-y-5">
+        <div className="flex gap-3 overflow-x-auto pb-2">
           {grouped.map(([team, members]) => (
-            <section key={team}>
-              <h2 className="mb-2 flex items-baseline gap-2 text-sm font-semibold text-zinc-700 dark:text-zinc-300">
-                {team}
-                <span className="text-[10px] font-normal text-zinc-500">
-                  {members.length}명
-                </span>
-              </h2>
-              <ul className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
+            <section
+              key={team}
+              className="flex w-48 flex-shrink-0 flex-col rounded-xl border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900"
+            >
+              <header className="border-b border-zinc-200 px-3 py-2 dark:border-zinc-800">
+                <h2 className="flex items-baseline gap-2 text-xs font-semibold text-zinc-700 dark:text-zinc-300">
+                  {team}
+                  <span className="text-[10px] font-normal text-zinc-500">
+                    {members.length}명
+                  </span>
+                </h2>
+              </header>
+              <ul className="space-y-1 p-2">
+                {members.length === 0 && (
+                  <li className="px-2 py-3 text-center text-[10px] text-zinc-400">
+                    인원 없음
+                  </li>
+                )}
                 {members.map((e) => (
                   <li key={e.id}>
                     <Link
                       href={`/me?as=${encodeURIComponent(e.name)}`}
                       className={cn(
-                        "block rounded-lg border border-zinc-200 bg-white px-3 py-2.5 text-sm transition-colors hover:bg-zinc-50",
-                        "dark:border-zinc-800 dark:bg-zinc-900 dark:hover:bg-zinc-800",
+                        "block rounded-md border border-zinc-200 bg-white px-2.5 py-1.5 text-xs transition-colors hover:bg-zinc-50",
+                        "dark:border-zinc-800 dark:bg-zinc-950 dark:hover:bg-zinc-800",
                       )}
                     >
                       <p className="font-medium">{e.name}</p>
-                      <p className="mt-0.5 text-[11px] text-zinc-500">
-                        {[e.team, e.position].filter(Boolean).join(" · ") || "—"}
+                      <p className="mt-0.5 text-[10px] text-zinc-500">
+                        {e.position || "—"}
                       </p>
                     </Link>
                   </li>

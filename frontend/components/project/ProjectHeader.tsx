@@ -1,8 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
+import useSWR from "swr";
 
 import { useAuth } from "@/components/AuthGuard";
+import { getEmployeeTeamsMap } from "@/lib/api";
 import { authFetch } from "@/lib/auth";
 import type { Project } from "@/lib/domain";
 import { formatDate } from "@/lib/format";
@@ -30,6 +32,21 @@ export default function ProjectHeader({ project }: { project: Project }) {
   const [copied, setCopied] = useState(false);
   const [explorerOpen, setExplorerOpen] = useState(false);
   const [stageChangeOpen, setStageChangeOpen] = useState(false);
+
+  // 담당팀 — 직원 명부의 assignee.team 으로 자동 집계 (중복 제거)
+  const { data: teamsMap } = useSWR(
+    ["employee-teams-map"],
+    () => getEmployeeTeamsMap(),
+  );
+  const memberTeams = useMemo(() => {
+    const map = teamsMap ?? {};
+    const teams = new Set<string>();
+    for (const a of project.assignees) {
+      const t = map[a];
+      if (t) teams.add(t);
+    }
+    return Array.from(teams).sort((a, b) => a.localeCompare(b, "ko"));
+  }, [project.assignees, teamsMap]);
   const masterLabel =
     project.master_project_name || project.master_code || "";
 
@@ -202,7 +219,14 @@ export default function ProjectHeader({ project }: { project: Project }) {
       </div>
 
       <dl className="mt-4 grid grid-cols-2 gap-x-4 gap-y-2 text-xs md:grid-cols-4">
-        <Field label="담당팀" value={project.teams.join(", ") || "—"} />
+        <Field
+          label="담당팀"
+          value={
+            memberTeams.length > 0
+              ? memberTeams.join(", ")
+              : project.teams.join(", ") || "—"
+          }
+        />
         <Field label="담당자" value={project.assignees.join(", ") || "—"} />
         <Field label="업무내용" value={project.work_types.join(", ") || "—"} />
         <Field label="계약" value={project.contract_signed ? "✓" : "미체결"} />
