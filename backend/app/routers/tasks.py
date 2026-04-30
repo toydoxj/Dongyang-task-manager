@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import asyncio
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -20,6 +20,7 @@ from app.models.task import (
     task_update_to_props,
 )
 from app.security import get_current_user
+from app.services import task_calendar_sync
 from app.services.mirror_dto import task_from_mirror
 from app.services.notion import NotionService, get_notion
 from app.services.sync import get_sync
@@ -75,6 +76,7 @@ async def list_tasks(
 @router.post("", response_model=Task, status_code=status.HTTP_201_CREATED)
 async def create_task(
     body: TaskCreateRequest,
+    background: BackgroundTasks,
     _user: User = Depends(get_current_user),
     notion: NotionService = Depends(get_notion),
 ) -> Task:
@@ -85,7 +87,10 @@ async def create_task(
     props = task_create_to_props(body)
     page = await notion.create_page(db_id, props)
     get_sync().upsert_page("tasks", page)  # write-through
-    return Task.from_notion_page(page)
+    task = Task.from_notion_page(page)
+    # WORKS Calendar 단방향 동기화 (best-effort, 실패해도 응답 영향 없음)
+    background.add_task(task_calendar_sync.sync_task, task)
+    return task
 
 
 @router.get("/{page_id}", response_model=Task)
@@ -111,6 +116,7 @@ async def get_task(
 async def update_task(
     page_id: str,
     body: TaskUpdateRequest,
+    background: BackgroundTasks,
     _user: User = Depends(get_current_user),
     notion: NotionService = Depends(get_notion),
 ) -> Task:
@@ -121,12 +127,15 @@ async def update_task(
         )
     page = await notion.update_page(page_id, props)
     get_sync().upsert_page("tasks", page)  # write-through
-    return Task.from_notion_page(page)
+    task = Task.from_notion_page(page)
+    background.add_task(task_calendar_sync.sync_task, task)
+    return task
 
 
 @router.delete("/{page_id}")
 async def archive_task(
     page_id: str,
+    background: BackgroundTasks,
     _user: User = Depends(get_current_user),
     notion: NotionService = Depends(get_notion),
 ) -> dict[str, str]:
@@ -136,4 +145,5 @@ async def archive_task(
     )
     notion.clear_cache()
     get_sync().archive_page("tasks", page_id)
+    background.add_task(task_calendar_sync.unsync_task, page_id)
     return {"status": "archived", "page_id": page_id}
