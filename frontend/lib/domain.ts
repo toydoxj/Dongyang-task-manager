@@ -65,6 +65,7 @@ export interface ProjectUpdateRequest {
   start_date?: string;
   contract_start?: string;
   contract_end?: string;
+  end_date?: string;
   contract_amount?: number;
   vat?: number;
 }

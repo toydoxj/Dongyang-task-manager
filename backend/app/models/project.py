@@ -138,6 +138,7 @@ class ProjectUpdateRequest(BaseModel):
     start_date: str | None = None
     contract_start: str | None = None
     contract_end: str | None = None
+    end_date: str | None = None  # 완료일 (단계변경 모달에서 사용)
     contract_amount: float | None = None
     vat: float | None = None
 
@@ -179,6 +180,12 @@ def project_update_to_props(req: ProjectUpdateRequest) -> dict[str, Any]:
                     "end": req.contract_end or None,
                 }
             }
+    if req.end_date is not None:
+        props["완료일"] = (
+            {"date": None}
+            if req.end_date == ""
+            else {"date": {"start": req.end_date, "end": None}}
+        )
     if req.contract_amount is not None:
         props["용역비(VAT제외)"] = {"number": req.contract_amount}
     if req.vat is not None:
