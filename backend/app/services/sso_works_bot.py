@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 import time
 from typing import Any
 
@@ -25,6 +26,11 @@ from app.settings import Settings, get_settings
 
 logger = logging.getLogger("sso.works_bot")
 
+_PEM_RE = re.compile(
+    r"^(?P<header>-----BEGIN [A-Z ]+-----)(?P<body>.+?)(?P<footer>-----END [A-Z ]+-----)\s*$",
+    re.DOTALL,
+)
+
 _TOKEN_ENDPOINT = "https://auth.worksmobile.com/oauth2/v2.0/token"
 _BOT_API_BASE = "https://www.worksapis.com/v1.0"
 _HTTP_TIMEOUT = 15.0
@@ -34,14 +40,36 @@ _token_lock = asyncio.Lock()
 
 
 def _normalize_private_key(raw: str) -> str:
-    """env에 single-line으로 들어간 PEM의 `\\n` 이스케이프를 실제 줄바꿈으로 복원.
+    """다양한 형태로 들어온 PEM을 cryptography가 받아들이는 표준 형태로 복원.
 
-    Render·dotenv 모두 multiline 지원하지만 운영자가 single-line으로 붙여넣는 경우가
-    잦아 호환 처리.
+    Render env / dotenv의 multi-line 지원 한계 때문에 운영자가 다음 중 한 가지로
+    PEM을 입력하는 경우가 잦다 — 셋 다 같은 표준 PEM으로 정규화한다:
+
+    1) 정상 multi-line — 줄마다 base64 64자 + LF, BEGIN/END 마커 양 끝
+    2) `\\n` 이스케이프 single-line — `-----BEGIN PRIVATE KEY-----\\nMIIE...\\n-----END...`
+    3) 공백 평탄화 single-line — `-----BEGIN PRIVATE KEY----- MIIE Awg... -----END...`
+       (paste 과정에서 multi-line이 공백/탭으로 squash된 경우)
+
+    cryptography의 `MalformedFraming` 에러는 (3) 형태에서 자주 발생한다.
     """
+    raw = (raw or "").strip()
+    if not raw:
+        return raw
+    # (2) 명시적 이스케이프 — 줄바꿈이 진짜 없는 경우만
     if "\\n" in raw and "\n" not in raw:
-        return raw.replace("\\n", "\n")
-    return raw
+        raw = raw.replace("\\n", "\n")
+    # (1)과 (2 처리 후) 이미 multi-line이고 첫 줄과 마지막 줄이 BEGIN/END면 그대로
+    if "\n" in raw:
+        return raw + ("\n" if not raw.endswith("\n") else "")
+    # (3) single-line — BEGIN/END 마커 인식 후 본문을 64자 wrap
+    m = _PEM_RE.match(raw)
+    if not m:
+        return raw  # 알 수 없는 형식 — 그대로 반환해 cryptography가 에러 메시지 띄우게
+    header = m.group("header").strip()
+    body = re.sub(r"\s+", "", m.group("body"))  # 모든 공백/탭/CR 제거
+    footer = m.group("footer").strip()
+    wrapped = "\n".join(body[i : i + 64] for i in range(0, len(body), 64))
+    return f"{header}\n{wrapped}\n{footer}\n"
 
 
 async def _get_access_token() -> str:

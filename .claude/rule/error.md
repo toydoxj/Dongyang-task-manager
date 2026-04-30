@@ -244,3 +244,10 @@
 - 패턴: 외부 서비스 호출(Bot send_text, 자동 task 생성, task 동기화)은 fire-and-forget — 호출자 트랜잭션을 절대 막지 않음. `asyncio.create_task` + `_bg_tasks: set` 강 참조 + `add_done_callback(_bg_tasks.discard)` 으로 GC 누수 방지
 - 패턴: 구조검토서 문서번호 발급(`{YY}-의견-{NNN}`)은 노션 default `archived=False` filter가 자동 적용 → 마지막 번호 archive 시 다음 발급에서 재사용 (별도 회수 로직 불필요). 중간 번호 취소는 archive하지 않고 `[날인취소]` prefix + 첨부 비움으로 흔적 남김 (sequence 깨짐 방지)
 - 재발 방지: 노션 select enum 변경 시 schema 자동 추가 + read 정규화 함수 쌍을 항상 같이 도입. 외부 알림은 어떤 경우에도 사용자 트랜잭션 차단 금지. JWT 서명 라이브러리는 이미 있는 것을 우선 활용 (python-jose / PyJWT 중복 의존 회피)
+
+### 2026-04-30 — Render env에 PEM 붙여넣으면 줄바꿈이 공백으로 평탄화 (MalformedFraming)
+- 컨텍스트: NAVER WORKS Bot Service Account JWT(RS256) 서명을 위해 WORKS_BOT_PRIVATE_KEY를 Render Environment에 붙여넣은 후 첫 호출
+- 증상: backend Logs `Bot 토큰 발급 실패: Bot JWT 서명 실패 — Private Key 형식 확인 필요: Unable to load PEM file. ... MalformedFraming`. test endpoint는 `ok=false, error="send_text False"`만 응답
+- 원인: Render env 입력 UI가 multi-line 지원하긴 하지만, paste 과정에서 PEM의 줄바꿈이 공백/탭으로 squash되는 케이스 발생. cryptography는 base64 본문 사이의 공백을 줄바꿈으로 인식 못 해 framing 에러
+- 해결: `sso_works_bot._normalize_private_key`를 강화 — (1) 정상 multi-line / (2) `\n` 이스케이프 single-line / (3) 공백 평탄화 single-line 3종 모두 정규화. BEGIN/END 마커를 regex로 잡고 본문의 모든 공백을 제거 후 64자 단위 wrap으로 표준 PEM 재구성. 테스트 6종 추가
+- 재발 방지: secret 환경변수에 multi-line 값이 들어가야 하는 모든 곳(JWT private key, certificate, multi-line config)은 입력 형태에 무관한 정규화 함수 + 명시적 unit test 동반. paste 사고를 코드 레이어에서 흡수하면 운영자 트러블슈팅 시간이 절약됨
