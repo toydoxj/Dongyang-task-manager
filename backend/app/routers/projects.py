@@ -336,8 +336,10 @@ async def assign_me(
     current = P.multi_select_names(props, "담당자")
     current_stage = P.select_name(props, "진행단계")
     current_completed = P.checkbox(props, "완료")
+    prev_end_date = P.date_range(props, "완료일")[0] or ""
     needs_assign = target_name not in current
     needs_stage = set_to_waiting and current_stage != "진행중"
+    needs_clear_completed = needs_stage and current_completed
 
     if not needs_assign and not needs_stage:
         return Project.from_notion_page(page)
@@ -351,8 +353,9 @@ async def assign_me(
     if needs_stage:
         update_props["진행단계"] = {"select": {"name": "대기"}}
         # 가져오기로 다시 활성화 — '완료' 표시·'완료일'도 함께 해제
-        # (mine list filter가 !completed 라 안 풀면 me 페이지에 안 보임)
-        if current_completed:
+        # (mine list filter가 !completed 라 안 풀면 me 페이지에 안 보임).
+        # 이전 완료일은 별도 assign log에 보존되어 기록 사라지지 않음.
+        if needs_clear_completed:
             update_props["완료"] = {"checkbox": False}
             update_props["완료일"] = {"date": None}
 
@@ -367,6 +370,18 @@ async def assign_me(
             actor=user.name or "(시스템)",
             target=target_name,
             action="담당 추가",
+        )
+    # 완료 해제(재활성화) 이벤트도 동일 assign log에 기록 — 이전 완료일 보존용
+    if needs_clear_completed:
+        await _log_assign_change(
+            notion,
+            project_id=page_id,
+            project_name=(
+                f"{project.name} (이전 완료일: {prev_end_date or '미상'})"
+            ),
+            actor=user.name or "(시스템)",
+            target=target_name,
+            action="완료 해제",
         )
     return project
 
