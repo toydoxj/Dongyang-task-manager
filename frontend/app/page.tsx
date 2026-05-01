@@ -76,9 +76,13 @@ export default function DashboardPage() {
         <>
           <section>
             <h2 className="mb-2 text-sm font-medium text-zinc-700 dark:text-zinc-300">
-              월별 매출/수금 추이
+              월별 수주 / 수금 / 지출 추이
             </h2>
-            <RevenueCollectionChart projects={projects} incomes={incomes} />
+            <RevenueCollectionChart
+              projects={projects}
+              incomes={incomes}
+              expenses={expenses ?? []}
+            />
           </section>
 
           <section>
