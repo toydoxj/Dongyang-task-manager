@@ -15,6 +15,16 @@
 
 ---
 
+### 2026-05-01 — 발주처가 `발주처` relation 대신 `발주처(임시)` 텍스트 컬럼으로 저장됨
+- 컨텍스트: 프로젝트 편집 모달에서 "KCC중앙연구소"를 발주처로 입력 후 저장
+- 증상: 노션 페이지에서 발주처 relation은 비어있고 발주처(임시) 텍스트만 채워짐
+- 원인: 프론트가 `useClients` 데이터에 정확히 매칭되는 항목이 있을 때만 `client_relation_ids`로 저장. 발주처 DB(`(주)동양구조-협력업체 관리`)에 미등록된 신규 발주처는 무조건 `client_text`(임시) fallback. 사용자가 신규 발주처를 등록할 진입점 부재.
+- 해결:
+  1) 백엔드에 `POST /api/clients` 추가 — 노션 발주처 DB에 페이지 생성 + mirror 즉시 upsert. trim+lower 기준 중복 체크로 동일 이름 재사용
+  2) 프론트 ProjectEdit/CreateModal에 "발주처 DB에 추가" 버튼 노출 (매칭 실패 시). createClient 호출 후 SWR mutate로 캐시 즉시 주입 → 재조회 race 회피
+  3) 프론트 매칭도 trim+lower로 정규화, 백엔드 중복 판정과 일관성 유지
+- 재발 방지: 노션 relation 컬럼에 데이터 입력 진입점은 항상 (a) 기존 항목 자동완성 + (b) 신규 등록 버튼 두 가지를 제공할 것. text fallback은 임시 도구로만 두고 명시적 메시지로 사용자에게 알림.
+
 ### 2026-04-26 — `.claude/rule`가 디렉토리가 아닌 빈 파일로 생성됨
 - 컨텍스트: 프로젝트 초기화 중 `.claude/rule/error.md` 생성 시도
 - 증상: `mkdir: cannot create directory '.claude/rule': File exists`

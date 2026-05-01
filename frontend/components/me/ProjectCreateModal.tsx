@@ -1,11 +1,13 @@
 "use client";
 
 import { useState } from "react";
+import { useSWRConfig } from "swr";
 
 import Modal from "@/components/ui/Modal";
-import { createProject } from "@/lib/api";
+import { createClient, createProject } from "@/lib/api";
+import type { ClientListResponse } from "@/lib/domain";
 import { TEAMS, WORK_TYPES } from "@/lib/domain";
-import { useClients } from "@/lib/hooks";
+import { keys, useClients } from "@/lib/hooks";
 
 interface Props {
   open: boolean;
@@ -32,12 +34,46 @@ export default function ProjectCreateModal({
   const [amount, setAmount] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [clientAdding, setClientAdding] = useState(false);
 
+  const { mutate } = useSWRConfig();
   // 협력업체 목록 (모달 열릴 때만 fetch)
   const { data: clientData } = useClients(open);
-  const clientMatch = clientData?.items.find(
-    (c) => c.name.trim() === client.trim() && client.trim() !== "",
-  );
+  // 정규화 매칭 — 백엔드의 중복 판정과 동일하게 trim + lower 비교
+  const norm = (s: string): string => s.trim().toLowerCase();
+  const clientMatch =
+    client.trim() === ""
+      ? undefined
+      : clientData?.items.find((c) => norm(c.name) === norm(client));
+  const showAddClient = !clientMatch && client.trim() !== "" && !clientAdding;
+
+  const addClientToDb = async (): Promise<void> => {
+    const trimmed = client.trim();
+    if (!trimmed) return;
+    setClientAdding(true);
+    setError(null);
+    try {
+      const created = await createClient({ name: trimmed });
+      // race 회피: SWR 캐시에 즉시 주입 후 setClient
+      await mutate(
+        keys.clients(),
+        (current: ClientListResponse | undefined) => {
+          if (!current) return current;
+          if (current.items.some((c) => c.id === created.id)) return current;
+          return {
+            items: [...current.items, created],
+            count: current.count + 1,
+          };
+        },
+        { revalidate: false },
+      );
+      setClient(created.name);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "발주처 등록 실패");
+    } finally {
+      setClientAdding(false);
+    }
+  };
 
   const reset = (): void => {
     setName("");
@@ -138,11 +174,25 @@ export default function ProjectCreateModal({
                 </option>
               ))}
             </datalist>
-            {client.trim() && (
-              <p className="mt-1 text-[10px] text-zinc-500">
-                {clientMatch
-                  ? `✓ 매칭: ${clientMatch.name} (${clientMatch.category || "분류 없음"})`
-                  : "신규 발주처로 입력 (text 컬럼)"}
+            {showAddClient && (
+              <div className="mt-1 flex items-center gap-2">
+                <p className="text-[10px] text-zinc-500">
+                  미등록 발주처입니다 — 추가하지 않으면 임시 텍스트로 저장됩니다.
+                </p>
+                <button
+                  type="button"
+                  onClick={addClientToDb}
+                  disabled={clientAdding}
+                  className="rounded-md border border-zinc-300 px-2 py-0.5 text-[10px] hover:bg-zinc-50 disabled:opacity-50 dark:border-zinc-700 dark:hover:bg-zinc-800"
+                >
+                  {clientAdding ? "추가 중..." : "발주처 DB에 추가"}
+                </button>
+              </div>
+            )}
+            {clientMatch && client.trim() && (
+              <p className="mt-1 text-[10px] text-emerald-500">
+                ✓ 매칭: {clientMatch.name}
+                {clientMatch.category ? ` (${clientMatch.category})` : ""}
               </p>
             )}
           </Field>

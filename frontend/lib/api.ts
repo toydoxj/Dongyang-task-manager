@@ -4,6 +4,7 @@ import { authFetch } from "./auth";
 import { API_BASE } from "./types";
 import type {
   CashflowResponse,
+  Client,
   ClientListResponse,
   DriveChildrenResponse,
   DriveUploadResponse,
@@ -204,11 +205,27 @@ export async function getCashflow(filters: {
   return jsonOrThrow<CashflowResponse>(res);
 }
 
-// ── 협력업체 ──
+// ── 협력업체(발주처) ──
 
 export async function listClients(): Promise<ClientListResponse> {
   const res = await authFetch(`/api/clients`);
   return jsonOrThrow<ClientListResponse>(res);
+}
+
+export interface ClientCreateRequest {
+  name: string;
+  category?: string;
+}
+
+export async function createClient(
+  body: ClientCreateRequest,
+): Promise<Client> {
+  const res = await authFetch(`/api/clients`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  return jsonOrThrow<Client>(res);
 }
 
 // ── 마스터 프로젝트 ──
