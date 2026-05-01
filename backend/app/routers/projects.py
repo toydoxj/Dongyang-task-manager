@@ -414,10 +414,10 @@ VALID_STAGES = {"진행중", "대기", "보류", "완료", "타절", "종결", "
 async def set_project_stage(
     page_id: str,
     stage: str = Query(..., description="대기/보류/완료/타절/종결/이관 중 하나"),
-    _user: User = Depends(get_current_user),
+    _admin: User = Depends(require_admin),
     notion: NotionService = Depends(get_notion),
 ) -> Project:
-    """대시보드 칸반 드래그용 — '진행중'은 자동 결정이라 강제 변경 불가."""
+    """대시보드 칸반 드래그용 — admin 전용. '진행중'은 자동 결정이라 강제 변경 불가."""
     if stage not in VALID_STAGES:
         raise HTTPException(status_code=400, detail=f"잘못된 stage: {stage}")
     if stage == "진행중":

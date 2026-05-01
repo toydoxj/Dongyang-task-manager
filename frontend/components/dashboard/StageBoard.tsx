@@ -13,6 +13,8 @@ import Link from "next/link";
 import { useState } from "react";
 import { mutate as globalMutate } from "swr";
 
+import { useAuth } from "@/components/AuthGuard";
+import ProjectStageChangeModal from "@/components/project/ProjectStageChangeModal";
 import { setProjectStage } from "@/lib/api";
 import type { Project, ProjectListResponse } from "@/lib/domain";
 import { PROJECT_STAGES, TEAMS } from "@/lib/domain";
@@ -23,6 +25,13 @@ import { cn } from "@/lib/utils";
 interface Props {
   projects: Project[];
 }
+
+type CloseMode = "완료" | "타절" | "종결";
+const CLOSE_MODES: ReadonlySet<string> = new Set<CloseMode>([
+  "완료",
+  "타절",
+  "종결",
+]);
 
 const STAGE_COLOR: Record<string, string> = {
   "진행중": "border-blue-500/40 bg-blue-500/5",
@@ -45,9 +54,16 @@ const STAGE_DOT: Record<string, string> = {
 };
 
 export default function StageBoard({ projects }: Props) {
+  const { user } = useAuth();
+  const isAdmin = user?.role === "admin";
   const [items, setItems] = useState<Project[]>(projects);
   const [err, setErr] = useState<string | null>(null);
   const [activeTeam, setActiveTeam] = useState<string>("전체");
+  // 드래그로 완료/타절/종결 컬럼에 떨어뜨렸을 때 띄우는 모달 상태
+  const [pendingClose, setPendingClose] = useState<{
+    project: Project;
+    mode: CloseMode;
+  } | null>(null);
 
   // 부모가 새 데이터 주면 동기화 (SWR revalidate)
   if (projects !== items && projects.length !== items.length) {
@@ -95,6 +111,10 @@ export default function StageBoard({ projects }: Props) {
   async function handleDragEnd(e: DragEndEvent): Promise<void> {
     const { active, over } = e;
     if (!over) return;
+    if (!isAdmin) {
+      setErr("진행단계 변경은 관리자만 가능합니다.");
+      return;
+    }
     const projectId = String(active.id);
     const targetStage = String(over.id);
     const proj = items.find((p) => p.id === projectId);
@@ -105,7 +125,15 @@ export default function StageBoard({ projects }: Props) {
     }
 
     setErr(null);
-    // optimistic update
+
+    // 완료/타절/종결은 완료일·금액 등 부수 정보가 필요해 모달로 위임.
+    // optimistic update 안 하므로 모달 취소 시 카드는 자연스럽게 원위치.
+    if (CLOSE_MODES.has(targetStage)) {
+      setPendingClose({ project: proj, mode: targetStage as CloseMode });
+      return;
+    }
+
+    // 대기/보류/이관: 즉시 stage만 변경
     const prev = items;
     setItems(items.map((p) => (p.id === projectId ? { ...p, stage: targetStage } : p)));
 
@@ -159,6 +187,11 @@ export default function StageBoard({ projects }: Props) {
         })}
       </div>
 
+      {!isAdmin && (
+        <p className="rounded-md border border-zinc-300 bg-zinc-50 p-2 text-xs text-zinc-600 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-400">
+          진행단계 변경은 관리자만 가능합니다. 카드 드래그는 비활성화되어 있습니다.
+        </p>
+      )}
       {err && (
         <p className="rounded-md border border-amber-500/40 bg-amber-500/5 p-2 text-xs text-amber-500">
           {err}
@@ -171,19 +204,59 @@ export default function StageBoard({ projects }: Props) {
               key={stage}
               stage={stage}
               items={grouped.get(stage) ?? []}
+              draggable={isAdmin}
             />
           ))}
         </div>
       </DndContext>
+
+      {pendingClose && (
+        <ProjectStageChangeModal
+          project={pendingClose.project}
+          defaultMode={pendingClose.mode}
+          onClose={() => setPendingClose(null)}
+          onSaved={() => {
+            const id = pendingClose.project.id;
+            const newStage = pendingClose.mode;
+            setItems((prev) =>
+              prev.map((p) =>
+                p.id === id ? { ...p, stage: newStage } : p,
+              ),
+            );
+            void globalMutate(
+              keys.projects(),
+              (old: ProjectListResponse | undefined) =>
+                old
+                  ? {
+                      ...old,
+                      items: old.items.map((p) =>
+                        p.id === id ? { ...p, stage: newStage } : p,
+                      ),
+                    }
+                  : old,
+              { revalidate: true },
+            );
+            setPendingClose(null);
+          }}
+        />
+      )}
     </div>
   );
 }
 
-function StageColumn({ stage, items }: { stage: string; items: Project[] }) {
+function StageColumn({
+  stage,
+  items,
+  draggable,
+}: {
+  stage: string;
+  items: Project[];
+  draggable: boolean;
+}) {
   const isAutoStage = stage === "진행중";
   const { isOver, setNodeRef } = useDroppable({
     id: stage,
-    disabled: isAutoStage, // 진행중 컬럼은 drop 차단
+    disabled: isAutoStage || !draggable, // 진행중 컬럼/비-admin은 drop 차단
   });
   const total = items.reduce((s, p) => s + (p.contract_amount ?? 0), 0);
   const [expanded, setExpanded] = useState(false);
@@ -226,7 +299,7 @@ function StageColumn({ stage, items }: { stage: string; items: Project[] }) {
           </li>
         )}
         {visibleItems.map((p) => (
-          <ProjectCard key={p.id} project={p} />
+          <ProjectCard key={p.id} project={p} draggable={draggable} />
         ))}
         {items.length > VISIBLE && (
           <li>
@@ -246,9 +319,15 @@ function StageColumn({ stage, items }: { stage: string; items: Project[] }) {
   );
 }
 
-function ProjectCard({ project: p }: { project: Project }) {
+function ProjectCard({
+  project: p,
+  draggable,
+}: {
+  project: Project;
+  draggable: boolean;
+}) {
   const { attributes, listeners, setNodeRef, transform, isDragging } =
-    useDraggable({ id: p.id });
+    useDraggable({ id: p.id, disabled: !draggable });
 
   const style: React.CSSProperties | undefined = transform
     ? {

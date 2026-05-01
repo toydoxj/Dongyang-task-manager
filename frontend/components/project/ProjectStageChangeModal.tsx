@@ -16,21 +16,24 @@ import { getProjectLog, updateProject } from "@/lib/api";
 import type { Project } from "@/lib/domain";
 import { cn } from "@/lib/utils";
 
+type Mode = "완료" | "타절" | "종결";
+
 interface Props {
   project: Project;
   onClose: () => void;
   onSaved: () => void;
+  /** 외부에서 모드를 prefill (칸반 드래그 흐름). 미지정 시 null로 시작. */
+  defaultMode?: Mode;
 }
-
-type Mode = "완료" | "타절" | "종결";
 
 export default function ProjectStageChangeModal({
   project,
   onClose,
   onSaved,
+  defaultMode,
 }: Props) {
   const today = new Date().toISOString().slice(0, 10);
-  const [mode, setMode] = useState<Mode | null>(null);
+  const [mode, setMode] = useState<Mode | null>(defaultMode ?? null);
   const [endDate, setEndDate] = useState(today);
   const [terminationAmount, setTerminationAmount] = useState("");
   const [terminationVat, setTerminationVat] = useState("");
