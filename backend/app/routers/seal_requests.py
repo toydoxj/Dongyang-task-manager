@@ -555,6 +555,12 @@ async def _create_seal_task_bg(
         page = await notion.create_page(s.notion_db_tasks, props)
         task_id = str(page.get("id", ""))
         if task_id:
+            # write-through — mirror_tasks에 즉시 upsert. 일반 task create와
+            # 동일하게 5분 incremental sync 전에 프로젝트 칸반에 보이도록.
+            try:
+                get_sync().upsert_page("tasks", page)
+            except Exception as e:  # noqa: BLE001
+                logger.warning("자동 task mirror upsert 실패: %s", e)
             await notion.update_page(
                 seal_page_id,
                 {seal_link_prop: {"rich_text": [{"text": {"content": task_id}}]}},
@@ -603,7 +609,7 @@ async def _sync_linked_task(
         except Exception:  # noqa: BLE001
             start = date.today().isoformat()
         today_iso = date.today().isoformat()
-        await notion.update_page(
+        updated = await notion.update_page(
             task_id,
             {
                 "상태": {"status": {"name": "완료"}},
@@ -611,6 +617,11 @@ async def _sync_linked_task(
                 "실제 완료일": {"date": {"start": today_iso}},
             },
         )
+        # write-through — 5분 sync 전에 칸반에서 '진행 중' → '완료' 이동 즉시 반영
+        try:
+            get_sync().upsert_page("tasks", updated)
+        except Exception as e:  # noqa: BLE001
+            logger.warning("자동 task mirror upsert 실패 (완료): %s", e)
     except Exception as e:  # noqa: BLE001
         logger.warning("연결 task 동기화 실패 (%s, %s): %s", task_id, target, e)
 
