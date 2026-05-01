@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { cn } from "@/lib/utils";
 
@@ -35,6 +35,11 @@ export default function MultiSelectChips({
   const [active, setActive] = useState(0);
   const [open, setOpen] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  // value의 latest snapshot — add() closure 안에서 stale ref 위험 차단
+  const valueRef = useRef(value);
+  useEffect(() => {
+    valueRef.current = value;
+  }, [value]);
 
   const suggestions = useMemo(() => {
     const q = text.trim().toLowerCase();
@@ -47,8 +52,9 @@ export default function MultiSelectChips({
   function add(raw: string) {
     const v = raw.trim();
     if (!v) return;
-    if (value.includes(v)) return;
-    onChange([...value, v]);
+    const current = valueRef.current;
+    if (current.includes(v)) return;
+    onChange([...current, v]);
     setText("");
     setActive(0);
   }
