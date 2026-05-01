@@ -645,6 +645,31 @@ export async function createSealRequest(form: FormData): Promise<SealRequestItem
   return jsonOrThrow<SealRequestItem>(res);
 }
 
+export interface SealRedoRequest {
+  seal_type: string;
+  due_date: string;
+  title?: string;
+  note?: string;
+  real_source_id?: string;
+  purpose?: string;
+  revision?: number;
+  with_safety_cert?: boolean;
+  summary?: string;
+  doc_kind?: string;
+}
+
+export async function redoSealRequest(
+  id: string,
+  body: SealRedoRequest,
+): Promise<SealRequestItem> {
+  const res = await authFetch(`/api/seal-requests/${id}/redo`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  return jsonOrThrow<SealRequestItem>(res);
+}
+
 export async function approveSealLead(id: string): Promise<SealRequestItem> {
   const res = await authFetch(`/api/seal-requests/${id}/approve-lead`, {
     method: "PATCH",

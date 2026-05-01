@@ -158,6 +158,25 @@ class SealUpdateBody(BaseModel):
     due_date: str | None = None
 
 
+class SealRedoBody(BaseModel):
+    """재날인요청 — 같은 노션 row를 새 1차검토 사이클로 덮어쓰기.
+
+    create와 동일한 모든 입력을 받음. seal_type은 변경 가능(요구상 모든 필드
+    덮어쓰기). 단 구조검토서는 새 문서번호로 자동 갱신.
+    """
+
+    seal_type: str
+    due_date: str
+    title: str = ""
+    note: str = ""
+    real_source_id: str = ""
+    purpose: str = ""
+    revision: int = 0
+    with_safety_cert: bool = False
+    summary: str = ""
+    doc_kind: str = ""
+
+
 # ── helper ──
 
 
@@ -1488,6 +1507,175 @@ async def add_attachments(
     await notion.update_page(page_id, update_props)
     if failed:
         logger.warning("첨부 추가 일부 실패 (page=%s): %s", page_id, failed)
+    final = await notion.get_page(page_id)
+    return _from_notion_page(final)
+
+
+@router.post("/{page_id}/redo", response_model=SealRequestItem)
+async def redo_seal_request(
+    page_id: str,
+    body: SealRedoBody,
+    user: User = Depends(get_current_user),
+    notion: NotionService = Depends(get_notion),
+    db: Session = Depends(get_db),
+) -> SealRequestItem:
+    """재날인요청 — 같은 노션 row를 update해 새 1차검토 사이클 시작.
+
+    docs/request.md 정책:
+    - DB row는 새로 만들지 않고 기존 row 덮어쓰기.
+    - 모든 입력 필드를 update + 상태='1차검토 중' + 처리자/반려사유 reset.
+    - 구조검토서의 문서번호는 이전 값 유지(새로 발급 X).
+    - 자동 TASK 흐름은 정상 — 요청자 + 1차 검토자 TASK를 새로 생성.
+      (이전 사이클의 TASK들은 완료 상태 그대로 보존하여 history.)
+    """
+    try:
+        page = await notion.get_page(page_id)
+    except NotFoundError as exc:
+        raise HTTPException(status_code=404, detail=exc.message) from exc
+    if not _can_access(user, page, db):
+        raise HTTPException(status_code=403, detail="접근 권한이 없습니다")
+    props = page.get("properties", {})
+    requester = P.rich_text(props, "요청자") or (user.name or user.username)
+    project_ids = P.relation_ids(props, "프로젝트")
+    if not project_ids:
+        raise HTTPException(status_code=400, detail="프로젝트 relation 누락")
+    project_id = project_ids[0]
+
+    seal_type = SL.normalize_type(body.seal_type.strip())
+    if seal_type not in SL.SEAL_TYPES_NEW:
+        raise HTTPException(
+            status_code=400, detail=f"잘못된 날인유형: {seal_type}"
+        )
+    due_iso = (body.due_date or "").strip()
+    if not due_iso:
+        raise HTTPException(status_code=400, detail="제출예정일은 필수입니다")
+
+    today = date.today()
+    today_iso = today.isoformat()
+
+    # 1) 검토구분별 필드 정리. 구조검토서 문서번호는 기존 값 유지.
+    fields: dict[str, Any] = {}
+    if seal_type == "구조계산서":
+        fields = {"revision": body.revision, "용도": body.purpose}
+    elif seal_type in {"구조안전확인서", "구조도면"}:
+        fields = {"용도": body.purpose}
+    elif seal_type == "구조검토서":
+        existing_doc_no = P.rich_text(props, "문서번호").strip()
+        fields = {"문서번호": existing_doc_no, "내용요약": body.summary}
+    elif seal_type == "기타":
+        fields = {"문서종류": body.doc_kind}
+
+    # 2) 자동 제목 (사용자 입력 우선) — 새 등록과 동일 빌더
+    code, project_name, _drive_url, _root_folder_id = _project_summary_from_db(
+        db, project_id
+    )
+    auto_title = (body.title or "").strip() or SL.build_title(
+        code=code, seal_type=seal_type, fields=fields
+    )
+
+    # 3) 기존 row 덮어쓰기 — 모든 prop + 상태/처리자 reset
+    title_prop = await _get_title_prop_name(notion)
+    update_props: dict[str, Any] = {
+        title_prop: {"title": [{"text": {"content": auto_title}}]},
+        "날인유형": {"select": {"name": seal_type}},
+        "상태": {"select": {"name": "1차검토 중"}},
+        "요청일": {"date": {"start": today_iso}},
+        "제출예정일": {"date": {"start": due_iso}},
+        "비고": {"rich_text": [{"text": {"content": body.note}}]},
+        # 이전 사이클 처리/반려 정보 reset
+        "팀장처리자": {"rich_text": [{"text": {"content": ""}}]},
+        "팀장처리일": {"date": None},
+        "관리자처리자": {"rich_text": [{"text": {"content": ""}}]},
+        "관리자처리일": {"date": None},
+        "반려사유": {"rich_text": [{"text": {"content": ""}}]},
+        # 새 사이클 — 검토자 TASK ID는 비워두고 새 task 생성 후 채움
+        "1차검토TASK": {"rich_text": [{"text": {"content": ""}}]},
+        "2차검토TASK": {"rich_text": [{"text": {"content": ""}}]},
+    }
+    if body.real_source_id.strip():
+        update_props["실제출처"] = {
+            "relation": [{"id": body.real_source_id.strip()}]
+        }
+    else:
+        update_props["실제출처"] = {"relation": []}
+    if seal_type == "구조계산서":
+        update_props["Revision"] = {"number": int(body.revision or 0)}
+        update_props["안전확인서포함"] = {"checkbox": bool(body.with_safety_cert)}
+    if "용도" in fields:
+        update_props["용도"] = {
+            "rich_text": [{"text": {"content": str(fields["용도"] or "")}}]
+        }
+    if seal_type == "구조검토서":
+        # 문서번호는 그대로 두지만 명시적으로 다시 set (idempotent)
+        update_props["문서번호"] = {
+            "rich_text": [{"text": {"content": str(fields.get("문서번호", ""))}}]
+        }
+        update_props["내용요약"] = {
+            "rich_text": [{"text": {"content": body.summary}}]
+        }
+    if seal_type == "기타":
+        update_props["문서종류"] = {
+            "rich_text": [{"text": {"content": body.doc_kind.strip()}}]
+        }
+
+    await notion.update_page(page_id, update_props)
+
+    # 4) 자동 TASK 새로 생성 — 요청자 + 1차 검토자
+    _spawn_task(
+        _create_seal_task_bg(
+            notion,
+            seal_page_id=page_id,
+            seal_link_prop="연결TASK",
+            project_id=project_id,
+            title=f"[날인 재요청] {auto_title}",
+            assignee_name=requester,
+            today_iso=today_iso,
+        )
+    )
+    lead_reviewer_name = ""
+    if user.role == "member":
+        lead = _find_team_lead(db, requester_name=requester)
+        if lead:
+            lead_reviewer_name = lead.name or ""
+        else:
+            admins_list = _find_admins(db)
+            if admins_list:
+                lead_reviewer_name = admins_list[0].name or ""
+    else:
+        admins_list = _find_admins(db)
+        if admins_list:
+            lead_reviewer_name = admins_list[0].name or ""
+    _spawn_task(
+        _create_seal_task_bg(
+            notion,
+            seal_page_id=page_id,
+            seal_link_prop="1차검토TASK",
+            project_id=project_id,
+            title=f"[날인 1차검토(재요청)] {auto_title}",
+            assignee_name=lead_reviewer_name,
+            today_iso=today_iso,
+        )
+    )
+
+    # 5) Bot 알림
+    project_label = (
+        f"[{code}] {project_name}".strip("[] ") or project_name or project_id
+    )
+    msg = (
+        f"[날인 재요청] {project_label} - {seal_type} ({auto_title})"
+        f"\n요청자: {requester} / 제출예정일: {due_iso}"
+    )
+    if user.role == "member":
+        lead = _find_team_lead(db, requester_name=requester)
+        if lead:
+            _bot_send(_resolve_works_id(lead), msg)
+        else:
+            for adm in _find_admins(db):
+                _bot_send(_resolve_works_id(adm), msg)
+    else:
+        for adm in _find_admins(db):
+            _bot_send(_resolve_works_id(adm), msg)
+
     final = await notion.get_page(page_id)
     return _from_notion_page(final)
 

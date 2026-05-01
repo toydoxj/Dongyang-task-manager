@@ -11,6 +11,7 @@ import {
   createSealRequest,
   getNextSealDocNumber,
   getReviewFolder,
+  redoSealRequest,
   type SealRequestItem,
 } from "@/lib/api";
 import type { Project } from "@/lib/domain";
@@ -213,25 +214,41 @@ function Form({
     setBusy(true);
     setErr(null);
     try {
-      const fd = new FormData();
-      fd.append("project_id", projectId);
-      fd.append("seal_type", sealType);
-      fd.append("title", title);
-      fd.append("due_date", dueDate);
-      fd.append("note", note);
-      // 거래처명 → 매칭되는 page_id로 변환. 매칭 실패 시 ""(현재는 무시).
-      // 거래처 자동 추가 흐름은 후속 작업에서 통합 처리.
       const matchedClient = clients.find(
         (c) => c.name.trim() === realSourceName.trim(),
       );
-      fd.append("real_source_id", matchedClient?.id ?? "");
-      fd.append("purpose", purpose);
-      fd.append("revision", String(revision || 0));
-      fd.append("with_safety_cert", withSafetyCert ? "true" : "false");
-      fd.append("summary", summary);
-      fd.append("doc_kind", docKind);
-      // 첨부 input은 폐지 — files 미첨부. 폴더만 자동 생성됨.
-      await createSealRequest(fd);
+      const realSourceId = matchedClient?.id ?? "";
+
+      if (redoFrom) {
+        // 재날인요청 — 기존 row 덮어쓰기. 자동 TASK 흐름은 backend가 새로 생성.
+        await redoSealRequest(redoFrom.id, {
+          seal_type: sealType,
+          due_date: dueDate,
+          title,
+          note,
+          real_source_id: realSourceId,
+          purpose,
+          revision: revision || 0,
+          with_safety_cert: withSafetyCert,
+          summary,
+          doc_kind: docKind,
+        });
+      } else {
+        // 신규 등록
+        const fd = new FormData();
+        fd.append("project_id", projectId);
+        fd.append("seal_type", sealType);
+        fd.append("title", title);
+        fd.append("due_date", dueDate);
+        fd.append("note", note);
+        fd.append("real_source_id", realSourceId);
+        fd.append("purpose", purpose);
+        fd.append("revision", String(revision || 0));
+        fd.append("with_safety_cert", withSafetyCert ? "true" : "false");
+        fd.append("summary", summary);
+        fd.append("doc_kind", docKind);
+        await createSealRequest(fd);
+      }
       onCreated();
     } catch (e) {
       setErr(e instanceof Error ? e.message : "등록 실패");
@@ -241,7 +258,12 @@ function Form({
   };
 
   return (
-    <Modal open onClose={onClose} title="새 날인요청" size="md">
+    <Modal
+      open
+      onClose={onClose}
+      title={redoFrom ? "🔁 재날인요청 (기존 row 덮어쓰기)" : "새 날인요청"}
+      size="md"
+    >
       <div className="space-y-3">
         <Field label="프로젝트" required>
           {fixedProject ? (
@@ -485,7 +507,9 @@ function Form({
             disabled={busy}
             className="rounded-md bg-zinc-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-zinc-700 disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300"
           >
-            {busy ? "등록 중..." : "등록"}
+            {busy
+              ? redoFrom ? "재요청 중..." : "등록 중..."
+              : redoFrom ? "재요청" : "등록"}
           </button>
         </footer>
       </div>
