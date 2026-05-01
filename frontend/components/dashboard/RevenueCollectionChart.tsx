@@ -4,6 +4,7 @@ import {
   Bar,
   CartesianGrid,
   ComposedChart,
+  LabelList,
   Line,
   ResponsiveContainer,
   Tooltip,
@@ -34,6 +35,17 @@ interface MonthBucket {
 function monthKey(iso: string | null): string | null {
   if (!iso) return null;
   return iso.slice(0, 7);
+}
+
+/** 막대 위 라벨용 — 큰 단위로 자동 축약. 0/너무 작은 값은 빈 문자열. */
+function shortWon(v: number): string {
+  if (!v) return "";
+  const abs = Math.abs(v);
+  if (abs >= 1e8) return `${(v / 1e8).toFixed(1)}억`;
+  if (abs >= 1e7) return `${(v / 1e7).toFixed(1)}천만`;
+  if (abs >= 1e6) return `${Math.round(v / 1e6)}백만`;
+  if (abs >= 1e4) return `${Math.round(v / 1e4)}만`;
+  return "";
 }
 
 function linearRegression(values: number[]): {
@@ -172,19 +184,43 @@ export default function RevenueCollectionChart({
               name="수주액"
               fill="#6366f1"
               radius={[3, 3, 0, 0]}
-            />
+            >
+              <LabelList
+                dataKey="revenue"
+                position="top"
+                fontSize={9}
+                fill="#6366f1"
+                formatter={(v: unknown) => shortWon(Number(v) || 0)}
+              />
+            </Bar>
             <Bar
               dataKey="collection"
               name="수금액"
               fill="#10b981"
               radius={[3, 3, 0, 0]}
-            />
+            >
+              <LabelList
+                dataKey="collection"
+                position="top"
+                fontSize={9}
+                fill="#10b981"
+                formatter={(v: unknown) => shortWon(Number(v) || 0)}
+              />
+            </Bar>
             <Bar
               dataKey="expense"
               name="지출액"
               fill="#f97316"
               radius={[3, 3, 0, 0]}
-            />
+            >
+              <LabelList
+                dataKey="expense"
+                position="top"
+                fontSize={9}
+                fill="#f97316"
+                formatter={(v: unknown) => shortWon(Number(v) || 0)}
+              />
+            </Bar>
             <Line
               dataKey="revenueTrend"
               name="수주 추세"
