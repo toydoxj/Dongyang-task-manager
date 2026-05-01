@@ -619,6 +619,23 @@ export async function createReviewFolder(
   return jsonOrThrow<ReviewFolderState>(res);
 }
 
+export async function deleteDriveFile(
+  projectId: string,
+  fileId: string,
+): Promise<void> {
+  const res = await authFetch(
+    `/api/projects/${projectId}/drive/files/${fileId}`,
+    { method: "DELETE" },
+  );
+  if (!res.ok) {
+    const detail = await res
+      .json()
+      .then((d) => (d as { detail?: string }).detail)
+      .catch(() => undefined);
+    throw new Error(detail ?? `${res.status} ${res.statusText}`);
+  }
+}
+
 export async function createSealRequest(form: FormData): Promise<SealRequestItem> {
   // multipart/form-data: project_id, seal_type, title?, note, files[]
   const res = await authFetch(`/api/seal-requests`, {

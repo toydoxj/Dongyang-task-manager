@@ -3,7 +3,12 @@
 import { useEffect, useState } from "react";
 
 import Modal from "@/components/ui/Modal";
-import { getDriveStreamUrl, listDriveChildren, uploadDriveFiles } from "@/lib/api";
+import {
+  deleteDriveFile,
+  getDriveStreamUrl,
+  listDriveChildren,
+  uploadDriveFiles,
+} from "@/lib/api";
 import type { DriveFileType, DriveItem, DriveUploadResultItem } from "@/lib/domain";
 
 interface Props {
@@ -172,6 +177,29 @@ export default function DriveExplorerModal({
     }
   };
 
+  const onDelete = async (it: DriveItem): Promise<void> => {
+    const ok = window.confirm(
+      `"${it.fileName}" 을(를) 삭제하시겠습니까?\n` +
+        (it.fileType === "FOLDER"
+          ? "폴더 안의 모든 파일이 함께 휴지통으로 이동됩니다."
+          : "휴지통으로 이동됩니다."),
+    );
+    if (!ok) return;
+    setError(null);
+    try {
+      await deleteDriveFile(projectId, it.fileId);
+      // 즉시 list에서 제거 (낙관적). 이어서 강제 reload로 정합성 보정.
+      setItems((prev) => prev.filter((x) => x.fileId !== it.fileId));
+      void load(current.fileId, undefined, false);
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "삭제 실패");
+    }
+  };
+
+  const refresh = (): void => {
+    void load(current.fileId, undefined, false);
+  };
+
   // ── 다중 파일 업로드 (drag-drop 또는 file input) ──
   const uploadMany = async (fileList: File[] | FileList): Promise<void> => {
     const arr = Array.from(fileList as FileList);
@@ -316,11 +344,14 @@ export default function DriveExplorerModal({
         ) : (
           <ul className="divide-y divide-zinc-200 dark:divide-zinc-800">
             {items.map((it) => (
-              <li key={it.fileId}>
+              <li
+                key={it.fileId}
+                className="flex items-center gap-3 px-3 py-2 text-xs hover:bg-zinc-50 dark:hover:bg-zinc-800"
+              >
                 <button
                   type="button"
                   onClick={() => onItemClick(it)}
-                  className="flex w-full items-center gap-3 px-3 py-2 text-left text-xs hover:bg-zinc-50 dark:hover:bg-zinc-800"
+                  className="flex flex-1 items-center gap-3 text-left"
                 >
                   <span className="w-5 text-base leading-none">
                     {TYPE_ICON[it.fileType] ?? "📎"}
@@ -343,25 +374,50 @@ export default function DriveExplorerModal({
                     {formatDate(it.modifiedTime)}
                   </span>
                 </button>
+                <button
+                  type="button"
+                  onClick={() => void onDelete(it)}
+                  className="rounded border border-zinc-200 px-1.5 py-0.5 text-[11px] text-zinc-500 hover:border-red-400 hover:bg-red-50 hover:text-red-600 dark:border-zinc-700 dark:hover:bg-red-950 dark:hover:text-red-400"
+                  title="휴지통으로 이동"
+                >
+                  🗑
+                </button>
               </li>
             ))}
           </ul>
         )}
       </div>
 
-      {/* footer: 더 보기 + 카운트 */}
+      {/* footer: 더 보기 + 새로고침 + 닫기 */}
       <div className="mt-3 flex items-center justify-between text-xs text-zinc-500">
         <span>{loading ? "" : `${items.length}건${cursor ? "+" : ""}`}</span>
-        {cursor && (
+        <div className="flex items-center gap-2">
+          {cursor && (
+            <button
+              type="button"
+              onClick={() => void load(current.fileId, cursor, true)}
+              disabled={loadingMore}
+              className="rounded-md border border-zinc-300 px-3 py-1 text-zinc-700 hover:border-zinc-400 hover:bg-zinc-50 disabled:opacity-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
+            >
+              {loadingMore ? "로드 중..." : "더 보기"}
+            </button>
+          )}
           <button
             type="button"
-            onClick={() => void load(current.fileId, cursor, true)}
-            disabled={loadingMore}
+            onClick={refresh}
+            disabled={loading}
             className="rounded-md border border-zinc-300 px-3 py-1 text-zinc-700 hover:border-zinc-400 hover:bg-zinc-50 disabled:opacity-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
           >
-            {loadingMore ? "로드 중..." : "더 보기"}
+            🔄 새로고침
           </button>
-        )}
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-md bg-zinc-900 px-3 py-1 text-xs font-medium text-white hover:bg-zinc-700 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300"
+          >
+            닫기
+          </button>
+        </div>
       </div>
     </Modal>
   );

@@ -470,7 +470,11 @@ function Form({
       {selectedProject && folderState?.folder_id && (
         <DriveExplorerModal
           open={explorerOpen}
-          onClose={() => setExplorerOpen(false)}
+          onClose={() => {
+            setExplorerOpen(false);
+            // 탐색기에서 업로드/삭제했을 수 있으니 file_count 즉시 갱신
+            void globalMutate(folderKey);
+          }}
           projectId={selectedProject.id}
           rootLabel={
             selectedProject.code && selectedProject.name

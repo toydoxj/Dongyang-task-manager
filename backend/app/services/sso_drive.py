@@ -223,12 +223,11 @@ async def find_child_folder(
     """parent 아래에서 같은 이름 폴더가 있으면 metadata 반환.
 
     NAVER WORKS Drive API:
-      - sharedrive root list: GET /sharedrives/{sd}/files
-      - 특정 folder children: GET /sharedrives/{sd}/files?parentFolderId={parent}
-        (parent는 별도 fileId(base64url) 또는 sharedrive_id)
+      - sharedrive 자식 list: GET /sharedrives/{sd}/files/{parent}/children
+      - root 자식 list:       GET /sharedrives/{sd}/files
+        (parent 미지정/비어있으면 sharedrive root)
 
-    pagination: nextCursor가 있으면 끝까지 따라감 (한 부모에 200개 넘는 자식이
-    있을 때 못 찾는 케이스 방지).
+    pagination: nextCursor가 있으면 끝까지 따라감.
     """
     sd = settings.works_drive_sharedrive_id
     if not sd:
@@ -236,15 +235,18 @@ async def find_child_folder(
     cursor: str | None = None
     name_match: dict[str, Any] | None = None
     seen_pages = 0
+    all_names: list[str] = []
     while True:
         params: dict[str, Any] = {}
-        if parent_id and parent_id != sd:
-            params["parentFolderId"] = parent_id
         if cursor:
             params["cursor"] = cursor
-        body = await _api(
-            settings, "GET", f"/sharedrives/{sd}/files", params=params
-        )
+        # sharedrive 자식 폴더 안의 children은 /files/{parent}/children 가 정식 path.
+        # sharedrive root는 /files. 두 경로의 응답 형태가 다를 수 있어 분기.
+        if parent_id and parent_id != sd:
+            path = f"/sharedrives/{sd}/files/{parent_id}/children"
+        else:
+            path = f"/sharedrives/{sd}/files"
+        body = await _api(settings, "GET", path, params=params)
         items = (
             body.get("files")
             or body.get("items")
@@ -255,6 +257,7 @@ async def find_child_folder(
         seen_pages += 1
         for it in items:
             item_name = it.get("fileName") or it.get("name") or ""
+            all_names.append(item_name)
             if item_name != name:
                 continue
             ftype = str(it.get("fileType") or "").upper()
@@ -271,9 +274,18 @@ async def find_child_folder(
         cursor = meta.get("nextCursor") or ""
         if not cursor or seen_pages >= 20:  # safety cap
             break
+    # 진단 로그 — 못 찾은 이유 추적용
+    logger.warning(
+        "find_child_folder: '%s' 못 찾음 (parent=%s pages=%d total=%d names=%s)",
+        name,
+        parent_id[:16] + "...",
+        seen_pages,
+        len(all_names),
+        all_names[:30],
+    )
     if name_match is not None:
         logger.warning(
-            "find_child_folder: 같은 이름 항목 발견했으나 폴더 아님 — "
+            "find_child_folder: 같은 이름 항목 있으나 폴더 아님 — "
             "fileName=%s fileType=%s keys=%s",
             name,
             name_match.get("fileType"),
@@ -528,6 +540,33 @@ async def list_children(
         f"/sharedrives/{sd}/files/{parent_file_id}/children",
         params=params,
     )
+
+
+async def delete_file(
+    file_id: str,
+    *,
+    settings: Settings | None = None,
+) -> None:
+    """sharedrive 안의 파일/폴더를 휴지통으로 이동.
+
+    NAVER WORKS Drive API: DELETE /sharedrives/{sd}/files/{file_id}.
+    실패 시 DriveError. 404는 이미 삭제된 것으로 간주하고 통과.
+    """
+    s = settings or get_settings()
+    if not s.works_drive_enabled:
+        raise DriveError("WORKS_DRIVE_ENABLED=false")
+    if not s.works_drive_sharedrive_id:
+        raise DriveError("WORKS_DRIVE_SHAREDRIVE_ID 미설정")
+    if not file_id:
+        raise DriveError("file_id 미지정")
+    sd = s.works_drive_sharedrive_id
+    try:
+        await _api(s, "DELETE", f"/sharedrives/{sd}/files/{file_id}")
+    except DriveError as exc:
+        if "(404)" in str(exc):
+            logger.info("delete_file: 이미 없음 — %s", file_id)
+            return
+        raise
 
 
 async def upload_file(

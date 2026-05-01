@@ -1018,3 +1018,30 @@ async def upload_drive_files(
                 DriveUploadResultItem(fileName=name, error=f"내부 오류: {e}")
             )
     return DriveUploadResponse(items=results)
+
+
+@router.delete(
+    "/{page_id}/drive/files/{file_id}", status_code=status.HTTP_204_NO_CONTENT
+)
+async def delete_drive_file(
+    page_id: str,
+    file_id: str,
+    _user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> None:
+    """프로젝트 Drive 안의 파일/폴더를 휴지통으로 이동.
+
+    임베디드 탐색기에서 휴지통 버튼이 호출. 권한은 일반 인증으로 충분
+    (날인 검토자가 잘못 올라간 파일 정리 가능).
+    """
+    s = get_settings()
+    if not s.works_drive_enabled:
+        raise HTTPException(status_code=503, detail="WORKS Drive 비활성")
+    if db.get(M.MirrorProject, page_id) is None:
+        raise HTTPException(status_code=404, detail="프로젝트를 찾을 수 없습니다")
+    if not file_id:
+        raise HTTPException(status_code=400, detail="file_id 미지정")
+    try:
+        await sso_drive.delete_file(file_id, settings=s)
+    except sso_drive.DriveError as e:
+        raise HTTPException(status_code=502, detail=str(e)) from e
