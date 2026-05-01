@@ -10,7 +10,7 @@ interface Props {
 
 export default function LoadingState({
   message = "데이터 불러오는 중…",
-  hint = "노션에서 첫 호출은 5~15초 걸릴 수 있습니다 (이후 30초 캐시).",
+  hint = "",
   height = "h-64",
 }: Props) {
   const [seconds, setSeconds] = useState(0);
@@ -31,7 +31,7 @@ export default function LoadingState({
         <span>{message}</span>
       </div>
       <p className="text-[11px] text-zinc-500">
-        {seconds}초 경과 · {hint}
+        {seconds}초 경과{hint ? ` · ${hint}` : ""}
       </p>
     </div>
   );
