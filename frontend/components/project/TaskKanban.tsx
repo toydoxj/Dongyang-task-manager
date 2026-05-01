@@ -51,34 +51,20 @@ export default function TaskKanban({ tasks, onChanged, onCreate }: Props) {
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
   );
 
-  // 컴포넌트 mount 시점 캡처 (React purity 룰 — Date.now 직접 호출 금지)
-  const [nowMs] = useState(() => Date.now());
-  // "완료" 컬럼은 최근 N일 이내 완료된 것만 표시
+  // 프로젝트 상세 칸반은 기간과 무관하게 모든 task 표시 (사용자 정책).
   const { grouped, hiddenCompleted } = useMemo(() => {
-    const COMPLETED_RECENT_DAYS = 10;
     const g = new Map<string, Task[]>();
     for (const s of TASK_STATUSES) g.set(s, []);
-    let hidden = 0;
     for (const t of tasks) {
       const key = TASK_STATUSES.includes(
         t.status as (typeof TASK_STATUSES)[number],
       )
         ? t.status
         : "시작 전";
-      if (key === "완료") {
-        const ref = t.actual_end_date ?? t.last_edited_time;
-        if (ref) {
-          const days = (nowMs - new Date(ref).getTime()) / 86400000;
-          if (days > COMPLETED_RECENT_DAYS) {
-            hidden += 1;
-            continue;
-          }
-        }
-      }
       g.get(key)?.push(t);
     }
-    return { grouped: g, hiddenCompleted: hidden };
-  }, [tasks, nowMs]);
+    return { grouped: g, hiddenCompleted: 0 };
+  }, [tasks]);
 
   const showToast = (msg: string): void => {
     setToast(msg);

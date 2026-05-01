@@ -226,12 +226,12 @@ export default function ProjectClient({ id }: { id: string }) {
         logs={logs}
       />
 
-      <TaskKanban tasks={tasks} onChanged={refreshTasks} onCreate={openCreate} />
-
       <SealHistoryList
         seals={seals}
         onClick={(s) => setSealDetailId(s.id)}
       />
+
+      <TaskKanban tasks={tasks} onChanged={refreshTasks} onCreate={openCreate} />
 
       <ProjectCashflowChart project={project} entries={cashflow} />
 
