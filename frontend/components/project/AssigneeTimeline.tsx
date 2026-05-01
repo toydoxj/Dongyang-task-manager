@@ -209,7 +209,7 @@ export default function AssigneeTimeline({ project, logs }: Props) {
               <span className="w-16 shrink-0 truncate text-xs text-zinc-700 dark:text-zinc-300">
                 {lane.name}
               </span>
-              <div className="relative h-5 flex-1 rounded bg-zinc-100 dark:bg-zinc-800">
+              <div className="relative h-3 flex-1 rounded bg-zinc-100 dark:bg-zinc-800">
                 {lane.segments.map((s, i) => {
                   const left = xPct(s.startMs);
                   const right = xPct(s.endMs);
@@ -228,19 +228,26 @@ export default function AssigneeTimeline({ project, logs }: Props) {
                     <div
                       key={i}
                       className={cn(
-                        "absolute top-0.5 h-4 rounded text-[9px] leading-[1rem] text-white",
+                        "absolute top-1 flex h-1.5 items-center rounded-sm text-[9px] text-white",
                         color,
                         s.open ? "border-r-2 border-dashed border-white" : "",
                       )}
                       style={{ left: `${left}%`, width: `${width}%` }}
                       title={tip}
-                    >
-                      <span className="px-1.5">
-                        {s.open ? "→" : ""}
-                      </span>
-                    </div>
+                    />
                   );
                 })}
+                {lane.segments
+                  .filter((s) => s.open)
+                  .map((s, i) => (
+                    <span
+                      key={`arrow-${i}`}
+                      className="absolute top-0 text-[10px] leading-3 text-zinc-500"
+                      style={{ left: `calc(${xPct(s.endMs)}% + 1px)` }}
+                    >
+                      →
+                    </span>
+                  ))}
               </div>
             </div>
           );
