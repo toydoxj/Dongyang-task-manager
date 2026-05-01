@@ -378,9 +378,9 @@ export const TASK_CATEGORIES = [
 ] as const;
 export type TaskCategory = (typeof TASK_CATEGORIES)[number];
 
-/** 시간(시:분)까지 지정해야 하는 일정 분류. 휴가/연차는 종일 처리라 분류는 모두 date-only.
- * 시간 기반은 활동(외근/출장)에서만 결정. */
-export const TIME_BASED_CATEGORIES: readonly string[] = [];
+/** 시간(시:분)까지 지정해야 하는 일정 분류.
+ * 휴가는 반차/시간 단위 등 시간 지정이 필요. "휴가"는 옛 표기 호환. */
+export const TIME_BASED_CATEGORIES: readonly string[] = ["휴가(연차)", "휴가"];
 
 /** 활동 유형 — 분류와 독립. 프로젝트 task의 외근/출장 표시용. */
 export const ACTIVITY_TYPES = ["사무실", "외근", "출장"] as const;

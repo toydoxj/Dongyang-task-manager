@@ -64,7 +64,8 @@ export default function SchedulePage() {
         } else if (filterCategory === "출장") {
           if (cat !== "출장" && act !== "출장") return false;
         } else if (filterCategory === "휴가") {
-          if (cat !== "휴가") return false;
+          // 옛 표기('휴가')와 새 표기('휴가(연차)') 모두 휴가로 처리
+          if (cat !== "휴가" && cat !== "휴가(연차)") return false;
         }
       }
       if (filterTeam !== "전체") {
@@ -354,6 +355,7 @@ function colorFor(tag: string): string {
     case "출장":
       return "#0ea5e9"; // sky-500
     case "휴가":
+    case "휴가(연차)":
       return "#ef4444"; // red-500
     default:
       return "#64748b"; // slate-500

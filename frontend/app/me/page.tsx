@@ -424,10 +424,13 @@ function TodayTasks({
   ]);
   const unclassified: Task[] = [];
 
+  // 휴가는 옛 표기('휴가')와 새 표기('휴가(연차)') 모두 같은 일정 버킷으로 처리
+  const isVacationCat = (c: string): boolean => c === "휴가" || c === "휴가(연차)";
+
   for (const t of open) {
     // 일정 영역에 등장해야 하는가 (분류 또는 활동 기준)
     const scheduleBucket =
-      t.category === "휴가"
+      isVacationCat(t.category)
         ? "휴가"
         : t.activity === "출장" || t.category === "출장"
           ? "출장"
@@ -447,7 +450,7 @@ function TodayTasks({
     } else if (
       t.category === "외근" ||
       t.category === "출장" ||
-      t.category === "휴가"
+      isVacationCat(t.category)
     ) {
       // 일정 분류 task는 메인 영역에 추가 안 함 (일정 카드에만 표시)
     } else {

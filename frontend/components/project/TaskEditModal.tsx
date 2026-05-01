@@ -211,12 +211,17 @@ function Form({
         // 분류가 프로젝트에서 다른 것으로 바뀌었으면 relation 비우기
         projectIdsParam = [];
       }
+      // 휴가는 예상 완료일과 실제 완료일이 동일 — datetime-local의 시간 부분
+      // 잘라낸 date-only 값을 actual_end_date로 자동 set (입력란은 숨김).
+      const isVacation = category === "휴가(연차)" || category === "휴가";
+      const effectiveActual = isVacation ? (end || "").slice(0, 10) : actualEnd;
       await updateTask(task.id, {
         title,
         status,
         start_date: start === wasStart ? undefined : start,
         end_date: end === wasEnd ? undefined : end,
-        actual_end_date: actualEnd === wasActual ? undefined : actualEnd,
+        actual_end_date:
+          effectiveActual === wasActual ? undefined : effectiveActual,
         priority: priority === wasPriority ? undefined : priority,
         difficulty: difficulty === wasDifficulty ? undefined : difficulty,
         category: category === wasCategory ? undefined : category,
@@ -455,14 +460,17 @@ function Form({
           </Field>
         </div>
 
-        <Field label="실제 완료일 (완료 시)">
-          <input
-            type="date"
-            value={actualEnd}
-            onChange={(e) => setActualEnd(e.target.value)}
-            className={inputCls}
-          />
-        </Field>
+        {/* 휴가는 예상 완료일=실제 완료일 정책 — 입력란 숨기고 자동 동기화. */}
+        {category !== "휴가(연차)" && category !== "휴가" && (
+          <Field label="실제 완료일 (완료 시)">
+            <input
+              type="date"
+              value={actualEnd}
+              onChange={(e) => setActualEnd(e.target.value)}
+              className={inputCls}
+            />
+          </Field>
+        )}
 
         <Field label="담당자 (쉼표로 구분)">
           <input
