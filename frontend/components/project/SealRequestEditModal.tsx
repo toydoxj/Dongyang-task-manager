@@ -1,10 +1,9 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 
 import Modal from "@/components/ui/Modal";
 import {
-  addSealAttachments,
   getSealAttachmentUrl,
   updateSealRequest,
   type SealRequestItem,
@@ -45,27 +44,8 @@ export default function SealRequestEditModal({ item, onClose, onSaved }: Props) 
   const [summary, setSummary] = useState(item.summary);
   const [docKind, setDocKind] = useState(item.doc_kind);
   const [note, setNote] = useState(item.note);
-  const [pendingFiles, setPendingFiles] = useState<File[]>([]);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
-  const fileInput = useRef<HTMLInputElement>(null);
-
-  const onPickFiles = (list: FileList | null): void => {
-    if (!list) return;
-    const MAX = 200 * 1024 * 1024;
-    const all = Array.from(list);
-    const tooBig = all.filter((f) => f.size > MAX);
-    if (tooBig.length > 0) {
-      alert(
-        `200MB 초과:\n${tooBig
-          .map((f) => `• ${f.name} (${Math.round(f.size / 1024 / 1024)}MB)`)
-          .join("\n")}`,
-      );
-    }
-    const ok = all.filter((f) => f.size <= MAX);
-    if (ok.length > 0) setPendingFiles((prev) => [...prev, ...ok]);
-    if (fileInput.current) fileInput.current.value = "";
-  };
 
   const submit = async (): Promise<void> => {
     if (!dueDate) {
@@ -89,10 +69,6 @@ export default function SealRequestEditModal({ item, onClose, onSaved }: Props) 
         doc_kind: docKind,
         note,
       });
-      // 첨부 추가가 있으면 같이 업로드 (상태가 자동으로 1차검토 중으로 복구)
-      if (pendingFiles.length > 0) {
-        await addSealAttachments(item.id, pendingFiles);
-      }
       onSaved();
     } catch (e) {
       setErr(e instanceof Error ? e.message : "저장 실패");
@@ -229,10 +205,25 @@ export default function SealRequestEditModal({ item, onClose, onSaved }: Props) 
           />
         </Field>
 
-        <Field label={`기존 첨부 (${item.attachments.length})`}>
-          {item.attachments.length === 0 ? (
-            <p className="text-xs text-zinc-400">첨부 없음</p>
+        <Field label="검토자료 폴더">
+          {item.folder_url ? (
+            <a
+              href={item.folder_url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1 rounded-md border border-emerald-700/40 bg-emerald-600/10 px-2.5 py-1 text-xs font-medium text-emerald-700 hover:bg-emerald-600/20 dark:text-emerald-300"
+            >
+              📁 폴더 열기
+            </a>
           ) : (
+            <p className="rounded-md border border-amber-500/40 bg-amber-500/5 px-2.5 py-2 text-[11px] text-amber-700 dark:text-amber-300">
+              폴더가 생성되지 않았습니다 — Drive 미연결 또는 등록 시 생성 실패.
+            </p>
+          )}
+        </Field>
+
+        {item.attachments.length > 0 && (
+          <Field label={`기존 첨부 (${item.attachments.length})`}>
             <ul className="space-y-1">
               {item.attachments.map((f, i) => (
                 <li
@@ -269,46 +260,8 @@ export default function SealRequestEditModal({ item, onClose, onSaved }: Props) 
                 </li>
               ))}
             </ul>
-          )}
-        </Field>
-
-        <Field label="첨부 추가 (선택, 다중 가능, 파일당 ≤200MB)">
-          <input
-            ref={fileInput}
-            type="file"
-            multiple
-            onChange={(e) => onPickFiles(e.target.files)}
-            className="block w-full text-xs file:mr-2 file:rounded-md file:border-0 file:bg-zinc-100 file:px-3 file:py-1.5 file:text-xs hover:file:bg-zinc-200 dark:file:bg-zinc-800 dark:file:text-zinc-100"
-          />
-          {pendingFiles.length > 0 && (
-            <ul className="mt-2 space-y-1 text-xs">
-              {pendingFiles.map((f, i) => (
-                <li
-                  key={i}
-                  className="flex items-center justify-between rounded border border-amber-300 px-2 py-1 dark:border-amber-700"
-                >
-                  <span className="truncate" title={f.name}>
-                    🆕 {f.name}{" "}
-                    <span className="text-zinc-400">
-                      ({Math.round(f.size / 1024)} KB)
-                    </span>
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setPendingFiles((prev) =>
-                        prev.filter((_, j) => j !== i),
-                      )
-                    }
-                    className="text-zinc-400 hover:text-red-500"
-                  >
-                    ×
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
-        </Field>
+          </Field>
+        )}
 
         {err && (
           <p className="rounded-md border border-red-500/40 bg-red-500/5 p-2 text-xs text-red-400">

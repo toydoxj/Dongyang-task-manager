@@ -1,10 +1,11 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useMemo, useState } from "react";
+import useSWR from "swr";
 
 import { useAuth } from "@/components/AuthGuard";
 import Modal from "@/components/ui/Modal";
-import { createSealRequest } from "@/lib/api";
+import { createSealRequest, getNextSealDocNumber } from "@/lib/api";
 import type { Project } from "@/lib/domain";
 import { useClients, useProjects } from "@/lib/hooks";
 
@@ -66,7 +67,6 @@ function Form({
   const [title, setTitle] = useState("");
   const [dueDate, setDueDate] = useState("");
   const [note, setNote] = useState("");
-  const [files, setFiles] = useState<File[]>([]);
   // 조건부 필드
   // 실제출처는 거래처명 입력 → datalist 매칭 시 client.id로 변환해 server에 전송
   const [realSourceName, setRealSourceName] = useState("");
@@ -78,7 +78,14 @@ function Form({
 
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
-  const fileInput = useRef<HTMLInputElement>(null);
+
+  // 구조검토서 다음 문서번호 미리보기 — 모달 열린 동안 1회 fetch (1분 dedupe)
+  const { data: nextDocData } = useSWR(
+    sealType === "구조검토서" ? ["seal-next-doc", sealType] : null,
+    () => getNextSealDocNumber(sealType),
+    { dedupingInterval: 60 * 1000 },
+  );
+  const nextDocNumber = nextDocData?.next_doc_number ?? "";
 
   const selectedProject = useMemo<Project | null>(() => {
     if (fixedProject) return fixedProject;
@@ -105,7 +112,7 @@ function Form({
       case "구조안전확인서":
         return `${code}_구조안전확인서_${purpose || "?"}`;
       case "구조검토서":
-        return `${code}_(자동발급)_구조검토서`;
+        return `${code}_${nextDocNumber || "(자동발급)"}_구조검토서`;
       case "구조도면":
         return `${code}_구조도면_${purpose || "?"}`;
       case "보고서":
@@ -113,7 +120,7 @@ function Form({
       case "기타":
         return `${code}_${docKind || "기타"}`;
     }
-  }, [title, selectedProject, sealType, revision, purpose, docKind]);
+  }, [title, selectedProject, sealType, revision, purpose, docKind, nextDocNumber]);
 
   const submit = async (): Promise<void> => {
     if (!projectId) {
@@ -160,7 +167,7 @@ function Form({
       fd.append("with_safety_cert", withSafetyCert ? "true" : "false");
       fd.append("summary", summary);
       fd.append("doc_kind", docKind);
-      for (const f of files) fd.append("files", f);
+      // 첨부 input은 폐지 — files 미첨부. 폴더만 자동 생성됨.
       await createSealRequest(fd);
       onCreated();
     } catch (e) {
@@ -168,22 +175,6 @@ function Form({
     } finally {
       setBusy(false);
     }
-  };
-
-  const onPickFiles = (list: FileList | null): void => {
-    if (!list) return;
-    const MAX_BYTES = 200 * 1024 * 1024;
-    const all = Array.from(list);
-    const tooBig = all.filter((f) => f.size > MAX_BYTES);
-    const ok = all.filter((f) => f.size <= MAX_BYTES);
-    if (tooBig.length > 0) {
-      const detail = tooBig
-        .map((f) => `• ${f.name} (${Math.round(f.size / 1024 / 1024)}MB)`)
-        .join("\n");
-      alert(`200MB 초과 파일은 첨부할 수 없습니다:\n${detail}`);
-    }
-    if (ok.length > 0) setFiles((prev) => [...prev, ...ok]);
-    if (fileInput.current) fileInput.current.value = "";
   };
 
   return (
@@ -304,15 +295,25 @@ function Form({
         )}
 
         {sealType === "구조검토서" && (
-          <Field label="내용요약">
-            <textarea
-              value={summary}
-              onChange={(e) => setSummary(e.target.value)}
-              rows={3}
-              placeholder="검토 의견 요약"
-              className={`${inputCls} resize-y`}
-            />
-          </Field>
+          <>
+            <Field label="문서번호 (자동 발급)">
+              <p className="rounded-md border border-zinc-200 bg-zinc-50 px-2.5 py-1.5 text-sm font-mono dark:border-zinc-800 dark:bg-zinc-900">
+                {nextDocNumber || "불러오는 중..."}
+              </p>
+              <p className="mt-0.5 text-[10px] text-zinc-400">
+                등록 시점에 다시 발급되므로 이 번호와 다를 수 있습니다.
+              </p>
+            </Field>
+            <Field label="내용요약">
+              <textarea
+                value={summary}
+                onChange={(e) => setSummary(e.target.value)}
+                rows={3}
+                placeholder="검토 의견 요약"
+                className={`${inputCls} resize-y`}
+              />
+            </Field>
+          </>
         )}
 
         {sealType === "구조도면" && (
@@ -361,40 +362,13 @@ function Form({
           />
         </Field>
 
-        <Field label="첨부파일 (선택, 다중 가능, 파일당 ≤200MB)">
-          <input
-            ref={fileInput}
-            type="file"
-            multiple
-            onChange={(e) => onPickFiles(e.target.files)}
-            className="block w-full text-xs file:mr-2 file:rounded-md file:border-0 file:bg-zinc-100 file:px-3 file:py-1.5 file:text-xs hover:file:bg-zinc-200 dark:file:bg-zinc-800 dark:file:text-zinc-100"
-          />
-          {files.length > 0 && (
-            <ul className="mt-2 space-y-1 text-xs">
-              {files.map((f, i) => (
-                <li
-                  key={i}
-                  className="flex items-center justify-between rounded border border-zinc-200 px-2 py-1 dark:border-zinc-800"
-                >
-                  <span className="truncate" title={f.name}>
-                    📎 {f.name}{" "}
-                    <span className="text-zinc-400">
-                      ({Math.round(f.size / 1024)} KB)
-                    </span>
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setFiles((prev) => prev.filter((_, j) => j !== i))
-                    }
-                    className="text-zinc-400 hover:text-red-500"
-                  >
-                    ×
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
+        <Field label="검토자료 폴더">
+          <p className="rounded-md border border-blue-300/60 bg-blue-50 px-2.5 py-2 text-[11px] text-blue-800 dark:border-blue-800/60 dark:bg-blue-950/30 dark:text-blue-200">
+            📁 등록 시 <span className="font-mono">[코드]프로젝트명/0.검토자료/YYYYMMDD/</span>{" "}
+            폴더가 자동 생성되고 노션에 URL이 저장됩니다. 파일은 NAVER WORKS Drive에서
+            직접 업로드해주세요. 검토자가 승인 시 폴더가 비어있으면 확인 알림이
+            발송됩니다.
+          </p>
         </Field>
 
         {err && (

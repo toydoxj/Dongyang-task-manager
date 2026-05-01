@@ -59,6 +59,46 @@ def _max_bytes() -> int:
     return get_settings().storage_max_file_mb * 1024 * 1024
 
 
+def _drive_folder_id_from_url(folder_url: str) -> str:
+    """첨부폴더URL의 query string에서 resourceKey 추출 (= 폴더 fileId).
+
+    NAVER WORKS Drive share URL은 `?...&resourceKey=<fileId>` 형식.
+    """
+    if not folder_url:
+        return ""
+    try:
+        qs = parse_qs(urlparse(folder_url).query)
+    except Exception:  # noqa: BLE001
+        return ""
+    v = qs.get("resourceKey")
+    return v[0] if v else ""
+
+
+async def _check_review_folder(folder_url: str) -> str:
+    """검토자료 폴더 점검. 안내 메시지(빈 문자열이면 정상)를 반환.
+
+    - URL 없음 → "폴더 미생성"
+    - 폴더 조회 실패 → "확인 실패"
+    - 파일 0건 → "비어있음"
+    """
+    if not folder_url:
+        return "검토자료 폴더가 생성되지 않았습니다 — Drive 미연결 또는 등록 시 생성 실패."
+    folder_id = _drive_folder_id_from_url(folder_url)
+    if not folder_id:
+        return "검토자료 폴더 URL 파싱 실패 — 관리자에게 문의해주세요."
+    try:
+        body = await sso_drive.list_children(folder_id)
+    except sso_drive.DriveError as exc:
+        logger.warning("검토자료 폴더 list 실패: %s", exc)
+        return f"검토자료 폴더 확인 실패: {exc}"
+    files = body.get("files") or []
+    # 폴더만 있고 실제 파일이 0건이면 비어있는 것으로 처리
+    real_files = [f for f in files if f.get("fileType") != "FOLDER"]
+    if len(real_files) == 0:
+        return "검토자료 폴더가 비어있습니다 — 파일을 업로드 했는지 확인해주세요."
+    return ""
+
+
 async def _read_with_limit(f: UploadFile, max_bytes: int) -> bytes | None:
     """`UploadFile`을 chunk 단위로 읽고 max_bytes 초과 시 즉시 중단 + None 반환.
 
@@ -547,6 +587,32 @@ async def list_seal_requests(
     return SealListResponse(items=items, count=len(items))
 
 
+class NextDocNumberResponse(BaseModel):
+    """다음 발급될 문서번호 (구조검토서만 의미). 발급은 안 함."""
+
+    seal_type: str
+    next_doc_number: str  # 빈 문자열 = 자동 발급 안 하는 type
+
+
+@router.get("/next-doc-number", response_model=NextDocNumberResponse)
+async def get_next_doc_number(
+    seal_type: str,
+    _user: User = Depends(get_current_user),
+    notion: NotionService = Depends(get_notion),
+) -> NextDocNumberResponse:
+    """모달 미리보기용 — 다음 발급될 문서번호를 미리 계산.
+
+    실제 발급은 create 시점에 다시 issue_review_doc_number 호출로. 그 사이
+    다른 사용자가 한 건 발급하면 모달의 미리보기와 실제 부여 번호가 다를 수
+    있음 (사용자에게 정보 제공 목적이라 허용).
+    """
+    seal_type = SL.normalize_type(seal_type.strip())
+    if seal_type != "구조검토서":
+        return NextDocNumberResponse(seal_type=seal_type, next_doc_number="")
+    next_no = await SL.issue_review_doc_number(notion, _db_id())
+    return NextDocNumberResponse(seal_type=seal_type, next_doc_number=next_no)
+
+
 @router.get("/pending-count", response_model=PendingCount)
 async def get_pending_count(
     user: User = Depends(get_current_user),
@@ -668,55 +734,57 @@ async def create_seal_request(
     page = await notion.create_page(_db_id(), init_props)
     page_id = page["id"]
 
-    # 4) 첨부파일 업로드 → Works Drive (`0. 검토자료/YYYYMMDD/`)
+    # 4) 검토자료 폴더 생성 (`0. 검토자료/YYYYMMDD/`) — files 유무와 무관하게 항상 시도.
+    # docs/request.md: 첨부 파일 자체는 선택. 사용자가 NAVER WORKS Drive에서 직접 올림.
+    # 첨부 input은 frontend에서 제거됨 — `files`는 backward compat용 (빈 list 기본).
     attachments_meta: list[dict[str, Any]] = []
     failed: list[str] = []
     folder_url = ""
-    if files:
-        s_set = get_settings()
-        if not s_set.works_drive_enabled or not root_folder_id:
-            failed.extend(
-                [f"{(f.filename or 'file.bin')}: Drive 미연결" for f in files]
+    s_set = get_settings()
+    day_folder_id = ""
+    if s_set.works_drive_enabled and root_folder_id:
+        ymd = today.strftime("%Y%m%d")
+        try:
+            day_folder_id, day_folder_url = await sso_drive.ensure_review_folder(
+                root_folder_id, ymd
             )
-        else:
-            ymd = today.strftime("%Y%m%d")
+            folder_url = day_folder_url
+        except sso_drive.DriveError as exc:
+            logger.warning("검토자료 폴더 생성 실패: %s", exc)
+            failed.append(f"검토자료 폴더 생성 실패: {exc}")
+    elif files:
+        # 폴더 생성 불가능한데 첨부가 있는 경우만 사용자에게 알림
+        failed.extend(
+            [f"{(f.filename or 'file.bin')}: Drive 미연결" for f in files]
+        )
+
+    # 호환: 첨부 파일이 들어오면 기존 로직 그대로 (frontend는 더 이상 안 보냄).
+    if files and day_folder_id:
+        for f in files:
+            fname = f.filename or "file.bin"
+            data = await _read_with_limit(f, max_bytes)
+            if data is None:
+                failed.append(
+                    f"{fname}: 한도 {max_bytes // (1024 * 1024)}MB 초과 (업로드 중단)"
+                )
+                continue
             try:
-                day_folder_id, day_folder_url = await sso_drive.ensure_review_folder(
-                    root_folder_id, ymd
+                meta = await sso_drive.upload_file(
+                    day_folder_id,
+                    fname,
+                    data,
+                    content_type=f.content_type or "application/octet-stream",
                 )
-                folder_url = day_folder_url
+                attachments_meta.append(
+                    {
+                        "drive_file_id": meta.get("fileId", ""),
+                        "name": meta.get("fileName") or fname,
+                        "size": int(meta.get("fileSize") or len(data)),
+                        "type": f.content_type or "application/octet-stream",
+                    }
+                )
             except sso_drive.DriveError as exc:
-                logger.warning("검토자료 폴더 생성 실패: %s", exc)
-                day_folder_id = ""
-                failed.extend(
-                    [f"{(f.filename or 'file.bin')}: 폴더 생성 실패 ({exc})" for f in files]
-                )
-            if day_folder_id:
-                for f in files:
-                    fname = f.filename or "file.bin"
-                    data = await _read_with_limit(f, max_bytes)
-                    if data is None:
-                        failed.append(
-                            f"{fname}: 한도 {max_bytes // (1024 * 1024)}MB 초과 (업로드 중단)"
-                        )
-                        continue
-                    try:
-                        meta = await sso_drive.upload_file(
-                            day_folder_id,
-                            fname,
-                            data,
-                            content_type=f.content_type or "application/octet-stream",
-                        )
-                        attachments_meta.append(
-                            {
-                                "drive_file_id": meta.get("fileId", ""),
-                                "name": meta.get("fileName") or fname,
-                                "size": int(meta.get("fileSize") or len(data)),
-                                "type": f.content_type or "application/octet-stream",
-                            }
-                        )
-                    except sso_drive.DriveError as exc:
-                        failed.append(f"{fname}: {exc}")
+                failed.append(f"{fname}: {exc}")
 
     # 5) 첨부메타 + 폴더 URL + 비고(실패 기록) update
     update_props: dict[str, Any] = {
@@ -816,12 +884,24 @@ async def approve_lead(
             detail=f"현재 상태가 '1차검토 중'이 아닙니다 (현재: {cur or '미정'})",
         )
     handler = user.name or user.username
+    item = _from_notion_page(page)
+
+    # 폴더 점검 — 비어있으면 요청자/검토자에게 안내 알림 (승인은 진행)
+    warn = await _check_review_folder(item.folder_url)
+    if warn:
+        warn_msg = (
+            f"[검토자료 확인 필요] {item.title}\n{warn}\n검토자: {handler}"
+        )
+        requester_user = _find_user_by_name(db, item.requester)
+        _bot_send(_resolve_works_id(requester_user), warn_msg)
+        if user.id != getattr(requester_user, "id", -1):
+            _bot_send(_resolve_works_id(user), warn_msg)
+
     await _set_status_with_handler(
         notion, page_id, "2차검토 중", "팀장처리자", "팀장처리일", handler
     )
 
     # Bot 알림 — admin들에게 (본인 admin이면 본인 제외)
-    item = _from_notion_page(page)
     msg = (
         f"[2차검토 요청] {item.title}"
         f"\n1차검토자: {handler} / 요청자: {item.requester} / 제출예정일: {item.due_date or '-'}"
@@ -851,11 +931,23 @@ async def approve_admin(
             detail=f"승인 가능 상태가 아님 (현재: {cur or '미정'})",
         )
     handler = user.name or user.username
+    item = _from_notion_page(page)
+
+    # 폴더 점검 — 비어있으면 요청자/검토자에게 안내 알림 (승인은 진행)
+    warn = await _check_review_folder(item.folder_url)
+    if warn:
+        warn_msg = (
+            f"[검토자료 확인 필요] {item.title}\n{warn}\n검토자: {handler}"
+        )
+        requester_user = _find_user_by_name(db, item.requester)
+        _bot_send(_resolve_works_id(requester_user), warn_msg)
+        if user.id != getattr(requester_user, "id", -1):
+            _bot_send(_resolve_works_id(user), warn_msg)
+
     await _set_status_with_handler(
         notion, page_id, "승인", "관리자처리자", "관리자처리일", handler
     )
 
-    item = _from_notion_page(page)
     # 연결 task → 진행 단계 '완료'
     if item.linked_task_id:
         await _sync_linked_task(notion, item.linked_task_id, target="완료")

@@ -586,6 +586,15 @@ export async function getSealPendingCount(): Promise<{ count: number }> {
   return jsonOrThrow<{ count: number }>(res);
 }
 
+export async function getNextSealDocNumber(
+  sealType: string,
+): Promise<{ seal_type: string; next_doc_number: string }> {
+  const res = await authFetch(
+    `/api/seal-requests/next-doc-number${qs({ seal_type: sealType })}`,
+  );
+  return jsonOrThrow<{ seal_type: string; next_doc_number: string }>(res);
+}
+
 export async function createSealRequest(form: FormData): Promise<SealRequestItem> {
   // multipart/form-data: project_id, seal_type, title?, note, files[]
   const res = await authFetch(`/api/seal-requests`, {
