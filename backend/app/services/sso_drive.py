@@ -262,6 +262,10 @@ async def create_folder(
       - 폴더 내부:    POST /sharedrives/{sd}/files/{parent_fileId}/createfolder
       body: {"fileName": "..."}
       → 201 응답에 fileId/parentFileId/fileType="FOLDER" 즉시 포함
+
+    409 conflict 처리: find_child_folder가 못 찾았는데(이름 normalize 차이/
+    pagination 한계 등) NAVER가 같은 이름이라고 판단하는 경계 케이스 — 재조회로
+    실제 폴더 메타 회수.
     """
     existing = await find_child_folder(settings, parent_id, name)
     if existing is not None:
@@ -271,7 +275,22 @@ async def create_folder(
         path = f"/sharedrives/{sd}/files/{parent_id}/createfolder"
     else:
         path = f"/sharedrives/{sd}/files/createfolder"
-    body = await _api(settings, "POST", path, json={"fileName": name})
+    try:
+        body = await _api(settings, "POST", path, json={"fileName": name})
+    except DriveError as exc:
+        if "(409)" in str(exc):
+            # 이미 존재 — 다시 찾아서 반환. 그래도 못 찾으면 conflict 그대로
+            again = await find_child_folder(settings, parent_id, name)
+            if again is not None:
+                logger.info(
+                    "create_folder 409 fallback: %s 재조회 성공", name
+                )
+                return again
+            logger.warning(
+                "create_folder 409 fallback 실패 — 같은 이름 폴더 재조회 못 함: %s",
+                name,
+            )
+        raise
     if not isinstance(body, dict) or not body.get("fileId"):
         raise DriveError(f"폴더 생성 응답에 fileId 없음: {name}")
     return body
