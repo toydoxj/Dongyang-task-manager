@@ -9,6 +9,7 @@ import ProjectCashflowChart from "@/components/project/ProjectCashflowChart";
 import ProjectEditModal from "@/components/project/ProjectEditModal";
 import ProjectHeader from "@/components/project/ProjectHeader";
 import SealRequestCreateModal from "@/components/project/SealRequestCreateModal";
+import SealRequestDetailModal from "@/components/project/SealRequestDetailModal";
 import SealRequestEditModal from "@/components/project/SealRequestEditModal";
 import TaskCreateModal from "@/components/project/TaskCreateModal";
 import TaskKanban from "@/components/project/TaskKanban";
@@ -34,6 +35,12 @@ export default function ProjectClient({ id }: { id: string }) {
   const [sealOpen, setSealOpen] = useState(false);
   const [sealEditId, setSealEditId] = useState<string | null>(null);
   const [sealBusy, setSealBusy] = useState(false);
+  // 날인 현황에서 항목 클릭 시 read-only 상세 모달
+  const [sealDetailId, setSealDetailId] = useState<string | null>(null);
+  // 재날인요청 — SealRequestCreateModal에 prefill로 사용
+  const [sealRedoItem, setSealRedoItem] = useState<
+    import("@/lib/api").SealRequestItem | null
+  >(null);
 
   // 어디서 왔든 그 페이지로 돌아가기. history 없으면 /projects로 fallback.
   const goBack = (): void => {
@@ -221,6 +228,11 @@ export default function ProjectClient({ id }: { id: string }) {
 
       <TaskKanban tasks={tasks} onChanged={refreshTasks} onCreate={openCreate} />
 
+      <SealHistoryList
+        seals={seals}
+        onClick={(s) => setSealDetailId(s.id)}
+      />
+
       <ProjectCashflowChart project={project} entries={cashflow} />
 
       <TaskCreateModal
@@ -242,11 +254,16 @@ export default function ProjectClient({ id }: { id: string }) {
       )}
 
       <SealRequestCreateModal
-        open={sealOpen}
+        open={sealOpen || sealRedoItem !== null}
         fixedProject={project}
-        onClose={() => setSealOpen(false)}
+        redoFrom={sealRedoItem}
+        onClose={() => {
+          setSealOpen(false);
+          setSealRedoItem(null);
+        }}
         onCreated={() => {
           setSealOpen(false);
+          setSealRedoItem(null);
           void mutate(["seals", id]);
         }}
       />
@@ -266,6 +283,99 @@ export default function ProjectClient({ id }: { id: string }) {
             />
           );
         })()}
+
+      {sealDetailId &&
+        (() => {
+          const target = seals.find((s) => s.id === sealDetailId);
+          if (!target) return null;
+          return (
+            <SealRequestDetailModal
+              item={target}
+              onClose={() => setSealDetailId(null)}
+              onRedo={(it) => {
+                setSealDetailId(null);
+                setSealRedoItem(it);
+              }}
+            />
+          );
+        })()}
     </div>
+  );
+}
+
+const SEAL_HISTORY_BADGE: Record<string, string> = {
+  "1차검토 중": "bg-yellow-500/15 text-yellow-700 dark:text-yellow-400",
+  "2차검토 중": "bg-blue-500/15 text-blue-700 dark:text-blue-400",
+  승인: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400",
+  반려: "bg-red-500/15 text-red-700 dark:text-red-400",
+};
+
+function SealHistoryList({
+  seals,
+  onClick,
+}: {
+  seals: import("@/lib/api").SealRequestItem[];
+  onClick: (s: import("@/lib/api").SealRequestItem) => void;
+}) {
+  if (seals.length === 0) return null;
+  return (
+    <section className="rounded-xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900">
+      <header className="mb-3 flex items-center justify-between">
+        <h2 className="text-sm font-semibold">날인 현황 ({seals.length})</h2>
+        <p className="text-[11px] text-zinc-500">
+          항목 클릭 시 상세 보기 + 재날인요청 가능
+        </p>
+      </header>
+      <ul className="divide-y divide-zinc-100 dark:divide-zinc-800">
+        {seals.map((s) => {
+          const dateLabel = s.requested_at
+            ? new Date(s.requested_at).toLocaleDateString("ko-KR", {
+                year: "2-digit",
+                month: "2-digit",
+                day: "2-digit",
+              })
+            : "—";
+          return (
+            <li key={s.id}>
+              <button
+                type="button"
+                onClick={() => onClick(s)}
+                className="flex w-full items-center gap-3 px-1 py-2 text-left hover:bg-zinc-50 dark:hover:bg-zinc-800/50"
+              >
+                <span className="w-12 shrink-0 text-[10px] text-zinc-400">
+                  {dateLabel}
+                </span>
+                <span
+                  className={cn(
+                    "shrink-0 rounded-md px-1.5 py-0.5 text-[10px] font-medium",
+                    SEAL_HISTORY_BADGE[s.status] ??
+                      "bg-zinc-500/15 text-zinc-500",
+                  )}
+                >
+                  {s.status}
+                </span>
+                <span className="shrink-0 rounded bg-zinc-100 px-1.5 py-0.5 text-[10px] text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300">
+                  {s.seal_type}
+                </span>
+                <span
+                  className="flex-1 truncate text-xs text-zinc-900 dark:text-zinc-100"
+                  title={s.title}
+                >
+                  {s.title || "(제목 없음)"}
+                </span>
+                {s.doc_no && (
+                  <span className="hidden shrink-0 font-mono text-[10px] text-zinc-500 sm:inline">
+                    {s.doc_no}
+                  </span>
+                )}
+                <span className="shrink-0 text-[10px] text-zinc-400">
+                  {s.requester}
+                </span>
+              </button>
+            </li>
+          );
+        })}
+      </ul>
+    </section>
   );
 }

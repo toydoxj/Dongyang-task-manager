@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import useSWR, { useSWRConfig } from "swr";
 
 import { useAuth } from "@/components/AuthGuard";
@@ -11,6 +11,7 @@ import {
   createSealRequest,
   getNextSealDocNumber,
   getReviewFolder,
+  type SealRequestItem,
 } from "@/lib/api";
 import type { Project } from "@/lib/domain";
 import { useClients, useProjects } from "@/lib/hooks";
@@ -29,6 +30,8 @@ interface Props {
   open: boolean;
   /** 프로젝트 컨텍스트 고정 (프로젝트 상세에서 호출 시). */
   fixedProject?: Project | null;
+  /** 기존 항목을 base로 새 날인요청을 만드는 "재날인요청" 흐름. */
+  redoFrom?: SealRequestItem | null;
   onClose: () => void;
   onCreated: () => void;
 }
@@ -36,14 +39,16 @@ interface Props {
 export default function SealRequestCreateModal({
   open,
   fixedProject,
+  redoFrom,
   onClose,
   onCreated,
 }: Props) {
   if (!open) return null;
   return (
     <Form
-      key={fixedProject?.id ?? "new"}
+      key={(redoFrom?.id ?? "") + (fixedProject?.id ?? "new")}
       fixedProject={fixedProject}
+      redoFrom={redoFrom ?? null}
       onClose={onClose}
       onCreated={onCreated}
     />
@@ -52,10 +57,12 @@ export default function SealRequestCreateModal({
 
 function Form({
   fixedProject,
+  redoFrom,
   onClose,
   onCreated,
 }: {
   fixedProject?: Project | null;
+  redoFrom: SealRequestItem | null;
   onClose: () => void;
   onCreated: () => void;
 }) {
@@ -69,18 +76,34 @@ function Form({
   const clients = clientData?.items ?? [];
 
   const [projectId, setProjectId] = useState(fixedProject?.id ?? "");
-  const [sealType, setSealType] = useState<SealType>("구조계산서");
+  const [sealType, setSealType] = useState<SealType>(
+    (redoFrom?.seal_type as SealType) || "구조계산서",
+  );
   const [title, setTitle] = useState("");
   const [dueDate, setDueDate] = useState("");
-  const [note, setNote] = useState("");
-  // 조건부 필드
-  // 실제출처는 거래처명 입력 → datalist 매칭 시 client.id로 변환해 server에 전송
+  const [note, setNote] = useState(redoFrom?.note ?? "");
+  // 조건부 필드 — 재날인요청 시 이전 값 prefill
   const [realSourceName, setRealSourceName] = useState("");
-  const [purpose, setPurpose] = useState("");
-  const [revision, setRevision] = useState(0);
-  const [withSafetyCert, setWithSafetyCert] = useState(false);
-  const [summary, setSummary] = useState("");
-  const [docKind, setDocKind] = useState("");
+  // clients가 lazy loading이라 mount 직후 redoFrom의 real_source_id 매칭이 비어있음.
+  // useEffect로 한 번 보정.
+  useEffect(() => {
+    if (
+      redoFrom?.real_source_id &&
+      !realSourceName &&
+      clients.length > 0
+    ) {
+      const c = clients.find((x) => x.id === redoFrom.real_source_id);
+      if (c) setRealSourceName(c.name);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [clients.length]);
+  const [purpose, setPurpose] = useState(redoFrom?.purpose ?? "");
+  const [revision, setRevision] = useState(redoFrom?.revision ?? 0);
+  const [withSafetyCert, setWithSafetyCert] = useState(
+    redoFrom?.with_safety_cert ?? false,
+  );
+  const [summary, setSummary] = useState(redoFrom?.summary ?? "");
+  const [docKind, setDocKind] = useState(redoFrom?.doc_kind ?? "");
 
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
