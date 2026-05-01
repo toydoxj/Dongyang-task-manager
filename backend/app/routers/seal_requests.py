@@ -59,46 +59,6 @@ def _max_bytes() -> int:
     return get_settings().storage_max_file_mb * 1024 * 1024
 
 
-def _drive_folder_id_from_url(folder_url: str) -> str:
-    """첨부폴더URL의 query string에서 resourceKey 추출 (= 폴더 fileId).
-
-    NAVER WORKS Drive share URL은 `?...&resourceKey=<fileId>` 형식.
-    """
-    if not folder_url:
-        return ""
-    try:
-        qs = parse_qs(urlparse(folder_url).query)
-    except Exception:  # noqa: BLE001
-        return ""
-    v = qs.get("resourceKey")
-    return v[0] if v else ""
-
-
-async def _check_review_folder(folder_url: str) -> str:
-    """검토자료 폴더 점검. 안내 메시지(빈 문자열이면 정상)를 반환.
-
-    - URL 없음 → "폴더 미생성"
-    - 폴더 조회 실패 → "확인 실패"
-    - 파일 0건 → "비어있음"
-    """
-    if not folder_url:
-        return "검토자료 폴더가 생성되지 않았습니다 — Drive 미연결 또는 등록 시 생성 실패."
-    folder_id = _drive_folder_id_from_url(folder_url)
-    if not folder_id:
-        return "검토자료 폴더 URL 파싱 실패 — 관리자에게 문의해주세요."
-    try:
-        body = await sso_drive.list_children(folder_id)
-    except sso_drive.DriveError as exc:
-        logger.warning("검토자료 폴더 list 실패: %s", exc)
-        return f"검토자료 폴더 확인 실패: {exc}"
-    files = body.get("files") or []
-    # 폴더만 있고 실제 파일이 0건이면 비어있는 것으로 처리
-    real_files = [f for f in files if f.get("fileType") != "FOLDER"]
-    if len(real_files) == 0:
-        return "검토자료 폴더가 비어있습니다 — 파일을 업로드 했는지 확인해주세요."
-    return ""
-
-
 async def _read_with_limit(f: UploadFile, max_bytes: int) -> bytes | None:
     """`UploadFile`을 chunk 단위로 읽고 max_bytes 초과 시 즉시 중단 + None 반환.
 
@@ -831,8 +791,8 @@ async def create_seal_request(
             for adm in _find_admins(db):
                 _bot_send(_resolve_works_id(adm), msg)
     else:
-        # team_lead 또는 admin이 직접 요청 → admin 전원(본인 외)
-        for adm in _find_admins(db, exclude_user_id=user.id):
+        # team_lead 또는 admin이 직접 요청 → admin 전원 (본인 포함)
+        for adm in _find_admins(db):
             _bot_send(_resolve_works_id(adm), msg)
 
     # 응답 — 자동 TASK는 background라 페이지에 아직 미반영. final fetch는 첨부메타/
@@ -880,27 +840,16 @@ async def approve_lead(
     handler = user.name or user.username
     item = _from_notion_page(page)
 
-    # 폴더 점검 — 비어있으면 요청자/검토자에게 안내 알림 (승인은 진행)
-    warn = await _check_review_folder(item.folder_url)
-    if warn:
-        warn_msg = (
-            f"[검토자료 확인 필요] {item.title}\n{warn}\n검토자: {handler}"
-        )
-        requester_user = _find_user_by_name(db, item.requester)
-        _bot_send(_resolve_works_id(requester_user), warn_msg)
-        if user.id != getattr(requester_user, "id", -1):
-            _bot_send(_resolve_works_id(user), warn_msg)
-
     await _set_status_with_handler(
         notion, page_id, "2차검토 중", "팀장처리자", "팀장처리일", handler
     )
 
-    # Bot 알림 — admin들에게 (본인 admin이면 본인 제외)
+    # Bot 알림 — admin 전원 (본인 포함)
     msg = (
         f"[2차검토 요청] {item.title}"
         f"\n1차검토자: {handler} / 요청자: {item.requester} / 제출예정일: {item.due_date or '-'}"
     )
-    for adm in _find_admins(db, exclude_user_id=user.id if user.role == "admin" else None):
+    for adm in _find_admins(db):
         _bot_send(_resolve_works_id(adm), msg)
 
     updated = await notion.get_page(page_id)
@@ -926,17 +875,6 @@ async def approve_admin(
         )
     handler = user.name or user.username
     item = _from_notion_page(page)
-
-    # 폴더 점검 — 비어있으면 요청자/검토자에게 안내 알림 (승인은 진행)
-    warn = await _check_review_folder(item.folder_url)
-    if warn:
-        warn_msg = (
-            f"[검토자료 확인 필요] {item.title}\n{warn}\n검토자: {handler}"
-        )
-        requester_user = _find_user_by_name(db, item.requester)
-        _bot_send(_resolve_works_id(requester_user), warn_msg)
-        if user.id != getattr(requester_user, "id", -1):
-            _bot_send(_resolve_works_id(user), warn_msg)
 
     await _set_status_with_handler(
         notion, page_id, "승인", "관리자처리자", "관리자처리일", handler
@@ -1091,7 +1029,8 @@ async def update_seal_request(
                 for adm in _find_admins(db):
                     _bot_send(_resolve_works_id(adm), msg)
         else:
-            for adm in _find_admins(db, exclude_user_id=user.id):
+            # team_lead 또는 admin이 재요청 → admin 전원 (본인 포함)
+            for adm in _find_admins(db):
                 _bot_send(_resolve_works_id(adm), msg)
 
     updated = await notion.get_page(page_id)
