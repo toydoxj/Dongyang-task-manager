@@ -541,11 +541,13 @@ async def _create_seal_task_bg(
     if not assignee_name:
         logger.info("assignee 미지정 — task 생성 skip (%s)", seal_link_prop)
         return
+    # 노션 task DB 실제 컬럼명: title="내용", status type="상태", select="분류".
+    # task_create_to_props와 동일한 schema로 맞춰야 mirror 동기화·칸반 표시 정상.
     props: dict[str, Any] = {
-        "제목": {"title": [{"text": {"content": title}}]},
+        "내용": {"title": [{"text": {"content": title}}]},
         "프로젝트": {"relation": [{"id": project_id}]},
         "분류": {"select": {"name": "프로젝트"}},
-        "진행 단계": {"select": {"name": "진행 중"}},
+        "상태": {"status": {"name": "진행 중"}},
         "기간": {"date": {"start": today_iso}},
         "담당자": {"multi_select": [{"name": assignee_name}]},
     }
@@ -577,8 +579,8 @@ async def _sync_linked_task(
 ) -> None:
     """target ∈ {'완료', '취소'}.
 
-    '완료': 진행 단계='완료' + 기간.end=오늘(승인일). docs/request.md 정책으로
-    날인요청 자동 task의 완료일은 최종 승인일로 채움.
+    '완료': 노션 task DB 실제 schema에 맞춰 status type '상태'='완료' + 기간.end
+    =오늘. docs/request.md 정책으로 자동 task 완료일은 단계 마감일로 채움.
     '취소': 노션 페이지 archive.
     """
     if not task_id:
@@ -589,8 +591,7 @@ async def _sync_linked_task(
                 notion._client.pages.update, page_id=task_id, archived=True
             )
             return
-        # 완료 — 기간.end를 채우려면 기존 start 값 보존 필요. 현재 task의 start
-        # 조회 후 같이 보내야 노션이 end만 추가하고 start 안 지움.
+        # 완료 — 기간.end를 채우려면 기존 start 값 보존 필요.
         try:
             cur = await notion.get_page(task_id)
             start = (
@@ -605,8 +606,9 @@ async def _sync_linked_task(
         await notion.update_page(
             task_id,
             {
-                "진행 단계": {"select": {"name": "완료"}},
+                "상태": {"status": {"name": "완료"}},
                 "기간": {"date": {"start": start, "end": today_iso}},
+                "실제 완료일": {"date": {"start": today_iso}},
             },
         )
     except Exception as e:  # noqa: BLE001
