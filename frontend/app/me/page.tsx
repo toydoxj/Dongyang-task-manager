@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useSWRConfig } from "swr";
 
 import { useAuth } from "@/components/AuthGuard";
@@ -52,7 +52,26 @@ export default function MyPage() {
   const { data: tasksData, error: tasksErr } = useTasks(fetchFilters);
 
   const error = projectErr ?? tasksErr;
-  const tasks = tasksData?.items;
+  const allTasks = tasksData?.items;
+  // 내 업무 정책: 완료된 TASK는 '완료된지 주 기준 저저번 주 이전' 까지만 표시.
+  // cutoff = (이번주 월요일 00:00 KST) - 14일. 그보다 오래된 완료 task는 숨김.
+  const tasks = useMemo<Task[] | undefined>(() => {
+    if (!allTasks) return allTasks;
+    const now = new Date();
+    const dow = now.getDay(); // 0=Sun, 1=Mon..6=Sat
+    const diffToMon = dow === 0 ? -6 : 1 - dow;
+    const monday = new Date(now);
+    monday.setDate(monday.getDate() + diffToMon);
+    monday.setHours(0, 0, 0, 0);
+    monday.setDate(monday.getDate() - 14);
+    const cutoffMs = monday.getTime();
+    return allTasks.filter((t) => {
+      if (t.status !== "완료") return true;
+      const ref = t.actual_end_date ?? t.last_edited_time;
+      if (!ref) return true; // 시점 모르면 안전하게 보여줌
+      return new Date(ref).getTime() >= cutoffMs;
+    });
+  }, [allTasks]);
   // mine 프로젝트 = 진행중 + 대기 (완료/타절/종결/이관 제외)
   const candidates = projectData?.items.filter(
     (p) => !p.completed && (p.stage === "진행중" || p.stage === "대기"),
