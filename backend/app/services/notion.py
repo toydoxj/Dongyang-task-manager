@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
+import random
 import time
 from collections.abc import Callable
 from functools import lru_cache
@@ -10,10 +12,12 @@ from typing import Any
 
 import httpx
 from notion_client import Client
-from notion_client.errors import APIResponseError
+from notion_client.errors import APIResponseError, RequestTimeoutError
 
 from app.exceptions import NotFoundError, NotionApiError
 from app.settings import get_settings
+
+logger = logging.getLogger("notion")
 
 # 노션 공식 한도: 평균 3 req/s. 보수적으로 ~2.5 req/s.
 _MIN_INTERVAL_S = 0.4
@@ -21,6 +25,42 @@ _CACHE_TTL_S = 30.0
 # file_upload API 는 notion-client 미지원 → raw httpx
 _NOTION_API = "https://api.notion.com/v1"
 _NOTION_VERSION = "2025-09-03"
+
+# ── Transient retry 정책 ──
+# notion-client 3.0.0 (Python)은 자동 retry 미지원. 502는 노션 측 게이트웨이
+# 일시 장애로 가장 흔한 transient — 직접 wrap.
+_RETRYABLE_HTTP_STATUS: frozenset[int] = frozenset({429, 502, 503, 504})
+_RETRY_MAX_ATTEMPTS = 4
+_RETRY_BASE_DELAY_S = 0.5
+_RETRY_MAX_DELAY_S = 8.0
+# 한 호출의 retry 누적 한계 — read는 60초로 충분, raw httpx upload는 호출자가 별도 deadline.
+_RETRY_DEADLINE_S = 60.0
+
+
+def _retry_backoff_delay(attempt: int) -> float:
+    """exponential backoff + full jitter (0.5x ~ 1.0x base * 2^(attempt-1))."""
+    base = min(_RETRY_BASE_DELAY_S * (2 ** (attempt - 1)), _RETRY_MAX_DELAY_S)
+    return random.uniform(base * 0.5, base)
+
+
+def _retry_after_seconds(res: httpx.Response | None) -> float | None:
+    """response의 Retry-After 헤더(초 또는 HTTP-date)를 초 단위 float로 변환.
+
+    파싱 실패/없음/음수면 None. 우리 max delay로 cap.
+    """
+    if res is None:
+        return None
+    raw = res.headers.get("retry-after") or res.headers.get("Retry-After")
+    if not raw:
+        return None
+    try:
+        secs = float(raw)
+    except ValueError:
+        # HTTP-date 포맷은 드물어 우선 단순 무시 (그러면 우리 backoff 사용)
+        return None
+    if secs <= 0:
+        return None
+    return min(secs, _RETRY_MAX_DELAY_S)
 
 
 class RateLimiter:
@@ -85,21 +125,81 @@ class NotionService:
         fn: Callable[[], Any],
         *,
         cache_key: str | None = None,
+        op_name: str = "notion",
     ) -> Any:
+        """notion-client SDK 호출 + transient retry.
+
+        429/502/503/504 + Timeout/Network 오류에 대해 exponential backoff + jitter로
+        max_attempts 회 retry. retry/실패는 구조화 로그로 남김. 404는 NotFoundError.
+        """
         if cache_key is not None:
             cached = self._cache.get(cache_key)
             if cached is not None:
                 return cached
-        await self._limiter.wait()
-        try:
-            result = await asyncio.to_thread(fn)
-        except APIResponseError as exc:
-            if exc.status == 404:
-                raise NotFoundError(f"노션 리소스를 찾을 수 없습니다: {exc}") from exc
-            raise NotionApiError(f"노션 API 호출 실패: {exc}") from exc
-        if cache_key is not None:
-            self._cache.put(cache_key, result)
-        return result
+        start = time.monotonic()
+        last_exc: BaseException | None = None
+        for attempt in range(1, _RETRY_MAX_ATTEMPTS + 1):
+            await self._limiter.wait()
+            try:
+                result = await asyncio.to_thread(fn)
+            except APIResponseError as exc:
+                # 404는 즉시 명시적 변환 — 재시도 안 함
+                if exc.status == 404:
+                    raise NotFoundError(
+                        f"노션 리소스를 찾을 수 없습니다: {exc}"
+                    ) from exc
+                if exc.status in _RETRYABLE_HTTP_STATUS:
+                    last_exc = exc
+                else:
+                    raise NotionApiError(
+                        f"노션 API 호출 실패: {exc}"
+                    ) from exc
+            except RequestTimeoutError as exc:
+                last_exc = exc
+            except (httpx.TimeoutException, httpx.NetworkError) as exc:
+                last_exc = exc
+            else:
+                # 성공 — 캐시 저장 후 반환. retry 발생했으면 회복 로그.
+                if cache_key is not None:
+                    self._cache.put(cache_key, result)
+                if attempt > 1:
+                    logger.info(
+                        "notion recovered op=%s attempt=%d/%d elapsed=%.2fs",
+                        op_name, attempt, _RETRY_MAX_ATTEMPTS,
+                        time.monotonic() - start,
+                    )
+                return result
+
+            # retry 결정 — 다음 시도 시간/예산 점검
+            elapsed = time.monotonic() - start
+            if attempt >= _RETRY_MAX_ATTEMPTS:
+                break
+            delay = _retry_backoff_delay(attempt)
+            if elapsed + delay > _RETRY_DEADLINE_S:
+                logger.warning(
+                    "notion retry deadline op=%s attempt=%d elapsed=%.1fs status=%s",
+                    op_name, attempt, elapsed,
+                    getattr(last_exc, "status", type(last_exc).__name__),
+                )
+                break
+            logger.warning(
+                "notion retry op=%s attempt=%d/%d status=%s delay=%.2fs elapsed=%.1fs",
+                op_name, attempt, _RETRY_MAX_ATTEMPTS,
+                getattr(last_exc, "status", type(last_exc).__name__),
+                delay, elapsed,
+            )
+            await asyncio.sleep(delay)
+
+        # 모든 시도 실패 — NotionApiError로 정규화
+        logger.error(
+            "notion give up op=%s attempts=%d elapsed=%.1fs last=%s",
+            op_name, _RETRY_MAX_ATTEMPTS,
+            time.monotonic() - start,
+            repr(last_exc),
+        )
+        raise NotionApiError(
+            f"노션 API 호출 실패 (재시도 후): {last_exc!r}"
+        ) from last_exc
 
     # ── 데이터베이스 / 데이터 소스 ──
     #
@@ -266,6 +366,77 @@ class NotionService:
     async def delete_block(self, block_id: str) -> dict[str, Any]:
         return await self._call(lambda: self._client.blocks.delete(block_id=block_id))
 
+    # ── raw httpx retry helper ──
+
+    async def _httpx_with_retry(
+        self,
+        http: httpx.AsyncClient,
+        *,
+        method: str,
+        url: str,
+        op_name: str,
+        **kwargs: Any,
+    ) -> httpx.Response:
+        """raw httpx 호출에 _call과 동일 retry 정책 적용.
+
+        반환된 Response의 raise_for_status는 호출자가 책임. transient 5xx는
+        직접 retry하고, 비-transient 4xx는 res를 그대로 돌려줘 호출자가 처리.
+        """
+        start = time.monotonic()
+        last_exc: BaseException | None = None
+        for attempt in range(1, _RETRY_MAX_ATTEMPTS + 1):
+            await self._limiter.wait()
+            try:
+                res = await http.request(method, url, **kwargs)
+            except (httpx.TimeoutException, httpx.NetworkError) as exc:
+                last_exc = exc
+            else:
+                if res.status_code in _RETRYABLE_HTTP_STATUS:
+                    last_exc = httpx.HTTPStatusError(
+                        f"{res.status_code} {res.reason_phrase}",
+                        request=res.request,
+                        response=res,
+                    )
+                else:
+                    if attempt > 1:
+                        logger.info(
+                            "notion httpx recovered op=%s attempt=%d/%d elapsed=%.2fs",
+                            op_name, attempt, _RETRY_MAX_ATTEMPTS,
+                            time.monotonic() - start,
+                        )
+                    return res
+
+            elapsed = time.monotonic() - start
+            if attempt >= _RETRY_MAX_ATTEMPTS:
+                break
+            # 429일 때 Retry-After 헤더 우선, 그 외엔 backoff
+            response = getattr(last_exc, "response", None)
+            ra = _retry_after_seconds(response)
+            delay = ra if ra is not None else _retry_backoff_delay(attempt)
+            if elapsed + delay > _RETRY_DEADLINE_S:
+                logger.warning(
+                    "notion httpx retry deadline op=%s attempt=%d elapsed=%.1fs",
+                    op_name, attempt, elapsed,
+                )
+                break
+            logger.warning(
+                "notion httpx retry op=%s attempt=%d/%d delay=%.2fs elapsed=%.1fs status=%s%s",
+                op_name, attempt, _RETRY_MAX_ATTEMPTS, delay, elapsed,
+                getattr(response, "status_code", type(last_exc).__name__),
+                " (retry-after)" if ra is not None else "",
+            )
+            await asyncio.sleep(delay)
+
+        logger.error(
+            "notion httpx give up op=%s attempts=%d elapsed=%.1fs last=%s",
+            op_name, _RETRY_MAX_ATTEMPTS,
+            time.monotonic() - start,
+            repr(last_exc),
+        )
+        raise NotionApiError(
+            f"노션 httpx 호출 실패 (재시도 후) op={op_name}: {last_exc!r}"
+        ) from last_exc
+
     # ── data_source schema 수정 (raw httpx — notion-client 안정성 보강) ──
 
     async def update_data_source_schema(
@@ -278,14 +449,16 @@ class NotionService:
             "Notion-Version": _NOTION_VERSION,
             "Content-Type": "application/json",
         }
-        await self._limiter.wait()
         async with httpx.AsyncClient(timeout=30.0) as http:
+            res = await self._httpx_with_retry(
+                http,
+                method="PATCH",
+                url=f"{_NOTION_API}/data_sources/{ds_id}",
+                op_name=f"schema_update:{ds_id[:8]}",
+                headers=headers,
+                json={"properties": properties},
+            )
             try:
-                res = await http.patch(
-                    f"{_NOTION_API}/data_sources/{ds_id}",
-                    headers=headers,
-                    json={"properties": properties},
-                )
                 res.raise_for_status()
             except httpx.HTTPError as exc:
                 raise NotionApiError(f"data_source schema update 실패: {exc}") from exc
@@ -320,18 +493,20 @@ class NotionService:
             "Authorization": f"Bearer {self._api_key}",
             "Notion-Version": _NOTION_VERSION,
         }
-        await self._limiter.wait()
         async with httpx.AsyncClient(timeout=60.0) as http:
+            init = await self._httpx_with_retry(
+                http,
+                method="POST",
+                url=f"{_NOTION_API}/file_uploads",
+                op_name="upload_init_single",
+                headers={**headers, "Content-Type": "application/json"},
+                json={
+                    "mode": "single_part",
+                    "filename": filename,
+                    "content_type": content_type,
+                },
+            )
             try:
-                init = await http.post(
-                    f"{_NOTION_API}/file_uploads",
-                    headers={**headers, "Content-Type": "application/json"},
-                    json={
-                        "mode": "single_part",
-                        "filename": filename,
-                        "content_type": content_type,
-                    },
-                )
                 init.raise_for_status()
             except httpx.HTTPError as exc:
                 raise NotionApiError(f"file_upload 초기화 실패: {exc}") from exc
@@ -342,13 +517,15 @@ class NotionService:
             )
             if not upload_id or not upload_url:
                 raise NotionApiError("file_upload 응답에 id/upload_url 없음")
-            await self._limiter.wait()
+            send = await self._httpx_with_retry(
+                http,
+                method="POST",
+                url=upload_url,
+                op_name=f"upload_send_single:{upload_id[:8]}",
+                headers=headers,
+                files={"file": (filename, data, content_type)},
+            )
             try:
-                send = await http.post(
-                    upload_url,
-                    headers=headers,
-                    files={"file": (filename, data, content_type)},
-                )
                 send.raise_for_status()
             except httpx.HTTPError as exc:
                 raise NotionApiError(f"file_upload 전송 실패: {exc}") from exc
@@ -365,20 +542,22 @@ class NotionService:
             "Authorization": f"Bearer {self._api_key}",
             "Notion-Version": _NOTION_VERSION,
         }
-        await self._limiter.wait()
         async with httpx.AsyncClient(timeout=600.0) as http:
             # 1. init
+            init = await self._httpx_with_retry(
+                http,
+                method="POST",
+                url=f"{_NOTION_API}/file_uploads",
+                op_name="upload_init_multi",
+                headers={**headers, "Content-Type": "application/json"},
+                json={
+                    "mode": "multi_part",
+                    "filename": filename,
+                    "content_type": content_type,
+                    "number_of_parts": parts,
+                },
+            )
             try:
-                init = await http.post(
-                    f"{_NOTION_API}/file_uploads",
-                    headers={**headers, "Content-Type": "application/json"},
-                    json={
-                        "mode": "multi_part",
-                        "filename": filename,
-                        "content_type": content_type,
-                        "number_of_parts": parts,
-                    },
-                )
                 init.raise_for_status()
             except httpx.HTTPError as exc:
                 raise NotionApiError(
@@ -396,14 +575,16 @@ class NotionService:
             # 2. 각 part 업로드 (1-indexed)
             for i in range(parts):
                 part_data = data[i * chunk : (i + 1) * chunk]
-                await self._limiter.wait()
+                send = await self._httpx_with_retry(
+                    http,
+                    method="POST",
+                    url=send_url,
+                    op_name=f"upload_part:{i + 1}/{parts}",
+                    headers=headers,
+                    files={"file": (filename, part_data, content_type)},
+                    data={"part_number": str(i + 1)},
+                )
                 try:
-                    send = await http.post(
-                        send_url,
-                        headers=headers,
-                        files={"file": (filename, part_data, content_type)},
-                        data={"part_number": str(i + 1)},
-                    )
                     send.raise_for_status()
                 except httpx.HTTPError as exc:
                     raise NotionApiError(
@@ -411,12 +592,14 @@ class NotionService:
                     ) from exc
 
             # 3. complete
-            await self._limiter.wait()
+            done = await self._httpx_with_retry(
+                http,
+                method="POST",
+                url=f"{_NOTION_API}/file_uploads/{upload_id}/complete",
+                op_name=f"upload_complete:{upload_id[:8]}",
+                headers={**headers, "Content-Type": "application/json"},
+            )
             try:
-                done = await http.post(
-                    f"{_NOTION_API}/file_uploads/{upload_id}/complete",
-                    headers={**headers, "Content-Type": "application/json"},
-                )
                 done.raise_for_status()
             except httpx.HTTPError as exc:
                 raise NotionApiError(
