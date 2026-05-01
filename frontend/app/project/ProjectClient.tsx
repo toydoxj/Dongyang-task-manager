@@ -103,104 +103,101 @@ export default function ProjectClient({ id }: { id: string }) {
     );
   }
 
+  // seals는 created_time desc로 정렬되어 옴(backend list_seal_requests).
+  // 가장 최근 1건의 상태로만 판단 — 과거 반려가 끌려와 새 요청을 막지 않게.
+  const latest = seals[0];
+  const sealActive =
+    latest &&
+    (latest.status === "1차검토 중" || latest.status === "2차검토 중")
+      ? latest
+      : undefined;
+  const sealRejected =
+    !sealActive && latest && latest.status === "반려" ? latest : undefined;
+
+  const onCancelSeal = async (sid: string): Promise<void> => {
+    if (!confirm("날인요청을 취소하시겠습니까?")) return;
+    setSealBusy(true);
+    try {
+      await deleteSealRequest(sid);
+      await mutate(["seals", id]);
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "취소 실패");
+    } finally {
+      setSealBusy(false);
+    }
+  };
+
+  const headerActions = (
+    <>
+      <button
+        type="button"
+        onClick={() => setEditOpen(true)}
+        className="rounded-md border border-zinc-300 px-2.5 py-1 text-xs hover:bg-zinc-50 dark:border-zinc-700 dark:hover:bg-zinc-800"
+      >
+        편집
+      </button>
+      {sealActive ? (
+        <>
+          <span
+            className={cn(
+              "rounded-md px-2 py-0.5 text-[11px] font-medium",
+              SEAL_STATUS_COLOR[sealActive.status],
+            )}
+          >
+            🔖 {sealActive.status}
+          </span>
+          <button
+            type="button"
+            onClick={() => void onCancelSeal(sealActive.id)}
+            disabled={sealBusy}
+            className="rounded-md border border-red-300 px-2.5 py-1 text-xs text-red-500 hover:bg-red-50 disabled:opacity-50 dark:border-red-900 dark:hover:bg-red-950"
+          >
+            날인취소
+          </button>
+        </>
+      ) : sealRejected ? (
+        <>
+          <span
+            className={cn(
+              "rounded-md px-2 py-0.5 text-[11px] font-medium",
+              SEAL_STATUS_COLOR["반려"],
+            )}
+          >
+            🔖 반려
+          </span>
+          <button
+            type="button"
+            onClick={() => setSealEditId(sealRejected.id)}
+            className="rounded-md bg-amber-500 px-2.5 py-1 text-xs text-white hover:bg-amber-600"
+          >
+            🔁 날인재요청
+          </button>
+          <button
+            type="button"
+            onClick={() => void onCancelSeal(sealRejected.id)}
+            disabled={sealBusy}
+            className="rounded-md border border-red-300 px-2.5 py-1 text-xs text-red-500 hover:bg-red-50 disabled:opacity-50 dark:border-red-900 dark:hover:bg-red-950"
+          >
+            날인취소
+          </button>
+        </>
+      ) : (
+        <button
+          type="button"
+          onClick={() => setSealOpen(true)}
+          className="rounded-md border border-zinc-300 px-2.5 py-1 text-xs hover:bg-zinc-50 dark:border-zinc-700 dark:hover:bg-zinc-800"
+        >
+          🔖 날인요청
+        </button>
+      )}
+    </>
+  );
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <BackButton />
         <div className="flex items-center gap-2">
-          {(() => {
-            // seals는 created_time desc로 정렬되어 옴(backend list_seal_requests).
-            // 가장 최근 1건의 상태로만 판단 — 과거 반려가 끌려와 새 요청을 막지 않게.
-            const latest = seals[0];
-            const active =
-              latest &&
-              (latest.status === "1차검토 중" || latest.status === "2차검토 중")
-                ? latest
-                : undefined;
-            const rejected =
-              !active && latest && latest.status === "반려" ? latest : undefined;
-            const refreshSeals = (): Promise<unknown> =>
-              mutate(["seals", id]);
-            const onCancel = async (sid: string): Promise<void> => {
-              if (!confirm("날인요청을 취소하시겠습니까?")) return;
-              setSealBusy(true);
-              try {
-                await deleteSealRequest(sid);
-                await refreshSeals();
-              } catch (e) {
-                alert(e instanceof Error ? e.message : "취소 실패");
-              } finally {
-                setSealBusy(false);
-              }
-            };
-            if (active) {
-              return (
-                <>
-                  <span
-                    className={cn(
-                      "rounded-md px-2 py-0.5 text-[11px] font-medium",
-                      SEAL_STATUS_COLOR[active.status],
-                    )}
-                  >
-                    🔖 {active.status}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => void onCancel(active.id)}
-                    disabled={sealBusy}
-                    className="rounded-md border border-red-300 px-2.5 py-1 text-xs text-red-500 hover:bg-red-50 disabled:opacity-50 dark:border-red-900 dark:hover:bg-red-950"
-                  >
-                    날인취소
-                  </button>
-                </>
-              );
-            }
-            if (rejected) {
-              return (
-                <>
-                  <span
-                    className={cn(
-                      "rounded-md px-2 py-0.5 text-[11px] font-medium",
-                      SEAL_STATUS_COLOR["반려"],
-                    )}
-                  >
-                    🔖 반려
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => setSealEditId(rejected.id)}
-                    className="rounded-md bg-amber-500 px-2.5 py-1 text-xs text-white hover:bg-amber-600"
-                  >
-                    🔁 날인재요청
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => void onCancel(rejected.id)}
-                    disabled={sealBusy}
-                    className="rounded-md border border-red-300 px-2.5 py-1 text-xs text-red-500 hover:bg-red-50 disabled:opacity-50 dark:border-red-900 dark:hover:bg-red-950"
-                  >
-                    날인취소
-                  </button>
-                </>
-              );
-            }
-            return (
-              <button
-                type="button"
-                onClick={() => setSealOpen(true)}
-                className="rounded-md border border-zinc-300 px-2.5 py-1 text-xs hover:bg-zinc-50 dark:border-zinc-700 dark:hover:bg-zinc-800"
-              >
-                🔖 날인요청
-              </button>
-            );
-          })()}
-          <button
-            type="button"
-            onClick={() => setEditOpen(true)}
-            className="rounded-md border border-zinc-300 px-2.5 py-1 text-xs hover:bg-zinc-50 dark:border-zinc-700 dark:hover:bg-zinc-800"
-          >
-            편집
-          </button>
           {project.url && (
             <a
               href={project.url}
@@ -214,7 +211,7 @@ export default function ProjectClient({ id }: { id: string }) {
         </div>
       </div>
 
-      <ProjectHeader project={project} />
+      <ProjectHeader project={project} actions={headerActions} />
       <LifecycleTimeline
         project={project}
         tasks={tasks}

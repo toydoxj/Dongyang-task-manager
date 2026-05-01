@@ -24,7 +24,14 @@ const STAGE_BADGE: Record<string, string> = {
   "이관": "bg-zinc-400/15 text-zinc-400 border-zinc-400/30",
 };
 
-export default function ProjectHeader({ project }: { project: Project }) {
+export default function ProjectHeader({
+  project,
+  actions,
+}: {
+  project: Project;
+  /** 프로젝트 제목 옆 버튼 슬롯 (편집/날인요청 등). */
+  actions?: React.ReactNode;
+}) {
   const { user, driveLocalRoot } = useAuth();
   const [masterOpen, setMasterOpen] = useState(false);
   const [driveBusy, setDriveBusy] = useState(false);
@@ -132,9 +139,14 @@ export default function ProjectHeader({ project }: { project: Project }) {
               <span className="text-zinc-400">({masterLabel})</span>
             )}
           </p>
-          <h1 className="mt-1 text-xl font-semibold text-zinc-900 dark:text-zinc-100">
-            {project.name || "(제목 없음)"}
-          </h1>
+          <div className="mt-1 flex flex-wrap items-center gap-2">
+            <h1 className="text-xl font-semibold text-zinc-900 dark:text-zinc-100">
+              {project.name || "(제목 없음)"}
+            </h1>
+            {actions && (
+              <div className="flex items-center gap-1.5">{actions}</div>
+            )}
+          </div>
           <p className="mt-1 text-sm text-zinc-500">
             발주처:{" "}
             {project.client_names.length > 0
