@@ -551,7 +551,7 @@ export interface SealRequestItem {
 
 export interface SealUpdateBody {
   title?: string;
-  real_source?: string;
+  real_source_id?: string;
   purpose?: string;
   revision?: number;
   with_safety_cert?: boolean;
