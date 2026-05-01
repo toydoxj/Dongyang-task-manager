@@ -364,6 +364,57 @@ async def list_sharedrives(settings: Settings | None = None) -> dict[str, Any]:
     return await _api(s, "GET", "/sharedrives")
 
 
+async def find_review_folder(
+    project_root_file_id: str,
+    ymd: str,
+    *,
+    settings: Settings | None = None,
+) -> tuple[str, str] | None:
+    """0.검토자료/YYYYMMDD 폴더가 이미 있으면 (id, url) 반환. 없으면 None.
+
+    생성하지 않음 — 사용자가 [폴더생성] 버튼을 명시 클릭한 경우에만
+    ensure_review_folder로 생성. 그 외엔 조회만.
+    """
+    s = settings or get_settings()
+    if not project_root_file_id or not ymd:
+        return None
+    try:
+        # 1) 프로젝트 root 자식 중 "0.검토자료" 찾기
+        root_children = await list_children(project_root_file_id, settings=s)
+        review = next(
+            (
+                f
+                for f in (root_children.get("files") or [])
+                if f.get("fileType") == "FOLDER" and f.get("fileName") == "0.검토자료"
+            ),
+            None,
+        )
+        if not review:
+            return None
+        review_id = _extract_id(review)
+        if not review_id:
+            return None
+        # 2) 0.검토자료 자식 중 ymd 폴더 찾기
+        day_children = await list_children(review_id, settings=s)
+        day = next(
+            (
+                f
+                for f in (day_children.get("files") or [])
+                if f.get("fileType") == "FOLDER" and f.get("fileName") == ymd
+            ),
+            None,
+        )
+        if not day:
+            return None
+        day_id = _extract_id(day)
+        if not day_id:
+            return None
+        return day_id, _extract_url(day)
+    except DriveError as exc:
+        logger.warning("find_review_folder 실패: %s", exc)
+        return None
+
+
 async def ensure_review_folder(
     project_root_file_id: str,
     ymd: str,

@@ -734,9 +734,8 @@ async def create_seal_request(
     page = await notion.create_page(_db_id(), init_props)
     page_id = page["id"]
 
-    # 4) 검토자료 폴더 생성 (`0. 검토자료/YYYYMMDD/`) — files 유무와 무관하게 항상 시도.
-    # docs/request.md: 첨부 파일 자체는 선택. 사용자가 NAVER WORKS Drive에서 직접 올림.
-    # 첨부 input은 frontend에서 제거됨 — `files`는 backward compat용 (빈 list 기본).
+    # 4) 검토자료 폴더 — 사용자가 모달에서 [폴더생성]으로 미리 만든 폴더만 사용.
+    # backend 자동 ensure는 하지 않음 (사용자 의도: 명시 생성만). 못 찾으면 빈 채로 둠.
     attachments_meta: list[dict[str, Any]] = []
     failed: list[str] = []
     folder_url = ""
@@ -744,18 +743,13 @@ async def create_seal_request(
     day_folder_id = ""
     if s_set.works_drive_enabled and root_folder_id:
         ymd = today.strftime("%Y%m%d")
-        try:
-            day_folder_id, day_folder_url = await sso_drive.ensure_review_folder(
-                root_folder_id, ymd
-            )
-            folder_url = day_folder_url
-        except sso_drive.DriveError as exc:
-            logger.warning("검토자료 폴더 생성 실패: %s", exc)
-            failed.append(f"검토자료 폴더 생성 실패: {exc}")
-    elif files:
-        # 폴더 생성 불가능한데 첨부가 있는 경우만 사용자에게 알림
+        found = await sso_drive.find_review_folder(root_folder_id, ymd)
+        if found:
+            day_folder_id, folder_url = found
+    if not day_folder_id and files:
+        # 폴더 미생성 상태에서 첨부가 들어온 경우만 사용자에게 알림
         failed.extend(
-            [f"{(f.filename or 'file.bin')}: Drive 미연결" for f in files]
+            [f"{(f.filename or 'file.bin')}: 검토자료 폴더 미생성" for f in files]
         )
 
     # 호환: 첨부 파일이 들어오면 기존 로직 그대로 (frontend는 더 이상 안 보냄).

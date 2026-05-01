@@ -595,6 +595,29 @@ export async function getNextSealDocNumber(
   return jsonOrThrow<{ seal_type: string; next_doc_number: string }>(res);
 }
 
+export interface ReviewFolderState {
+  ymd: string;
+  exists: boolean;
+  folder_url: string;
+  file_count: number;
+}
+
+export async function getReviewFolder(
+  projectId: string,
+): Promise<ReviewFolderState> {
+  const res = await authFetch(`/api/projects/${projectId}/review-folder`);
+  return jsonOrThrow<ReviewFolderState>(res);
+}
+
+export async function createReviewFolder(
+  projectId: string,
+): Promise<ReviewFolderState> {
+  const res = await authFetch(`/api/projects/${projectId}/review-folder`, {
+    method: "POST",
+  });
+  return jsonOrThrow<ReviewFolderState>(res);
+}
+
 export async function createSealRequest(form: FormData): Promise<SealRequestItem> {
   // multipart/form-data: project_id, seal_type, title?, note, files[]
   const res = await authFetch(`/api/seal-requests`, {

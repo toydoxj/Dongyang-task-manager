@@ -1,11 +1,16 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import useSWR from "swr";
+import useSWR, { useSWRConfig } from "swr";
 
 import { useAuth } from "@/components/AuthGuard";
 import Modal from "@/components/ui/Modal";
-import { createSealRequest, getNextSealDocNumber } from "@/lib/api";
+import {
+  createReviewFolder,
+  createSealRequest,
+  getNextSealDocNumber,
+  getReviewFolder,
+} from "@/lib/api";
 import type { Project } from "@/lib/domain";
 import { useClients, useProjects } from "@/lib/hooks";
 
@@ -87,6 +92,27 @@ function Form({
   );
   const nextDocNumber = nextDocData?.next_doc_number ?? "";
 
+  // 검토자료 폴더 상태 — 프로젝트 결정 시 fetch
+  const { mutate: globalMutate } = useSWRConfig();
+  const folderKey = projectId ? ["review-folder", projectId] : null;
+  const { data: folderState } = useSWR(folderKey, () =>
+    getReviewFolder(projectId),
+  );
+  const [folderBusy, setFolderBusy] = useState(false);
+
+  const handleCreateFolder = async (): Promise<void> => {
+    if (!projectId) return;
+    setFolderBusy(true);
+    try {
+      const result = await createReviewFolder(projectId);
+      await globalMutate(folderKey, result, { revalidate: false });
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "폴더 생성 실패");
+    } finally {
+      setFolderBusy(false);
+    }
+  };
+
   const selectedProject = useMemo<Project | null>(() => {
     if (fixedProject) return fixedProject;
     return myProjects.find((p) => p.id === projectId) ?? null;
@@ -146,6 +172,18 @@ function Form({
     if (sealType === "기타" && !docKind.trim()) {
       setErr("기타: 문서종류를 입력하세요");
       return;
+    }
+    // 검토자료 폴더 경고 — 폴더 없거나 비어있으면 사용자 확인
+    if (!folderState?.exists) {
+      const ok = window.confirm(
+        "검토자료 폴더가 생성되지 않았습니다.\n그대로 등록하시겠습니까?",
+      );
+      if (!ok) return;
+    } else if (folderState.file_count === 0) {
+      const ok = window.confirm(
+        "검토자료 폴더가 비어있습니다 (파일 0개).\n그대로 등록하시겠습니까?",
+      );
+      if (!ok) return;
     }
     setBusy(true);
     setErr(null);
@@ -363,12 +401,43 @@ function Form({
         </Field>
 
         <Field label="검토자료 폴더">
-          <p className="rounded-md border border-blue-300/60 bg-blue-50 px-2.5 py-2 text-[11px] text-blue-800 dark:border-blue-800/60 dark:bg-blue-950/30 dark:text-blue-200">
-            📁 등록 시 <span className="font-mono">[코드]프로젝트명/0.검토자료/YYYYMMDD/</span>{" "}
-            폴더가 자동 생성되고 노션에 URL이 저장됩니다. 파일은 NAVER WORKS Drive에서
-            직접 업로드해주세요. 검토자가 승인 시 폴더가 비어있으면 확인 알림이
-            발송됩니다.
-          </p>
+          {!projectId ? (
+            <p className="text-[11px] text-zinc-400">
+              프로젝트를 먼저 선택하세요.
+            </p>
+          ) : !folderState ? (
+            <p className="text-[11px] text-zinc-400">폴더 상태 확인 중...</p>
+          ) : folderState.exists ? (
+            <div className="flex flex-wrap items-center gap-2">
+              <a
+                href={folderState.folder_url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1 rounded-md border border-emerald-700/40 bg-emerald-600/10 px-2.5 py-1 text-xs font-medium text-emerald-700 hover:bg-emerald-600/20 dark:text-emerald-300"
+              >
+                📁 폴더 열기
+              </a>
+              <span className="text-[11px] text-zinc-500">
+                파일 {folderState.file_count}개{" "}
+                {folderState.file_count === 0 && "(비어있음 — 업로드 후 등록 권장)"}
+              </span>
+            </div>
+          ) : (
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={handleCreateFolder}
+                disabled={folderBusy}
+                className="inline-flex items-center gap-1 rounded-md border border-amber-700/40 bg-amber-600/10 px-2.5 py-1 text-xs font-medium text-amber-700 hover:bg-amber-600/20 disabled:opacity-50 dark:text-amber-300"
+              >
+                {folderBusy ? "생성 중..." : "📁 폴더 생성"}
+              </button>
+              <span className="text-[11px] text-zinc-500">
+                <span className="font-mono">0.검토자료/{getTodayYmd()}/</span>{" "}
+                — 클릭 시 즉시 생성
+              </span>
+            </div>
+          )}
         </Field>
 
         {err && (
@@ -398,6 +467,14 @@ function Form({
       </div>
     </Modal>
   );
+}
+
+function getTodayYmd(): string {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}${m}${day}`;
 }
 
 const inputCls =

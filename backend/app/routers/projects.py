@@ -644,6 +644,97 @@ class DriveChildrenResponse(BaseModel):
     next_cursor: str = ""
 
 
+class ReviewFolderState(BaseModel):
+    """프로젝트의 오늘 날짜 검토자료(0.검토자료/YYYYMMDD) 폴더 상태."""
+
+    ymd: str  # YYYYMMDD
+    exists: bool  # day 폴더 존재 여부 (생성하지 않고 조회만)
+    folder_url: str = ""
+    file_count: int = 0  # FOLDER 제외한 실제 파일 개수
+
+
+def _today_ymd() -> str:
+    return date.today().strftime("%Y%m%d")
+
+
+async def _review_folder_state(
+    page_id: str, db: Session, *, ymd: str
+) -> ReviewFolderState:
+    """공용 helper — GET/POST 응답 모두 동일 구조."""
+    row = db.get(M.MirrorProject, page_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="프로젝트를 찾을 수 없습니다")
+    project = project_from_mirror(row)
+    root_id = _extract_resource_key(project.drive_url)
+    if not root_id:
+        return ReviewFolderState(ymd=ymd, exists=False, folder_url="", file_count=0)
+    found = await sso_drive.find_review_folder(root_id, ymd)
+    if not found:
+        return ReviewFolderState(ymd=ymd, exists=False, folder_url="", file_count=0)
+    day_id, day_url = found
+    try:
+        body = await sso_drive.list_children(day_id)
+        files = body.get("files") or []
+        real = [f for f in files if f.get("fileType") != "FOLDER"]
+        count = len(real)
+    except sso_drive.DriveError:
+        count = 0
+    return ReviewFolderState(
+        ymd=ymd, exists=True, folder_url=day_url, file_count=count
+    )
+
+
+@router.get("/{page_id}/review-folder", response_model=ReviewFolderState)
+async def get_review_folder(
+    page_id: str,
+    _user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> ReviewFolderState:
+    """오늘 날짜의 검토자료 폴더 상태 조회 — 생성하지 않음.
+
+    날인요청 모달에서 [폴더생성]/[폴더열기] 버튼 분기 + 등록 시 경고용.
+    """
+    s = get_settings()
+    if not s.works_drive_enabled:
+        raise HTTPException(status_code=503, detail="WORKS Drive 비활성")
+    return await _review_folder_state(page_id, db, ymd=_today_ymd())
+
+
+@router.post(
+    "/{page_id}/review-folder",
+    response_model=ReviewFolderState,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_review_folder(
+    page_id: str,
+    _user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> ReviewFolderState:
+    """[폴더생성] 버튼 — 0.검토자료/오늘날짜 폴더 ensure (idempotent).
+
+    프로젝트 root 폴더가 없으면 502.
+    """
+    s = get_settings()
+    if not s.works_drive_enabled:
+        raise HTTPException(status_code=503, detail="WORKS Drive 비활성")
+    row = db.get(M.MirrorProject, page_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="프로젝트를 찾을 수 없습니다")
+    project = project_from_mirror(row)
+    root_id = _extract_resource_key(project.drive_url)
+    if not root_id:
+        raise HTTPException(
+            status_code=422,
+            detail="프로젝트 Drive 폴더가 아직 생성되지 않았습니다",
+        )
+    ymd = _today_ymd()
+    try:
+        await sso_drive.ensure_review_folder(root_id, ymd)
+    except sso_drive.DriveError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    return await _review_folder_state(page_id, db, ymd=ymd)
+
+
 @router.get("/{page_id}/drive/children", response_model=DriveChildrenResponse)
 async def list_drive_children(
     page_id: str,
