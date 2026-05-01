@@ -1,26 +1,35 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useMemo, useState } from "react";
 import useSWR from "swr";
 
 import { useAuth } from "@/components/AuthGuard";
+import DriveExplorerModal from "@/components/project/DriveExplorerModal";
 import SealRequestEditModal from "@/components/project/SealRequestEditModal";
 import Modal from "@/components/ui/Modal";
 import LoadingState from "@/components/ui/LoadingState";
-import { authFetch } from "@/lib/auth";
-import { useClients } from "@/lib/hooks";
+import { useClients, useProject } from "@/lib/hooks";
 import {
-  addSealAttachments,
   approveSealAdmin,
   approveSealLead,
   deleteSealRequest,
-  getSealAttachmentUrl,
   listSealRequests,
   rejectSealRequest,
   type SealRequestItem,
 } from "@/lib/api";
 import { formatDate, formatDateTime } from "@/lib/format";
 import { cn } from "@/lib/utils";
+
+/** Drive share URL의 query string에서 resourceKey(폴더 fileId) 추출. */
+function extractResourceKey(url: string): string {
+  if (!url) return "";
+  try {
+    const u = new URL(url);
+    return u.searchParams.get("resourceKey") ?? "";
+  } catch {
+    return "";
+  }
+}
 
 const STATUS_TABS = ["전체", "1차검토 중", "2차검토 중", "승인", "반려"] as const;
 type StatusTab = (typeof STATUS_TABS)[number];
@@ -191,12 +200,62 @@ function DetailModal({
   onClose: () => void;
   onChanged: () => void;
 }) {
+  const { driveLocalRoot } = useAuth();
   const { data: clientData } = useClients(true);
   const clients = clientData?.items ?? [];
+  // 프로젝트명/발주처 표시용 — 첫 번째 project_id로 lookup
+  const projectId = item.project_ids?.[0] ?? "";
+  const { data: project } = useProject(projectId || null);
+  const projectClientLabel = useMemo<string>(() => {
+    if (item.real_source_id) {
+      return clients.find((c) => c.id === item.real_source_id)?.name ?? "";
+    }
+    if (!project) return "";
+    if (project.client_names?.length) return project.client_names.join(", ");
+    return project.client_text ?? "";
+  }, [item.real_source_id, project, clients]);
+
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [editOpen, setEditOpen] = useState(false);
-  const reuploadInput = useRef<HTMLInputElement>(null);
+  const [explorerOpen, setExplorerOpen] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  // 검토자료 폴더 fileId — folder_url에서 추출
+  const folderFileId = useMemo(
+    () => extractResourceKey(item.folder_url),
+    [item.folder_url],
+  );
+
+  // PC 경로: {driveLocalRoot}\[코드]프로젝트명\0.검토자료\YYYYMMDD
+  // YYYYMMDD는 요청일 기준 (대부분 폴더 생성일과 동일)
+  const folderName =
+    project?.code && project?.name
+      ? `[${project.code}]${project.name}`
+      : "";
+  const ymd = useMemo(() => {
+    const d = item.requested_at ? new Date(item.requested_at) : new Date();
+    if (Number.isNaN(d.getTime())) return "";
+    return (
+      `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, "0")}` +
+      `${String(d.getDate()).padStart(2, "0")}`
+    );
+  }, [item.requested_at]);
+  const localPath =
+    driveLocalRoot && folderName
+      ? `${driveLocalRoot}\\${folderName}\\0.검토자료${ymd ? "\\" + ymd : ""}`
+      : "";
+
+  const copyLocalPath = async (): Promise<void> => {
+    if (!localPath) return;
+    try {
+      await navigator.clipboard.writeText(localPath);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 2000);
+    } catch {
+      window.prompt("아래 경로를 복사하세요 (Ctrl+C):", localPath);
+    }
+  };
 
   const action = async (fn: () => Promise<unknown>): Promise<void> => {
     setBusy(true);
@@ -209,20 +268,6 @@ function DetailModal({
     } finally {
       setBusy(false);
     }
-  };
-
-  const onReupload = async (list: FileList | null): Promise<void> => {
-    if (!list || list.length === 0) return;
-    if (
-      !confirm(
-        `파일 ${list.length}개를 추가하고 다시 '1차검토 중' 상태로 변경합니다. 진행할까요?`,
-      )
-    ) {
-      if (reuploadInput.current) reuploadInput.current.value = "";
-      return;
-    }
-    await action(() => addSealAttachments(item.id, Array.from(list)));
-    if (reuploadInput.current) reuploadInput.current.value = "";
   };
 
   const onApproveLead = (): Promise<void> => action(() => approveSealLead(item.id));
@@ -240,6 +285,24 @@ function DetailModal({
   return (
     <Modal open onClose={onClose} title={item.title || "(제목 없음)"} size="lg">
       <div className="space-y-3 text-sm">
+        {/* 프로젝트명 + 발주처(실제출처) */}
+        <div className="grid grid-cols-2 gap-3 rounded-md border border-zinc-200 p-2 dark:border-zinc-800">
+          <Info
+            label="프로젝트"
+            value={
+              project
+                ? `${project.code ? `[${project.code}] ` : ""}${project.name}`
+                : projectId
+                  ? "불러오는 중..."
+                  : "—"
+            }
+          />
+          <Info
+            label={item.real_source_id ? "발주처(실제출처)" : "발주처"}
+            value={projectClientLabel || "—"}
+          />
+        </div>
+
         <div className="grid grid-cols-2 gap-3">
           <Info label="날인유형" value={item.seal_type} />
           <Info label="상태">
@@ -310,16 +373,37 @@ function DetailModal({
         )}
 
         {item.folder_url && (
-          <p className="text-xs">
+          <div className="flex flex-wrap items-center gap-1.5 text-xs">
+            {folderFileId && (
+              <button
+                type="button"
+                onClick={() => setExplorerOpen(true)}
+                className="inline-flex items-center gap-1 rounded-md border border-amber-700/40 bg-amber-600/10 px-2.5 py-1 font-medium text-amber-700 hover:bg-amber-600/20 dark:text-amber-300"
+                title="앱 안에서 폴더 트리 탐색"
+              >
+                🗂️ 폴더 열기
+              </button>
+            )}
             <a
               href={item.folder_url}
               target="_blank"
               rel="noopener noreferrer"
-              className="text-blue-600 hover:underline dark:text-blue-400"
+              className="inline-flex items-center gap-1 rounded-md border border-emerald-700/40 bg-emerald-600/10 px-2.5 py-1 font-medium text-emerald-700 hover:bg-emerald-600/20 dark:text-emerald-300"
+              title="WORKS Drive 웹에서 폴더 열기"
             >
-              📂 Works Drive 폴더 열기
+              🌐 WORKS Drive
             </a>
-          </p>
+            {localPath && (
+              <button
+                type="button"
+                onClick={() => void copyLocalPath()}
+                className="inline-flex items-center gap-1 rounded-md border border-blue-700/40 bg-blue-600/10 px-2.5 py-1 font-medium text-blue-700 hover:bg-blue-600/20 dark:text-blue-300"
+                title={localPath}
+              >
+                📁 {copied ? "복사됨!" : "PC 경로 복사"}
+              </button>
+            )}
+          </div>
         )}
 
         {item.note && (
@@ -330,48 +414,6 @@ function DetailModal({
             </p>
           </div>
         )}
-
-        <div>
-          <p className="mb-1 text-xs text-zinc-500">첨부파일 ({item.attachments.length})</p>
-          {item.attachments.length === 0 ? (
-            <p className="text-xs text-zinc-400">첨부 없음</p>
-          ) : (
-            <ul className="space-y-1">
-              {item.attachments.map((f, i) => (
-                <li key={i} className="flex items-center gap-1">
-                  <button
-                    type="button"
-                    onClick={() => void openAttachmentInline(item.id, i)}
-                    className="flex flex-1 items-center gap-2 rounded border border-zinc-200 px-2 py-1 text-left text-xs text-blue-600 hover:bg-zinc-50 dark:border-zinc-800 dark:text-blue-400 dark:hover:bg-zinc-800"
-                    title="새 탭에서 미리보기 (PDF/이미지는 inline 표시)"
-                  >
-                    📎 {f.name}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={async () => {
-                      try {
-                        const r = await getSealAttachmentUrl(item.id, i);
-                        const a = document.createElement("a");
-                        a.href = r.url;
-                        a.download = r.name;
-                        a.click();
-                      } catch (e) {
-                        alert(
-                          e instanceof Error ? e.message : "다운로드 실패",
-                        );
-                      }
-                    }}
-                    className="rounded border border-zinc-200 px-2 py-1 text-[10px] text-zinc-500 hover:bg-zinc-50 dark:border-zinc-800 dark:hover:bg-zinc-800"
-                    title="원본 다운로드"
-                  >
-                    ↓
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
 
         <p className="text-[10px] text-zinc-400">
           생성: {formatDateTime(item.created_time)} · 수정:{" "}
@@ -387,26 +429,17 @@ function DetailModal({
         {item.status === "반려" && (isOwner || isAdminOrLead) && (
           <div className="rounded-md border border-amber-500/40 bg-amber-500/5 p-2 text-xs">
             <p className="mb-1 text-amber-700 dark:text-amber-400">
-              반려된 요청입니다. 입력 정보를 수정하거나 파일을 보완해 재요청하면 다시 &lsquo;1차검토 중&rsquo; 상태로 진행됩니다.
+              반려된 요청입니다. 입력 정보를 수정한 뒤 재요청하면 다시 &lsquo;1차검토 중&rsquo;으로 진행됩니다.
+              파일은 NAVER WORKS Drive 검토자료 폴더에서 직접 보완하세요.
             </p>
-            <div className="flex flex-wrap items-center gap-2">
-              <button
-                type="button"
-                onClick={() => setEditOpen(true)}
-                disabled={busy}
-                className="rounded-md bg-amber-500 px-3 py-1.5 text-xs text-white hover:bg-amber-600 disabled:opacity-50"
-              >
-                ✏️ 입력 내용 수정 / 재요청
-              </button>
-              <input
-                ref={reuploadInput}
-                type="file"
-                multiple
-                onChange={(e) => void onReupload(e.target.files)}
-                disabled={busy}
-                className="block flex-1 text-xs file:mr-2 file:rounded-md file:border-0 file:bg-amber-500 file:px-3 file:py-1.5 file:text-xs file:text-white hover:file:bg-amber-600"
-              />
-            </div>
+            <button
+              type="button"
+              onClick={() => setEditOpen(true)}
+              disabled={busy}
+              className="rounded-md bg-amber-500 px-3 py-1.5 text-xs text-white hover:bg-amber-600 disabled:opacity-50"
+            >
+              ✏️ 입력 내용 수정 / 재요청
+            </button>
           </div>
         )}
 
@@ -476,29 +509,18 @@ function DetailModal({
           }}
         />
       )}
+      {explorerOpen && project && folderFileId && (
+        <DriveExplorerModal
+          open={explorerOpen}
+          onClose={() => setExplorerOpen(false)}
+          projectId={project.id}
+          rootLabel={folderName || project.name || "프로젝트 폴더"}
+          initialFolderId={folderFileId}
+          initialFolderLabel={`0.검토자료${ymd ? "/" + ymd : ""}`}
+        />
+      )}
     </Modal>
   );
-}
-
-/** 첨부파일을 backend stream proxy(inline header)로 받아 새 탭에서 미리보기. */
-async function openAttachmentInline(id: string, idx: number): Promise<void> {
-  try {
-    const res = await authFetch(`/api/seal-requests/${id}/preview/${idx}`);
-    if (!res.ok) {
-      const detail = await res
-        .json()
-        .then((d) => (d as { detail?: string }).detail)
-        .catch(() => undefined);
-      throw new Error(detail ?? `${res.status} ${res.statusText}`);
-    }
-    const blob = await res.blob();
-    const blobUrl = URL.createObjectURL(blob);
-    window.open(blobUrl, "_blank", "noopener,noreferrer");
-    // 1분 후 메모리 회수 (브라우저가 다 로드한 후)
-    setTimeout(() => URL.revokeObjectURL(blobUrl), 60_000);
-  } catch (e) {
-    alert(e instanceof Error ? e.message : "미리보기 실패");
-  }
 }
 
 function Info({

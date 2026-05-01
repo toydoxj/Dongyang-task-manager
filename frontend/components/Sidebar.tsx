@@ -35,6 +35,8 @@ const NAV: NavItem[] = [
   { href: "/admin/employees", label: "직원 관리", roles: ["admin"] },
   { href: "/admin/users", label: "사용자 관리", roles: ["admin"] },
   { href: "/admin/drive", label: "Drive 연결", roles: ["admin"] },
+  // 사용 매뉴얼은 모든 사용자가 볼 수 있음
+  { href: "/help", label: "사용 매뉴얼" },
 ];
 
 interface Props {
