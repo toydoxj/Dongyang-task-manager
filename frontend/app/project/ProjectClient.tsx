@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { useSWRConfig } from "swr";
 
+import AssigneeTimeline from "@/components/project/AssigneeTimeline";
 import LifecycleTimeline from "@/components/project/LifecycleTimeline";
 import ProjectCashflowChart from "@/components/project/ProjectCashflowChart";
 import ProjectEditModal from "@/components/project/ProjectEditModal";
@@ -227,6 +228,8 @@ export default function ProjectClient({ id }: { id: string }) {
         seals={seals}
         logs={logs}
       />
+
+      <AssigneeTimeline project={project} logs={logs} />
 
       <SealHistoryList
         seals={seals}
