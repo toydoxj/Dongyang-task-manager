@@ -477,8 +477,9 @@ function DetailModal({
                 관리자 최종 승인
               </button>
             )}
-            {isAdminOrLead &&
-              (item.status === "1차검토 중" || item.status === "2차검토 중") && (
+            {/* 반려는 현재 단계의 검토자만 가능: 1차검토 중→팀장/관리자, 2차검토 중→관리자 */}
+            {((item.status === "1차검토 중" && isAdminOrLead) ||
+              (item.status === "2차검토 중" && isAdmin)) && (
                 <button
                   type="button"
                   onClick={() => void onReject()}

@@ -1094,6 +1094,12 @@ async def reject_seal_request(
             status_code=400,
             detail=f"반려 가능 상태가 아님 (현재: {cur or '미정'})",
         )
+    # 정책: 팀장은 1차검토 단계에서만 반려 가능. 2차검토 중인 항목의 반려는 admin only.
+    if cur == "2차검토 중" and user.role != "admin":
+        raise HTTPException(
+            status_code=403,
+            detail="2차검토 중인 항목의 반려는 관리자만 가능합니다",
+        )
     rejector = user.name or user.username
     reason = (body.reason or "").strip()
     update_props: dict[str, Any] = {
