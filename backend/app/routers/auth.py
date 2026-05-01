@@ -255,10 +255,10 @@ def get_me(user: User = Depends(get_current_user)) -> UserInfo:
 
 @router.get("/me/midas")
 def get_my_midas_credentials(user: User = Depends(get_current_user)) -> dict:
-    """본인의 MIDAS 자격 반환 (DY_MIDAS Electron sidecar 용).
+    """본인의 MIDAS 자격 반환 (별도 데스크톱 도구가 호출하는 SSO 위임용).
 
     midas_key는 일반 /me에는 노출되지 않으나 본 endpoint는 인증된 본인에게만
-    자기 값을 반환. SSO 위임 패턴에서 sidecar가 사용자별 설정을 적용하는 데 사용.
+    자기 값을 반환. 외부 도구가 사용자별 설정을 적용하는 용도.
     """
     return {
         "midas_url": user.midas_url or "",
