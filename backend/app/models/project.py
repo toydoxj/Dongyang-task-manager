@@ -122,6 +122,7 @@ class ProjectCreateRequest(BaseModel):
     contract_start: str | None = None
     contract_end: str | None = None
     contract_amount: float | None = None
+    vat: float | None = None
 
 
 class ProjectUpdateRequest(BaseModel):
@@ -231,4 +232,6 @@ def project_create_to_props(req: ProjectCreateRequest) -> dict[str, Any]:
         }
     if req.contract_amount is not None:
         props["용역비(VAT제외)"] = {"number": req.contract_amount}
+    if req.vat is not None:
+        props["VAT"] = {"number": req.vat}
     return props

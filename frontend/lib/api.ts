@@ -22,6 +22,7 @@ import type {
   Project,
   ProjectCreateRequest,
   ProjectListResponse,
+  ProjectOptions,
   Task,
   TaskCreateRequest,
   TaskListResponse,
@@ -113,6 +114,11 @@ export async function createProject(
     },
   );
   return jsonOrThrow<Project>(res);
+}
+
+export async function getProjectOptions(): Promise<ProjectOptions> {
+  const res = await authFetch(`/api/projects/options`);
+  return jsonOrThrow<ProjectOptions>(res);
 }
 
 export async function syncProjectStage(pageId: string): Promise<Project> {

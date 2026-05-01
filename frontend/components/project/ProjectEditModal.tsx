@@ -4,10 +4,11 @@ import { useState } from "react";
 import { useSWRConfig } from "swr";
 
 import Modal from "@/components/ui/Modal";
+import MultiSelectChips from "@/components/ui/MultiSelectChips";
 import { createClient, updateProject } from "@/lib/api";
 import type { ClientListResponse, Project } from "@/lib/domain";
-import { PROJECT_STAGES, TEAMS, WORK_TYPES } from "@/lib/domain";
-import { keys, useClients } from "@/lib/hooks";
+import { PROJECT_STAGES } from "@/lib/domain";
+import { keys, useClients, useProjectOptions } from "@/lib/hooks";
 
 interface Props {
   project: Project | null;
@@ -35,8 +36,8 @@ function Form({
     project.client_names[0] ?? project.client_text,
   );
   const [stage, setStage] = useState(project.stage);
-  const [team, setTeam] = useState(project.teams[0] ?? "");
-  const [workType, setWorkType] = useState(project.work_types[0] ?? "");
+  const [assignees, setAssignees] = useState<string[]>(project.assignees);
+  const [workTypes, setWorkTypes] = useState<string[]>(project.work_types);
   const [startDate, setStartDate] = useState(project.start_date ?? "");
   const [contractStart, setContractStart] = useState(project.contract_start ?? "");
   const [contractEnd, setContractEnd] = useState(project.contract_end ?? "");
@@ -50,6 +51,8 @@ function Form({
 
   const { mutate } = useSWRConfig();
   const { data: clientData } = useClients(true);
+  const { data: optionsData } = useProjectOptions(true);
+  const workTypeOptions = optionsData?.work_types ?? [];
   // 정규화 매칭 — 백엔드의 중복 판정과 동일하게 trim + lower 비교
   const norm = (s: string): string => s.trim().toLowerCase();
   const clientMatch =
@@ -109,18 +112,11 @@ function Form({
             : { client_text: trimmedClient, client_relation_ids: [] }
           : {}),
         stage: stage === project.stage ? undefined : stage,
-        teams:
-          team === (project.teams[0] ?? "")
-            ? undefined
-            : team
-              ? [team]
-              : [],
+        // 담당팀은 폼에서 제거 — 노션 자동 집계에 위임
+        assignees:
+          arraysEqual(assignees, project.assignees) ? undefined : assignees,
         work_types:
-          workType === (project.work_types[0] ?? "")
-            ? undefined
-            : workType
-              ? [workType]
-              : [],
+          arraysEqual(workTypes, project.work_types) ? undefined : workTypes,
         start_date:
           startDate === (project.start_date ?? "") ? undefined : startDate,
         contract_start:
@@ -212,49 +208,39 @@ function Form({
           </Field>
         </div>
 
-        <div className="grid grid-cols-3 gap-3">
-          <Field label="진행단계">
-            <select
-              value={stage}
-              onChange={(e) => setStage(e.target.value)}
-              className={inputCls}
-            >
-              {PROJECT_STAGES.map((s) => (
-                <option key={s} value={s}>
-                  {s}
-                </option>
-              ))}
-            </select>
-          </Field>
-          <Field label="담당팀">
-            <select
-              value={team}
-              onChange={(e) => setTeam(e.target.value)}
-              className={inputCls}
-            >
-              <option value="">—</option>
-              {TEAMS.map((t) => (
-                <option key={t} value={t}>
-                  {t}
-                </option>
-              ))}
-            </select>
-          </Field>
-          <Field label="업무내용">
-            <select
-              value={workType}
-              onChange={(e) => setWorkType(e.target.value)}
-              className={inputCls}
-            >
-              <option value="">—</option>
-              {WORK_TYPES.map((w) => (
-                <option key={w} value={w}>
-                  {w}
-                </option>
-              ))}
-            </select>
-          </Field>
-        </div>
+        <Field label="진행단계">
+          <select
+            value={stage}
+            onChange={(e) => setStage(e.target.value)}
+            className={inputCls}
+          >
+            {PROJECT_STAGES.map((s) => (
+              <option key={s} value={s}>
+                {s}
+              </option>
+            ))}
+          </select>
+        </Field>
+        <MultiSelectChips
+          label="담당자"
+          value={assignees}
+          onChange={setAssignees}
+          options={[]}
+          placeholder="이름 입력 후 Enter (콤마/엔터로 추가)"
+          full
+        />
+        <MultiSelectChips
+          label="업무내용"
+          value={workTypes}
+          onChange={setWorkTypes}
+          options={workTypeOptions}
+          placeholder={
+            workTypeOptions.length > 0
+              ? "선택 또는 신규 입력"
+              : "옵션 불러오는 중..."
+          }
+          full
+        />
 
         <Field label="수주일">
           <input
@@ -343,6 +329,12 @@ function Form({
 
 const inputCls =
   "w-full rounded-md border border-zinc-300 bg-white px-2.5 py-1.5 text-sm outline-none focus:border-zinc-500 dark:border-zinc-700 dark:bg-zinc-950";
+
+function arraysEqual(a: string[], b: string[]): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+  return true;
+}
 
 function Field({
   label,

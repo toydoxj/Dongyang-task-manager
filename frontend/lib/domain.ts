@@ -51,6 +51,7 @@ export interface ProjectCreateRequest {
   contract_start?: string;
   contract_end?: string;
   contract_amount?: number;
+  vat?: number;
 }
 
 export interface ProjectUpdateRequest {
@@ -175,6 +176,10 @@ export interface MasterOptions {
   usage: string[];
   structure: string[];
   special_types: string[];
+}
+
+export interface ProjectOptions {
+  work_types: string[];
 }
 
 // ── 직원 ──

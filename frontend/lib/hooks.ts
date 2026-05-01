@@ -7,6 +7,7 @@ import {
   getMasterOptions,
   getMasterProject,
   getProject,
+  getProjectOptions,
   listClients,
   listMasterImages,
   listProjects,
@@ -20,6 +21,7 @@ import type {
   MasterProject,
   Project,
   ProjectListResponse,
+  ProjectOptions,
   TaskListResponse,
 } from "./domain";
 
@@ -103,6 +105,16 @@ export function useMasterOptions(
   return useSWR(
     enabled ? masterKeys.options() : null,
     () => getMasterOptions(),
+    { dedupingInterval: 60 * 60 * 1000 },
+  );
+}
+
+export function useProjectOptions(
+  enabled: boolean = true,
+): SWRResponse<ProjectOptions> {
+  return useSWR(
+    enabled ? ["project-options"] : null,
+    () => getProjectOptions(),
     { dedupingInterval: 60 * 60 * 1000 },
   );
 }

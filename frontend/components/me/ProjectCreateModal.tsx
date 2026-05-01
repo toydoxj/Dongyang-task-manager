@@ -3,11 +3,12 @@
 import { useState } from "react";
 import { useSWRConfig } from "swr";
 
+import { useAuth } from "@/components/AuthGuard";
 import Modal from "@/components/ui/Modal";
+import MultiSelectChips from "@/components/ui/MultiSelectChips";
 import { createClient, createProject } from "@/lib/api";
 import type { ClientListResponse } from "@/lib/domain";
-import { TEAMS, WORK_TYPES } from "@/lib/domain";
-import { keys, useClients } from "@/lib/hooks";
+import { keys, useClients, useProjectOptions } from "@/lib/hooks";
 
 interface Props {
   open: boolean;
@@ -23,19 +24,25 @@ export default function ProjectCreateModal({
   onCreated,
   forUser,
 }: Props) {
+  const { user } = useAuth();
   const [name, setName] = useState("");
   const [code, setCode] = useState("");
   const [client, setClient] = useState("");
-  const [team, setTeam] = useState<string>("");
-  const [workType, setWorkType] = useState<string>("");
+  const [assignees, setAssignees] = useState<string[]>(
+    user?.name ? [user.name] : [],
+  );
+  const [workTypes, setWorkTypes] = useState<string[]>([]);
   const [startDate, setStartDate] = useState("");
   const [contractStart, setContractStart] = useState("");
   const [contractEnd, setContractEnd] = useState("");
   const [amount, setAmount] = useState("");
+  const [vat, setVat] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [clientAdding, setClientAdding] = useState(false);
 
+  const { data: optionsData } = useProjectOptions(open);
+  const workTypeOptions = optionsData?.work_types ?? [];
   const { mutate } = useSWRConfig();
   // 협력업체 목록 (모달 열릴 때만 fetch)
   const { data: clientData } = useClients(open);
@@ -79,12 +86,13 @@ export default function ProjectCreateModal({
     setName("");
     setCode("");
     setClient("");
-    setTeam("");
-    setWorkType("");
+    setAssignees(user?.name ? [user.name] : []);
+    setWorkTypes([]);
     setStartDate("");
     setContractStart("");
     setContractEnd("");
     setAmount("");
+    setVat("");
     setError(null);
   };
 
@@ -104,12 +112,14 @@ export default function ProjectCreateModal({
           // 협력업체 매칭되면 relation 으로, 아니면 text fallback
           client_relation_ids: clientMatch ? [clientMatch.id] : undefined,
           client_text: clientMatch ? undefined : trimmedClient || undefined,
-          teams: team ? [team] : [],
-          work_types: workType ? [workType] : [],
+          // 담당팀은 폼에서 제거 — 노션 자동 집계에 위임
+          assignees,
+          work_types: workTypes,
           start_date: startDate || undefined,
           contract_start: contractStart || undefined,
           contract_end: contractEnd || undefined,
           contract_amount: amount ? Number(amount) : undefined,
+          vat: vat ? Number(vat) : undefined,
         },
         { forUser },
       );
@@ -198,36 +208,26 @@ export default function ProjectCreateModal({
           </Field>
         </div>
 
-        <div className="grid grid-cols-2 gap-3">
-          <Field label="담당팀">
-            <select
-              value={team}
-              onChange={(e) => setTeam(e.target.value)}
-              className={inputCls}
-            >
-              <option value="">—</option>
-              {TEAMS.map((t) => (
-                <option key={t} value={t}>
-                  {t}
-                </option>
-              ))}
-            </select>
-          </Field>
-          <Field label="업무내용">
-            <select
-              value={workType}
-              onChange={(e) => setWorkType(e.target.value)}
-              className={inputCls}
-            >
-              <option value="">—</option>
-              {WORK_TYPES.map((w) => (
-                <option key={w} value={w}>
-                  {w}
-                </option>
-              ))}
-            </select>
-          </Field>
-        </div>
+        <MultiSelectChips
+          label="담당자"
+          value={assignees}
+          onChange={setAssignees}
+          options={[]}
+          placeholder="이름 입력 후 Enter (콤마/엔터로 추가)"
+          full
+        />
+        <MultiSelectChips
+          label="업무내용"
+          value={workTypes}
+          onChange={setWorkTypes}
+          options={workTypeOptions}
+          placeholder={
+            workTypeOptions.length > 0
+              ? "선택 또는 신규 입력"
+              : "옵션 불러오는 중..."
+          }
+          full
+        />
 
         <Field label="수주일">
           <input
@@ -256,15 +256,34 @@ export default function ProjectCreateModal({
           </Field>
         </div>
 
-        <Field label="용역비 (원, VAT 제외)">
-          <input
-            type="number"
-            value={amount}
-            onChange={(e) => setAmount(e.target.value)}
-            className={inputCls}
-            placeholder="1500000"
-          />
-        </Field>
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="용역비 (VAT 제외)">
+            <input
+              type="text"
+              inputMode="numeric"
+              value={amount === "" ? "" : Number(amount).toLocaleString("ko-KR")}
+              onChange={(e) => {
+                const digits = e.target.value.replace(/[^\d]/g, "");
+                setAmount(digits);
+              }}
+              placeholder="₩ 0"
+              className={inputCls}
+            />
+          </Field>
+          <Field label="VAT">
+            <input
+              type="text"
+              inputMode="numeric"
+              value={vat === "" ? "" : Number(vat).toLocaleString("ko-KR")}
+              onChange={(e) => {
+                const digits = e.target.value.replace(/[^\d]/g, "");
+                setVat(digits);
+              }}
+              placeholder="₩ 0"
+              className={inputCls}
+            />
+          </Field>
+        </div>
 
         {error && (
           <p className="rounded-md border border-red-500/40 bg-red-500/5 p-2 text-xs text-red-400">
