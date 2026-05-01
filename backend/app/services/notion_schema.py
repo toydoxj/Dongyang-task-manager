@@ -115,7 +115,9 @@ SEAL_REQUEST_DB_REQUIRED: dict[str, dict[str, Any]] = {
     "문서종류": {"rich_text": {}},  # 기타 유형 전용
     "첨부폴더URL": {"url": {}},  # Works Drive 일자 폴더 web URL
     "반려사유": {"rich_text": {}},  # 비고와 분리해 read 단순화
-    "연결TASK": {"rich_text": {}},  # 자동 생성한 노션 TASK page_id (lifecycle 동기화)
+    "연결TASK": {"rich_text": {}},  # 요청자용 자동 TASK page_id (lifecycle 동기화)
+    "1차검토TASK": {"rich_text": {}},  # 1차 검토자(팀장)용 자동 TASK page_id
+    "2차검토TASK": {"rich_text": {}},  # 2차 검토자(admin)용 자동 TASK page_id
 }
 
 

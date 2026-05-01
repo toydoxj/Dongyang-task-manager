@@ -120,7 +120,9 @@ class SealRequestItem(BaseModel):
     doc_kind: str = ""           # 문서종류 (기타)
     folder_url: str = ""         # 첨부폴더URL (Works Drive 일자 폴더)
     reject_reason: str = ""      # 반려사유
-    linked_task_id: str = ""     # 연결TASK page_id
+    linked_task_id: str = ""     # 연결TASK page_id (요청자용)
+    lead_task_id: str = ""       # 1차검토TASK page_id (팀장 또는 admin)
+    admin_task_id: str = ""      # 2차검토TASK page_id (admin)
     created_time: str | None = None
     last_edited_time: str | None = None
 
@@ -246,6 +248,8 @@ def _from_notion_page(page: dict[str, Any]) -> SealRequestItem:
         folder_url=P.url(props, "첨부폴더URL"),
         reject_reason=P.rich_text(props, "반려사유"),
         linked_task_id=P.rich_text(props, "연결TASK"),
+        lead_task_id=P.rich_text(props, "1차검토TASK"),
+        admin_task_id=P.rich_text(props, "2차검토TASK"),
         created_time=page.get("created_time"),
         last_edited_time=page.get("last_edited_time"),
     )
@@ -324,8 +328,34 @@ def _can_access(user: User, page: dict[str, Any], db: Session) -> bool:
 def _filter_accessible(
     user: User, pages: list[dict[str, Any]], db: Session
 ) -> list[dict[str, Any]]:
-    if user.role in {"admin", "team_lead"}:
+    if user.role == "admin":
         return pages
+    if user.role == "team_lead":
+        # 자기 팀의 진행 현황만 — 요청자가 같은 팀에 속한 직원이어야 함
+        me = user.name or ""
+        if not me:
+            return []
+        my_emp = db.execute(
+            select(Employee).where(Employee.name == me)
+        ).scalar_one_or_none()
+        my_team = (my_emp.team if my_emp else "") or ""
+        if not my_team:
+            return []
+        team_member_names = {
+            row
+            for row in db.execute(
+                select(Employee.name).where(
+                    Employee.team == my_team, Employee.resigned_at.is_(None)
+                )
+            ).scalars().all()
+        }
+        return [
+            p
+            for p in pages
+            if P.rich_text(p.get("properties", {}), "요청자")
+            in team_member_names
+        ]
+    # member — 본인 요청 또는 본인이 담당자로 등록된 프로젝트만
     me = user.name or ""
     if not me:
         return []
@@ -352,6 +382,41 @@ def _filter_accessible(
             if me in project_assignees.get(pid, []):
                 out.append(p)
                 break
+    return out
+
+
+def _sort_items_by_role(
+    items: list[SealRequestItem], role: str
+) -> list[SealRequestItem]:
+    """역할별 상태 우선순위 + 상태별 due_date 정렬.
+
+    docs/request.md 정책:
+    - admin: 2차검토 중 → 1차검토 중 → 반려 → 승인
+    - team_lead: 1차검토 중 → 2차검토 중 → 반려 → 승인
+    - 검토중/반려: due_date asc (제출예정일 가까운 것 우선)
+    - 승인: due_date desc (최신 승인이 위)
+    """
+    if role == "admin":
+        order = ["2차검토 중", "1차검토 중", "반려", "승인"]
+    else:
+        order = ["1차검토 중", "2차검토 중", "반려", "승인"]
+    buckets: dict[str, list[SealRequestItem]] = {s: [] for s in order}
+    misc: list[SealRequestItem] = []
+    for it in items:
+        if it.status in buckets:
+            buckets[it.status].append(it)
+        else:
+            misc.append(it)
+    out: list[SealRequestItem] = []
+    for status in order:
+        bucket = buckets[status]
+        if status == "승인":
+            bucket.sort(key=lambda x: x.due_date or "", reverse=True)
+        else:
+            # 빈 값은 가장 뒤로 (제출예정일 미정인 요청은 우선순위 마지막)
+            bucket.sort(key=lambda x: x.due_date or "9999-99-99")
+        out.extend(bucket)
+    out.extend(misc)
     return out
 
 
@@ -451,51 +516,71 @@ def _project_summary_from_db(
     return code, name, drive_url, _extract_resource_key(drive_url)
 
 
-async def _create_linked_task_bg(
+async def _create_seal_task_bg(
     notion: NotionService,
     *,
     seal_page_id: str,
+    seal_link_prop: str,
     project_id: str,
     title: str,
-    requester_name: str,
+    assignee_name: str,
     today_iso: str,
-    due_iso: str,
 ) -> None:
-    """노션 TASK DB row 생성 + SealRequest의 연결TASK 컬럼 update.
+    """노션 TASK DB row 생성 + SealRequest의 연결 컬럼(rich_text) update.
 
-    response 흐름과 분리된 background — 실패해도 사용자 등록은 완료되어 있음.
-    노션 task DB schema 미스, 노션 API timeout 등이 endpoint 응답을 막지 않게
-    fire-and-forget으로 호출.
+    docs/request.md 정책: 시작일=등록일/단계전환일, 완료일은 미정. 기간은 end
+    없이 단일 날짜로 시작 → _sync_linked_task('완료')에서 end=오늘로 추가.
+
+    seal_link_prop 예: "연결TASK"(요청자), "1차검토TASK"(팀장), "2차검토TASK"(admin).
+    response와 분리된 fire-and-forget — 실패해도 사용자 흐름엔 영향 없음.
     """
     s = get_settings()
     if not s.notion_db_tasks:
-        logger.warning("notion_db_tasks 미설정 — 자동 task 생성 skip")
+        logger.warning("notion_db_tasks 미설정 — 자동 task 생성 skip (%s)", seal_link_prop)
+        return
+    if not assignee_name:
+        logger.info("assignee 미지정 — task 생성 skip (%s)", seal_link_prop)
         return
     props: dict[str, Any] = {
         "제목": {"title": [{"text": {"content": title}}]},
         "프로젝트": {"relation": [{"id": project_id}]},
         "분류": {"select": {"name": "프로젝트"}},
         "진행 단계": {"select": {"name": "진행 중"}},
-        "기간": {"date": {"start": today_iso, "end": due_iso}},
+        "기간": {"date": {"start": today_iso}},
+        "담당자": {"multi_select": [{"name": assignee_name}]},
     }
-    if requester_name:
-        props["담당자"] = {"multi_select": [{"name": requester_name}]}
     try:
         page = await notion.create_page(s.notion_db_tasks, props)
         task_id = str(page.get("id", ""))
         if task_id:
             await notion.update_page(
                 seal_page_id,
-                {"연결TASK": {"rich_text": [{"text": {"content": task_id}}]}},
+                {seal_link_prop: {"rich_text": [{"text": {"content": task_id}}]}},
             )
     except Exception as e:  # noqa: BLE001
-        logger.warning("자동 task 생성/연결 실패: %s", e)
+        logger.warning("자동 task 생성/연결 실패 (%s): %s", seal_link_prop, e)
+
+
+def _spawn_task(coro: Any) -> None:
+    """fire-and-forget — bg_tasks set에 보관해 GC 회수 방지."""
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        return
+    task = loop.create_task(coro)
+    _bg_tasks.add(task)
+    task.add_done_callback(_bg_tasks.discard)
 
 
 async def _sync_linked_task(
     notion: NotionService, task_id: str, *, target: str
 ) -> None:
-    """target ∈ {'완료', '취소'}. '완료'는 진행 단계 update, '취소'는 archive."""
+    """target ∈ {'완료', '취소'}.
+
+    '완료': 진행 단계='완료' + 기간.end=오늘(승인일). docs/request.md 정책으로
+    날인요청 자동 task의 완료일은 최종 승인일로 채움.
+    '취소': 노션 페이지 archive.
+    """
     if not task_id:
         return
     try:
@@ -503,10 +588,27 @@ async def _sync_linked_task(
             await asyncio.to_thread(
                 notion._client.pages.update, page_id=task_id, archived=True
             )
-        else:
-            await notion.update_page(
-                task_id, {"진행 단계": {"select": {"name": target}}}
+            return
+        # 완료 — 기간.end를 채우려면 기존 start 값 보존 필요. 현재 task의 start
+        # 조회 후 같이 보내야 노션이 end만 추가하고 start 안 지움.
+        try:
+            cur = await notion.get_page(task_id)
+            start = (
+                (cur.get("properties", {}).get("기간") or {})
+                .get("date", {})
+                .get("start")
+                or date.today().isoformat()
             )
+        except Exception:  # noqa: BLE001
+            start = date.today().isoformat()
+        today_iso = date.today().isoformat()
+        await notion.update_page(
+            task_id,
+            {
+                "진행 단계": {"select": {"name": "완료"}},
+                "기간": {"date": {"start": start, "end": today_iso}},
+            },
+        )
     except Exception as e:  # noqa: BLE001
         logger.warning("연결 task 동기화 실패 (%s, %s): %s", task_id, target, e)
 
@@ -544,6 +646,7 @@ async def list_seal_requests(
         ]
     pages = _filter_accessible(user, pages, db)
     items = [_from_notion_page(p) for p in pages]
+    items = _sort_items_by_role(items, user.role or "member")
     return SealListResponse(items=items, count=len(items))
 
 
@@ -757,25 +860,46 @@ async def create_seal_request(
         }
     await notion.update_page(page_id, update_props)
 
-    # 6) 자동 TASK 생성 — fire-and-forget. 노션 task DB schema 미스 또는 노션 API
-    #    timeout이 endpoint 응답을 막지 않게 background로 분리. 실패는 logger warn.
-    try:
-        loop = asyncio.get_running_loop()
-        task = loop.create_task(
-            _create_linked_task_bg(
-                notion,
-                seal_page_id=page_id,
-                project_id=project_id,
-                title=auto_title,
-                requester_name=requester,
-                today_iso=today_iso,
-                due_iso=due_iso,
-            )
+    # 6) 자동 TASK 생성 — fire-and-forget.
+    # 요청자용 1개 + 1차 검토자(팀장 또는 admin)용 1개.
+    # 시작일=오늘, 완료일은 승인/반려 시점에 _sync_linked_task로 채움.
+    _spawn_task(
+        _create_seal_task_bg(
+            notion,
+            seal_page_id=page_id,
+            seal_link_prop="연결TASK",
+            project_id=project_id,
+            title=f"[날인요청] {auto_title}",
+            assignee_name=requester,
+            today_iso=today_iso,
         )
-        _bg_tasks.add(task)
-        task.add_done_callback(_bg_tasks.discard)
-    except RuntimeError:
-        pass  # 테스트 컨텍스트 등 — silent skip
+    )
+    # 1차 검토자 결정 — member 요청자면 같은 팀 팀장, 팀장이 없으면 admin 1명
+    lead_reviewer_name = ""
+    if user.role == "member":
+        lead = _find_team_lead(db, requester_name=requester)
+        if lead:
+            lead_reviewer_name = lead.name or ""
+        else:
+            admins = _find_admins(db)
+            if admins:
+                lead_reviewer_name = admins[0].name or ""
+    else:
+        # team_lead 또는 admin이 직접 요청 → 1차는 admin 1명이 처리
+        admins = _find_admins(db)
+        if admins:
+            lead_reviewer_name = admins[0].name or ""
+    _spawn_task(
+        _create_seal_task_bg(
+            notion,
+            seal_page_id=page_id,
+            seal_link_prop="1차검토TASK",
+            project_id=project_id,
+            title=f"[날인 1차검토] {auto_title}",
+            assignee_name=lead_reviewer_name,
+            today_iso=today_iso,
+        )
+    )
 
     # 7) Bot 알림 — 1차 처리자(팀장 또는 admin)에게
     project_label = f"[{code}] {project_name}".strip("[] ") or project_name or project_id
@@ -844,6 +968,25 @@ async def approve_lead(
         notion, page_id, "2차검토 중", "팀장처리자", "팀장처리일", handler
     )
 
+    # 1차 검토자 TASK 완료 + 2차 검토자(admin) TASK 생성
+    if item.lead_task_id:
+        await _sync_linked_task(notion, item.lead_task_id, target="완료")
+    project_id_for_task = item.project_ids[0] if item.project_ids else ""
+    admins = _find_admins(db)
+    admin_reviewer_name = (admins[0].name or "") if admins else ""
+    if project_id_for_task and admin_reviewer_name:
+        _spawn_task(
+            _create_seal_task_bg(
+                notion,
+                seal_page_id=page_id,
+                seal_link_prop="2차검토TASK",
+                project_id=project_id_for_task,
+                title=f"[날인 2차검토] {item.title}",
+                assignee_name=admin_reviewer_name,
+                today_iso=date.today().isoformat(),
+            )
+        )
+
     # Bot 알림 — admin 전원 (본인 포함)
     msg = (
         f"[2차검토 요청] {item.title}"
@@ -880,7 +1023,13 @@ async def approve_admin(
         notion, page_id, "승인", "관리자처리자", "관리자처리일", handler
     )
 
-    # 연결 task → 진행 단계 '완료'
+    # 2차 검토자 TASK 완료 + (1차 검토자 TASK가 1차 미경유 케이스로 남아있으면 함께 완료)
+    # + 요청자 TASK 완료
+    if item.admin_task_id:
+        await _sync_linked_task(notion, item.admin_task_id, target="완료")
+    if item.lead_task_id:
+        # 1차 미경유로 admin이 바로 승인한 경우 lead task가 진행 중일 수 있어 같이 완료
+        await _sync_linked_task(notion, item.lead_task_id, target="완료")
     if item.linked_task_id:
         await _sync_linked_task(notion, item.linked_task_id, target="완료")
 
@@ -924,6 +1073,14 @@ async def reject_seal_request(
         },
     }
     await notion.update_page(page_id, update_props)
+
+    # 현재 단계 검토자 TASK 완료 (반려도 검토 완료로 간주). 요청자 TASK는
+    # 그대로 진행 — 사용자가 재요청하면 다시 1차검토 중으로 돌아감.
+    item_for_task = _from_notion_page(page)
+    if cur == "1차검토 중" and item_for_task.lead_task_id:
+        await _sync_linked_task(notion, item_for_task.lead_task_id, target="완료")
+    elif cur == "2차검토 중" and item_for_task.admin_task_id:
+        await _sync_linked_task(notion, item_for_task.admin_task_id, target="완료")
 
     item = _from_notion_page(page)
     requester_user = _find_user_by_name(db, item.requester)
@@ -1014,9 +1171,36 @@ async def update_seal_request(
     if update_props:
         await notion.update_page(page_id, update_props)
 
-    # 반려 → 재요청이면 알림 재발송
+    # 반려 → 재요청이면 알림 재발송 + 1차 검토자 TASK 재생성 (이전 반려 시 완료됨)
     if cur_status == "반려":
         item = _from_notion_page(page)
+        # 새 1차 검토자 결정 — 등록 흐름과 동일 규칙
+        new_lead_name = ""
+        if user.role == "member":
+            lead = _find_team_lead(db, requester_name=requester)
+            if lead:
+                new_lead_name = lead.name or ""
+            else:
+                admins_for_task = _find_admins(db)
+                if admins_for_task:
+                    new_lead_name = admins_for_task[0].name or ""
+        else:
+            admins_for_task = _find_admins(db)
+            if admins_for_task:
+                new_lead_name = admins_for_task[0].name or ""
+        if item.project_ids and new_lead_name:
+            _spawn_task(
+                _create_seal_task_bg(
+                    notion,
+                    seal_page_id=page_id,
+                    seal_link_prop="1차검토TASK",
+                    project_id=item.project_ids[0],
+                    title=f"[날인 1차검토(재요청)] {body.title or item.title}",
+                    assignee_name=new_lead_name,
+                    today_iso=date.today().isoformat(),
+                )
+            )
+
         msg = (
             f"[날인 재요청] {body.title or item.title}"
             f"\n요청자: {requester}"
@@ -1375,9 +1559,11 @@ async def delete_seal_request(
             notion._client.pages.update, page_id=page_id, archived=True
         )
 
-    # 연결 task archive
-    if item.linked_task_id:
-        await _sync_linked_task(notion, item.linked_task_id, target="취소")
+    # 연결 task 완료 처리 (요청자 + 검토자 모두) — 취소도 라이프사이클 종료로 간주.
+    # 진행 단계='완료' + 기간.end=오늘. 노션에 흔적이 남아 사후 조회 가능.
+    for tid in (item.linked_task_id, item.lead_task_id, item.admin_task_id):
+        if tid:
+            await _sync_linked_task(notion, tid, target="완료")
 
     notion.clear_cache()
     return {
