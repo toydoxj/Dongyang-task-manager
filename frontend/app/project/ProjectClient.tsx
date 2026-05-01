@@ -126,7 +126,9 @@ export default function ProjectClient({ id }: { id: string }) {
     setSealBusy(true);
     try {
       await deleteSealRequest(sid);
+      // 취소는 연결 TASK도 '완료'로 마감 → 칸반/타임라인까지 같이 갱신
       await mutate(["seals", id]);
+      refreshTasks();
     } catch (e) {
       alert(e instanceof Error ? e.message : "취소 실패");
     } finally {
@@ -264,7 +266,12 @@ export default function ProjectClient({ id }: { id: string }) {
         onCreated={() => {
           setSealOpen(false);
           setSealRedoItem(null);
+          // 재날인요청 시: 노션 page update + 자동 TASK 새 사이클 생성. 화면 전체
+          // 새 데이터를 받도록 관련 SWR key를 모두 mutate.
           void mutate(["seals", id]);
+          refreshTasks();
+          void mutate(keys.project(id));
+          void mutate(["project-log", id]);
         }}
       />
 
@@ -279,6 +286,7 @@ export default function ProjectClient({ id }: { id: string }) {
               onSaved={() => {
                 setSealEditId(null);
                 void mutate(["seals", id]);
+                refreshTasks();
               }}
             />
           );
