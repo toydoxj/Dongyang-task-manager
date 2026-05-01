@@ -11,6 +11,9 @@ interface Props {
   onClose: () => void;
   projectId: string;
   rootLabel: string; // 예: "[26-001]프로젝트명"
+  /** 지정 시 그 폴더로 직접 진입 (예: 검토자료/YYYYMMDD). 미지정 시 프로젝트 root. */
+  initialFolderId?: string;
+  initialFolderLabel?: string;
 }
 
 interface BreadcrumbEntry {
@@ -67,10 +70,17 @@ export default function DriveExplorerModal({
   onClose,
   projectId,
   rootLabel,
+  initialFolderId,
+  initialFolderLabel,
 }: Props) {
-  const [stack, setStack] = useState<BreadcrumbEntry[]>([
-    { fileId: null, name: rootLabel || "루트" },
-  ]);
+  const [stack, setStack] = useState<BreadcrumbEntry[]>(() =>
+    initialFolderId
+      ? [
+          { fileId: null, name: rootLabel || "루트" },
+          { fileId: initialFolderId, name: initialFolderLabel || "폴더" },
+        ]
+      : [{ fileId: null, name: rootLabel || "루트" }],
+  );
   const [items, setItems] = useState<DriveItem[]>([]);
   const [cursor, setCursor] = useState<string>("");
   const [loading, setLoading] = useState(false);
@@ -109,10 +119,18 @@ export default function DriveExplorerModal({
 
   useEffect(() => {
     if (!open) return;
-    setStack([{ fileId: null, name: rootLabel || "루트" }]);
-    void load(null, undefined, false);
+    if (initialFolderId) {
+      setStack([
+        { fileId: null, name: rootLabel || "루트" },
+        { fileId: initialFolderId, name: initialFolderLabel || "폴더" },
+      ]);
+      void load(initialFolderId, undefined, false);
+    } else {
+      setStack([{ fileId: null, name: rootLabel || "루트" }]);
+      void load(null, undefined, false);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, projectId]);
+  }, [open, projectId, initialFolderId]);
 
   const enterFolder = (it: DriveItem): void => {
     setStack([...stack, { fileId: it.fileId, name: it.fileName }]);

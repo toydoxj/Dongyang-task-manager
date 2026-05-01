@@ -599,6 +599,7 @@ export interface ReviewFolderState {
   ymd: string;
   exists: boolean;
   folder_url: string;
+  folder_id: string;
   file_count: number;
 }
 

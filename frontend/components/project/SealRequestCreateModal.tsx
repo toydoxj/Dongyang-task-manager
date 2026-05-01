@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import useSWR, { useSWRConfig } from "swr";
 
 import { useAuth } from "@/components/AuthGuard";
+import DriveExplorerModal from "@/components/project/DriveExplorerModal";
 import Modal from "@/components/ui/Modal";
 import {
   createReviewFolder,
@@ -99,6 +100,7 @@ function Form({
     getReviewFolder(projectId),
   );
   const [folderBusy, setFolderBusy] = useState(false);
+  const [explorerOpen, setExplorerOpen] = useState(false);
 
   const handleCreateFolder = async (): Promise<void> => {
     if (!projectId) return;
@@ -409,14 +411,13 @@ function Form({
             <p className="text-[11px] text-zinc-400">폴더 상태 확인 중...</p>
           ) : folderState.exists ? (
             <div className="flex flex-wrap items-center gap-2">
-              <a
-                href={folderState.folder_url}
-                target="_blank"
-                rel="noopener noreferrer"
+              <button
+                type="button"
+                onClick={() => setExplorerOpen(true)}
                 className="inline-flex items-center gap-1 rounded-md border border-emerald-700/40 bg-emerald-600/10 px-2.5 py-1 text-xs font-medium text-emerald-700 hover:bg-emerald-600/20 dark:text-emerald-300"
               >
                 📁 폴더 열기
-              </a>
+              </button>
               <span className="text-[11px] text-zinc-500">
                 파일 {folderState.file_count}개{" "}
                 {folderState.file_count === 0 && "(비어있음 — 업로드 후 등록 권장)"}
@@ -465,6 +466,21 @@ function Form({
           </button>
         </footer>
       </div>
+
+      {selectedProject && folderState?.folder_id && (
+        <DriveExplorerModal
+          open={explorerOpen}
+          onClose={() => setExplorerOpen(false)}
+          projectId={selectedProject.id}
+          rootLabel={
+            selectedProject.code && selectedProject.name
+              ? `[${selectedProject.code}]${selectedProject.name}`
+              : selectedProject.name || "프로젝트 폴더"
+          }
+          initialFolderId={folderState.folder_id}
+          initialFolderLabel={`0.검토자료/${folderState.ymd}`}
+        />
+      )}
     </Modal>
   );
 }

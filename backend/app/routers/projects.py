@@ -650,6 +650,7 @@ class ReviewFolderState(BaseModel):
     ymd: str  # YYYYMMDD
     exists: bool  # day 폴더 존재 여부 (생성하지 않고 조회만)
     folder_url: str = ""
+    folder_id: str = ""  # 폴더 fileId — 임베디드 탐색기 직접 진입용
     file_count: int = 0  # FOLDER 제외한 실제 파일 개수
 
 
@@ -667,10 +668,10 @@ async def _review_folder_state(
     project = project_from_mirror(row)
     root_id = _extract_resource_key(project.drive_url)
     if not root_id:
-        return ReviewFolderState(ymd=ymd, exists=False, folder_url="", file_count=0)
+        return ReviewFolderState(ymd=ymd, exists=False)
     found = await sso_drive.find_review_folder(root_id, ymd)
     if not found:
-        return ReviewFolderState(ymd=ymd, exists=False, folder_url="", file_count=0)
+        return ReviewFolderState(ymd=ymd, exists=False)
     day_id, day_url = found
     try:
         body = await sso_drive.list_children(day_id)
@@ -680,7 +681,11 @@ async def _review_folder_state(
     except sso_drive.DriveError:
         count = 0
     return ReviewFolderState(
-        ymd=ymd, exists=True, folder_url=day_url, file_count=count
+        ymd=ymd,
+        exists=True,
+        folder_url=day_url,
+        folder_id=day_id,
+        file_count=count,
     )
 
 

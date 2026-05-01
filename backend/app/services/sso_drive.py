@@ -226,29 +226,59 @@ async def find_child_folder(
       - sharedrive root list: GET /sharedrives/{sd}/files
       - 특정 folder children: GET /sharedrives/{sd}/files?parentFolderId={parent}
         (parent는 별도 fileId(base64url) 또는 sharedrive_id)
+
+    pagination: nextCursor가 있으면 끝까지 따라감 (한 부모에 200개 넘는 자식이
+    있을 때 못 찾는 케이스 방지).
     """
     sd = settings.works_drive_sharedrive_id
     if not sd:
         raise DriveError("WORKS_DRIVE_SHAREDRIVE_ID 미설정")
-    params: dict[str, Any] = {}
-    if parent_id and parent_id != sd:
-        params["parentFolderId"] = parent_id
-    body = await _api(
-        settings, "GET", f"/sharedrives/{sd}/files", params=params
-    )
-    items = (
-        body.get("files")
-        or body.get("items")
-        or body.get("children")
-        or body.get("list")
-        or []
-    )
-    for it in items:
-        item_name = it.get("fileName") or it.get("name") or ""
-        # NAVER WORKS spec: 폴더는 fileType=FOLDER. file/ETC/IMAGE 등은 skip
-        # (잘못 만들어진 0byte 파일을 폴더로 매칭하지 않도록)
-        if item_name == name and it.get("fileType") == "FOLDER":
-            return it
+    cursor: str | None = None
+    name_match: dict[str, Any] | None = None
+    seen_pages = 0
+    while True:
+        params: dict[str, Any] = {}
+        if parent_id and parent_id != sd:
+            params["parentFolderId"] = parent_id
+        if cursor:
+            params["cursor"] = cursor
+        body = await _api(
+            settings, "GET", f"/sharedrives/{sd}/files", params=params
+        )
+        items = (
+            body.get("files")
+            or body.get("items")
+            or body.get("children")
+            or body.get("list")
+            or []
+        )
+        seen_pages += 1
+        for it in items:
+            item_name = it.get("fileName") or it.get("name") or ""
+            if item_name != name:
+                continue
+            ftype = str(it.get("fileType") or "").upper()
+            is_folder = (
+                ftype == "FOLDER"
+                or "FOLDER" in ftype
+                or bool(it.get("isFolder"))
+            )
+            if is_folder:
+                return it
+            if name_match is None:
+                name_match = it
+        meta = body.get("responseMetaData") or {}
+        cursor = meta.get("nextCursor") or ""
+        if not cursor or seen_pages >= 20:  # safety cap
+            break
+    if name_match is not None:
+        logger.warning(
+            "find_child_folder: 같은 이름 항목 발견했으나 폴더 아님 — "
+            "fileName=%s fileType=%s keys=%s",
+            name,
+            name_match.get("fileType"),
+            list(name_match.keys()),
+        )
     return None
 
 
