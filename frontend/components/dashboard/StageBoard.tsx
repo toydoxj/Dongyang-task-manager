@@ -286,7 +286,7 @@ function ClosedStackColumn({
   draggable: boolean;
 }) {
   return (
-    <div className="flex w-72 flex-shrink-0 flex-col gap-2">
+    <div className="flex min-w-0 flex-1 flex-col gap-2">
       {sections.map((s) => (
         <ClosedSubSection
           key={s.stage}
@@ -384,7 +384,7 @@ function StageColumn({
     <div
       ref={setNodeRef}
       className={cn(
-        "flex w-72 flex-shrink-0 flex-col rounded-xl border bg-white transition-colors dark:bg-zinc-900",
+        "flex min-w-0 flex-1 flex-col rounded-xl border bg-white transition-colors dark:bg-zinc-900",
         STAGE_COLOR[stage] ?? "border-zinc-300",
         isOver && !isAutoStage && "ring-2 ring-blue-400",
         isAutoStage && "opacity-95",
