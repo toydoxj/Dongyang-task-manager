@@ -33,6 +33,8 @@ const CLOSE_MODES: ReadonlySet<string> = new Set<CloseMode>([
   "타절",
   "종결",
 ]);
+// 한 컬럼 안에 세로 stack으로 묶어 보여주는 종료성 단계들 (보드 가로 폭 축소 목적)
+const STACKED_CLOSED: ReadonlyArray<CloseMode> = ["완료", "타절", "종결"];
 
 const STAGE_COLOR: Record<string, string> = {
   "진행중": "border-blue-500/40 bg-blue-500/5",
@@ -202,14 +204,32 @@ export default function StageBoard({ projects }: Props) {
       )}
       <DndContext sensors={sensors} onDragEnd={handleDragEnd}>
         <div className="flex gap-3 overflow-x-auto pb-2">
-          {PROJECT_STAGES.map((stage) => (
-            <StageColumn
-              key={stage}
-              stage={stage}
-              items={grouped.get(stage) ?? []}
-              draggable={isAdmin}
-            />
-          ))}
+          {PROJECT_STAGES.map((stage) => {
+            // 완료 등장 시 종료성 stack 컬럼 한 번 렌더, 타절/종결은 skip
+            if (stage === STACKED_CLOSED[0]) {
+              return (
+                <ClosedStackColumn
+                  key="closed-stack"
+                  sections={STACKED_CLOSED.map((s) => ({
+                    stage: s,
+                    items: grouped.get(s) ?? [],
+                  }))}
+                  draggable={isAdmin}
+                />
+              );
+            }
+            if (STACKED_CLOSED.slice(1).includes(stage as CloseMode)) {
+              return null;
+            }
+            return (
+              <StageColumn
+                key={stage}
+                stage={stage}
+                items={grouped.get(stage) ?? []}
+                draggable={isAdmin}
+              />
+            );
+          })}
           <CreateColumn onClick={() => setCreateOpen(true)} />
         </div>
       </DndContext>
@@ -254,6 +274,75 @@ export default function StageBoard({ projects }: Props) {
         }}
         emptyAssignees
       />
+    </div>
+  );
+}
+
+function ClosedStackColumn({
+  sections,
+  draggable,
+}: {
+  sections: { stage: string; items: Project[] }[];
+  draggable: boolean;
+}) {
+  return (
+    <div className="flex w-72 flex-shrink-0 flex-col gap-2">
+      {sections.map((s) => (
+        <ClosedSubSection
+          key={s.stage}
+          stage={s.stage}
+          items={s.items}
+          draggable={draggable}
+        />
+      ))}
+    </div>
+  );
+}
+
+function ClosedSubSection({
+  stage,
+  items,
+  draggable,
+}: {
+  stage: string;
+  items: Project[];
+  draggable: boolean;
+}) {
+  const { isOver, setNodeRef } = useDroppable({
+    id: stage,
+    disabled: !draggable,
+  });
+  const total = items.reduce((s, p) => s + (p.contract_amount ?? 0), 0);
+
+  return (
+    <div
+      ref={setNodeRef}
+      className={cn(
+        "flex flex-col rounded-xl border bg-white transition-colors dark:bg-zinc-900",
+        STAGE_COLOR[stage] ?? "border-zinc-300",
+        isOver && "ring-2 ring-blue-400",
+      )}
+    >
+      <header className="flex items-center justify-between border-b border-zinc-200 px-3 py-1.5 dark:border-zinc-800">
+        <div className="flex items-center gap-1.5">
+          <span className={cn("h-2 w-2 rounded-full", STAGE_DOT[stage])} />
+          <h3 className="text-xs font-semibold">{stage}</h3>
+          <span className="text-[10px] text-zinc-500">{items.length}건</span>
+        </div>
+        <span className="text-[10px] font-medium text-zinc-600 dark:text-zinc-400">
+          {formatWon(total, true)}
+        </span>
+      </header>
+      <ul className="max-h-[140px] space-y-1 overflow-y-auto p-1.5">
+        {items.length === 0 && (
+          <li className="px-2 py-3 text-center text-[10px] text-zinc-400">
+            비어있음
+          </li>
+        )}
+        {items.map((p) => (
+          <ProjectCard key={p.id} project={p} draggable={draggable} />
+        ))}
+      </ul>
     </div>
   );
 }
