@@ -117,6 +117,30 @@ class MirrorCashflow(Base):
     archived: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
 
 
+class MirrorContractItem(Base):
+    """프로젝트 계약 항목 (공동수급·추가 용역의 발주처별 분담분).
+
+    한 프로젝트에 N개의 (발주처, 금액, 라벨) 항목이 존재할 수 있으며,
+    각 수금 row는 0~1개의 contract_item에 매칭된다.
+    """
+
+    __tablename__ = "mirror_contract_items"
+
+    page_id: Mapped[str] = mapped_column(String, primary_key=True)
+    project_id: Mapped[str] = mapped_column(String, default="", index=True)
+    client_id: Mapped[str] = mapped_column(String, default="", index=True)
+    label: Mapped[str] = mapped_column(String, default="")
+    amount: Mapped[float] = mapped_column(Float, default=0)
+    vat: Mapped[float] = mapped_column(Float, default=0)
+    sort_order: Mapped[int] = mapped_column(default=0)
+    properties: Mapped[dict] = mapped_column(JSONB, default=dict)
+    last_edited_time: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, index=True
+    )
+    synced_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    archived: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+
+
 class MirrorBlock(Base):
     """페이지 본문 블록 (특히 마스터 프로젝트의 image block)."""
 

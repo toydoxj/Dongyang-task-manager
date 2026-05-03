@@ -17,6 +17,7 @@ from sqlalchemy.orm import Session
 
 from app.models import mirror as M
 from app.models.cashflow import CashflowEntry
+from app.models.contract_item import ContractItem
 from app.models.project import Project
 from app.models.task import Task
 from app.services import notion_props as P
@@ -26,7 +27,13 @@ from app.settings import Settings, get_settings
 logger = logging.getLogger("notion.sync")
 
 SyncKind = Literal[
-    "projects", "tasks", "clients", "master", "cashflow", "expense"
+    "projects",
+    "tasks",
+    "clients",
+    "master",
+    "cashflow",
+    "expense",
+    "contract_items",
 ]
 ALL_KINDS: tuple[SyncKind, ...] = (
     "projects",
@@ -35,6 +42,7 @@ ALL_KINDS: tuple[SyncKind, ...] = (
     "master",
     "cashflow",
     "expense",
+    "contract_items",
 )
 
 # incremental query lookback. since를 sync 시작 시각으로 박아도 노션 인덱싱
@@ -258,6 +266,7 @@ class NotionSyncService:
             "master": s.notion_db_master,
             "cashflow": s.notion_db_cashflow,
             "expense": s.notion_db_expense,
+            "contract_items": s.notion_db_contract_items,
         }[kind]
 
     def _upsert_one(self, db: Session, kind: SyncKind, page: dict) -> None:
@@ -273,6 +282,8 @@ class NotionSyncService:
             self._upsert_cashflow(db, page, kind="income")
         elif kind == "expense":
             self._upsert_cashflow(db, page, kind="expense")
+        elif kind == "contract_items":
+            self._upsert_contract_item(db, page)
 
     def _archive_one(self, db: Session, kind: SyncKind, page_id: str) -> None:
         table = self._table_for(kind)
@@ -290,6 +301,7 @@ class NotionSyncService:
             "master": M.MirrorMaster,
             "cashflow": M.MirrorCashflow,
             "expense": M.MirrorCashflow,
+            "contract_items": M.MirrorContractItem,
         }.get(kind)
 
     def _mark_missing_archived(
@@ -505,6 +517,39 @@ class NotionSyncService:
                     amount=stmt.excluded.amount,
                     category=stmt.excluded.category,
                     note=stmt.excluded.note,
+                    properties=stmt.excluded.properties,
+                    last_edited_time=stmt.excluded.last_edited_time,
+                    synced_at=stmt.excluded.synced_at,
+                    archived=stmt.excluded.archived,
+                ),
+            )
+        )
+
+    def _upsert_contract_item(self, db: Session, page: dict) -> None:
+        ent = ContractItem.from_notion_page(page)
+        stmt = pg_insert(M.MirrorContractItem).values(
+            page_id=ent.id,
+            project_id=ent.project_id or "",
+            client_id=ent.client_id or "",
+            label=ent.label or "",
+            amount=float(ent.amount or 0),
+            vat=float(ent.vat or 0),
+            sort_order=int(ent.sort_order or 0),
+            properties=page.get("properties", {}),
+            last_edited_time=_parse_iso(page.get("last_edited_time")),
+            synced_at=_utcnow(),
+            archived=bool(page.get("archived", False)),
+        )
+        db.execute(
+            stmt.on_conflict_do_update(
+                index_elements=["page_id"],
+                set_=dict(
+                    project_id=stmt.excluded.project_id,
+                    client_id=stmt.excluded.client_id,
+                    label=stmt.excluded.label,
+                    amount=stmt.excluded.amount,
+                    vat=stmt.excluded.vat,
+                    sort_order=stmt.excluded.sort_order,
                     properties=stmt.excluded.properties,
                     last_edited_time=stmt.excluded.last_edited_time,
                     synced_at=stmt.excluded.synced_at,

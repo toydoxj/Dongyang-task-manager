@@ -20,6 +20,7 @@ from app.routers import admin_drive as admin_drive_router
 from app.routers import auth as auth_router
 from app.routers import cashflow as cashflow_router
 from app.routers import clients as clients_router
+from app.routers import contract_items as contract_items_router
 from app.routers import employees as employees_router
 from app.routers import master_projects as master_projects_router
 from app.routers import projects as projects_router
@@ -103,6 +104,7 @@ app.include_router(projects_router.router, prefix="/api")
 app.include_router(tasks_router.router, prefix="/api")
 app.include_router(cashflow_router.router, prefix="/api")
 app.include_router(clients_router.router, prefix="/api")
+app.include_router(contract_items_router.router, prefix="/api")
 app.include_router(master_projects_router.router, prefix="/api")
 app.include_router(employees_router.router, prefix="/api")
 app.include_router(suggestions_router.router, prefix="/api")

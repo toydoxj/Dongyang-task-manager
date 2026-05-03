@@ -68,6 +68,14 @@ PROJECT_DB_REQUIRED: dict[str, dict[str, Any]] = {
 MASTER_DB_REQUIRED: dict[str, dict[str, Any]] = {}
 CLIENT_DB_REQUIRED: dict[str, dict[str, Any]] = {}
 
+# 프로젝트 계약 항목 DB — relation은 사용자가 노션에서 직접 생성해야 함
+# (ensure는 select/number/text/url만 보강 가능; relation은 schema에서 생략)
+CONTRACT_ITEM_DB_REQUIRED: dict[str, dict[str, Any]] = {
+    "금액": {"number": {}},
+    "VAT": {"number": {}},
+    "정렬": {"number": {}},
+}
+
 # 날인요청 DB
 # 신 옵션(1차검토 중 / 2차검토 중 / 승인)을 운영 표준으로 채택하되, 노션은 select option을
 # 자동 제거하지 않으므로 옛 옵션(요청/팀장승인/관리자승인/완료/도면/검토서)이 그대로
@@ -236,4 +244,10 @@ async def ensure_all_schemas(notion: NotionService, settings: Settings) -> None:
         settings.notion_db_seal_requests,
         SEAL_REQUEST_DB_REQUIRED,
         label="seal_requests",
+    )
+    await _ensure_db(
+        notion,
+        settings.notion_db_contract_items,
+        CONTRACT_ITEM_DB_REQUIRED,
+        label="contract_items",
     )

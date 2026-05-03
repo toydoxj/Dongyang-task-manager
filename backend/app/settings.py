@@ -38,6 +38,8 @@ class Settings(BaseSettings):
     notion_db_master: str = ""  # 마스터 프로젝트
     notion_db_suggestions: str = ""  # 건의사항
     notion_db_seal_requests: str = ""  # 날인요청
+    # 프로젝트 계약 항목 (공동수급/추가용역 — 1프로젝트 N발주처 N금액)
+    notion_db_contract_items: str = ""
 
     # ── 외부 파일 storage (날인요청 첨부) ──
     storage_provider: str = "s3"  # 현재는 s3만

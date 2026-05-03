@@ -8,6 +8,7 @@ from datetime import datetime
 
 from app.models import mirror as M
 from app.models.cashflow import CashflowEntry
+from app.models.contract_item import ContractItem
 from app.models.project import Project
 from app.models.task import Task
 
@@ -54,3 +55,16 @@ def cashflow_from_mirror(row: M.MirrorCashflow) -> CashflowEntry:
     if row.kind == "income":
         return CashflowEntry.from_income_page(page)
     return CashflowEntry.from_expense_page(page)
+
+
+def contract_item_from_mirror(row: M.MirrorContractItem) -> ContractItem:
+    """직접 컬럼 우선 사용 — properties JSON parse를 한 번 더 돌리지 않음."""
+    return ContractItem(
+        id=row.page_id,
+        project_id=row.project_id or "",
+        client_id=row.client_id or "",
+        label=row.label or "",
+        amount=float(row.amount or 0),
+        vat=float(row.vat or 0),
+        sort_order=int(row.sort_order or 0),
+    )
