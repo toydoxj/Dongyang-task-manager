@@ -222,6 +222,7 @@ export interface IncomeCreateRequest {
   round_no?: number | null;
   project_ids?: string[];
   payer_relation_ids?: string[];
+  contract_item_id?: string | null;
   note?: string;
 }
 
@@ -231,6 +232,7 @@ export interface IncomeUpdateRequest {
   round_no?: number | null;
   project_ids?: string[] | null;
   payer_relation_ids?: string[] | null;
+  contract_item_id?: string | null;
   note?: string | null;
 }
 

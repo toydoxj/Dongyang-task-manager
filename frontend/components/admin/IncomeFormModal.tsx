@@ -15,7 +15,7 @@ import type {
   ClientListResponse,
   Project,
 } from "@/lib/domain";
-import { keys, useClients } from "@/lib/hooks";
+import { keys, useClients, useContractItems } from "@/lib/hooks";
 
 interface Props {
   /** null이면 신규 등록, entry 있으면 편집 */
@@ -81,12 +81,17 @@ function Form({
     initialProject?.id ?? null,
   );
   const [payerQuery, setPayerQuery] = useState(entry?.payer_names?.[0] ?? "");
+  const [contractItemId, setContractItemId] = useState<string | null>(
+    entry?.contract_item_id ?? null,
+  );
   const [note, setNote] = useState(entry?.note ?? "");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [clientAdding, setClientAdding] = useState(false);
 
   const { data: clientData } = useClients(true);
+  // 선택한 프로젝트의 contract items 후보. 프로젝트 미선택 시 fetch 안 함.
+  const { data: contractItemsData } = useContractItems(selectedProjectId);
   const { mutate } = useSWRConfig();
   const norm = (s: string): string => s.trim().toLowerCase();
   const payerMatch =
@@ -132,6 +137,15 @@ function Form({
     }
   };
 
+  // contract items가 1개면 사용자가 명시 변경 안 했을 때 자동 매칭, 0개면 legacy
+  const items = contractItemsData?.items ?? [];
+  const effectiveContractItemId =
+    contractItemId !== null
+      ? contractItemId
+      : items.length === 1
+        ? items[0].id
+        : null;
+
   const submit = async (): Promise<void> => {
     if (!date) {
       setError("일자를 입력하세요");
@@ -152,6 +166,7 @@ function Form({
         round_no: roundNo ? Number(roundNo) : null,
         project_ids: projectIds,
         payer_relation_ids: payerIds,
+        contract_item_id: effectiveContractItemId,
         note,
       };
       if (isEdit && entry) {
@@ -236,6 +251,8 @@ function Form({
                     onClick={() => {
                       setSelectedProjectId(p.id);
                       setProjectQuery(p.name);
+                      // 새 프로젝트 선택 시 contract item 매칭 reset
+                      setContractItemId(null);
                     }}
                     className="flex w-full items-center justify-between gap-2 px-2 py-1.5 text-left hover:bg-zinc-100 dark:hover:bg-zinc-800"
                   >
@@ -254,6 +271,39 @@ function Form({
             </p>
           )}
         </Field>
+
+        {selectedProjectId && items.length > 0 && (
+          <Field
+            label={`분담 항목 ${items.length === 1 ? "(자동)" : `(${items.length}개)`}`}
+          >
+            <select
+              value={effectiveContractItemId ?? ""}
+              onChange={(e) => setContractItemId(e.target.value || null)}
+              className={inputCls}
+              disabled={items.length === 1}
+            >
+              {items.length > 1 && <option value="">선택…</option>}
+              {items.map((it) => {
+                const total =
+                  Math.round((it.amount + it.vat) / 1e6) * 1e6;
+                const totalStr =
+                  total >= 1e8
+                    ? `${(total / 1e8).toFixed(1)}억`
+                    : `${(total / 1e6).toFixed(0)}백만`;
+                return (
+                  <option key={it.id} value={it.id}>
+                    {it.label} · {it.client_name || "(미매칭)"} · {totalStr}
+                  </option>
+                );
+              })}
+            </select>
+            {items.length === 1 && (
+              <p className="mt-1 text-[10px] text-zinc-500">
+                항목이 1개라 자동 선택됩니다.
+              </p>
+            )}
+          </Field>
+        )}
 
         <Field label="금액 (원)" required>
           <input

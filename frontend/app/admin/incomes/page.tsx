@@ -5,9 +5,11 @@ import { useMemo, useState } from "react";
 import { useAuth } from "@/components/AuthGuard";
 import IncomeFormModal from "@/components/admin/IncomeFormModal";
 import LoadingState from "@/components/ui/LoadingState";
-import type { CashflowEntry, Project } from "@/lib/domain";
+import { listContractItems } from "@/lib/api";
+import type { CashflowEntry, ContractItem, Project } from "@/lib/domain";
 import { formatWon } from "@/lib/format";
 import { useCashflow, useProjects } from "@/lib/hooks";
+import useSWR from "swr";
 
 interface IncomeRow {
   entry: CashflowEntry;
@@ -16,17 +18,24 @@ interface IncomeRow {
   projectCode: string;
   clientName: string; // 프로젝트의 발주처
   payerName: string; // 이번 row의 실지급
-  totalAmount: number; // 계약 총액 (용역비 + VAT)
-  cumulativeAmount: number; // 해당 row까지 누적 수금
+  contractItemLabel: string; // 분담 항목 라벨 ("본 계약" / "변경설계" / "" = legacy)
+  totalAmount: number; // 분담 모드면 항목 (금액+VAT), legacy면 프로젝트 (용역비+VAT)
+  cumulativeAmount: number; // 해당 row까지 누적 수금 (같은 키 그룹 안에서)
   outstanding: number; // totalAmount - cumulativeAmount (해당 row 시점 미수금)
 }
 
 export default function IncomesAdminPage() {
   const { user } = useAuth();
-  const { data: projectsData } = useProjects(undefined, user?.role === "admin");
+  const isAdmin = user?.role === "admin";
+  const { data: projectsData } = useProjects(undefined, isAdmin);
   const { data: cashflowData, mutate } = useCashflow(
     { flow: "income" },
-    user?.role === "admin",
+    isAdmin,
+  );
+  // 미수금 계산 시 분담 항목 단위 분모가 필요 — 전체 contract items 일괄 fetch
+  const { data: contractItemsData, mutate: mutateItems } = useSWR(
+    isAdmin ? ["contract-items", "all"] : null,
+    () => listContractItems(),
   );
 
   const [dateFrom, setDateFrom] = useState("");
@@ -42,43 +51,90 @@ export default function IncomesAdminPage() {
     return map;
   }, [projectsData]);
 
+  // (project_id, item_id) → 항목 정보. legacy(item_id 없음)는 별도 처리.
+  const itemMap = useMemo(() => {
+    const map = new Map<string, ContractItem>();
+    for (const it of contractItemsData?.items ?? []) map.set(it.id, it);
+    return map;
+  }, [contractItemsData]);
+
+  // 프로젝트별 contract items 그룹 — legacy 판정용 (분담 모드 여부)
+  const itemsByProject = useMemo(() => {
+    const map = new Map<string, ContractItem[]>();
+    for (const it of contractItemsData?.items ?? []) {
+      const list = map.get(it.project_id) ?? [];
+      list.push(it);
+      map.set(it.project_id, list);
+    }
+    return map;
+  }, [contractItemsData]);
+
   const rows: IncomeRow[] = useMemo(() => {
     const items = cashflowData?.items ?? [];
-    // 1) 모든 income을 date asc로 정렬해 프로젝트별 누적합 계산
+    // 1) 모든 income을 date asc로 정렬해 키별 누적합 계산
+    //    분담 모드(item_id 있음): key = `item:{item_id}`
+    //    legacy: key = `proj:{project_id}`
     const sorted = items
       .filter((e) => e.type === "income")
       .slice()
       .sort((a, b) => (a.date ?? "").localeCompare(b.date ?? ""));
-    const cumByProject = new Map<string, number>();
+
+    const keyOf = (e: CashflowEntry): string => {
+      if (e.contract_item_id) return `item:${e.contract_item_id}`;
+      const pid = e.project_ids[0] ?? "";
+      return `proj:${pid}`;
+    };
+
+    const cumByKey = new Map<string, number>();
     const cumById = new Map<string, number>();
     for (const e of sorted) {
-      const pid = e.project_ids[0] ?? "";
-      const prev = cumByProject.get(pid) ?? 0;
+      const k = keyOf(e);
+      const prev = cumByKey.get(k) ?? 0;
       const next = prev + e.amount;
-      cumByProject.set(pid, next);
+      cumByKey.set(k, next);
       cumById.set(e.id, next);
     }
 
     return sorted.map((e) => {
       const pid = e.project_ids[0] ?? "";
       const project = pid ? projectMap.get(pid) ?? null : null;
-      const total = project
-        ? (project.contract_amount ?? 0) + (project.vat ?? 0)
-        : 0;
+      const item = e.contract_item_id ? itemMap.get(e.contract_item_id) : null;
+
+      let total: number;
+      let clientName: string;
+      let label: string;
+
+      if (item) {
+        total = (item.amount ?? 0) + (item.vat ?? 0);
+        clientName = item.client_name ?? "";
+        label = item.label;
+      } else {
+        // legacy — 프로젝트 단일 모드. 그러나 그 프로젝트가 분담 모드라면 분모 계산이
+        // 부정확해질 수 있으므로 분담 모드인지 별도 표시.
+        const projItems = pid ? itemsByProject.get(pid) ?? [] : [];
+        const projHasItems = projItems.length > 0;
+        total = project
+          ? (project.contract_amount ?? 0) + (project.vat ?? 0)
+          : 0;
+        clientName = project?.client_names?.[0] ?? project?.client_text ?? "";
+        label = projHasItems ? "(미매칭 분담)" : "";
+      }
+
       const cum = cumById.get(e.id) ?? 0;
       return {
         entry: e,
         project,
         projectName: project?.name ?? "(미연결)",
         projectCode: project?.code ?? "",
-        clientName: project?.client_names?.[0] ?? project?.client_text ?? "",
+        clientName,
         payerName: e.payer_names?.[0] ?? "",
+        contractItemLabel: label,
         totalAmount: total,
         cumulativeAmount: cum,
         outstanding: total - cum,
       };
     });
-  }, [cashflowData, projectMap]);
+  }, [cashflowData, projectMap, itemMap, itemsByProject]);
 
   // 필터 적용
   const filtered = rows.filter((r) => {
@@ -104,7 +160,7 @@ export default function IncomesAdminPage() {
   const visible = filtered.slice().reverse();
   const totalAmount = filtered.reduce((s, r) => s + r.entry.amount, 0);
 
-  if (user && user.role !== "admin") {
+  if (user && !isAdmin) {
     return (
       <main className="p-6">
         <p className="text-sm text-red-500">관리자 권한이 필요합니다.</p>
@@ -122,6 +178,7 @@ export default function IncomesAdminPage() {
       "프로젝트명",
       "발주처",
       "실지급",
+      "분담항목",
       "지급액",
       "미수금",
       "총금액",
@@ -136,6 +193,7 @@ export default function IncomesAdminPage() {
         r.projectName,
         r.clientName,
         r.payerName,
+        r.contractItemLabel,
         r.entry.amount.toString(),
         r.outstanding.toString(),
         r.totalAmount.toString(),
@@ -239,6 +297,7 @@ export default function IncomesAdminPage() {
                   <Th>프로젝트</Th>
                   <Th>발주처</Th>
                   <Th>실지급</Th>
+                  <Th className="w-24">분담항목</Th>
                   <Th className="text-right">지급액</Th>
                   <Th className="text-right" title="해당 row 시점 미수금">
                     미수금
@@ -251,7 +310,7 @@ export default function IncomesAdminPage() {
                 {visible.length === 0 ? (
                   <tr>
                     <td
-                      colSpan={9}
+                      colSpan={10}
                       className="px-4 py-12 text-center text-xs text-zinc-400"
                     >
                       해당 데이터가 없습니다
@@ -286,6 +345,12 @@ export default function IncomesAdminPage() {
                       <Td className="truncate" title={r.payerName}>
                         {r.payerName || "—"}
                       </Td>
+                      <Td
+                        className={`truncate text-[11px] ${r.contractItemLabel === "(미매칭 분담)" ? "text-amber-500" : "text-zinc-500"}`}
+                        title={r.contractItemLabel}
+                      >
+                        {r.contractItemLabel || "—"}
+                      </Td>
                       <Td className="text-right font-medium">
                         {formatWon(r.entry.amount)}
                       </Td>
@@ -317,14 +382,20 @@ export default function IncomesAdminPage() {
         entry={null}
         open={createOpen}
         onClose={() => setCreateOpen(false)}
-        onSaved={() => void mutate()}
+        onSaved={() => {
+          void mutate();
+          void mutateItems();
+        }}
         projects={projectsData?.items ?? []}
       />
       <IncomeFormModal
         entry={editTarget}
         open={!!editTarget}
         onClose={() => setEditTarget(null)}
-        onSaved={() => void mutate()}
+        onSaved={() => {
+          void mutate();
+          void mutateItems();
+        }}
         projects={projectsData?.items ?? []}
       />
     </div>

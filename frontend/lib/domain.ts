@@ -348,6 +348,9 @@ export interface CashflowEntry {
   round_no?: number | null;
   payer_relation_ids?: string[];
   payer_names?: string[];
+  // 분담 항목 매칭 (공동수급/추가용역). 없으면 legacy 단일 모드.
+  contract_item_id?: string | null;
+  contract_item_label?: string | null;
 }
 
 export interface CashflowResponse {

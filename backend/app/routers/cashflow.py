@@ -51,6 +51,23 @@ def _resolve_payer_names(db: Session, items: list[CashflowEntry]) -> None:
             ]
 
 
+def _resolve_contract_item_labels(
+    db: Session, items: list[CashflowEntry]
+) -> None:
+    ci_ids: set[str] = {e.contract_item_id for e in items if e.contract_item_id}
+    if not ci_ids:
+        return
+    rows = db.execute(
+        select(M.MirrorContractItem.page_id, M.MirrorContractItem.label).where(
+            M.MirrorContractItem.page_id.in_(ci_ids)
+        )
+    ).all()
+    label_map: dict[str, str] = {pid: label for pid, label in rows}
+    for e in items:
+        if e.contract_item_id:
+            e.contract_item_label = label_map.get(e.contract_item_id) or None
+
+
 @router.get("", response_model=CashflowResponse)
 async def get_cashflow(
     project_id: str | None = Query(default=None),
@@ -81,6 +98,7 @@ async def get_cashflow(
     items = [cashflow_from_mirror(r) for r in rows]
 
     _resolve_payer_names(db, items)
+    _resolve_contract_item_labels(db, items)
 
     inc = sum(e.amount for e in items if e.type == "income")
     exp = sum(e.amount for e in items if e.type == "expense")
@@ -102,6 +120,7 @@ class IncomeCreateRequest(BaseModel):
     round_no: int | None = None
     project_ids: list[str] = []
     payer_relation_ids: list[str] = []
+    contract_item_id: str | None = None  # 분담 항목 매칭 (없으면 legacy)
     note: str = ""
 
 
@@ -113,6 +132,7 @@ class IncomeUpdateRequest(BaseModel):
     round_no: int | None = None
     project_ids: list[str] | None = None
     payer_relation_ids: list[str] | None = None
+    contract_item_id: str | None = None
     note: str | None = None
 
 
@@ -131,6 +151,8 @@ def _income_create_props(req: IncomeCreateRequest) -> dict[str, Any]:
         props["실지급"] = {
             "relation": [{"id": rid} for rid in req.payer_relation_ids]
         }
+    if req.contract_item_id:
+        props["계약항목"] = {"relation": [{"id": req.contract_item_id}]}
     if req.note:
         props["비고"] = {"rich_text": [{"text": {"content": req.note}}]}
     return props
@@ -156,6 +178,12 @@ def _income_update_props(req: IncomeUpdateRequest) -> dict[str, Any]:
         props["실지급"] = {
             "relation": [{"id": rid} for rid in req.payer_relation_ids]
         }
+    if req.contract_item_id is not None:
+        props["계약항목"] = (
+            {"relation": []}
+            if req.contract_item_id == ""
+            else {"relation": [{"id": req.contract_item_id}]}
+        )
     if req.note is not None:
         props["비고"] = {"rich_text": [{"text": {"content": req.note}}]}
     return props
@@ -182,6 +210,7 @@ async def create_income(
     get_sync().upsert_page("cashflow", page)
     entry = CashflowEntry.from_income_page(page)
     _resolve_payer_names(db, [entry])
+    _resolve_contract_item_labels(db, [entry])
     return entry
 
 
@@ -202,6 +231,7 @@ async def update_income(
     get_sync().upsert_page("cashflow", page)
     entry = CashflowEntry.from_income_page(page)
     _resolve_payer_names(db, [entry])
+    _resolve_contract_item_labels(db, [entry])
     return entry
 
 
