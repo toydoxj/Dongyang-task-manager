@@ -1,7 +1,9 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { useSWRConfig } from "swr";
 
+import ProjectEditModal from "@/components/project/ProjectEditModal";
 import Modal from "@/components/ui/Modal";
 import {
   createIncome,
@@ -9,7 +11,7 @@ import {
   updateIncome,
 } from "@/lib/api";
 import type { CashflowEntry, Project } from "@/lib/domain";
-import { useCashflow, useContractItems } from "@/lib/hooks";
+import { keys, useCashflow, useContractItems } from "@/lib/hooks";
 
 interface Props {
   /** null이면 신규 등록, entry 있으면 편집 */
@@ -91,9 +93,13 @@ function Form({
   const [note, setNote] = useState(entry?.note ?? "");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [projectEditOpen, setProjectEditOpen] = useState(false);
 
+  const { mutate: globalMutate } = useSWRConfig();
   // 선택한 프로젝트의 contract items 후보. 프로젝트 미선택 시 fetch 안 함.
-  const { data: contractItemsData } = useContractItems(selectedProjectId);
+  const { data: contractItemsData, mutate: mutateItems } = useContractItems(
+    selectedProjectId,
+  );
   // dropdown에 분담 항목별 기성금(누적 수금) 표시 — 전체 income 호출 후 client side 합산
   const { data: incomeData } = useCashflow(
     { flow: "income" },
@@ -250,9 +256,19 @@ function Form({
             </ul>
           )}
           {selectedProjectId && (
-            <p className="mt-1 text-[10px] text-emerald-500">
-              ✓ 선택됨 ({selectedProjectId.slice(0, 8)}...)
-            </p>
+            <div className="mt-1 flex items-center gap-2">
+              <p className="text-[10px] text-emerald-500">
+                ✓ 선택됨 ({selectedProjectId.slice(0, 8)}...)
+              </p>
+              <button
+                type="button"
+                onClick={() => setProjectEditOpen(true)}
+                className="rounded-md border border-zinc-300 px-1.5 py-0.5 text-[10px] hover:bg-zinc-50 dark:border-zinc-700 dark:hover:bg-zinc-800"
+                title="프로젝트 정보 / 계약 분담 편집"
+              >
+                ⚙ 프로젝트 편집
+              </button>
+            </div>
           )}
         </Field>
 
@@ -350,6 +366,21 @@ function Form({
           </div>
         </footer>
       </div>
+
+      <ProjectEditModal
+        project={
+          projectEditOpen
+            ? projects.find((p) => p.id === selectedProjectId) ?? null
+            : null
+        }
+        onClose={() => setProjectEditOpen(false)}
+        onSaved={() => {
+          // 프로젝트 본체 + contract items 모두 재검증 — 분담 모드 dropdown/미수금 즉시 반영
+          void mutateItems();
+          void globalMutate(keys.projects());
+          void globalMutate(["contract-items", "all"]);
+        }}
+      />
     </Modal>
   );
 }
