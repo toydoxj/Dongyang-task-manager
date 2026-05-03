@@ -3,6 +3,7 @@
 import Link from "next/link";
 
 import type { Project } from "@/lib/domain";
+import { formatWon } from "@/lib/format";
 
 interface Props {
   projects: Project[];
@@ -56,6 +57,10 @@ export default function RecentAndStaleProjects({ projects }: Props) {
       return p.start_date.slice(0, 10) <= cutoff;
     })
     .sort((a, b) => (a.start_date ?? "").localeCompare(b.start_date ?? ""));
+  const staleTotal = staleWaiting.reduce(
+    (s, p) => s + (p.contract_amount ?? 0),
+    0,
+  );
 
   return (
     <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
@@ -69,6 +74,14 @@ export default function RecentAndStaleProjects({ projects }: Props) {
       <Card
         title="3개월 이상 대기 프로젝트"
         subtitle={`수주일 ${cutoff} 이전 + 현재 '대기'`}
+        trailing={
+          <>
+            <div className="font-medium text-zinc-700 dark:text-zinc-200">
+              {staleWaiting.length}건
+            </div>
+            <div className="text-zinc-500">{formatWon(staleTotal, true)}</div>
+          </>
+        }
       >
         {staleWaiting.length === 0 ? (
           <p className="px-2 py-6 text-center text-xs text-zinc-400">
@@ -89,17 +102,26 @@ export default function RecentAndStaleProjects({ projects }: Props) {
 function Card({
   title,
   subtitle,
+  trailing,
   children,
 }: {
   title: string;
   subtitle?: string;
+  trailing?: React.ReactNode;
   children: React.ReactNode;
 }) {
   return (
     <section className="flex h-full max-h-[480px] flex-col rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
-      <header className="mb-3 shrink-0">
-        <h3 className="text-sm font-semibold">{title}</h3>
-        {subtitle && <p className="text-[11px] text-zinc-500">{subtitle}</p>}
+      <header className="mb-3 flex shrink-0 items-start justify-between gap-2">
+        <div className="min-w-0">
+          <h3 className="text-sm font-semibold">{title}</h3>
+          {subtitle && <p className="text-[11px] text-zinc-500">{subtitle}</p>}
+        </div>
+        {trailing && (
+          <div className="shrink-0 text-right text-[11px] leading-tight">
+            {trailing}
+          </div>
+        )}
       </header>
       <div className="flex-1 space-y-3 overflow-y-auto pr-1">{children}</div>
     </section>
