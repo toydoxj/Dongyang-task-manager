@@ -7,6 +7,7 @@ import { useAuth } from "@/components/AuthGuard";
 import CashflowForecast from "@/components/dashboard/CashflowForecast";
 import EmployeeLoadHeatmap from "@/components/dashboard/EmployeeLoadHeatmap";
 import ExpenseTrend from "@/components/dashboard/ExpenseTrend";
+import RecentAndStaleProjects from "@/components/dashboard/RecentAndStaleProjects";
 import RevenueCollectionChart from "@/components/dashboard/RevenueCollectionChart";
 import StageBoard from "@/components/dashboard/StageBoard";
 import StaleTaskAlert from "@/components/dashboard/StaleTaskAlert";
@@ -91,6 +92,8 @@ export default function DashboardPage() {
             </h2>
             <StageBoard projects={projects} />
           </section>
+
+          <RecentAndStaleProjects projects={projects} />
 
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
             <section>
