@@ -75,7 +75,7 @@ export default function RecentAndStaleProjects({ projects }: Props) {
             해당 없음
           </p>
         ) : (
-          <ul className="max-h-[320px] space-y-1 overflow-y-auto pr-1">
+          <ul className="space-y-1">
             {staleWaiting.map((p) => (
               <ProjectRow key={p.id} project={p} />
             ))}
@@ -96,12 +96,12 @@ function Card({
   children: React.ReactNode;
 }) {
   return (
-    <section className="rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
-      <header className="mb-3">
+    <section className="flex h-full max-h-[480px] flex-col rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
+      <header className="mb-3 shrink-0">
         <h3 className="text-sm font-semibold">{title}</h3>
         {subtitle && <p className="text-[11px] text-zinc-500">{subtitle}</p>}
       </header>
-      <div className="space-y-3">{children}</div>
+      <div className="flex-1 space-y-3 overflow-y-auto pr-1">{children}</div>
     </section>
   );
 }
