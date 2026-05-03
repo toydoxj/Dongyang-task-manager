@@ -14,6 +14,7 @@ import { useState } from "react";
 import { mutate as globalMutate } from "swr";
 
 import { useAuth } from "@/components/AuthGuard";
+import ProjectCreateModal from "@/components/me/ProjectCreateModal";
 import ProjectStageChangeModal from "@/components/project/ProjectStageChangeModal";
 import { setProjectStage } from "@/lib/api";
 import type { Project, ProjectListResponse } from "@/lib/domain";
@@ -64,6 +65,8 @@ export default function StageBoard({ projects }: Props) {
     project: Project;
     mode: CloseMode;
   } | null>(null);
+  // 보드 우측 끝 [+ 새 프로젝트] 모달
+  const [createOpen, setCreateOpen] = useState(false);
 
   // 부모가 새 데이터 주면 동기화 (SWR revalidate)
   if (projects !== items && projects.length !== items.length) {
@@ -207,6 +210,7 @@ export default function StageBoard({ projects }: Props) {
               draggable={isAdmin}
             />
           ))}
+          <CreateColumn onClick={() => setCreateOpen(true)} />
         </div>
       </DndContext>
 
@@ -240,7 +244,31 @@ export default function StageBoard({ projects }: Props) {
           }}
         />
       )}
+
+      <ProjectCreateModal
+        open={createOpen}
+        onClose={() => setCreateOpen(false)}
+        onCreated={() => {
+          // 보드 데이터는 부모(SWR)에서 갱신 — 캐시만 invalidate
+          void globalMutate(keys.projects());
+        }}
+        emptyAssignees
+      />
     </div>
+  );
+}
+
+function CreateColumn({ onClick }: { onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="flex w-32 flex-shrink-0 flex-col items-center justify-center rounded-xl border border-dashed border-zinc-300 bg-zinc-50/40 text-xs text-zinc-500 transition-colors hover:border-zinc-400 hover:bg-zinc-100 hover:text-zinc-700 dark:border-zinc-700 dark:bg-zinc-900/40 dark:hover:border-zinc-600 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
+      title="새 프로젝트 생성 (담당자 비어있음 — 진행단계 '대기'로 시작)"
+    >
+      <span className="text-2xl leading-none">+</span>
+      <span className="mt-1">새 프로젝트</span>
+    </button>
   );
 }
 

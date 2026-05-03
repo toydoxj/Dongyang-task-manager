@@ -16,6 +16,8 @@ interface Props {
   onCreated: () => void;
   /** 다른 직원 명의 생성 (admin/team_lead). 지정 시 그 사람이 자동 담당자. */
   forUser?: string;
+  /** true면 담당자를 비워둔 상태로 시작 (대시보드 보드에서 호출). */
+  emptyAssignees?: boolean;
 }
 
 export default function ProjectCreateModal({
@@ -23,14 +25,15 @@ export default function ProjectCreateModal({
   onClose,
   onCreated,
   forUser,
+  emptyAssignees,
 }: Props) {
   const { user } = useAuth();
+  const initialAssignees = (): string[] =>
+    emptyAssignees ? [] : user?.name ? [user.name] : [];
   const [name, setName] = useState("");
   const [code, setCode] = useState("");
   const [client, setClient] = useState("");
-  const [assignees, setAssignees] = useState<string[]>(
-    user?.name ? [user.name] : [],
-  );
+  const [assignees, setAssignees] = useState<string[]>(initialAssignees());
   const [workTypes, setWorkTypes] = useState<string[]>([]);
   const [startDate, setStartDate] = useState("");
   const [contractStart, setContractStart] = useState("");
@@ -86,7 +89,7 @@ export default function ProjectCreateModal({
     setName("");
     setCode("");
     setClient("");
-    setAssignees(user?.name ? [user.name] : []);
+    setAssignees(initialAssignees());
     setWorkTypes([]);
     setStartDate("");
     setContractStart("");
@@ -112,6 +115,8 @@ export default function ProjectCreateModal({
           // 협력업체 매칭되면 relation 으로, 아니면 text fallback
           client_relation_ids: clientMatch ? [clientMatch.id] : undefined,
           client_text: clientMatch ? undefined : trimmedClient || undefined,
+          // 신규 프로젝트 default 진행단계 = '대기' (자동 '진행중' 분류는 TASK 활동 기반)
+          stage: "대기",
           // 담당팀은 폼에서 제거 — 노션 자동 집계에 위임
           assignees,
           work_types: workTypes,
@@ -136,13 +141,6 @@ export default function ProjectCreateModal({
   return (
     <Modal open={open} onClose={onClose} title="새 프로젝트 생성" size="lg">
       <div className="space-y-3">
-        <p className="text-xs text-zinc-500">
-          노션 메인 DB에 새 프로젝트 페이지를 생성합니다.{" "}
-          {forUser
-            ? `${forUser} 님이 자동으로 담당자에 추가됩니다.`
-            : "본인이 자동으로 담당자에 추가됩니다."}
-        </p>
-
         <Field label="프로젝트명" required>
           <input
             type="text"

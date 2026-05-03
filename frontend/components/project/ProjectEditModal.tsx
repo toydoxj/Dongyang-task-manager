@@ -32,8 +32,9 @@ function Form({
 }) {
   const [name, setName] = useState(project.name);
   const [code, setCode] = useState(project.code);
-  const [client, setClient] = useState(
-    project.client_names[0] ?? project.client_text,
+  // 발주처: relation 이름 우선, 없으면 임시 텍스트, 둘 다 없으면 빈 문자열로 controlled input 보장
+  const [client, setClient] = useState<string>(
+    project.client_names[0] ?? project.client_text ?? "",
   );
   const [stage, setStage] = useState(project.stage);
   const [assignees, setAssignees] = useState<string[]>(project.assignees);
