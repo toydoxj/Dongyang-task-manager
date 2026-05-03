@@ -113,7 +113,7 @@ export default function ProjectsPage() {
 
       {!all && !error && (
         <LoadingState
-          message="프로젝트 목록 불러오는 중 (1,500+ 건)"
+          message="프로젝트 목록 불러오는 중"
           height="h-64"
         />
       )}

@@ -67,7 +67,7 @@ export default function DashboardPage() {
 
       {loading && !error && (
         <LoadingState
-          message="대시보드 데이터 불러오는 중 (프로젝트 1,500+ / 수금 1,900+)"
+          message="대시보드 데이터 불러오는 중"
           height="h-96"
         />
       )}
