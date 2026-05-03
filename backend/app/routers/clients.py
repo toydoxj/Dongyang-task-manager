@@ -1,5 +1,7 @@
-"""/api/clients — 협력업체(발주처) 목록 + 신규 등록."""
+"""/api/clients — 협력업체(발주처) 목록 + CRUD."""
 from __future__ import annotations
+
+import asyncio
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
@@ -9,7 +11,7 @@ from sqlalchemy.orm import Session
 from app.db import get_db
 from app.models import mirror as M
 from app.models.auth import User
-from app.security import get_current_user
+from app.security import get_current_user, require_admin
 from app.services import notion_props as P
 from app.services.notion import NotionService, get_notion
 from app.services.sync import get_sync
@@ -109,3 +111,95 @@ async def create_client(
     return Client(
         id=page.get("id", ""), name=actual_name, category=actual_category
     )
+
+
+class ClientUpdateRequest(BaseModel):
+    """None 필드는 변경 안 함."""
+
+    name: str | None = None
+    category: str | None = None
+
+
+@router.patch("/{page_id}", response_model=Client)
+async def update_client(
+    page_id: str,
+    body: ClientUpdateRequest,
+    _admin: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+    notion: NotionService = Depends(get_notion),
+) -> Client:
+    props: dict = {}
+    if body.name is not None:
+        new_name = body.name.strip()
+        if not new_name:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, detail="이름은 비울 수 없습니다"
+            )
+        # 중복 체크 (자기 자신 제외)
+        dup = db.execute(
+            select(M.MirrorClient)
+            .where(
+                M.MirrorClient.archived.is_(False),
+                M.MirrorClient.page_id != page_id,
+                func.lower(func.trim(M.MirrorClient.name)) == new_name.lower(),
+            )
+            .limit(1)
+        ).scalar_one_or_none()
+        if dup is not None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"동일한 이름의 발주처가 이미 존재합니다: {dup.name}",
+            )
+        props["이름"] = {"title": [{"text": {"content": new_name}}]}
+    if body.category is not None:
+        cat = body.category.strip()
+        # 빈 문자열은 select clear 신호
+        props["구분"] = {"select": None} if not cat else {"select": {"name": cat}}
+    if not props:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="변경할 필드가 없습니다"
+        )
+    page = await notion.update_page(page_id, properties=props)
+    get_sync().upsert_page("clients", page)
+    page_props = page.get("properties", {})
+    return Client(
+        id=page.get("id", page_id),
+        name=P.title(page_props, "이름"),
+        category=P.select_name(page_props, "구분"),
+    )
+
+
+@router.delete("/{page_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_client(
+    page_id: str,
+    _admin: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+    notion: NotionService = Depends(get_notion),
+) -> None:
+    """발주처 페이지 archive(노션 휴지통). 기존 relation은 그대로 유지된다.
+
+    삭제 전 사용처 검사: 활성 프로젝트의 발주처 또는 수금의 실지급으로
+    아직 참조 중이면 409. 회계상 흔적은 보존하기 위함.
+    """
+    used_in_project = db.execute(
+        select(M.MirrorProject.page_id)
+        .where(
+            M.MirrorProject.archived.is_(False),
+            M.MirrorProject.client_relation_ids.any(page_id),  # type: ignore[attr-defined]
+        )
+        .limit(1)
+    ).scalar_one_or_none()
+    if used_in_project:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="아직 프로젝트에서 발주처로 사용 중입니다. 먼저 프로젝트의 발주처를 변경하세요.",
+        )
+
+    await asyncio.to_thread(
+        notion._client.pages.update, page_id=page_id, archived=True
+    )
+    db.query(M.MirrorClient).filter(M.MirrorClient.page_id == page_id).update(
+        {"archived": True}, synchronize_session=False
+    )
+    db.commit()
+    return None

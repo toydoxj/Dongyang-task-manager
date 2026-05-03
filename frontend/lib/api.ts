@@ -288,6 +288,31 @@ export async function createClient(
   return jsonOrThrow<Client>(res);
 }
 
+export interface ClientUpdateRequest {
+  name?: string | null;
+  category?: string | null;
+}
+
+export async function updateClient(
+  pageId: string,
+  body: ClientUpdateRequest,
+): Promise<Client> {
+  const res = await authFetch(`/api/clients/${pageId}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  return jsonOrThrow<Client>(res);
+}
+
+export async function deleteClient(pageId: string): Promise<void> {
+  const res = await authFetch(`/api/clients/${pageId}`, { method: "DELETE" });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(text || `삭제 실패 (${res.status})`);
+  }
+}
+
 // ── 마스터 프로젝트 ──
 
 export async function getMasterProject(pageId: string): Promise<MasterProject> {
