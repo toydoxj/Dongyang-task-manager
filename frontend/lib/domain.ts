@@ -320,6 +320,22 @@ export interface TaskUpdateRequest {
   project_ids?: string[];
 }
 
+export interface ContractItem {
+  id: string;
+  project_id: string;
+  client_id: string;
+  client_name?: string;
+  label: string;
+  amount: number;
+  vat: number;
+  sort_order: number;
+}
+
+export interface ContractItemListResponse {
+  items: ContractItem[];
+  count: number;
+}
+
 export interface CashflowEntry {
   id: string;
   type: "income" | "expense";

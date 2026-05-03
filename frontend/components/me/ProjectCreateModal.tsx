@@ -4,9 +4,16 @@ import { useState } from "react";
 import { useSWRConfig } from "swr";
 
 import { useAuth } from "@/components/AuthGuard";
+import ContractItemsEditor, {
+  type DraftContractItem,
+} from "@/components/project/ContractItemsEditor";
 import Modal from "@/components/ui/Modal";
 import MultiSelectChips from "@/components/ui/MultiSelectChips";
-import { createClient, createProject } from "@/lib/api";
+import {
+  createClient,
+  createContractItem,
+  createProject,
+} from "@/lib/api";
 import type { ClientListResponse } from "@/lib/domain";
 import { keys, useClients, useProjectOptions } from "@/lib/hooks";
 
@@ -40,6 +47,7 @@ export default function ProjectCreateModal({
   const [contractEnd, setContractEnd] = useState("");
   const [amount, setAmount] = useState("");
   const [vat, setVat] = useState("");
+  const [contractItems, setContractItems] = useState<DraftContractItem[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [clientAdding, setClientAdding] = useState(false);
@@ -96,7 +104,19 @@ export default function ProjectCreateModal({
     setContractEnd("");
     setAmount("");
     setVat("");
+    setContractItems([]);
     setError(null);
+  };
+
+  const syncTotalsFromItems = (): void => {
+    let amt = 0;
+    let v = 0;
+    for (const it of contractItems) {
+      amt += it.amount || 0;
+      v += it.vat || 0;
+    }
+    setAmount(String(amt));
+    setVat(String(v));
   };
 
   const submit = async (): Promise<void> => {
@@ -108,7 +128,7 @@ export default function ProjectCreateModal({
     setError(null);
     try {
       const trimmedClient = client.trim();
-      await createProject(
+      const created = await createProject(
         {
           name: name.trim(),
           code: code.trim() || undefined,
@@ -128,6 +148,18 @@ export default function ProjectCreateModal({
         },
         { forUser },
       );
+      // 신규 프로젝트의 분담 항목 일괄 등록 (page id 확보 후)
+      for (const it of contractItems) {
+        if (!it.client_id) continue;
+        await createContractItem({
+          project_id: created.id,
+          client_id: it.client_id,
+          label: it.label,
+          amount: it.amount,
+          vat: it.vat,
+          sort_order: it.sort_order,
+        });
+      }
       reset();
       onCreated();
       onClose();
@@ -282,6 +314,15 @@ export default function ProjectCreateModal({
             />
           </Field>
         </div>
+
+        <ContractItemsEditor
+          value={contractItems}
+          onChange={setContractItems}
+          clientData={clientData}
+          contractAmount={amount === "" ? undefined : Number(amount)}
+          vat={vat === "" ? undefined : Number(vat)}
+          onSyncTotalsFromItems={syncTotalsFromItems}
+        />
 
         {error && (
           <p className="rounded-md border border-red-500/40 bg-red-500/5 p-2 text-xs text-red-400">

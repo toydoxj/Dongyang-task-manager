@@ -3,12 +3,27 @@
 import { useState } from "react";
 import { useSWRConfig } from "swr";
 
+import ContractItemsEditor, {
+  type DraftContractItem,
+  toDraft,
+} from "@/components/project/ContractItemsEditor";
 import Modal from "@/components/ui/Modal";
 import MultiSelectChips from "@/components/ui/MultiSelectChips";
-import { createClient, updateProject } from "@/lib/api";
+import {
+  createClient,
+  createContractItem,
+  deleteContractItem,
+  updateContractItem,
+  updateProject,
+} from "@/lib/api";
 import type { ClientListResponse, Project } from "@/lib/domain";
 import { PROJECT_STAGES } from "@/lib/domain";
-import { keys, useClients, useProjectOptions } from "@/lib/hooks";
+import {
+  keys,
+  useClients,
+  useContractItems,
+  useProjectOptions,
+} from "@/lib/hooks";
 
 interface Props {
   project: Project | null;
@@ -53,7 +68,16 @@ function Form({
   const { mutate } = useSWRConfig();
   const { data: clientData } = useClients(true);
   const { data: optionsData } = useProjectOptions(true);
+  const { data: contractItemsData } = useContractItems(project.id);
   const workTypeOptions = optionsData?.work_types ?? [];
+
+  // 분담 항목 — 서버 응답이 들어오면 초기 state로 채움 (lazy 초기화는 SWR이 처리)
+  const [contractItems, setContractItems] = useState<DraftContractItem[]>([]);
+  const [contractItemsInitialized, setContractItemsInitialized] = useState(false);
+  if (contractItemsData && !contractItemsInitialized) {
+    setContractItems(contractItemsData.items.map(toDraft));
+    setContractItemsInitialized(true);
+  }
   // 정규화 매칭 — 백엔드의 중복 판정과 동일하게 trim + lower 비교
   const norm = (s: string): string => s.trim().toLowerCase();
   const clientMatch =
@@ -89,6 +113,17 @@ function Form({
     } finally {
       setClientAdding(false);
     }
+  };
+
+  const syncTotalsFromItems = (): void => {
+    let amt = 0;
+    let v = 0;
+    for (const it of contractItems) {
+      amt += it.amount || 0;
+      v += it.vat || 0;
+    }
+    setAmount(String(amt));
+    setVat(String(v));
   };
 
   const submit = async (): Promise<void> => {
@@ -139,6 +174,46 @@ function Form({
               ? undefined
               : Number(vat),
       });
+
+      // 분담 항목 diff 처리 — 서버 원본과 비교해 create/update/delete
+      if (contractItemsInitialized) {
+        const original = contractItemsData?.items ?? [];
+        const currentIds = new Set(
+          contractItems.filter((c) => c.id).map((c) => c.id),
+        );
+        // delete: 원본에 있는데 current에 없는 것
+        const toDelete = original.filter((o) => !currentIds.has(o.id));
+        for (const o of toDelete) {
+          // client_id가 비어있으면 미매칭이므로 발주처 등록 검증은 생략
+          await deleteContractItem(o.id);
+        }
+        for (const it of contractItems) {
+          if (!it.client_id) continue; // 미매칭 발주처는 skip (사용자에게 경고는 UI에서)
+          if (!it.id) {
+            await createContractItem({
+              project_id: project.id,
+              client_id: it.client_id,
+              label: it.label,
+              amount: it.amount,
+              vat: it.vat,
+              sort_order: it.sort_order,
+            });
+            continue;
+          }
+          if (it._origin === "modified") {
+            await updateContractItem(it.id, {
+              client_id: it.client_id,
+              label: it.label,
+              amount: it.amount,
+              vat: it.vat,
+              sort_order: it.sort_order,
+            });
+          }
+        }
+        // SWR 캐시 무효화 (수금 페이지가 contractItems를 사용하므로)
+        await mutate(keys.contractItems(project.id));
+      }
+
       onSaved();
       onClose();
     } catch (err) {
@@ -298,6 +373,15 @@ function Form({
             />
           </Field>
         </div>
+
+        <ContractItemsEditor
+          value={contractItems}
+          onChange={setContractItems}
+          clientData={clientData}
+          contractAmount={amount === "" ? undefined : Number(amount)}
+          vat={vat === "" ? undefined : Number(vat)}
+          onSyncTotalsFromItems={syncTotalsFromItems}
+        />
 
         {error && (
           <p className="rounded-md border border-red-500/40 bg-red-500/5 p-2 text-xs text-red-400">

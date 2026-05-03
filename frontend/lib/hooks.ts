@@ -9,6 +9,7 @@ import {
   getProject,
   getProjectOptions,
   listClients,
+  listContractItems,
   listMasterImages,
   listProjects,
   listTasks,
@@ -16,6 +17,7 @@ import {
 import type {
   CashflowResponse,
   ClientListResponse,
+  ContractItemListResponse,
   MasterImageList,
   MasterOptions,
   MasterProject,
@@ -35,6 +37,8 @@ export const keys = {
   cashflow: (filters?: Parameters<typeof getCashflow>[0]) =>
     ["cashflow", filters ?? null] as const,
   clients: () => ["clients"] as const,
+  contractItems: (projectId?: string) =>
+    ["contract-items", projectId ?? null] as const,
 };
 
 export function useProjects(
@@ -75,6 +79,15 @@ export function useClients(
   enabled: boolean = true,
 ): SWRResponse<ClientListResponse> {
   return useSWR(enabled ? keys.clients() : null, () => listClients());
+}
+
+export function useContractItems(
+  projectId: string | null,
+): SWRResponse<ContractItemListResponse> {
+  return useSWR(
+    projectId ? keys.contractItems(projectId) : null,
+    () => listContractItems(projectId!),
+  );
 }
 
 export function useMasterProject(
