@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 
 import Modal from "@/components/ui/Modal";
 import {
@@ -9,7 +9,7 @@ import {
   updateIncome,
 } from "@/lib/api";
 import type { CashflowEntry, Project } from "@/lib/domain";
-import { useContractItems } from "@/lib/hooks";
+import { useCashflow, useContractItems } from "@/lib/hooks";
 
 interface Props {
   /** null이면 신규 등록, entry 있으면 편집 */
@@ -43,6 +43,17 @@ export default function IncomeFormModal({
 function todayYMD(): string {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+/** 한국식 단위 축약 (억/천만/백만/만). 0이면 '0'. */
+function fmtKor(v: number): string {
+  if (!v) return "0";
+  const abs = Math.abs(v);
+  if (abs >= 1e8) return `${(v / 1e8).toFixed(1)}억`;
+  if (abs >= 1e7) return `${(v / 1e7).toFixed(1)}천만`;
+  if (abs >= 1e6) return `${Math.round(v / 1e6)}백만`;
+  if (abs >= 1e4) return `${Math.round(v / 1e4)}만`;
+  return v.toLocaleString("ko-KR");
 }
 
 function Form({
@@ -83,6 +94,25 @@ function Form({
 
   // 선택한 프로젝트의 contract items 후보. 프로젝트 미선택 시 fetch 안 함.
   const { data: contractItemsData } = useContractItems(selectedProjectId);
+  // dropdown에 분담 항목별 기성금(누적 수금) 표시 — 전체 income 호출 후 client side 합산
+  const { data: incomeData } = useCashflow(
+    { flow: "income" },
+    !!selectedProjectId,
+  );
+
+  // 분담 항목별 누적 수금합 (편집 중인 row는 제외해야 정확한 '이 row 외 기성금')
+  const paidByItem = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const e of incomeData?.items ?? []) {
+      if (!e.contract_item_id) continue;
+      if (entry && e.id === entry.id) continue; // 자기 자신 제외
+      map.set(
+        e.contract_item_id,
+        (map.get(e.contract_item_id) ?? 0) + e.amount,
+      );
+    }
+    return map;
+  }, [incomeData, entry]);
 
   const projectMatches = projectQuery.trim()
     ? projects
@@ -238,15 +268,13 @@ function Form({
             >
               {items.length > 1 && <option value="">선택…</option>}
               {items.map((it) => {
-                const total =
-                  Math.round((it.amount + it.vat) / 1e6) * 1e6;
-                const totalStr =
-                  total >= 1e8
-                    ? `${(total / 1e8).toFixed(1)}억`
-                    : `${(total / 1e6).toFixed(0)}백만`;
+                const total = it.amount + it.vat;
+                const paid = paidByItem.get(it.id) ?? 0;
+                const ratio = total > 0 ? (paid / total) * 100 : 0;
                 return (
                   <option key={it.id} value={it.id}>
-                    {it.label} · {it.client_name || "(미매칭)"} · {totalStr}
+                    {it.label} · {it.client_name || "(미매칭)"} · 총{" "}
+                    {fmtKor(total)} / 기성 {fmtKor(paid)} ({ratio.toFixed(0)}%)
                   </option>
                 );
               })}
