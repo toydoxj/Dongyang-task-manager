@@ -32,6 +32,7 @@ const NAV: NavItem[] = [
   { href: "/suggestions", label: "건의사항" },
   { href: "/seal-requests", label: "날인요청" },
   { href: "/utilities", label: "유틸 런처" },
+  { href: "/admin/incomes", label: "수금 관리", roles: ["admin"] },
   { href: "/admin/employees", label: "직원 관리", roles: ["admin"] },
   { href: "/admin/users", label: "사용자 관리", roles: ["admin"] },
   { href: "/admin/drive", label: "Drive 연결", roles: ["admin"] },

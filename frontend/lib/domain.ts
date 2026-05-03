@@ -328,6 +328,10 @@ export interface CashflowEntry {
   category: string;
   project_ids: string[];
   note: string;
+  // income 전용 — 노션 '실지급' relation (발주처 DB와 동일)
+  round_no?: number | null;
+  payer_relation_ids?: string[];
+  payer_names?: string[];
 }
 
 export interface CashflowResponse {

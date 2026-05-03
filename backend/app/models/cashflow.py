@@ -18,6 +18,11 @@ class CashflowEntry(BaseModel):
     category: str = ""        # 수금: 회차 표시, 지출: 구분
     project_ids: list[str] = []
     note: str = ""
+    # 수금(income)에만 사용 — 노션 "실지급" relation. 발주처 DB와 동일 DB.
+    # 등록되지 않은 경우 page_id 없이 비어 있을 수 있음.
+    round_no: int | None = None
+    payer_relation_ids: list[str] = []
+    payer_names: list[str] = []  # 라우터에서 발주처 mirror로 해결
 
     @classmethod
     def from_income_page(cls, page: dict[str, Any]) -> "CashflowEntry":
@@ -29,7 +34,9 @@ class CashflowEntry(BaseModel):
             date=P.date_range(props, "수금일")[0],
             amount=P.number(props, "수금액(원)") or 0.0,
             category=f"{int(round_no)}회차" if round_no else "",
+            round_no=int(round_no) if round_no else None,
             project_ids=P.relation_ids(props, "(주)동양구조 업무관리 - 프로젝트"),
+            payer_relation_ids=P.relation_ids(props, "실지급"),
             note=P.rich_text(props, "비고"),
         )
 

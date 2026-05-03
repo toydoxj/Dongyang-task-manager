@@ -3,6 +3,7 @@
 import { authFetch } from "./auth";
 import { API_BASE } from "./types";
 import type {
+  CashflowEntry,
   CashflowResponse,
   Client,
   ClientListResponse,
@@ -209,6 +210,59 @@ export async function getCashflow(filters: {
 } = {}): Promise<CashflowResponse> {
   const res = await authFetch(`/api/cashflow${qs(filters)}`);
   return jsonOrThrow<CashflowResponse>(res);
+}
+
+// ── 수금 CRUD (admin) ──
+
+export interface IncomeCreateRequest {
+  date: string;
+  amount: number;
+  round_no?: number | null;
+  project_ids?: string[];
+  payer_relation_ids?: string[];
+  note?: string;
+}
+
+export interface IncomeUpdateRequest {
+  date?: string | null;
+  amount?: number | null;
+  round_no?: number | null;
+  project_ids?: string[] | null;
+  payer_relation_ids?: string[] | null;
+  note?: string | null;
+}
+
+export async function createIncome(
+  body: IncomeCreateRequest,
+): Promise<CashflowEntry> {
+  const res = await authFetch(`/api/cashflow/incomes`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  return jsonOrThrow<CashflowEntry>(res);
+}
+
+export async function updateIncome(
+  pageId: string,
+  body: IncomeUpdateRequest,
+): Promise<CashflowEntry> {
+  const res = await authFetch(`/api/cashflow/incomes/${pageId}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  return jsonOrThrow<CashflowEntry>(res);
+}
+
+export async function deleteIncome(pageId: string): Promise<void> {
+  const res = await authFetch(`/api/cashflow/incomes/${pageId}`, {
+    method: "DELETE",
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(text || `삭제 실패 (${res.status})`);
+  }
 }
 
 // ── 협력업체(발주처) ──
