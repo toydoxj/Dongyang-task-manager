@@ -23,7 +23,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           />
         )}
 
-        <div className="flex min-h-screen w-full flex-col lg:ml-64">
+        <div className="flex min-h-screen w-full min-w-0 flex-col lg:ml-64">
           {/* 모바일 상단 바 (lg 이상에선 숨김) */}
           <header className="sticky top-0 z-10 flex items-center gap-3 border-b border-zinc-200 bg-white px-3 py-2 dark:border-zinc-800 dark:bg-zinc-950 lg:hidden">
             <button
@@ -50,7 +50,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             <span className="text-sm font-semibold">업무관리</span>
           </header>
 
-          <main className="flex-1 p-4 text-zinc-900 dark:text-zinc-100 sm:p-6">
+          <main className="mx-auto w-full min-w-0 max-w-[1600px] flex-1 p-4 text-zinc-900 dark:text-zinc-100 sm:p-6">
             {children}
           </main>
         </div>

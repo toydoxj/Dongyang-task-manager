@@ -153,7 +153,7 @@ export default function RevenueCollectionChart({
         <ResponsiveContainer width="100%" height="100%">
           <ComposedChart
             data={buckets}
-            margin={{ top: 10, right: 10, left: 0, bottom: 0 }}
+            margin={{ top: 10, right: 24, left: 0, bottom: 0 }}
           >
             <CartesianGrid strokeDasharray="3 3" stroke="rgba(120,120,120,0.15)" />
             <XAxis

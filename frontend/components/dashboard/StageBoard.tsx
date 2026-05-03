@@ -166,7 +166,7 @@ export default function StageBoard({ projects }: Props) {
   const tabs = ["전체", ...TEAMS];
 
   return (
-    <div className="space-y-2">
+    <div className="min-w-0 space-y-2">
       {/* 팀별 필터 탭 */}
       <div className="flex flex-wrap gap-1 border-b border-zinc-200 dark:border-zinc-800">
         {tabs.map((t) => {
