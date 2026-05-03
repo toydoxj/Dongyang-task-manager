@@ -58,6 +58,11 @@ interface Props {
   vat?: number;
   /** "분담 합계로 contract_amount 채우기" 콜백 — 부모가 처리. */
   onSyncTotalsFromItems?: () => void;
+  /**
+   * 미매칭 발주처 이름을 발주처 DB에 신규 등록 후 새 page_id를 반환.
+   * 부모가 createClient + SWR 캐시 invalidate를 처리한다.
+   */
+  onAddClientToDb?: (name: string) => Promise<string>;
 }
 
 export default function ContractItemsEditor({
@@ -67,6 +72,7 @@ export default function ContractItemsEditor({
   contractAmount,
   vat,
   onSyncTotalsFromItems,
+  onAddClientToDb,
 }: Props) {
   const totals = useMemo(() => {
     let amount = 0;
@@ -208,12 +214,32 @@ export default function ContractItemsEditor({
               />
               <div className="col-span-2 flex items-center gap-1 justify-end">
                 {it.client_name.trim() && !it.client_id && (
-                  <span
-                    className="text-[9px] text-amber-500"
-                    title="발주처 DB 미매칭 — 발주처 관리에서 먼저 등록하세요"
-                  >
-                    ⚠ 미매칭
-                  </span>
+                  onAddClientToDb ? (
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        try {
+                          const newId = await onAddClientToDb(
+                            it.client_name.trim(),
+                          );
+                          update(idx, { client_id: newId });
+                        } catch {
+                          /* 부모가 에러 표시 처리 */
+                        }
+                      }}
+                      className="rounded border border-amber-500/50 px-1.5 py-0.5 text-[9px] text-amber-500 hover:bg-amber-500/10"
+                      title="발주처 DB에 신규 등록"
+                    >
+                      + DB추가
+                    </button>
+                  ) : (
+                    <span
+                      className="text-[9px] text-amber-500"
+                      title="발주처 DB 미매칭 — 발주처 관리에서 먼저 등록하세요"
+                    >
+                      ⚠ 미매칭
+                    </span>
+                  )
                 )}
                 <button
                   type="button"

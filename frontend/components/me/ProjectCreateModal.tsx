@@ -108,6 +108,23 @@ export default function ProjectCreateModal({
     setError(null);
   };
 
+  const addContractClient = async (clientName: string): Promise<string> => {
+    const created = await createClient({ name: clientName });
+    await mutate(
+      keys.clients(),
+      (current: ClientListResponse | undefined) => {
+        if (!current) return current;
+        if (current.items.some((c) => c.id === created.id)) return current;
+        return {
+          items: [...current.items, created],
+          count: current.count + 1,
+        };
+      },
+      { revalidate: false },
+    );
+    return created.id;
+  };
+
   const syncTotalsFromItems = (): void => {
     let amt = 0;
     let v = 0;
@@ -322,6 +339,7 @@ export default function ProjectCreateModal({
           contractAmount={amount === "" ? undefined : Number(amount)}
           vat={vat === "" ? undefined : Number(vat)}
           onSyncTotalsFromItems={syncTotalsFromItems}
+          onAddClientToDb={addContractClient}
         />
 
         {error && (

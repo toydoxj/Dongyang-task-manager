@@ -115,6 +115,23 @@ function Form({
     }
   };
 
+  const addContractClient = async (clientName: string): Promise<string> => {
+    const created = await createClient({ name: clientName });
+    await mutate(
+      keys.clients(),
+      (current: ClientListResponse | undefined) => {
+        if (!current) return current;
+        if (current.items.some((c) => c.id === created.id)) return current;
+        return {
+          items: [...current.items, created],
+          count: current.count + 1,
+        };
+      },
+      { revalidate: false },
+    );
+    return created.id;
+  };
+
   const syncTotalsFromItems = (): void => {
     let amt = 0;
     let v = 0;
@@ -138,17 +155,17 @@ function Form({
       const wasClient =
         project.client_names[0] ?? project.client_text ?? "";
       const clientChanged = trimmedClient !== wasClient;
-      await updateProject(project.id, {
+      // diff 기반 patch 빌드 — 빈 객체면 updateProject 호출 자체 skip (분담 항목만 변경한 경우)
+      type Patch = Parameters<typeof updateProject>[1];
+      const patch: Patch = {
         name: name === project.name ? undefined : name.trim(),
         code: code === project.code ? undefined : code.trim(),
-        // 협력업체 매칭 → relation, 아니면 text. 변경된 경우만 전송
         ...(clientChanged
           ? clientMatch
             ? { client_relation_ids: [clientMatch.id], client_text: "" }
             : { client_text: trimmedClient, client_relation_ids: [] }
           : {}),
         stage: stage === project.stage ? undefined : stage,
-        // 담당팀은 폼에서 제거 — 노션 자동 집계에 위임
         assignees:
           arraysEqual(assignees, project.assignees) ? undefined : assignees,
         work_types:
@@ -173,7 +190,13 @@ function Form({
             : vat === ""
               ? undefined
               : Number(vat),
-      });
+      };
+      const hasProjectChange = Object.values(patch).some(
+        (v) => v !== undefined,
+      );
+      if (hasProjectChange) {
+        await updateProject(project.id, patch);
+      }
 
       // 분담 항목 diff 처리 — 서버 원본과 비교해 create/update/delete
       if (contractItemsInitialized) {
@@ -381,6 +404,7 @@ function Form({
           contractAmount={amount === "" ? undefined : Number(amount)}
           vat={vat === "" ? undefined : Number(vat)}
           onSyncTotalsFromItems={syncTotalsFromItems}
+          onAddClientToDb={addContractClient}
         />
 
         {error && (
