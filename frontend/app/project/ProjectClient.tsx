@@ -104,7 +104,7 @@ export default function ProjectClient({ id }: { id: string }) {
       <div className="space-y-4">
         <BackButton />
         <LoadingState
-          message="프로젝트 상세 불러오는 중 (프로젝트·업무·현금흐름)"
+          message="프로젝트 상세 불러오는 중"
           height="h-64"
         />
       </div>
