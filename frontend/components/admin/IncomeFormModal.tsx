@@ -271,10 +271,11 @@ function Form({
                 const total = it.amount + it.vat;
                 const paid = paidByItem.get(it.id) ?? 0;
                 const ratio = total > 0 ? (paid / total) * 100 : 0;
+                const head = `${it.client_name || "(미매칭)"}(${it.label})`;
                 return (
                   <option key={it.id} value={it.id}>
-                    {it.label} · {it.client_name || "(미매칭)"} · 총{" "}
-                    {fmtKor(total)} / 기성 {fmtKor(paid)} ({ratio.toFixed(0)}%)
+                    {head} · 총 {fmtKor(total)} / 기성 {fmtKor(paid)} (
+                    {ratio.toFixed(0)}%)
                   </option>
                 );
               })}

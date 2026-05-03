@@ -106,9 +106,10 @@ export default function IncomesAdminPage() {
       if (item) {
         total = (item.amount ?? 0) + (item.vat ?? 0);
         clientName = item.client_name ?? "";
-        label = item.label;
+        // 분담 모드 표시 형식: 업체명(라벨)
+        label = `${item.client_name || "(미매칭)"}(${item.label})`;
       } else {
-        // legacy — 프로젝트 단일 모드. 그러나 그 프로젝트가 분담 모드라면 분모 계산이
+        // legacy — 프로젝트 단일 모드. 그 프로젝트가 분담 모드라면 분모 계산이
         // 부정확해질 수 있으므로 분담 모드인지 별도 표시.
         const projItems = pid ? itemsByProject.get(pid) ?? [] : [];
         const projHasItems = projItems.length > 0;
