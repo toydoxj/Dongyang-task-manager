@@ -16,8 +16,7 @@ interface IncomeRow {
   project: Project | null;
   projectName: string;
   projectCode: string;
-  clientName: string; // 프로젝트의 발주처
-  payerName: string; // 이번 row의 실지급
+  clientName: string; // 분담 모드: 항목의 client, legacy: 프로젝트 발주처
   contractItemLabel: string; // 분담 항목 라벨 ("본 계약" / "변경설계" / "" = legacy)
   totalAmount: number; // 분담 모드면 항목 (금액+VAT), legacy면 프로젝트 (용역비+VAT)
   cumulativeAmount: number; // 해당 row까지 누적 수금 (같은 키 그룹 안에서)
@@ -41,7 +40,7 @@ export default function IncomesAdminPage() {
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [projectQuery, setProjectQuery] = useState("");
-  const [payerQuery, setPayerQuery] = useState("");
+  const [clientQuery, setClientQuery] = useState("");
   const [editTarget, setEditTarget] = useState<CashflowEntry | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
 
@@ -127,7 +126,6 @@ export default function IncomesAdminPage() {
         projectName: project?.name ?? "(미연결)",
         projectCode: project?.code ?? "",
         clientName,
-        payerName: e.payer_names?.[0] ?? "",
         contractItemLabel: label,
         totalAmount: total,
         cumulativeAmount: cum,
@@ -149,9 +147,9 @@ export default function IncomesAdminPage() {
       )
         return false;
     }
-    if (payerQuery) {
-      const q = payerQuery.toLowerCase();
-      if (!r.payerName.toLowerCase().includes(q)) return false;
+    if (clientQuery) {
+      const q = clientQuery.toLowerCase();
+      if (!r.clientName.toLowerCase().includes(q)) return false;
     }
     return true;
   });
@@ -177,7 +175,6 @@ export default function IncomesAdminPage() {
       "Sub_CODE",
       "프로젝트명",
       "발주처",
-      "실지급",
       "분담항목",
       "지급액",
       "미수금",
@@ -192,7 +189,6 @@ export default function IncomesAdminPage() {
         r.projectCode,
         r.projectName,
         r.clientName,
-        r.payerName,
         r.contractItemLabel,
         r.entry.amount.toString(),
         r.outstanding.toString(),
@@ -266,11 +262,11 @@ export default function IncomesAdminPage() {
               placeholder="이름 / Sub CODE"
             />
           </FilterField>
-          <FilterField label="실지급">
+          <FilterField label="발주처">
             <input
               type="text"
-              value={payerQuery}
-              onChange={(e) => setPayerQuery(e.target.value)}
+              value={clientQuery}
+              onChange={(e) => setClientQuery(e.target.value)}
               className={inputCls}
               placeholder="발주처명"
             />
@@ -296,7 +292,6 @@ export default function IncomesAdminPage() {
                   <Th className="w-16 text-right">회차</Th>
                   <Th>프로젝트</Th>
                   <Th>발주처</Th>
-                  <Th>실지급</Th>
                   <Th className="w-24">분담항목</Th>
                   <Th className="text-right">지급액</Th>
                   <Th className="text-right" title="해당 row 시점 미수금">
@@ -310,7 +305,7 @@ export default function IncomesAdminPage() {
                 {visible.length === 0 ? (
                   <tr>
                     <td
-                      colSpan={10}
+                      colSpan={9}
                       className="px-4 py-12 text-center text-xs text-zinc-400"
                     >
                       해당 데이터가 없습니다
@@ -339,11 +334,8 @@ export default function IncomesAdminPage() {
                           </span>
                         </div>
                       </Td>
-                      <Td className="truncate text-zinc-500" title={r.clientName}>
+                      <Td className="truncate" title={r.clientName}>
                         {r.clientName || "—"}
-                      </Td>
-                      <Td className="truncate" title={r.payerName}>
-                        {r.payerName || "—"}
                       </Td>
                       <Td
                         className={`truncate text-[11px] ${r.contractItemLabel === "(미매칭 분담)" ? "text-amber-500" : "text-zinc-500"}`}

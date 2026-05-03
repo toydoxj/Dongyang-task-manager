@@ -1,21 +1,15 @@
 "use client";
 
 import { useState } from "react";
-import { useSWRConfig } from "swr";
 
 import Modal from "@/components/ui/Modal";
 import {
-  createClient,
   createIncome,
   deleteIncome,
   updateIncome,
 } from "@/lib/api";
-import type {
-  CashflowEntry,
-  ClientListResponse,
-  Project,
-} from "@/lib/domain";
-import { keys, useClients, useContractItems } from "@/lib/hooks";
+import type { CashflowEntry, Project } from "@/lib/domain";
+import { useContractItems } from "@/lib/hooks";
 
 interface Props {
   /** null이면 신규 등록, entry 있으면 편집 */
@@ -80,26 +74,15 @@ function Form({
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(
     initialProject?.id ?? null,
   );
-  const [payerQuery, setPayerQuery] = useState(entry?.payer_names?.[0] ?? "");
   const [contractItemId, setContractItemId] = useState<string | null>(
     entry?.contract_item_id ?? null,
   );
   const [note, setNote] = useState(entry?.note ?? "");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [clientAdding, setClientAdding] = useState(false);
 
-  const { data: clientData } = useClients(true);
   // 선택한 프로젝트의 contract items 후보. 프로젝트 미선택 시 fetch 안 함.
   const { data: contractItemsData } = useContractItems(selectedProjectId);
-  const { mutate } = useSWRConfig();
-  const norm = (s: string): string => s.trim().toLowerCase();
-  const payerMatch =
-    payerQuery.trim() === ""
-      ? undefined
-      : clientData?.items.find((c) => norm(c.name) === norm(payerQuery));
-  const showAddPayer =
-    !payerMatch && payerQuery.trim() !== "" && !clientAdding;
 
   const projectMatches = projectQuery.trim()
     ? projects
@@ -109,33 +92,6 @@ function Form({
         )
         .slice(0, 8)
     : [];
-
-  const addPayerToDb = async (): Promise<void> => {
-    const trimmed = payerQuery.trim();
-    if (!trimmed) return;
-    setClientAdding(true);
-    setError(null);
-    try {
-      const created = await createClient({ name: trimmed });
-      await mutate(
-        keys.clients(),
-        (current: ClientListResponse | undefined) => {
-          if (!current) return current;
-          if (current.items.some((c) => c.id === created.id)) return current;
-          return {
-            items: [...current.items, created],
-            count: current.count + 1,
-          };
-        },
-        { revalidate: false },
-      );
-      setPayerQuery(created.name);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "발주처 등록 실패");
-    } finally {
-      setClientAdding(false);
-    }
-  };
 
   // contract items가 1개면 사용자가 명시 변경 안 했을 때 자동 매칭, 0개면 legacy
   const items = contractItemsData?.items ?? [];
@@ -158,14 +114,12 @@ function Form({
     setBusy(true);
     setError(null);
     try {
-      const payerIds = payerMatch ? [payerMatch.id] : [];
       const projectIds = selectedProjectId ? [selectedProjectId] : [];
       const body = {
         date,
         amount: Number(amount),
         round_no: roundNo ? Number(roundNo) : null,
         project_ids: projectIds,
-        payer_relation_ids: payerIds,
         contract_item_id: effectiveContractItemId,
         note,
       };
@@ -317,49 +271,6 @@ function Form({
             placeholder="₩ 0"
             className={inputCls}
           />
-        </Field>
-
-        <Field label="실지급 (발주처)">
-          <input
-            type="text"
-            list="dy-payer-clients"
-            value={payerQuery}
-            onChange={(e) => setPayerQuery(e.target.value)}
-            className={inputCls}
-            placeholder={
-              clientData
-                ? "발주처 자동완성 (미등록 시 추가 가능)"
-                : "협력업체 목록 불러오는 중..."
-            }
-          />
-          <datalist id="dy-payer-clients">
-            {clientData?.items.map((c) => (
-              <option key={c.id} value={c.name}>
-                {c.category}
-              </option>
-            ))}
-          </datalist>
-          {showAddPayer && (
-            <div className="mt-1 flex items-center gap-2">
-              <p className="text-[10px] text-zinc-500">
-                미등록 발주처 — 추가하지 않으면 빈 relation으로 저장됩니다.
-              </p>
-              <button
-                type="button"
-                onClick={addPayerToDb}
-                disabled={clientAdding}
-                className="rounded-md border border-zinc-300 px-2 py-0.5 text-[10px] hover:bg-zinc-50 disabled:opacity-50 dark:border-zinc-700 dark:hover:bg-zinc-800"
-              >
-                {clientAdding ? "추가 중..." : "발주처 DB에 추가"}
-              </button>
-            </div>
-          )}
-          {payerMatch && payerQuery.trim() && (
-            <p className="mt-1 text-[10px] text-emerald-500">
-              ✓ 매칭: {payerMatch.name}
-              {payerMatch.category ? ` (${payerMatch.category})` : ""}
-            </p>
-          )}
         </Field>
 
         <Field label="비고">

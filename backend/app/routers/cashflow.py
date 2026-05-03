@@ -147,10 +147,7 @@ def _income_create_props(req: IncomeCreateRequest) -> dict[str, Any]:
         props["(주)동양구조 업무관리 - 프로젝트"] = {
             "relation": [{"id": pid} for pid in req.project_ids]
         }
-    if req.payer_relation_ids:
-        props["실지급"] = {
-            "relation": [{"id": rid} for rid in req.payer_relation_ids]
-        }
+    # 발주처는 contract_item으로 결정 — 별도 '실지급' 컬럼 매핑 없음
     if req.contract_item_id:
         props["계약항목"] = {"relation": [{"id": req.contract_item_id}]}
     if req.note:
@@ -173,10 +170,6 @@ def _income_update_props(req: IncomeUpdateRequest) -> dict[str, Any]:
     if req.project_ids is not None:
         props["(주)동양구조 업무관리 - 프로젝트"] = {
             "relation": [{"id": pid} for pid in req.project_ids]
-        }
-    if req.payer_relation_ids is not None:
-        props["실지급"] = {
-            "relation": [{"id": rid} for rid in req.payer_relation_ids]
         }
     if req.contract_item_id is not None:
         props["계약항목"] = (
