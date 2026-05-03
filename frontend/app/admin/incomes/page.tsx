@@ -14,8 +14,11 @@ interface IncomeRow {
   project: Project | null;
   projectName: string;
   projectCode: string;
-  payerName: string;
-  cumulativeRate: number; // 0~1, 해당 row까지 누적 수금률
+  clientName: string; // 프로젝트의 발주처
+  payerName: string; // 이번 row의 실지급
+  totalAmount: number; // 계약 총액 (용역비 + VAT)
+  cumulativeAmount: number; // 해당 row까지 누적 수금
+  outstanding: number; // totalAmount - cumulativeAmount (해당 row 시점 미수금)
 }
 
 export default function IncomesAdminPage() {
@@ -47,29 +50,32 @@ export default function IncomesAdminPage() {
       .slice()
       .sort((a, b) => (a.date ?? "").localeCompare(b.date ?? ""));
     const cumByProject = new Map<string, number>();
-    const rateById = new Map<string, number>();
+    const cumById = new Map<string, number>();
     for (const e of sorted) {
       const pid = e.project_ids[0] ?? "";
       const prev = cumByProject.get(pid) ?? 0;
       const next = prev + e.amount;
       cumByProject.set(pid, next);
-      const project = pid ? projectMap.get(pid) : undefined;
-      const denom = project
-        ? (project.contract_amount ?? 0) + (project.vat ?? 0)
-        : 0;
-      rateById.set(e.id, denom > 0 ? next / denom : 0);
+      cumById.set(e.id, next);
     }
 
     return sorted.map((e) => {
       const pid = e.project_ids[0] ?? "";
       const project = pid ? projectMap.get(pid) ?? null : null;
+      const total = project
+        ? (project.contract_amount ?? 0) + (project.vat ?? 0)
+        : 0;
+      const cum = cumById.get(e.id) ?? 0;
       return {
         entry: e,
         project,
         projectName: project?.name ?? "(미연결)",
         projectCode: project?.code ?? "",
+        clientName: project?.client_names?.[0] ?? project?.client_text ?? "",
         payerName: e.payer_names?.[0] ?? "",
-        cumulativeRate: rateById.get(e.id) ?? 0,
+        totalAmount: total,
+        cumulativeAmount: cum,
+        outstanding: total - cum,
       };
     });
   }, [cashflowData, projectMap]);
@@ -111,24 +117,28 @@ export default function IncomesAdminPage() {
   const exportCsv = (): void => {
     const header = [
       "수금일",
+      "회차",
       "Sub_CODE",
       "프로젝트명",
+      "발주처",
       "실지급",
-      "회차",
-      "금액",
-      "누적수금률(%)",
+      "지급액",
+      "미수금",
+      "총금액",
       "비고",
     ];
     const lines = [header.join(",")];
     for (const r of visible) {
       const cells = [
         r.entry.date ?? "",
+        r.entry.round_no?.toString() ?? "",
         r.projectCode,
         r.projectName,
+        r.clientName,
         r.payerName,
-        r.entry.round_no?.toString() ?? "",
         r.entry.amount.toString(),
-        (r.cumulativeRate * 100).toFixed(1),
+        r.outstanding.toString(),
+        r.totalAmount.toString(),
         (r.entry.note ?? "").replace(/[\n,]/g, " "),
       ];
       lines.push(cells.map((c) => `"${c}"`).join(","));
@@ -225,11 +235,15 @@ export default function IncomesAdminPage() {
               <thead className="border-b border-zinc-200 bg-zinc-50 text-zinc-500 dark:border-zinc-800 dark:bg-zinc-950">
                 <tr>
                   <Th className="w-24">일자</Th>
-                  <Th className="w-20 text-right">회차</Th>
+                  <Th className="w-16 text-right">회차</Th>
                   <Th>프로젝트</Th>
+                  <Th>발주처</Th>
                   <Th>실지급</Th>
-                  <Th className="text-right">금액</Th>
-                  <Th className="w-24 text-right">누적 수금률</Th>
+                  <Th className="text-right">지급액</Th>
+                  <Th className="text-right" title="해당 row 시점 미수금">
+                    미수금
+                  </Th>
+                  <Th className="text-right">총금액</Th>
                   <Th>비고</Th>
                 </tr>
               </thead>
@@ -237,7 +251,7 @@ export default function IncomesAdminPage() {
                 {visible.length === 0 ? (
                   <tr>
                     <td
-                      colSpan={7}
+                      colSpan={9}
                       className="px-4 py-12 text-center text-xs text-zinc-400"
                     >
                       해당 데이터가 없습니다
@@ -266,6 +280,9 @@ export default function IncomesAdminPage() {
                           </span>
                         </div>
                       </Td>
+                      <Td className="truncate text-zinc-500" title={r.clientName}>
+                        {r.clientName || "—"}
+                      </Td>
                       <Td className="truncate" title={r.payerName}>
                         {r.payerName || "—"}
                       </Td>
@@ -273,7 +290,13 @@ export default function IncomesAdminPage() {
                         {formatWon(r.entry.amount)}
                       </Td>
                       <Td className="text-right">
-                        <RateBadge rate={r.cumulativeRate} />
+                        <OutstandingCell
+                          outstanding={r.outstanding}
+                          total={r.totalAmount}
+                        />
+                      </Td>
+                      <Td className="text-right text-zinc-500">
+                        {r.totalAmount > 0 ? formatWon(r.totalAmount) : "—"}
                       </Td>
                       <Td
                         className="truncate text-zinc-500"
@@ -329,14 +352,17 @@ function FilterField({
 function Th({
   children,
   className,
+  title,
 }: {
   children: React.ReactNode;
   className?: string;
+  title?: string;
 }) {
   return (
     <th
       className={`px-3 py-2 text-left font-medium ${className ?? ""}`}
       scope="col"
+      title={title}
     >
       {children}
     </th>
@@ -359,11 +385,26 @@ function Td({
   );
 }
 
-function RateBadge({ rate }: { rate: number }) {
-  const pct = (rate * 100).toFixed(1);
-  let color = "text-zinc-500";
-  if (rate >= 1) color = "text-emerald-500";
-  else if (rate >= 0.5) color = "text-blue-500";
-  else if (rate > 0) color = "text-amber-500";
-  return <span className={`font-mono ${color}`}>{pct}%</span>;
+function OutstandingCell({
+  outstanding,
+  total,
+}: {
+  outstanding: number;
+  total: number;
+}) {
+  if (total <= 0) return <span className="text-zinc-400">—</span>;
+  // 부동소수 오차 흡수 (1원 미만은 0으로 간주)
+  const isPaid = outstanding <= 1;
+  const color = isPaid
+    ? "text-emerald-500"
+    : outstanding > total * 0.5
+      ? "text-amber-500"
+      : "text-zinc-700 dark:text-zinc-200";
+  const pct = total > 0 ? ((outstanding / total) * 100).toFixed(0) : "0";
+  return (
+    <span className={`font-medium ${color}`}>
+      {isPaid ? "완납" : formatWon(outstanding)}
+      {!isPaid && <span className="ml-1 text-[10px] text-zinc-400">({pct}%)</span>}
+    </span>
+  );
 }
