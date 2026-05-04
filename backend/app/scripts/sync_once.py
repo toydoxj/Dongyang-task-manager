@@ -29,6 +29,7 @@ _KIND_ENV = {
     "master": "NOTION_DB_MASTER",
     "cashflow": "NOTION_DB_CASHFLOW",
     "expense": "NOTION_DB_EXPENSE",
+    "contract_items": "NOTION_DB_CONTRACT_ITEMS",
 }
 
 
