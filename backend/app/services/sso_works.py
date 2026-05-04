@@ -55,18 +55,25 @@ def issue_state(
     next_path: str,
     *,
     drive: bool = False,
+    client: str = "task",
     extra: dict[str, Any] | None = None,
 ) -> tuple[str, str]:
     """signed state(HMAC) + nonce 발급. cookie 없이도 검증 가능.
 
-    state payload: {n: nonce, t: ts, x: next, d: 1?, ...extra}
+    state payload: {n: nonce, t: ts, x: next, d: 1?, c: client, ...extra}
     sig: HMAC-SHA256(secret, payload) → base64url
     state token: payload.sig
 
     drive=True면 callback에서 Drive 토큰 보관 흐름으로 분기.
+    client는 (user_id, client) 단위 세션 분리에 사용 (default "task").
     """
     nonce = secrets.token_urlsafe(32)
-    body: dict[str, Any] = {"n": nonce, "t": int(time.time()), "x": next_path or "/"}
+    body: dict[str, Any] = {
+        "n": nonce,
+        "t": int(time.time()),
+        "x": next_path or "/",
+        "c": client or "task",
+    }
     if drive:
         body["d"] = 1
     if extra:

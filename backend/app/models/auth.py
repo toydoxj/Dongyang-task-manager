@@ -4,7 +4,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 
 from pydantic import BaseModel, ConfigDict, EmailStr
-from sqlalchemy import DateTime, Integer, String
+from sqlalchemy import DateTime, ForeignKey, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db import Base
@@ -39,6 +39,28 @@ class User(Base):
     # "password" | "works" | "both"  — 기존 사용자는 마이그레이션으로 "password"
     auth_provider: Mapped[str] = mapped_column(String, nullable=False, default="password")
     sso_login_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
+class UserSession(Base):
+    """클라이언트(예: 'task', 'dy-midas')별 활성 세션.
+
+    PK(user_id, client) 로 client당 1개씩 활성 세션을 유지. 같은 user가 서로 다른
+    client에서 로그인하면 각각 독립 sid를 가져 서로를 무효화하지 않는다.
+    같은 client 내 재로그인은 row 갱신으로 직전 sid가 자연스럽게 무효화된다.
+    """
+
+    __tablename__ = "user_sessions"
+
+    user_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("users.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    client: Mapped[str] = mapped_column(String(32), primary_key=True)
+    session_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, default=lambda: datetime.now(timezone.utc), nullable=False
+    )
 
 
 # ── Pydantic 스키마 ──

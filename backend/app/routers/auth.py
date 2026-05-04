@@ -15,7 +15,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.db import get_db
-from app.models.auth import User, UserInfo, UserUpdateRequest
+from app.models.auth import User, UserInfo, UserSession, UserUpdateRequest
 from app.security import (
     create_token,
     get_current_user,
@@ -29,6 +29,10 @@ from app.settings import get_settings
 VALID_ROLES = {"admin", "team_lead", "member"}
 # 회사 이메일 도메인 강제 (직원만 사용 허용)
 ALLOWED_EMAIL_DOMAIN = "@dyce.kr"
+# SSO 세션 분리 단위. 동일 사용자가 둘 다 활성 세션을 동시에 보유 가능.
+# default "task" — 본 웹앱(task.dyce.kr) frontend.
+# "dy-midas" — MIDAS GEN NX Dashboard Electron 앱.
+VALID_CLIENTS = {"task", "dy-midas"}
 
 
 def _ensure_company_email(email: str) -> None:
@@ -100,6 +104,11 @@ async def works_login(
         description="1이면 prompt=none으로 silent re-auth (iframe에서 사용). "
         "NAVER 세션 살아있으면 즉시 callback, 없으면 error=login_required",
     ),
+    client: str = Query(
+        default="task",
+        description="세션 분리 클라이언트 식별자 (task | dy-midas). "
+        "동일 사용자가 다른 client에서 동시 활성 세션 보유 가능.",
+    ),
 ) -> RedirectResponse:
     """NAVER WORKS authorize URL로 302. state는 HMAC signed (cookie 비사용)."""
     s = get_settings()
@@ -108,13 +117,18 @@ async def works_login(
     if not s.works_client_id or not s.works_redirect_uri:
         raise HTTPException(status_code=503, detail="WORKS 설정 누락")
     safe_next = next if next.startswith("/") and not next.startswith("//") else "/"
+    safe_client = client if client in VALID_CLIENTS else "task"
     is_drive = drive == 1
     is_silent = silent == 1
     extra: dict[str, object] = {}
     if is_silent:
         extra["s"] = 1
     state, _nonce = sso_works.issue_state(
-        s.jwt_secret, safe_next, drive=is_drive, extra=extra or None
+        s.jwt_secret,
+        safe_next,
+        drive=is_drive,
+        client=safe_client,
+        extra=extra or None,
     )
     # drive=1 흐름은 Drive(file) + Calendar 권한을 한 번에 동의받음 — 같은
     # drive_credentials 토큰으로 두 API 모두 호출. 별도 동의 흐름 불필요.
@@ -172,6 +186,9 @@ async def works_callback(
     if not isinstance(safe_next, str) or not safe_next.startswith("/"):
         safe_next = "/"
     is_drive_flow = state_data.get("d") == 1
+    state_client = state_data.get("c", "task")
+    if not isinstance(state_client, str) or state_client not in VALID_CLIENTS:
+        state_client = "task"
 
     out_tokens: dict[str, object] = {}
     try:
@@ -215,12 +232,38 @@ async def works_callback(
             )
 
     sid = uuid4().hex
-    user.session_id = sid
+    # 레거시 호환: cli claim 없는 토큰을 검증하던 경로가 있는 동안 함께 갱신.
+    # state_client == "task" 인 경우에만 덮어써 dy-midas 로그인이 task 세션을
+    # 침범하지 않도록 한다.
+    if state_client == "task":
+        user.session_id = sid
     user.last_login_at = datetime.now(timezone.utc)
+    # (user_id, client) 단위 활성 세션 갱신 — 같은 client 내 재로그인은 직전 sid 무효화.
+    sess = (
+        db.query(UserSession)
+        .filter(
+            UserSession.user_id == user.id,
+            UserSession.client == state_client,
+        )
+        .first()
+    )
+    now = datetime.now(timezone.utc)
+    if sess is None:
+        db.add(
+            UserSession(
+                user_id=user.id,
+                client=state_client,
+                session_id=sid,
+                created_at=now,
+            )
+        )
+    else:
+        sess.session_id = sid
+        sess.created_at = now
     db.commit()
     db.refresh(user)
 
-    token = create_token(user.username, user.role, sid)
+    token = create_token(user.username, user.role, sid, client=state_client)
     info = _to_info(user)
     user_b64 = base64.urlsafe_b64encode(
         json.dumps(info.model_dump(mode="json"), ensure_ascii=False).encode("utf-8")

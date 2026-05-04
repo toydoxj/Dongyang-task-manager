@@ -11,7 +11,7 @@ from jose import JWTError, jwt
 from sqlalchemy.orm import Session
 
 from app.db import get_db
-from app.models.auth import User
+from app.models.auth import User, UserSession
 from app.settings import get_settings
 
 _bearer = HTTPBearer(auto_error=False)
@@ -28,13 +28,19 @@ def verify_password(plain: str, hashed: str) -> bool:
         return False
 
 
-def create_token(username: str, role: str, session_id: str = "") -> str:
+def create_token(
+    username: str,
+    role: str,
+    session_id: str = "",
+    client: str = "task",
+) -> str:
     s = get_settings()
     expire = datetime.now(timezone.utc) + timedelta(minutes=s.jwt_expire_minutes)
     payload: dict[str, Any] = {
         "sub": username,
         "role": role,
         "sid": session_id,
+        "cli": client,
         "exp": expire,
     }
     return jwt.encode(payload, s.jwt_secret, algorithm=s.jwt_algorithm)
@@ -72,13 +78,32 @@ def get_current_user(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="사용자를 찾을 수 없습니다"
         )
 
-    # 이중 로그인 방지: JWT의 session_id와 DB의 session_id 비교
+    # 이중 로그인 방지: client 단위로 활성 sid 비교.
+    # - cli claim 있는 토큰: user_sessions(user_id, client) 조회.
+    # - cli claim 없는 레거시 토큰: users.session_id 와 비교 (기존 동작 유지).
     token_sid = payload.get("sid", "")
-    if token_sid and user.session_id and token_sid != user.session_id:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="다른 기기에서 로그인되었습니다",
-        )
+    token_cli = payload.get("cli", "")
+    if token_sid:
+        if token_cli:
+            sess = (
+                db.query(UserSession)
+                .filter(
+                    UserSession.user_id == user.id,
+                    UserSession.client == token_cli,
+                )
+                .first()
+            )
+            if sess is None or sess.session_id != token_sid:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="다른 기기에서 로그인되었습니다",
+                )
+        else:
+            if user.session_id and token_sid != user.session_id:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="다른 기기에서 로그인되었습니다",
+                )
     return user
 
 
