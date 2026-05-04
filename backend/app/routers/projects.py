@@ -214,11 +214,12 @@ async def list_projects(
 
     stmt = select(M.MirrorProject).where(M.MirrorProject.archived.is_(False))
     if assignee:
-        stmt = stmt.where(M.MirrorProject.assignees.any(assignee))  # type: ignore[attr-defined]
+        # contains(@>) — ARRAY GIN 인덱스 활용. .any() 는 GIN 미적용.
+        stmt = stmt.where(M.MirrorProject.assignees.contains([assignee]))  # type: ignore[attr-defined]
     if stage:
         stmt = stmt.where(M.MirrorProject.stage == stage)
     if team:
-        stmt = stmt.where(M.MirrorProject.teams.any(team))  # type: ignore[attr-defined]
+        stmt = stmt.where(M.MirrorProject.teams.contains([team]))  # type: ignore[attr-defined]
     if completed is not None:
         stmt = stmt.where(M.MirrorProject.completed.is_(completed))
     stmt = stmt.order_by(M.MirrorProject.code.asc())

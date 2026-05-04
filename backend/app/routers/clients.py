@@ -185,7 +185,7 @@ async def delete_client(
         select(M.MirrorProject.page_id)
         .where(
             M.MirrorProject.archived.is_(False),
-            M.MirrorProject.client_relation_ids.any(page_id),  # type: ignore[attr-defined]
+            M.MirrorProject.client_relation_ids.contains([page_id]),  # type: ignore[attr-defined]
         )
         .limit(1)
     ).scalar_one_or_none()

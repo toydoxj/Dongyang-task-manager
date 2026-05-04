@@ -37,7 +37,7 @@ def has_active_task_this_week(db: Session, project_id: str) -> bool:
         db.execute(
             select(M.MirrorTask.page_id)
             .where(
-                M.MirrorTask.project_ids.any(project_id),  # type: ignore[attr-defined]
+                M.MirrorTask.project_ids.contains([project_id]),  # type: ignore[attr-defined]
                 M.MirrorTask.archived.is_(False),
                 or_(
                     (M.MirrorTask.start_date <= sunday)

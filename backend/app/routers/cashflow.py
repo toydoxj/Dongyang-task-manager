@@ -86,7 +86,8 @@ async def get_cashflow(
     if flow != "all":
         stmt = stmt.where(M.MirrorCashflow.kind == flow)
     if project_id:
-        stmt = stmt.where(M.MirrorCashflow.project_ids.any(project_id))  # type: ignore[attr-defined]
+        # contains(@>) 형태 — ARRAY GIN 인덱스 활용. .any() 는 GIN 미적용.
+        stmt = stmt.where(M.MirrorCashflow.project_ids.contains([project_id]))  # type: ignore[attr-defined]
     df = _parse_date(date_from)
     dt = _parse_date(date_to)
     if df:

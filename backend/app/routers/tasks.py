@@ -71,9 +71,10 @@ async def list_tasks(
     stmt = select(M.MirrorTask).where(M.MirrorTask.archived.is_(False))
     if project_id:
         # Postgres ARRAY contains: project_ids @> ARRAY[project_id]
-        stmt = stmt.where(M.MirrorTask.project_ids.any(project_id))  # type: ignore[attr-defined]
+        # — .any() 는 'value = ANY(array)' 로 GIN 미적용. .contains() 가 @> 컴파일 → GIN 활용.
+        stmt = stmt.where(M.MirrorTask.project_ids.contains([project_id]))  # type: ignore[attr-defined]
     if assignee:
-        stmt = stmt.where(M.MirrorTask.assignees.any(assignee))  # type: ignore[attr-defined]
+        stmt = stmt.where(M.MirrorTask.assignees.contains([assignee]))  # type: ignore[attr-defined]
     if status_name:
         stmt = stmt.where(M.MirrorTask.status == status_name)
     if schedule_only:
