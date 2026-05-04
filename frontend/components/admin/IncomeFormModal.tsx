@@ -47,17 +47,6 @@ function todayYMD(): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
-/** 한국식 단위 축약 (억/천만/백만/만). 0이면 '0'. */
-function fmtKor(v: number): string {
-  if (!v) return "0";
-  const abs = Math.abs(v);
-  if (abs >= 1e8) return `${(v / 1e8).toFixed(1)}억`;
-  if (abs >= 1e7) return `${(v / 1e7).toFixed(1)}천만`;
-  if (abs >= 1e6) return `${Math.round(v / 1e6)}백만`;
-  if (abs >= 1e4) return `${Math.round(v / 1e4)}만`;
-  return v.toLocaleString("ko-KR");
-}
-
 function Form({
   entry,
   onClose,
@@ -296,18 +285,11 @@ function Form({
               disabled={items.length === 1}
             >
               {items.length > 1 && <option value="">선택…</option>}
-              {items.map((it) => {
-                const total = it.amount + it.vat;
-                const paid = paidByItem.get(it.id) ?? 0;
-                const ratio = total > 0 ? (paid / total) * 100 : 0;
-                const head = `${it.client_name || "(미매칭)"}(${it.label})`;
-                return (
-                  <option key={it.id} value={it.id}>
-                    {head} · 총 {fmtKor(total)} / 기성 {fmtKor(paid)} (
-                    {ratio.toFixed(0)}%)
-                  </option>
-                );
-              })}
+              {items.map((it) => (
+                <option key={it.id} value={it.id}>
+                  {it.client_name || "(미매칭)"}({it.label})
+                </option>
+              ))}
             </select>
             {items.length === 1 && (
               <p className="mt-1 text-[10px] text-zinc-500">
