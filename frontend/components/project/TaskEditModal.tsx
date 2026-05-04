@@ -73,6 +73,11 @@ function Form({
   const isTimeBased = isTimeBasedTask(category, activity);
   const { user } = useAuth();
   const myName = user?.name ?? "";
+  // 일반직원은 본인 담당 task만 수정 가능 — 비-담당이면 read-only.
+  const canEdit =
+    user?.role === "admin" ||
+    user?.role === "team_lead" ||
+    (!!myName && task.assignees.includes(myName));
   // dropdown 기준 사람 = task의 담당자(첫 명). 비어있으면 본인.
   const firstAssignee = useMemo(() => {
     const names = assignees
@@ -262,8 +267,19 @@ function Form({
   };
 
   return (
-    <Modal open={true} onClose={onClose} title="업무 TASK 편집" size="md">
+    <Modal
+      open={true}
+      onClose={onClose}
+      title={canEdit ? "업무 TASK 편집" : "업무 TASK (읽기 전용)"}
+      size="md"
+    >
       <div className="space-y-4">
+        {!canEdit && (
+          <p className="rounded-md border border-amber-500/40 bg-amber-500/5 p-2 text-xs text-amber-500">
+            본인 담당 task가 아니라 읽기 전용입니다.
+          </p>
+        )}
+        <fieldset disabled={!canEdit} className="contents">
         <Field label="제목">
           <input
             type="text"
@@ -496,17 +512,22 @@ function Form({
             {error}
           </p>
         )}
+        </fieldset>
 
         <footer className="flex items-center justify-between gap-2 pt-2">
-          <button
-            type="button"
-            onClick={remove}
-            disabled={busy}
-            className="text-xs text-red-500 hover:underline disabled:opacity-50"
-            title="노션에서 보관 처리됩니다"
-          >
-            삭제
-          </button>
+          {canEdit ? (
+            <button
+              type="button"
+              onClick={remove}
+              disabled={busy}
+              className="text-xs text-red-500 hover:underline disabled:opacity-50"
+              title="노션에서 보관 처리됩니다"
+            >
+              삭제
+            </button>
+          ) : (
+            <span />
+          )}
           <div className="flex gap-2">
             <button
               type="button"
@@ -514,16 +535,18 @@ function Form({
               disabled={busy}
               className="rounded-md border border-zinc-300 px-3 py-1.5 text-xs hover:bg-zinc-50 dark:border-zinc-700 dark:hover:bg-zinc-800"
             >
-              취소
+              {canEdit ? "취소" : "닫기"}
             </button>
-            <button
-              type="button"
-              onClick={save}
-              disabled={busy}
-              className="rounded-md bg-zinc-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-zinc-700 disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300"
-            >
-              {busy ? "저장 중..." : "저장"}
-            </button>
+            {canEdit && (
+              <button
+                type="button"
+                onClick={save}
+                disabled={busy}
+                className="rounded-md bg-zinc-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-zinc-700 disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300"
+              >
+                {busy ? "저장 중..." : "저장"}
+              </button>
+            )}
           </div>
         </footer>
       </div>

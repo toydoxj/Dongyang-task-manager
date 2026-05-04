@@ -30,6 +30,23 @@ from app.settings import get_settings
 router = APIRouter(prefix="/tasks", tags=["tasks"])
 
 
+def _ensure_can_modify_task(user: User, assignees: list[str] | None) -> None:
+    """일반직원은 본인 담당 task만 수정/삭제 가능. admin/team_lead 는 패스.
+
+    mirror에 row가 없는 미연결 task(이미 archive됨 등)는 통과시켜 노션 호출
+    단계에서 적절한 에러가 발생하도록 한다 (조용한 403 회피).
+    """
+    if user.role in {"admin", "team_lead"}:
+        return
+    if assignees is None:
+        return
+    if not user.name or user.name not in assignees:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="본인 담당 task만 수정/삭제할 수 있습니다",
+        )
+
+
 @router.get("", response_model=TaskListResponse)
 async def list_tasks(
     project_id: str | None = Query(default=None),
@@ -122,12 +139,15 @@ async def update_task(
     page_id: str,
     body: TaskUpdateRequest,
     background: BackgroundTasks,
-    _user: User = Depends(get_current_user),
+    user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
     notion: NotionService = Depends(get_notion),
 ) -> Task:
-    # 변경 전 mirror 읽기 — project_ids 보존 + 기간 partial update 보강 용도.
+    # 변경 전 mirror 읽기 — 권한 체크 + project_ids 보존 + 기간 partial update 보강 용도.
     prev_row = db.get(M.MirrorTask, page_id)
+    _ensure_can_modify_task(
+        user, list(prev_row.assignees) if prev_row else None
+    )
     prev_project_ids = list(prev_row.project_ids or []) if prev_row else []
 
     # 노션 date prop은 start 필수, end도 명시 안 보내면 기존 값 클리어됨.
@@ -178,10 +198,15 @@ async def update_task(
 async def archive_task(
     page_id: str,
     background: BackgroundTasks,
-    _user: User = Depends(get_current_user),
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
     notion: NotionService = Depends(get_notion),
 ) -> dict[str, str]:
     """노션은 영구 삭제 대신 archive 사용."""
+    prev_row = db.get(M.MirrorTask, page_id)
+    _ensure_can_modify_task(
+        user, list(prev_row.assignees) if prev_row else None
+    )
     await asyncio.to_thread(
         notion._client.pages.update, page_id=page_id, archived=True
     )

@@ -12,6 +12,7 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 import { useEffect, useMemo, useState } from "react";
 
+import { useAuth } from "@/components/AuthGuard";
 import { updateTask } from "@/lib/api";
 import type { Task } from "@/lib/domain";
 import { TASK_STATUSES } from "@/lib/domain";
@@ -50,6 +51,14 @@ export default function TaskKanban({ tasks, onChanged, onCreate }: Props) {
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
   );
+
+  // 권한 — 일반직원은 본인 담당 task만 드래그/편집 가능. admin/team_lead 패스.
+  const { user } = useAuth();
+  const canEditTask = (t: Task): boolean => {
+    if (!user) return false;
+    if (user.role === "admin" || user.role === "team_lead") return true;
+    return !!user.name && t.assignees.includes(user.name);
+  };
 
   // 프로젝트 상세 칸반은 기간과 무관하게 모든 task 표시 (사용자 정책).
   const { grouped, hiddenCompleted } = useMemo(() => {
@@ -161,6 +170,7 @@ export default function TaskKanban({ tasks, onChanged, onCreate }: Props) {
               onAdvance={(t, next) => void applyStatusChange(t, next)}
               onClickTask={setEditing}
               onCreate={onCreate}
+              canEditTask={canEditTask}
             />
           ))}
         </div>
@@ -188,6 +198,7 @@ function DroppableColumn({
   onAdvance,
   onClickTask,
   onCreate,
+  canEditTask,
 }: {
   status: string;
   items: Task[];
@@ -195,6 +206,7 @@ function DroppableColumn({
   onAdvance: (t: Task, nextStatus: string) => void;
   onClickTask: (t: Task) => void;
   onCreate?: (initialStatus?: string) => void;
+  canEditTask: (t: Task) => boolean;
 }) {
   const { setNodeRef, isOver } = useDroppable({
     id: `col-${status}`,
@@ -249,6 +261,7 @@ function DroppableColumn({
             currentStatus={status}
             onAdvance={onAdvance}
             onClick={() => onClickTask(t)}
+            canEdit={canEditTask(t)}
           />
         ))}
       </ul>
@@ -261,16 +274,19 @@ function DraggableCard({
   currentStatus,
   onAdvance,
   onClick,
+  canEdit,
 }: {
   task: Task;
   currentStatus: string;
   onAdvance: (t: Task, nextStatus: string) => void;
   onClick: () => void;
+  canEdit: boolean;
 }) {
   const { attributes, listeners, setNodeRef, transform, isDragging } =
     useDraggable({
       id: task.id,
       data: { task, status: currentStatus },
+      disabled: !canEdit,
     });
 
   const idx = TASK_STATUSES.indexOf(
@@ -291,8 +307,12 @@ function DraggableCard({
       {...attributes}
       {...listeners}
       onClick={onClick}
+      title={canEdit ? undefined : "본인 담당 task가 아니라 읽기 전용입니다"}
       className={cn(
-        "cursor-grab rounded-md border border-zinc-200 bg-white p-2 text-xs shadow-sm transition-shadow active:cursor-grabbing dark:border-zinc-800 dark:bg-zinc-900",
+        "rounded-md border border-zinc-200 bg-white p-2 text-xs shadow-sm transition-shadow dark:border-zinc-800 dark:bg-zinc-900",
+        canEdit
+          ? "cursor-grab active:cursor-grabbing"
+          : "cursor-pointer opacity-60",
         !isDragging &&
           "hover:bg-zinc-50 hover:shadow-md dark:hover:bg-zinc-800/50",
         isDragging && "ring-2 ring-blue-400/60",
@@ -302,7 +322,7 @@ function DraggableCard({
         <p className="min-w-0 flex-1 truncate font-medium" title={task.title}>
           {task.title || "(제목 없음)"}
         </p>
-        {next && (
+        {next && canEdit && (
           <button
             type="button"
             onClick={(e) => {
