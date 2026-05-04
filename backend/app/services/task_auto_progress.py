@@ -98,14 +98,20 @@ async def auto_progress_tasks(notion: NotionService) -> dict[str, int]:
             logger.exception("task 자동 진행 실패 page_id=%s", t.page_id)
             task_failed += 1
 
-    # 프로젝트 진행단계 promote
+    # 프로젝트 진행단계 promote — '완료' 체크박스/완료일도 함께 클리어해
+    # stage=진행중 + completed=true 같은 부정합 회피.
     projects_due = _list_projects_to_promote(project_ids_to_promote)
     project_updated = 0
     project_failed = 0
     for p in projects_due:
         try:
             page = await notion.update_page(
-                p.page_id, {"진행단계": {"select": {"name": "진행중"}}}
+                p.page_id,
+                {
+                    "진행단계": {"select": {"name": "진행중"}},
+                    "완료": {"checkbox": False},
+                    "완료일": {"date": None},
+                },
             )
             get_sync().upsert_page("projects", page)
             project_updated += 1

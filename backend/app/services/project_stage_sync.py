@@ -85,9 +85,14 @@ async def reconcile_project_stage(
     current, desired = decision
     if desired == current:
         return None
-    updated = await notion.update_page(
-        project_id, {"진행단계": {"select": {"name": desired}}}
-    )
+    # stage가 진행중/대기로 바뀔 때 '완료' 체크박스/완료일도 함께 클리어 —
+    # stage=진행중 + completed=true 같은 부정합 회피 (auto_progress_tasks와 동일).
+    props = {
+        "진행단계": {"select": {"name": desired}},
+        "완료": {"checkbox": False},
+        "완료일": {"date": None},
+    }
+    updated = await notion.update_page(project_id, props)
     get_sync().upsert_page("projects", updated)
     return updated
 
