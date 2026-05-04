@@ -99,13 +99,17 @@ export default function IncomesAdminPage() {
       const project = pid ? projectMap.get(pid) ?? null : null;
       const item = e.contract_item_id ? itemMap.get(e.contract_item_id) : null;
 
+      // 발주처는 항상 프로젝트의 원 client (분담항목의 client는 분담항목 컬럼에 표시)
+      const clientName =
+        project?.client_names && project.client_names.length > 0
+          ? project.client_names.join(", ")
+          : project?.client_text ?? "";
+
       let total: number;
-      let clientName: string;
       let label: string;
 
       if (item) {
         total = (item.amount ?? 0) + (item.vat ?? 0);
-        clientName = item.client_name ?? "";
         // 분담 모드 표시 형식: 업체명(라벨)
         label = `${item.client_name || "(미매칭)"}(${item.label})`;
       } else {
@@ -116,7 +120,6 @@ export default function IncomesAdminPage() {
         total = project
           ? (project.contract_amount ?? 0) + (project.vat ?? 0)
           : 0;
-        clientName = project?.client_names?.[0] ?? project?.client_text ?? "";
         label = projHasItems ? "(미매칭 분담)" : "";
       }
 
