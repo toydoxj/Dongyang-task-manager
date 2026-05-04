@@ -431,10 +431,12 @@ export function isScheduleTask(category?: string, activity?: string): boolean {
 /** 일정 카드(외근/출장/휴가)에 표시할 분류. 옛 표기와 새 표기 모두 호환. */
 export const SCHEDULE_CATEGORIES = ["외근", "출장", "휴가", "휴가(연차)"] as const;
 
-/** 기타 업무(프로젝트도 일정도 아닌)에 묶을 분류. */
+/** 기타 업무(프로젝트도 일정도 아닌)에 묶을 분류.
+ * '서비스' 는 옛 표기 (새 옵션은 '영업(서비스)'). 데이터 호환 위해 둘 다 포함. */
 export const NON_PROJECT_WORK_CATEGORIES = [
   "개인업무",
   "사내잡무",
   "교육",
   "서비스",
+  "영업(서비스)",
 ] as const;

@@ -436,7 +436,14 @@ function TodayTasks({
   // 3) 기타 업무(개인업무/사내잡무/교육/서비스) → status별 4열 카드
   // 4) 일정 → 3열 카드 (분류=외근/출장/휴가 OR 활동=외근/출장 인 task 모두)
   //    - 프로젝트 task가 활동=외근이면 일정에도 함께 노출
-  const NON_PROJECT_WORK = ["개인업무", "사내잡무", "교육", "서비스"];
+  // '서비스' 는 옛 표기 (새 옵션은 '영업(서비스)'). 데이터 호환을 위해 둘 다 포함.
+  const NON_PROJECT_WORK = [
+    "개인업무",
+    "사내잡무",
+    "교육",
+    "서비스",
+    "영업(서비스)",
+  ];
   const STATUSES = ["시작 전", "진행 중", "완료", "보류"] as const;
 
   const projectTasks: Task[] = [];
