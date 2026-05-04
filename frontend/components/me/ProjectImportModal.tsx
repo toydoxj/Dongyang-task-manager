@@ -42,19 +42,24 @@ export default function ProjectImportModal({
   const [busyId, setBusyId] = useState<string | null>(null);
   const [assignErr, setAssignErr] = useState<string | null>(null);
 
+  // 종료 = stage in {완료,타절,종결,이관} OR 완료 체크박스. 노션 stage만 "완료"로
+  // 바꾸고 체크박스는 비어있는 케이스가 흔해 stage 기반 판정 병행.
+  const isClosed = (p: Project): boolean =>
+    p.completed || ["완료", "타절", "종결", "이관"].includes(p.stage);
+
   const candidates = useMemo<Project[]>(() => {
     if (searchMode) {
       if (!allData) return [];
       const q = trimmed.toLowerCase();
-      // 검색 모드: 본인 미담당 + (이미 담당이지만 완료된 프로젝트도 = 재활성화 케이스)
+      // 검색 모드: 본인 미담당 + (이미 담당이지만 종료된 프로젝트도 = 재활성화 케이스)
       return allData.items
-        .filter((p) => !p.assignees.includes(myName) || p.completed)
+        .filter((p) => !p.assignees.includes(myName) || isClosed(p))
         .filter((p) => `${p.code} ${p.name}`.toLowerCase().includes(q))
         .slice(0, 100);
     }
     if (!openData) return [];
     return openData.items
-      .filter((p) => !p.completed && !p.assignees.includes(myName))
+      .filter((p) => !isClosed(p) && !p.assignees.includes(myName))
       .slice(0, 50);
   }, [searchMode, openData, allData, trimmed, myName]);
 
@@ -139,7 +144,7 @@ export default function ProjectImportModal({
             <ul className="max-h-[60vh] divide-y divide-zinc-200 overflow-y-auto rounded-md border border-zinc-200 dark:divide-zinc-800 dark:border-zinc-800">
               {candidates.map((p) => {
                 const isMineCompleted =
-                  p.completed && p.assignees.includes(myName);
+                  isClosed(p) && p.assignees.includes(myName);
                 return (
                   <li key={p.id}>
                     <button
@@ -157,9 +162,9 @@ export default function ProjectImportModal({
                           title={p.name}
                         >
                           {p.name || "(제목 없음)"}
-                          {p.completed && (
+                          {isClosed(p) && (
                             <span className="ml-1.5 rounded bg-zinc-200 px-1.5 py-0.5 text-[10px] text-zinc-600 dark:bg-zinc-700 dark:text-zinc-300">
-                              완료
+                              {p.stage || "완료"}
                             </span>
                           )}
                         </p>
