@@ -270,6 +270,19 @@ function Form({
               </button>
             </div>
           )}
+          {selectedProjectId &&
+            (() => {
+              const proj = projects.find((p) => p.id === selectedProjectId);
+              const clients =
+                proj?.client_names && proj.client_names.length > 0
+                  ? proj.client_names.join(", ")
+                  : proj?.client_text || "(미지정)";
+              return (
+                <p className="mt-1 text-[11px] text-zinc-600 dark:text-zinc-400">
+                  발주처: <span className="font-medium">{clients}</span>
+                </p>
+              );
+            })()}
         </Field>
 
         {selectedProjectId && items.length > 0 && (
@@ -301,6 +314,38 @@ function Form({
                 항목이 1개라 자동 선택됩니다.
               </p>
             )}
+            {effectiveContractItemId &&
+              (() => {
+                const it = items.find((i) => i.id === effectiveContractItemId);
+                if (!it) return null;
+                const paid = paidByItem.get(it.id) ?? 0;
+                return (
+                  <div className="mt-2 grid grid-cols-3 gap-2 rounded-md border border-zinc-200 bg-zinc-50 p-2 dark:border-zinc-700 dark:bg-zinc-900">
+                    <div>
+                      <div className="text-[10px] text-zinc-500">
+                        용역비 (VAT 제외)
+                      </div>
+                      <div className="text-xs font-medium tabular-nums">
+                        ₩ {it.amount.toLocaleString("ko-KR")}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-[10px] text-zinc-500">VAT</div>
+                      <div className="text-xs font-medium tabular-nums">
+                        ₩ {it.vat.toLocaleString("ko-KR")}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-[10px] text-zinc-500">
+                        기성금 (이전까지)
+                      </div>
+                      <div className="text-xs font-medium tabular-nums">
+                        ₩ {paid.toLocaleString("ko-KR")}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
           </Field>
         )}
 
