@@ -85,10 +85,14 @@ export async function assignMe(
   return jsonOrThrow<Project>(res);
 }
 
-export async function unassignMe(pageId: string): Promise<Project> {
-  const res = await authFetch(`/api/projects/${pageId}/assign`, {
-    method: "DELETE",
-  });
+export async function unassignMe(
+  pageId: string,
+  options: { forUser?: string } = {},
+): Promise<Project> {
+  const res = await authFetch(
+    `/api/projects/${pageId}/assign${qs({ for_user: options.forUser })}`,
+    { method: "DELETE" },
+  );
   return jsonOrThrow<Project>(res);
 }
 

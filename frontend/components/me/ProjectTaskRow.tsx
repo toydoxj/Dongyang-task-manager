@@ -16,6 +16,8 @@ interface Props {
   onCreate: (projectId: string, initialStatus?: string) => void;
   onUnassigned?: (projectId: string) => void;  // 담당 해제 후 호출 (즉시 제거 + revalidate)
   myName?: string;                     // 본인 이름 (담당 해제 표시 조건)
+  /** admin/team_lead 가 다른 직원 페이지를 볼 때 — 그 직원 명의로 unassign */
+  forUser?: string;
   /** 우리 앱 분류: 금주 TASK 활동 있으면 true (배지 표시 우선) */
   effectiveActive?: boolean;
 }
@@ -32,6 +34,7 @@ export default function ProjectTaskRow({
   onCreate,
   onUnassigned,
   myName,
+  forUser,
   effectiveActive,
 }: Props) {
   // 우리 앱 분류 (effectiveActive) 가 우선, 없으면 노션 stage 사용
@@ -51,11 +54,16 @@ export default function ProjectTaskRow({
   const isMine = !!myName && project.assignees.includes(myName);
 
   const handleUnassign = async (): Promise<void> => {
-    if (!confirm(`"${project.name}" 프로젝트에서 본인 담당을 해제하시겠습니까?`))
+    const subject = forUser ? `${forUser} 님` : "본인";
+    if (
+      !confirm(
+        `"${project.name}" 프로젝트에서 ${subject} 담당을 해제하시겠습니까?`,
+      )
+    )
       return;
     setBusy(true);
     try {
-      await unassignMe(project.id);
+      await unassignMe(project.id, { forUser });
       onUnassigned?.(project.id);
     } catch (err) {
       alert(err instanceof Error ? err.message : "담당 해제 실패");

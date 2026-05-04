@@ -473,24 +473,40 @@ async def set_project_stage(
 @router.delete("/{page_id}/assign", response_model=Project)
 async def unassign_me(
     page_id: str,
+    for_user: str | None = Query(
+        default=None,
+        description="admin/team_lead가 다른 직원의 담당을 해제할 때 사용",
+    ),
     user: User = Depends(get_current_user),
     notion: NotionService = Depends(get_notion),
 ) -> Project:
-    if not user.name:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="본인 이름이 등록되어 있지 않습니다",
-        )
+    # for_user 지정 시 권한 체크 (assign_me 와 대칭)
+    target_name: str
+    if for_user:
+        if user.role not in {"admin", "team_lead"}:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="다른 직원 대리 담당해제는 관리자/팀장만 가능합니다",
+            )
+        target_name = for_user
+    else:
+        if not user.name:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="본인 이름이 등록되어 있지 않습니다",
+            )
+        target_name = user.name
+
     try:
         page = await notion.get_page(page_id)
     except NotFoundError as exc:
         raise HTTPException(status_code=404, detail=exc.message) from exc
 
     current = P.multi_select_names(page.get("properties", {}), "담당자")
-    if user.name not in current:
+    if target_name not in current:
         return Project.from_notion_page(page)
 
-    new_assignees = [n for n in current if n != user.name]
+    new_assignees = [n for n in current if n != target_name]
     updated = await notion.update_page(
         page_id,
         {"담당자": {"multi_select": [{"name": n} for n in new_assignees]}},
@@ -501,8 +517,8 @@ async def unassign_me(
         notion,
         project_id=page_id,
         project_name=project.name,
-        actor=user.name,
-        target=user.name,
+        actor=user.name or "(시스템)",
+        target=target_name,
         action="담당 제거",
     )
     return project

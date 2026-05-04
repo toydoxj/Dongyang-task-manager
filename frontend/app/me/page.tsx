@@ -287,6 +287,7 @@ export default function MyPage() {
                       project={p}
                       tasks={(tasks ?? []).filter((t) => taskBelongsTo(t, p.id))}
                       myName={effectiveName}
+                      forUser={isViewingOther ? effectiveName ?? undefined : undefined}
                       effectiveActive={true}
                       onChanged={refreshTasks}
                       onCreate={(projectId, status) =>
@@ -320,6 +321,7 @@ export default function MyPage() {
                       project={p}
                       tasks={(tasks ?? []).filter((t) => taskBelongsTo(t, p.id))}
                       myName={effectiveName}
+                      forUser={isViewingOther ? effectiveName ?? undefined : undefined}
                       effectiveActive={false}
                       onChanged={refreshTasks}
                       onCreate={(projectId, status) =>
