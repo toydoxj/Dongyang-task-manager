@@ -353,7 +353,13 @@ export default function MyPage() {
         ) : (
           <OtherTasksKanban
             tasks={tasks.filter((t) =>
-              ["개인업무", "사내잡무", "교육", "서비스"].includes(t.category),
+              [
+                "개인업무",
+                "사내잡무",
+                "교육",
+                "서비스",
+                "영업(서비스)",
+              ].includes(t.category),
             )}
             onClickTask={setEditing}
             onDeleteTask={handleDeleteTask}
