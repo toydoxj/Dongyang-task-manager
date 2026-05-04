@@ -9,7 +9,7 @@ services:
       pip install --upgrade pip uv
       env -u VIRTUAL_ENV uv sync --frozen --no-dev
       env -u VIRTUAL_ENV uv run alembic upgrade head
-    startCommand: env -u VIRTUAL_ENV uv run uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    startCommand: env -u VIRTUAL_ENV uv run uvicorn app.main:app --host 0.0.0.0 --port $PORT --workers 2
     healthCheckPath: /health
     envVars:
       - key: PYTHON_VERSION

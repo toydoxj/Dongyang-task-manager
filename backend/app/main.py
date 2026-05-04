@@ -131,6 +131,14 @@ def _verify_cron(authorization: str | None = Header(default=None)) -> None:
 # 진행 중 manual sync. 중복 호출(사용자가 응답 빠르다고 여러 번 누름)이
 # 여러 sync_all을 동시 spawn해 worker를 더 부하 주는 일을 방지.
 # "_all"은 sync_all 트리거, 그 외는 kind별.
+#
+# 주의: 이 set은 process-local. uvicorn workers > 1 환경에선 worker별로
+# 독립이므로 worker 간 동시 manual sync 가 둘 다 통과할 수 있음. 그러나:
+#  - 정기 sync는 별도 cron container(HTTP 미경유) 라 race 없음
+#  - manual sync 는 admin이 가끔 누르는 상황이라 빈도 낮음
+#  - 동작은 idempotent (notion upsert + 노션 rate limit이 자연 직렬화)
+# 정밀 cluster-wide dedup이 필요해지면 PgBouncer 호환 row-mutex 또는
+# direct DB connection의 advisory lock 으로 별도 작업.
 _running_sync: set[str] = set()
 
 # asyncio.create_task의 결과를 강한 참조로 보관. event loop은 weak ref만
@@ -178,7 +186,7 @@ async def cron_sync(
 
     무거운 sync가 worker를 막아 다른 요청이 502 되는 문제를 방지하기 위해
     fire-and-forget으로 실행. 즉시 202 반환, 결과는 Render Logs에서 확인.
-    이미 실행 중이면 중복 spawn 금지(already_running).
+    이미 실행 중이면 중복 spawn 금지(already_running) — process-local guard.
 
     full sync는 KST 7~22시(업무시간)에는 차단 — 새벽에만 허용.
     """
@@ -243,7 +251,7 @@ async def cron_auto_progress(
 ) -> dict[str, str]:
     """task 시작일 도래 시 '진행 중' + 프로젝트 진행단계 '진행중' 자동 처리.
 
-    매일 아침 외부 cron이 호출. fire-and-forget 202.
+    매일 아침 외부 cron이 호출. fire-and-forget 202. process-local 중복 차단.
     """
     global _running_auto_progress
     if _running_auto_progress:
