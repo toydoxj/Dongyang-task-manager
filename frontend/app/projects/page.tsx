@@ -1,12 +1,14 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import useSWR from "swr";
 
 import ProjectCard from "@/components/projects/ProjectCard";
 import ProjectFilter, {
   type FilterState,
 } from "@/components/projects/ProjectFilter";
 import LoadingState from "@/components/ui/LoadingState";
+import { getEmployeeTeamsMap } from "@/lib/api";
 import { useProjects } from "@/lib/hooks";
 
 const PAGE_SIZE = 60;
@@ -24,6 +26,11 @@ function cmpDateDesc(a: string | null, b: string | null): number {
 export default function ProjectsPage() {
   const { data, error } = useProjects();
   const all = data?.items;
+  // 직원 명부의 assignee.team 으로 프로젝트 팀을 자동 집계 (노션 '담당팀' 누락 보완).
+  const { data: teamsMap } = useSWR(
+    ["employee-teams-map"],
+    () => getEmployeeTeamsMap(),
+  );
   const [filter, setFilter] = useState<FilterState>({
     query: "",
     stage: "",
@@ -40,12 +47,26 @@ export default function ProjectsPage() {
 
   const filtered = useMemo(() => {
     if (!all) return [];
+    const map = teamsMap ?? {};
+    const matchesTeam = (
+      p: { assignees: string[]; teams: string[] },
+      team: string,
+    ): boolean => {
+      // 직원 명부 우선, 매핑이 없으면 노션 컬럼으로 fallback
+      const derived = new Set<string>();
+      for (const a of p.assignees) {
+        const t = map[a];
+        if (t) derived.add(t);
+      }
+      if (derived.size > 0) return derived.has(team);
+      return p.teams.includes(team);
+    };
     const q = filter.query.trim().toLowerCase();
     const result = all.filter((p) => {
       if (filter.completed === "open" && p.completed) return false;
       if (filter.completed === "done" && !p.completed) return false;
       if (filter.stage && p.stage !== filter.stage) return false;
-      if (filter.team && !p.teams.includes(filter.team)) return false;
+      if (filter.team && !matchesTeam(p, filter.team)) return false;
       if (q) {
         const hay = `${p.code} ${p.name}`.toLowerCase();
         if (!hay.includes(q)) return false;
@@ -67,7 +88,7 @@ export default function ProjectsPage() {
       }
     });
     return sorted;
-  }, [all, filter, sortKey]);
+  }, [all, filter, sortKey, teamsMap]);
 
   return (
     <div className="space-y-4">

@@ -1,7 +1,10 @@
 "use client";
 
 import { ResponsiveHeatMap } from "@nivo/heatmap";
+import { useMemo } from "react";
+import useSWR from "swr";
 
+import { getEmployeeTeamsMap } from "@/lib/api";
 import type { Project } from "@/lib/domain";
 import { TEAMS } from "@/lib/domain";
 
@@ -46,14 +49,28 @@ function isOverlap(start: string | null, end: string | null, monthKey: string): 
   return s <= monthEnd && e >= monthStart;
 }
 
-function buildData(projects: Project[], monthsBack: number): Row[] {
+function buildData(
+  projects: Project[],
+  monthsBack: number,
+  teamsMap: Record<string, string>,
+): Row[] {
   const months = buildMonths(monthsBack);
+  // 각 프로젝트의 팀 — 직원 명부 우선, 없으면 노션 컬럼 fallback
+  const teamsOf = (p: Project): Set<string> => {
+    const out = new Set<string>();
+    for (const a of p.assignees) {
+      const t = teamsMap[a];
+      if (t) out.add(t);
+    }
+    if (out.size === 0) for (const t of p.teams) out.add(t);
+    return out;
+  };
   return TEAMS.map((team): Row => {
     const data: Cell[] = months.map((m) => {
       let count = 0;
       for (const p of projects) {
         if (p.completed) continue;
-        if (!p.teams.includes(team)) continue;
+        if (!teamsOf(p).has(team)) continue;
         const start = p.contract_start ?? p.start_date;
         const end = p.contract_end ?? p.end_date;
         if (isOverlap(start, end, m)) count += 1;
@@ -65,7 +82,14 @@ function buildData(projects: Project[], monthsBack: number): Row[] {
 }
 
 export default function TeamLoadHeatmap({ projects, monthsBack = 12 }: Props) {
-  const data = buildData(projects, monthsBack);
+  const { data: teamsMap } = useSWR(
+    ["employee-teams-map"],
+    () => getEmployeeTeamsMap(),
+  );
+  const data = useMemo(
+    () => buildData(projects, monthsBack, teamsMap ?? {}),
+    [projects, monthsBack, teamsMap],
+  );
   const isDark =
     typeof window !== "undefined" &&
     window.matchMedia("(prefers-color-scheme: dark)").matches;

@@ -10,13 +10,13 @@ import {
   useSensors,
 } from "@dnd-kit/core";
 import Link from "next/link";
-import { useState } from "react";
-import { mutate as globalMutate } from "swr";
+import { useMemo, useState } from "react";
+import useSWR, { mutate as globalMutate } from "swr";
 
 import { useAuth } from "@/components/AuthGuard";
 import ProjectCreateModal from "@/components/me/ProjectCreateModal";
 import ProjectStageChangeModal from "@/components/project/ProjectStageChangeModal";
-import { setProjectStage } from "@/lib/api";
+import { getEmployeeTeamsMap, setProjectStage } from "@/lib/api";
 import type { Project, ProjectListResponse } from "@/lib/domain";
 import { PROJECT_STAGES, TEAMS } from "@/lib/domain";
 import { formatWon } from "@/lib/format";
@@ -79,18 +79,46 @@ export default function StageBoard({ projects }: Props) {
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
   );
 
-  // 팀별 카운트 (탭 라벨용) — 미완료 + 그 팀 담당
+  // 노션 '담당팀' 컬럼은 갱신이 누락되는 경우가 많아 직원 명부의
+  // assignee.team 으로 프로젝트 팀을 자동 집계 (ProjectHeader와 동일 패턴).
+  // teams-map 이 비어있는 동안에는 노션 p.teams 를 fallback 으로 사용.
+  const { data: teamsMap } = useSWR(
+    ["employee-teams-map"],
+    () => getEmployeeTeamsMap(),
+  );
+  const projectTeams = useMemo((): Map<string, Set<string>> => {
+    const map = teamsMap ?? {};
+    const out = new Map<string, Set<string>>();
+    for (const p of items) {
+      const teams = new Set<string>();
+      for (const a of p.assignees) {
+        const t = map[a];
+        if (t) teams.add(t);
+      }
+      // 담당자가 매핑되지 않는 경우(전 직원/외부) 노션 컬럼으로 보조
+      if (teams.size === 0) {
+        for (const t of p.teams) teams.add(t);
+      }
+      out.set(p.id, teams);
+    }
+    return out;
+  }, [items, teamsMap]);
+
+  // 팀별 카운트 (탭 라벨용)
   const teamCount = new Map<string, number>();
   teamCount.set("전체", items.length);
   for (const team of TEAMS) {
-    teamCount.set(team, items.filter((p) => p.teams.includes(team)).length);
+    teamCount.set(
+      team,
+      items.filter((p) => projectTeams.get(p.id)?.has(team)).length,
+    );
   }
 
   // 활성 탭 기준 필터
   const filteredItems =
     activeTeam === "전체"
       ? items
-      : items.filter((p) => p.teams.includes(activeTeam));
+      : items.filter((p) => projectTeams.get(p.id)?.has(activeTeam));
 
   // 완료/타절/종결 그룹은 완료일이 최근 2주(14일) 이내인 것만 표시
   const TWO_WEEKS_AGO_ISO = (() => {
