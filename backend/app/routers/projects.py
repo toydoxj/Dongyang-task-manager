@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import logging
 import time
-from datetime import date, timedelta
+from datetime import date
 from typing import Any
 from urllib.parse import parse_qs, urlparse
 
@@ -21,7 +21,7 @@ from fastapi import (
 from fastapi.responses import StreamingResponse
 from jose import JWTError, jwt
 from pydantic import BaseModel, Field
-from sqlalchemy import or_, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 from starlette.background import BackgroundTask
 
@@ -42,6 +42,7 @@ from app.services import notion_props as P
 from app.services import sso_drive
 from app.services.mirror_dto import project_from_mirror
 from app.services.notion import NotionService, get_notion
+from app.services.project_stage_sync import reconcile_project_stage
 from app.services.sync import get_sync
 from app.settings import get_settings
 
@@ -563,13 +564,6 @@ async def get_project_log(
 # ── 진행단계 자동 sync (mirror_tasks 기반으로 N+1 제거) ──
 
 
-def _this_week_range() -> tuple[date, date]:
-    today = date.today()
-    monday = today - timedelta(days=today.weekday())
-    sunday = monday + timedelta(days=6)
-    return monday, sunday
-
-
 @router.post("/{page_id}/sync-stage", response_model=Project)
 async def sync_stage_by_tasks(
     page_id: str,
@@ -577,41 +571,14 @@ async def sync_stage_by_tasks(
     db: Session = Depends(get_db),
     notion: NotionService = Depends(get_notion),
 ) -> Project:
-    """진행중/대기 외 단계는 수동 설정 존중. mirror_tasks 단일 쿼리로 판단."""
+    """진행중/대기 외 단계는 수동 설정 존중. helper로 위임."""
     proj = db.get(M.MirrorProject, page_id)
     if proj is None or proj.archived:
         raise HTTPException(status_code=404, detail="프로젝트 미존재 (mirror)")
-    if proj.stage not in ("진행중", "대기"):
+    updated = await reconcile_project_stage(notion, page_id)
+    if updated is None:
         return project_from_mirror(proj)
-
-    monday, sunday = _this_week_range()
-    has_active = (
-        db.execute(
-            select(M.MirrorTask.page_id)
-            .where(
-                M.MirrorTask.project_ids.any(page_id),  # type: ignore[attr-defined]
-                M.MirrorTask.archived.is_(False),
-                or_(
-                    # 기간이 금주에 걸침
-                    (M.MirrorTask.start_date <= sunday)
-                    & (M.MirrorTask.end_date >= monday),
-                    # 또는 실제 완료일이 금주
-                    (M.MirrorTask.actual_end_date >= monday)
-                    & (M.MirrorTask.actual_end_date <= sunday),
-                ),
-            )
-            .limit(1)
-        ).first()
-        is not None
-    )
-    desired = "진행중" if has_active else "대기"
-    if desired == proj.stage:
-        return project_from_mirror(proj)
-
-    updated = await notion.update_page(
-        page_id, {"진행단계": {"select": {"name": desired}}}
-    )
-    get_sync().upsert_page("projects", updated)
+    # identity-map stale read 회피 — 노션 응답 page를 직접 변환
     return Project.from_notion_page(updated)
 
 

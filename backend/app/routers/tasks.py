@@ -23,6 +23,7 @@ from app.security import get_current_user
 from app.services import task_calendar_sync
 from app.services.mirror_dto import task_from_mirror
 from app.services.notion import NotionService, get_notion
+from app.services.project_stage_sync import reconcile_projects_for_task
 from app.services.sync import get_sync
 from app.settings import get_settings
 
@@ -92,6 +93,8 @@ async def create_task(
     task = Task.from_notion_page(page)
     # WORKS Calendar 단방향 동기화 (best-effort, 실패해도 응답 영향 없음)
     background.add_task(task_calendar_sync.sync_task, task)
+    # 프로젝트 진행단계 자동 동기화 — 새 task가 이번주 활성이면 '진행중'으로 promote
+    background.add_task(reconcile_projects_for_task, notion, task.project_ids)
     return task
 
 
@@ -120,6 +123,7 @@ async def update_task(
     body: TaskUpdateRequest,
     background: BackgroundTasks,
     _user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
     notion: NotionService = Depends(get_notion),
 ) -> Task:
     props = task_update_to_props(body)
@@ -127,10 +131,18 @@ async def update_task(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail="갱신할 필드가 없습니다"
         )
+    # 변경 전 project_ids 보존 — task가 떠난 프로젝트도 재산정해야
+    # 기존 프로젝트가 진행중으로 잘못 남는 케이스 방지.
+    prev_row = db.get(M.MirrorTask, page_id)
+    prev_project_ids = list(prev_row.project_ids or []) if prev_row else []
+
     page = await notion.update_page(page_id, props)
     get_sync().upsert_page("tasks", page)  # write-through
     task = Task.from_notion_page(page)
     background.add_task(task_calendar_sync.sync_task, task)
+    # 프로젝트 진행단계 자동 동기화 — 이전+신규 project_ids union
+    affected = list({*prev_project_ids, *task.project_ids})
+    background.add_task(reconcile_projects_for_task, notion, affected)
     return task
 
 
