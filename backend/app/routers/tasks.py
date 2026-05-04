@@ -126,15 +126,43 @@ async def update_task(
     db: Session = Depends(get_db),
     notion: NotionService = Depends(get_notion),
 ) -> Task:
+    # 변경 전 mirror 읽기 — project_ids 보존 + 기간 partial update 보강 용도.
+    prev_row = db.get(M.MirrorTask, page_id)
+    prev_project_ids = list(prev_row.project_ids or []) if prev_row else []
+
+    # 노션 date prop은 start 필수, end도 명시 안 보내면 기존 값 클리어됨.
+    # 한쪽만 변경(non-empty)되고 다른 쪽이 None(=미지정) 인 경우에만 mirror
+    # 현재 값으로 보강해 의도치 않은 클리어 / 'date.start required' 502 회피.
+    # body.*_date == "" 는 'clear' 신호이므로 절대 보강하지 않는다.
+    if prev_row is not None:
+        new_end = (
+            body.end_date is not None and body.end_date != ""
+        )
+        new_start = (
+            body.start_date is not None and body.start_date != ""
+        )
+        if (
+            new_end
+            and body.start_date is None
+            and prev_row.start_date is not None
+        ):
+            body = body.model_copy(
+                update={"start_date": prev_row.start_date.isoformat()}
+            )
+        elif (
+            new_start
+            and body.end_date is None
+            and prev_row.end_date is not None
+        ):
+            body = body.model_copy(
+                update={"end_date": prev_row.end_date.isoformat()}
+            )
+
     props = task_update_to_props(body)
     if not props:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail="갱신할 필드가 없습니다"
         )
-    # 변경 전 project_ids 보존 — task가 떠난 프로젝트도 재산정해야
-    # 기존 프로젝트가 진행중으로 잘못 남는 케이스 방지.
-    prev_row = db.get(M.MirrorTask, page_id)
-    prev_project_ids = list(prev_row.project_ids or []) if prev_row else []
 
     page = await notion.update_page(page_id, props)
     get_sync().upsert_page("tasks", page)  # write-through
