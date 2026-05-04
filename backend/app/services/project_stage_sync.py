@@ -18,7 +18,9 @@ from sqlalchemy.orm import Session
 
 from app.db import SessionLocal
 from app.models import mirror as M
+from app.services import notion_props as P
 from app.services.notion import NotionService
+from app.services.project_log import log_assign_change
 from app.services.sync import get_sync
 
 logger = logging.getLogger("project.stage_sync")
@@ -52,10 +54,16 @@ def has_active_task_this_week(db: Session, project_id: str) -> bool:
     )
 
 
-def _read_desired_stage(project_id: str) -> tuple[str, str] | None:
-    """short-lived 세션으로 (current_stage, desired_stage) 결정.
+def _read_desired_stage(
+    project_id: str,
+) -> tuple[str, str, bool, str, str] | None:
+    """short-lived 세션으로 결정 정보를 모두 capture 후 세션 close.
 
-    네트워크 호출 전에 세션을 즉시 닫아 풀 압박 방지. 변경 대상이 아니면 None.
+    반환: (current_stage, desired_stage, prev_completed, prev_end_date, project_name)
+    또는 None (변경 대상 아님).
+
+    prev_* 는 reactivation 이력 로깅에 사용. 네트워크 호출 전에 세션을 즉시
+    닫아 풀 압박 방지.
     """
     with SessionLocal() as db:
         proj = db.get(M.MirrorProject, project_id)
@@ -64,7 +72,16 @@ def _read_desired_stage(project_id: str) -> tuple[str, str] | None:
         if proj.stage not in ("진행중", "대기"):
             return None
         desired = "진행중" if has_active_task_this_week(db, project_id) else "대기"
-        return (proj.stage, desired)
+        prev_end_date = (
+            P.date_range(proj.properties or {}, "완료일")[0] or ""
+        )
+        return (
+            proj.stage,
+            desired,
+            bool(proj.completed),
+            prev_end_date,
+            proj.name or "",
+        )
 
 
 async def reconcile_project_stage(
@@ -82,11 +99,12 @@ async def reconcile_project_stage(
     decision = _read_desired_stage(project_id)
     if decision is None:
         return None
-    current, desired = decision
+    current, desired, prev_completed, prev_end_date, project_name = decision
     if desired == current:
         return None
     # stage가 진행중/대기로 바뀔 때 '완료' 체크박스/완료일도 함께 클리어 —
     # stage=진행중 + completed=true 같은 부정합 회피 (auto_progress_tasks와 동일).
+    # 클리어되는 이전 완료 정보는 assign_log 에 이력 기록.
     props = {
         "진행단계": {"select": {"name": desired}},
         "완료": {"checkbox": False},
@@ -94,6 +112,17 @@ async def reconcile_project_stage(
     }
     updated = await notion.update_page(project_id, props)
     get_sync().upsert_page("projects", updated)
+    if prev_completed or prev_end_date:
+        await log_assign_change(
+            notion,
+            project_id=project_id,
+            project_name=(
+                f"{project_name} (이전 완료일: {prev_end_date or '미상'})"
+            ),
+            actor="(시스템 자동 reconcile)",
+            target="(자동)",
+            action="완료 해제",
+        )
     return updated
 
 

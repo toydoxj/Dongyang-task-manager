@@ -19,7 +19,9 @@ from sqlalchemy import and_, or_, select
 
 from app.db import SessionLocal
 from app.models import mirror as M
+from app.services import notion_props as P
 from app.services.notion import NotionService
+from app.services.project_log import log_assign_change
 from app.services.sync import get_sync
 
 logger = logging.getLogger("task.auto_progress")
@@ -100,11 +102,18 @@ async def auto_progress_tasks(notion: NotionService) -> dict[str, int]:
 
     # 프로젝트 진행단계 promote — '완료' 체크박스/완료일도 함께 클리어해
     # stage=진행중 + completed=true 같은 부정합 회피.
+    # 클리어되는 이전 완료 정보는 assign_log 에 '완료 해제' 이벤트로 기록.
     projects_due = _list_projects_to_promote(project_ids_to_promote)
     project_updated = 0
     project_failed = 0
     for p in projects_due:
         try:
+            # 이전 완료 정보 capture — 클리어 후 추적용
+            prev_completed = bool(p.completed)
+            prev_end_date = (
+                P.date_range(p.properties or {}, "완료일")[0] or ""
+            )
+
             page = await notion.update_page(
                 p.page_id,
                 {
@@ -115,6 +124,19 @@ async def auto_progress_tasks(notion: NotionService) -> dict[str, int]:
             )
             get_sync().upsert_page("projects", page)
             project_updated += 1
+
+            # 이전이 완료 상태였다면 이력 기록
+            if prev_completed or prev_end_date:
+                await log_assign_change(
+                    notion,
+                    project_id=p.page_id,
+                    project_name=(
+                        f"{p.name or ''} (이전 완료일: {prev_end_date or '미상'})"
+                    ),
+                    actor="(시스템 자동 promote)",
+                    target="(자동)",
+                    action="완료 해제",
+                )
         except Exception:  # noqa: BLE001
             logger.exception("프로젝트 진행단계 promote 실패 page_id=%s", p.page_id)
             project_failed += 1
