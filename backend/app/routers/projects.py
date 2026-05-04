@@ -375,9 +375,15 @@ async def assign_me(
     prev_end_date = P.date_range(props, "완료일")[0] or ""
     needs_assign = target_name not in current
     needs_stage = set_to_waiting and current_stage != "진행중"
-    needs_clear_completed = needs_stage and current_completed
+    # 부정합 healing — stage가 활성(진행중/대기)인데 completed=true 면
+    # 사용자가 '재활성화' 클릭한 의도가 완료 체크박스 클리어임. me 필터의
+    # !p.completed 때문에 진행중 임에도 목록에서 안 보이는 갇힘 상태 해소.
+    needs_data_heal = (
+        current_stage in {"진행중", "대기"} and current_completed
+    )
+    needs_clear_completed = (needs_stage and current_completed) or needs_data_heal
 
-    if not needs_assign and not needs_stage:
+    if not needs_assign and not needs_stage and not needs_data_heal:
         return Project.from_notion_page(page)
 
     update_props: dict = {}
@@ -388,12 +394,11 @@ async def assign_me(
         }
     if needs_stage:
         update_props["진행단계"] = {"select": {"name": "대기"}}
-        # 가져오기로 다시 활성화 — '완료' 표시·'완료일'도 함께 해제
-        # (mine list filter가 !completed 라 안 풀면 me 페이지에 안 보임).
-        # 이전 완료일은 별도 assign log에 보존되어 기록 사라지지 않음.
-        if needs_clear_completed:
-            update_props["완료"] = {"checkbox": False}
-            update_props["완료일"] = {"date": None}
+    # 가져오기로 다시 활성화 — '완료' 표시·'완료일' 해제. 이전 완료일은
+    # assign log 에 보존. needs_data_heal 케이스도 동일 처리.
+    if needs_clear_completed:
+        update_props["완료"] = {"checkbox": False}
+        update_props["완료일"] = {"date": None}
 
     updated = await notion.update_page(page_id, update_props)
     get_sync().upsert_page("projects", updated)
