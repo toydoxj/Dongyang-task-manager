@@ -5,13 +5,13 @@ import { useState } from "react";
 
 import TaskKanban from "@/components/project/TaskKanban";
 import { unassignMe } from "@/lib/api";
-import type { Project, Task } from "@/lib/domain";
+import type { Project } from "@/lib/domain";
 import { formatDate, formatPercent } from "@/lib/format";
+import { useTasks } from "@/lib/hooks";
 import { cn } from "@/lib/utils";
 
 interface Props {
   project: Project;
-  tasks: Task[];                       // 이 프로젝트의 task 만 (이미 필터됨)
   onChanged: () => void;               // task 변경 시 호출
   onCreate: (projectId: string, initialStatus?: string) => void;
   onUnassigned?: (projectId: string) => void;  // 담당 해제 후 호출 (즉시 제거 + revalidate)
@@ -29,7 +29,6 @@ const STAGE_BADGE: Record<string, string> = {
 
 export default function ProjectTaskRow({
   project,
-  tasks,
   onChanged,
   onCreate,
   onUnassigned,
@@ -37,6 +36,11 @@ export default function ProjectTaskRow({
   forUser,
   effectiveActive,
 }: Props) {
+  // 프로젝트 전체 task (다른 직원 담당분 포함) — 카운트 + 칸반에 사용.
+  // 페이지 레벨 mine tasks 는 '해야할 일' 과 진행중/대기 분류에만 쓰이고
+  // 여기 칸반에는 본인/타인 가리지 않고 모두 노출.
+  const { data: projectTasksData } = useTasks({ project_id: project.id });
+  const tasks = projectTasksData?.items ?? [];
   // 우리 앱 분류 (effectiveActive) 가 우선, 없으면 노션 stage 사용
   const displayStage =
     effectiveActive == null

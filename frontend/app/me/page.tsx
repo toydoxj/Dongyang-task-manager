@@ -85,7 +85,13 @@ export default function MyPage() {
   const projects = candidates;
 
   const refreshTasks = (): void => {
-    void mutate(keys.tasks(fetchFilters));
+    // mine tasks + 프로젝트별 tasks(다른 직원 담당분) 캐시 모두 무효화 — task 편집 후
+    // ProjectTaskRow 의 자체 fetch 와 페이지의 mine fetch 둘 다 갱신되도록.
+    void mutate(
+      (key) => Array.isArray(key) && key[0] === "tasks",
+      undefined,
+      { revalidate: true },
+    );
   };
 
   const handleDeleteTask = async (t: Task): Promise<void> => {
@@ -272,7 +278,6 @@ export default function MyPage() {
                     <ProjectTaskRow
                       key={p.id}
                       project={p}
-                      tasks={(tasks ?? []).filter((t) => taskBelongsTo(t, p.id))}
                       myName={effectiveName}
                       forUser={isViewingOther ? effectiveName ?? undefined : undefined}
                       effectiveActive={true}
@@ -306,7 +311,6 @@ export default function MyPage() {
                     <ProjectTaskRow
                       key={p.id}
                       project={p}
-                      tasks={(tasks ?? []).filter((t) => taskBelongsTo(t, p.id))}
                       myName={effectiveName}
                       forUser={isViewingOther ? effectiveName ?? undefined : undefined}
                       effectiveActive={false}
