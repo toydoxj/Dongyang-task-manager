@@ -51,6 +51,8 @@ export default function ProjectTaskRow({
       ? project.client_names.join(", ")
       : project.client_text;
   const [busy, setBusy] = useState(false);
+  // 초기 접힘 상태 — 펼침 막대 클릭 시 TASK 칸반 노출
+  const [collapsed, setCollapsed] = useState(true);
   const isMine = !!myName && project.assignees.includes(myName);
 
   const handleUnassign = async (): Promise<void> => {
@@ -73,13 +75,29 @@ export default function ProjectTaskRow({
   };
 
   return (
-    <section className="rounded-xl border border-zinc-200 bg-zinc-50/30 p-3 dark:border-zinc-800 dark:bg-zinc-950/30">
-      {/* 프로젝트 헤더 */}
-      <header className="mb-3 flex flex-wrap items-start justify-between gap-2 px-1">
+    <section className="rounded-xl border border-zinc-200 bg-zinc-50/30 dark:border-zinc-800 dark:bg-zinc-950/30">
+      {/* 펼침 막대 — 빈 공간 클릭 시 TASK 노출. 내부 링크/버튼은 stopPropagation */}
+      <div
+        onClick={() => setCollapsed((v) => !v)}
+        role="button"
+        tabIndex={0}
+        aria-expanded={!collapsed}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            setCollapsed((v) => !v);
+          }
+        }}
+        className="flex w-full cursor-pointer items-start gap-2 px-3 py-2 hover:bg-zinc-100/40 dark:hover:bg-zinc-800/30"
+      >
+        <span className="mt-0.5 shrink-0 text-zinc-400">
+          {collapsed ? "▶" : "▼"}
+        </span>
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
             <Link
               href={`/project?id=${project.id}`}
+              onClick={(e) => e.stopPropagation()}
               className="truncate text-sm font-semibold text-zinc-900 hover:underline dark:text-zinc-100"
               title={project.name}
             >
@@ -96,6 +114,9 @@ export default function ProjectTaskRow({
                 {displayStage}
               </span>
             )}
+            <span className="shrink-0 text-[10px] text-zinc-500">
+              TASK {tasks.length}건
+            </span>
           </div>
           <p className="mt-0.5 text-[11px] text-zinc-500">
             <span className="font-mono">{project.code || "—"}</span>
@@ -107,7 +128,10 @@ export default function ProjectTaskRow({
         {isMine && (
           <button
             type="button"
-            onClick={handleUnassign}
+            onClick={(e) => {
+              e.stopPropagation();
+              void handleUnassign();
+            }}
             disabled={busy}
             title="본인을 이 프로젝트 담당자에서 제거 (노션 이력 기록)"
             className="shrink-0 rounded-md border border-zinc-300 px-2 py-1 text-[10px] text-zinc-600 hover:border-red-400 hover:bg-red-500/5 hover:text-red-500 disabled:opacity-50 dark:border-zinc-700 dark:text-zinc-300"
@@ -115,14 +139,18 @@ export default function ProjectTaskRow({
             {busy ? "해제중..." : "내 담당 해제"}
           </button>
         )}
-      </header>
+      </div>
 
-      {/* 이 프로젝트 단독 TaskKanban (별도 DndContext → 드래그 격리) */}
-      <TaskKanban
-        tasks={tasks}
-        onChanged={onChanged}
-        onCreate={(initialStatus) => onCreate(project.id, initialStatus)}
-      />
+      {/* 펼침 시: 이 프로젝트 단독 TaskKanban (별도 DndContext → 드래그 격리) */}
+      {!collapsed && (
+        <div className="border-t border-zinc-200 p-3 dark:border-zinc-800">
+          <TaskKanban
+            tasks={tasks}
+            onChanged={onChanged}
+            onCreate={(initialStatus) => onCreate(project.id, initialStatus)}
+          />
+        </div>
+      )}
     </section>
   );
 }

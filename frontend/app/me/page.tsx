@@ -40,8 +40,6 @@ export default function MyPage() {
   } | null>(null);
   // '해야할 일' 섹션 접기 (사용자가 자주 보는 영역이라 default 펼침)
   const [todoCollapsed, setTodoCollapsed] = useState(false);
-  // '담당 프로젝트' 섹션 접기 — default 펼침
-  const [projectsCollapsed, setProjectsCollapsed] = useState(false);
 
   // 다른 직원 보기 모드면 mine 대신 assignee=name 으로 fetch
   const fetchFilters = effectiveName
@@ -227,20 +225,9 @@ export default function MyPage() {
 
       <section>
         <div className="mb-2 flex items-center justify-between gap-2">
-          <button
-            type="button"
-            onClick={() => setProjectsCollapsed((v) => !v)}
-            className="flex items-center gap-2 text-left text-sm font-medium text-zinc-700 hover:text-zinc-900 dark:text-zinc-300 dark:hover:text-zinc-100"
-            aria-expanded={!projectsCollapsed}
-          >
-            <span className="text-zinc-400">
-              {projectsCollapsed ? "▶" : "▼"}
-            </span>
+          <h2 className="flex items-center gap-2 text-sm font-medium text-zinc-700 dark:text-zinc-300">
             담당 프로젝트 ({projects?.length ?? "—"})
-            <span className="ml-1 text-[10px] font-normal text-zinc-500">
-              {projectsCollapsed ? "펼치기" : "접기"}
-            </span>
-          </button>
+          </h2>
           <div className="flex gap-2">
             <button
               type="button"
@@ -258,7 +245,7 @@ export default function MyPage() {
             </button>
           </div>
         </div>
-        {projectsCollapsed ? null : projects == null ? (
+        {projects == null ? (
           <LoadingState message="담당 프로젝트 불러오는 중" height="h-32" />
         ) : projects.length === 0 ? (
           <p className="rounded-md border border-zinc-200 bg-white p-4 text-sm text-zinc-500 dark:border-zinc-800 dark:bg-zinc-900">
