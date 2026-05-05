@@ -55,6 +55,29 @@ EXPECTED: dict[str, dict[str, str]] = {
         "금액": "number",
         "구분": "select",
     },
+    # 영업 DB — 사장이 운영하던 "견적서 작성 리스트" 컬럼 + 코드가 도입한
+    # 분류 차원(유형/단계/입찰여부) 모두 검증. `전환된 프로젝트` relation은
+    # 운영자가 노션 UI에서 수동 생성해야 하므로 본 검사에서 제외 (있으면 OK).
+    "SALES": {
+        # 사장 기존 컬럼 (활용)
+        "견적서명": "title",
+        "견적금액": "number",
+        "연면적": "number",
+        "지상층수": "number",
+        "지하층수": "number",
+        "동수": "number",
+        "업무내용": "multi_select",
+        "의뢰처": "relation",
+        "상위 영업건": "relation",
+        "전환된 프로젝트": "relation",
+        "비고": "rich_text",
+        "제출일": "date",
+        # 코드가 도입한 분류 차원
+        "유형": "select",
+        "단계": "select",
+        "입찰여부": "checkbox",
+        "담당자": "multi_select",
+    },
 }
 
 
@@ -65,6 +88,7 @@ def db_id_for(alias: str) -> str:
         "TASKS": s.notion_db_tasks,
         "CASHFLOW": s.notion_db_cashflow,
         "EXPENSE": s.notion_db_expense,
+        "SALES": s.notion_db_sales,
     }
     return mapping[alias]
 

@@ -129,6 +129,44 @@ SEAL_REQUEST_DB_REQUIRED: dict[str, dict[str, Any]] = {
 }
 
 
+# 영업(Sales) DB — 사장이 운영하던 "견적서 작성 리스트" DB를 영업 파이프라인으로
+# 확장한 형태. 도메인 컬럼 대부분(견적서명/견적금액/연면적/지상층수/지하층수/동수/
+# 업무내용/의뢰처/비고/제출일 등)은 사장이 이미 정의·운영 중이므로 본 자동 보강
+# 대상에서 제외한다. 본 dict는 "코드가 추가로 도입한 영업 분류 차원"만 보강한다.
+#
+# kind는 "수주영업"(견적·입찰)과 "기술지원"(수주 전 자문) 2갈래.
+# stage는 두 kind의 옵션을 한 select에 합친다(노션 select는 그룹화 미지원).
+# UI에서 kind에 따라 노출 옵션을 필터링하지만 노션 자체는 자유 선택.
+# `전환된 프로젝트`(프로젝트 DB relation)는 update_data_source_schema가 relation
+# 자동 생성을 지원하지 않으므로 운영자가 노션 UI에서 직접 추가해야 한다.
+# `상위 영업건` self relation은 이미 견적서 DB에 존재.
+SALES_DB_REQUIRED: dict[str, dict[str, Any]] = {
+    "유형": _select(
+        [
+            ("수주영업", "blue"),
+            ("기술지원", "purple"),
+        ]
+    ),
+    # 단계: 수주영업 5종. 기술지원 단계는 PM 합의 후 PRESALES_STAGES에서 시드.
+    # default 10% fallback이 있으므로 옵션이 비어 있어도 시스템 동작.
+    # 사장 운영 견적서 DB의 기존 단계 옵션과 정확히 동일하므로 보강 시 무변경.
+    "단계": _select(
+        [
+            ("견적준비", "yellow"),
+            ("입찰대기", "orange"),
+            ("우선협상", "blue"),
+            ("낙찰", "green"),
+            ("실주", "gray"),
+        ]
+    ),
+    "입찰여부": {"checkbox": {}},
+    # 담당자 — 기존 견적서 DB가 multi_select 텍스트로 운영 중이므로 동일 패턴.
+    # /me 페이지의 assignee 매칭 로직을 그대로 재사용한다. 옵션은 노션이 사용자
+    # 입력 시 자동 등록 (task DB와 동일).
+    "담당자": {"multi_select": {}},
+}
+
+
 # 건의사항 DB
 SUGGESTION_DB_REQUIRED: dict[str, dict[str, Any]] = {
     "내용": {"rich_text": {}},
@@ -250,4 +288,10 @@ async def ensure_all_schemas(notion: NotionService, settings: Settings) -> None:
         settings.notion_db_contract_items,
         CONTRACT_ITEM_DB_REQUIRED,
         label="contract_items",
+    )
+    await _ensure_db(
+        notion,
+        settings.notion_db_sales,
+        SALES_DB_REQUIRED,
+        label="sales",
     )

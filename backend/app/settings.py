@@ -40,6 +40,8 @@ class Settings(BaseSettings):
     notion_db_seal_requests: str = ""  # 날인요청
     # 프로젝트 계약 항목 (공동수급/추가용역 — 1프로젝트 N발주처 N금액)
     notion_db_contract_items: str = ""
+    # 영업 파이프라인 (수주영업 + 기술지원). 견적서 DB를 확장한 형태
+    notion_db_sales: str = ""
 
     # ── 외부 파일 storage (날인요청 첨부) ──
     storage_provider: str = "s3"  # 현재는 s3만
