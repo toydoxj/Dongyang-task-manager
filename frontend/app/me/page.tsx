@@ -6,6 +6,7 @@ import { useMemo, useState } from "react";
 import { useSWRConfig } from "swr";
 
 import { useAuth } from "@/components/AuthGuard";
+import MySalesSection from "@/components/me/MySalesSection";
 import ProjectCreateModal from "@/components/me/ProjectCreateModal";
 import OtherTasksKanban from "@/components/me/OtherTasksKanban";
 import ProjectImportModal from "@/components/me/ProjectImportModal";
@@ -327,6 +328,13 @@ export default function MyPage() {
           </div>
         )}
       </section>
+
+      <hr className="border-zinc-200 dark:border-zinc-800" />
+
+      <MySalesSection
+        effectiveName={effectiveName}
+        isViewingOther={isViewingOther}
+      />
 
       <hr className="border-zinc-200 dark:border-zinc-800" />
 

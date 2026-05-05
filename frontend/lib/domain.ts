@@ -440,3 +440,72 @@ export const NON_PROJECT_WORK_CATEGORIES = [
   "서비스",
   "영업(서비스)",
 ] as const;
+
+// ── 영업(Sales) ──
+
+/** 영업 유형. 노션 '유형' select 옵션과 일치. */
+export type SalesKind = "수주영업" | "기술지원" | "";
+
+/** 수주영업 단계. 노션 '단계' select 옵션. */
+export const BID_STAGES = [
+  "견적준비",
+  "입찰대기",
+  "우선협상",
+  "낙찰",
+  "실주",
+] as const;
+
+export interface Sale {
+  id: string;
+  name: string;          // 견적서명
+  kind: SalesKind;
+  stage: string;
+  category: string[];     // 업무내용 multi_select
+  estimated_amount: number | null;  // 견적금액 KRW
+  is_bid: boolean;
+  client_id: string;      // 의뢰처 relation 첫번째
+  gross_floor_area: number | null;
+  floors_above: number | null;
+  floors_below: number | null;
+  building_count: number | null;
+  note: string;
+  submission_date: string | null;
+  vat_inclusive: string;
+  performance_design_amount: number | null;
+  wind_tunnel_amount: number | null;
+  parent_lead_id: string;
+  converted_project_id: string;
+  assignees: string[];
+  created_time: string | null;
+  last_edited_time: string | null;
+  url: string | null;
+  expected_revenue: number;  // 백엔드 computed_field — 견적금액 × 단계별 수주확률
+}
+
+export interface SaleListResponse {
+  items: Sale[];
+  count: number;
+}
+
+export interface SaleCreateRequest {
+  name: string;
+  kind?: string;
+  stage?: string;
+  category?: string[];
+  estimated_amount?: number;
+  is_bid?: boolean;
+  client_id?: string;
+  gross_floor_area?: number;
+  floors_above?: number;
+  floors_below?: number;
+  building_count?: number;
+  note?: string;
+  submission_date?: string;
+  vat_inclusive?: string;
+  performance_design_amount?: number;
+  wind_tunnel_amount?: number;
+  parent_lead_id?: string;
+  assignees?: string[];
+}
+
+export type SaleUpdateRequest = Partial<SaleCreateRequest>;

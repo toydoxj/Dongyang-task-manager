@@ -8,10 +8,12 @@ import {
   getMasterProject,
   getProject,
   getProjectOptions,
+  getSale,
   listClients,
   listContractItems,
   listMasterImages,
   listProjects,
+  listSales,
   listTasks,
 } from "./api";
 import type {
@@ -24,6 +26,8 @@ import type {
   Project,
   ProjectListResponse,
   ProjectOptions,
+  Sale,
+  SaleListResponse,
   TaskListResponse,
 } from "./domain";
 
@@ -39,6 +43,9 @@ export const keys = {
   clients: () => ["clients"] as const,
   contractItems: (projectId?: string) =>
     ["contract-items", projectId ?? null] as const,
+  sales: (filters?: Parameters<typeof listSales>[0]) =>
+    ["sales", filters ?? null] as const,
+  sale: (id: string) => ["sale", id] as const,
 };
 
 export function useProjects(
@@ -63,6 +70,20 @@ export function useTasks(
     enabled ? keys.tasks(filters) : null,
     () => listTasks(filters),
   );
+}
+
+export function useSales(
+  filters?: Parameters<typeof listSales>[0],
+  enabled: boolean = true,
+): SWRResponse<SaleListResponse> {
+  return useSWR(
+    enabled ? keys.sales(filters) : null,
+    () => listSales(filters),
+  );
+}
+
+export function useSale(id: string | null): SWRResponse<Sale> {
+  return useSWR(id ? keys.sale(id) : null, () => getSale(id!));
 }
 
 export function useCashflow(

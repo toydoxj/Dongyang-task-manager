@@ -26,6 +26,10 @@ import type {
   ProjectCreateRequest,
   ProjectListResponse,
   ProjectOptions,
+  Sale,
+  SaleCreateRequest,
+  SaleListResponse,
+  SaleUpdateRequest,
   Task,
   TaskCreateRequest,
   TaskListResponse,
@@ -948,4 +952,57 @@ export async function uploadDriveFiles(
     { method: "POST", body: fd },
   );
   return jsonOrThrow<DriveUploadResponse>(res);
+}
+
+// ── 영업(Sales) ──
+
+export async function listSales(
+  filters: {
+    assignee?: string;
+    kind?: string;
+    stage?: string;
+    mine?: boolean;
+  } = {},
+): Promise<SaleListResponse> {
+  const res = await authFetch(`/api/sales${qs(filters)}`);
+  return jsonOrThrow<SaleListResponse>(res);
+}
+
+export async function getSale(pageId: string): Promise<Sale> {
+  const res = await authFetch(`/api/sales/${pageId}`);
+  return jsonOrThrow<Sale>(res);
+}
+
+export async function createSale(body: SaleCreateRequest): Promise<Sale> {
+  const res = await authFetch(`/api/sales`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  return jsonOrThrow<Sale>(res);
+}
+
+export async function updateSale(
+  pageId: string,
+  body: SaleUpdateRequest,
+): Promise<Sale> {
+  const res = await authFetch(`/api/sales/${pageId}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  return jsonOrThrow<Sale>(res);
+}
+
+export async function archiveSale(
+  pageId: string,
+): Promise<{ status: string; page_id: string }> {
+  const res = await authFetch(`/api/sales/${pageId}`, { method: "DELETE" });
+  return jsonOrThrow<{ status: string; page_id: string }>(res);
+}
+
+/** 수주영업·우선협상/낙찰 단계의 영업을 메인 프로젝트로 전환. admin 전용. */
+export async function convertSale(pageId: string): Promise<Project> {
+  const res = await authFetch(`/api/sales/${pageId}/convert`, { method: "POST" });
+  return jsonOrThrow<Project>(res);
 }
