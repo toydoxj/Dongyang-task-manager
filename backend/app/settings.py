@@ -12,6 +12,9 @@ class Settings(BaseSettings):
         env_file_encoding="utf-8",
         case_sensitive=False,
         extra="ignore",
+        # CRLF 줄바꿈이 섞인 .env 파일에서 trailing \r이 값에 포함되는 문제 방지.
+        # 모든 string 필드에 .strip()을 자동 적용 (pydantic v2 기능).
+        str_strip_whitespace=True,
     )
 
     jwt_secret: str = "change-me-in-production"

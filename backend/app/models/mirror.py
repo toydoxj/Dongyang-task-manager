@@ -141,6 +141,49 @@ class MirrorContractItem(Base):
     archived: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
 
 
+class MirrorSales(Base):
+    """영업(Sales) 미러 — 사장이 운영하던 '견적서 작성 리스트' DB.
+
+    수주영업(견적·입찰)과 기술지원(수주 전 자문) 두 갈래를 단일 테이블에서 관리.
+    `kind` 컬럼으로 구분하고, `stage`는 두 갈래의 단계를 한 select에 합친 형태.
+    `category`/`assignees`는 multi_select라 ARRAY[String]로 모델링.
+    """
+
+    __tablename__ = "mirror_sales"
+
+    page_id: Mapped[str] = mapped_column(String, primary_key=True)
+    name: Mapped[str] = mapped_column(String, default="")  # 견적서명 (title)
+    kind: Mapped[str] = mapped_column(String, default="", index=True)  # 수주영업|기술지원
+    stage: Mapped[str] = mapped_column(String, default="", index=True)
+    category: Mapped[list[str]] = mapped_column(ARRAY(String), default=list)  # 업무내용 multi_select
+    estimated_amount: Mapped[float | None] = mapped_column(Float, nullable=True)  # 견적금액
+    is_bid: Mapped[bool] = mapped_column(Boolean, default=False)
+    # 의뢰처(clients DB relation 첫번째) — text 빠른 join 용도. 정식 join은 mirror_clients
+    client_id: Mapped[str] = mapped_column(String, default="", index=True)
+    gross_floor_area: Mapped[float | None] = mapped_column(Float, nullable=True)  # 연면적 ㎡
+    floors_above: Mapped[float | None] = mapped_column(Float, nullable=True)  # 지상층수
+    floors_below: Mapped[float | None] = mapped_column(Float, nullable=True)  # 지하층수
+    building_count: Mapped[float | None] = mapped_column(Float, nullable=True)  # 동수
+    note: Mapped[str] = mapped_column(Text, default="")
+    submission_date: Mapped[date | None] = mapped_column(Date, nullable=True, index=True)
+    vat_inclusive: Mapped[str] = mapped_column(String, default="")  # 별도|포함
+    performance_design_amount: Mapped[float | None] = mapped_column(Float, nullable=True)
+    wind_tunnel_amount: Mapped[float | None] = mapped_column(Float, nullable=True)
+    parent_lead_id: Mapped[str] = mapped_column(String, default="", index=True)  # 상위 영업건
+    converted_project_id: Mapped[str] = mapped_column(String, default="", index=True)
+    assignees: Mapped[list[str]] = mapped_column(ARRAY(String), default=list)
+    properties: Mapped[dict] = mapped_column(JSONB, default=dict)
+    url: Mapped[str] = mapped_column(String, default="")
+    created_time: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    last_edited_time: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, index=True
+    )
+    synced_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    archived: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+
+
 class MirrorBlock(Base):
     """페이지 본문 블록 (특히 마스터 프로젝트의 image block)."""
 

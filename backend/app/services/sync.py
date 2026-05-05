@@ -19,6 +19,7 @@ from app.models import mirror as M
 from app.models.cashflow import CashflowEntry
 from app.models.contract_item import ContractItem
 from app.models.project import Project
+from app.models.sale import Sale
 from app.models.task import Task
 from app.services import notion_props as P
 from app.services.notion import NotionService
@@ -34,6 +35,7 @@ SyncKind = Literal[
     "cashflow",
     "expense",
     "contract_items",
+    "sales",
 ]
 ALL_KINDS: tuple[SyncKind, ...] = (
     "projects",
@@ -43,6 +45,7 @@ ALL_KINDS: tuple[SyncKind, ...] = (
     "cashflow",
     "expense",
     "contract_items",
+    "sales",
 )
 
 # incremental query lookback. since를 sync 시작 시각으로 박아도 노션 인덱싱
@@ -267,6 +270,7 @@ class NotionSyncService:
             "cashflow": s.notion_db_cashflow,
             "expense": s.notion_db_expense,
             "contract_items": s.notion_db_contract_items,
+            "sales": s.notion_db_sales,
         }[kind]
 
     def _upsert_one(self, db: Session, kind: SyncKind, page: dict) -> None:
@@ -284,6 +288,8 @@ class NotionSyncService:
             self._upsert_cashflow(db, page, kind="expense")
         elif kind == "contract_items":
             self._upsert_contract_item(db, page)
+        elif kind == "sales":
+            self._upsert_sale(db, page)
 
     def _archive_one(self, db: Session, kind: SyncKind, page_id: str) -> None:
         table = self._table_for(kind)
@@ -302,6 +308,7 @@ class NotionSyncService:
             "cashflow": M.MirrorCashflow,
             "expense": M.MirrorCashflow,
             "contract_items": M.MirrorContractItem,
+            "sales": M.MirrorSales,
         }.get(kind)
 
     def _mark_missing_archived(
@@ -551,6 +558,69 @@ class NotionSyncService:
                     vat=stmt.excluded.vat,
                     sort_order=stmt.excluded.sort_order,
                     properties=stmt.excluded.properties,
+                    last_edited_time=stmt.excluded.last_edited_time,
+                    synced_at=stmt.excluded.synced_at,
+                    archived=stmt.excluded.archived,
+                ),
+            )
+        )
+
+    def _upsert_sale(self, db: Session, page: dict) -> None:
+        s = Sale.from_notion_page(page)
+        stmt = pg_insert(M.MirrorSales).values(
+            page_id=s.id,
+            name=s.name or "",
+            kind=s.kind or "",
+            stage=s.stage or "",
+            category=list(s.category),
+            estimated_amount=s.estimated_amount,
+            is_bid=bool(s.is_bid),
+            client_id=s.client_id or "",
+            gross_floor_area=s.gross_floor_area,
+            floors_above=s.floors_above,
+            floors_below=s.floors_below,
+            building_count=s.building_count,
+            note=s.note or "",
+            submission_date=_parse_date(s.submission_date),
+            vat_inclusive=s.vat_inclusive or "",
+            performance_design_amount=s.performance_design_amount,
+            wind_tunnel_amount=s.wind_tunnel_amount,
+            parent_lead_id=s.parent_lead_id or "",
+            converted_project_id=s.converted_project_id or "",
+            assignees=list(s.assignees),
+            properties=page.get("properties", {}),
+            url=page.get("url") or "",
+            created_time=_parse_iso(s.created_time),
+            last_edited_time=_parse_iso(s.last_edited_time),
+            synced_at=_utcnow(),
+            archived=bool(page.get("archived", False)),
+        )
+        db.execute(
+            stmt.on_conflict_do_update(
+                index_elements=["page_id"],
+                set_=dict(
+                    name=stmt.excluded.name,
+                    kind=stmt.excluded.kind,
+                    stage=stmt.excluded.stage,
+                    category=stmt.excluded.category,
+                    estimated_amount=stmt.excluded.estimated_amount,
+                    is_bid=stmt.excluded.is_bid,
+                    client_id=stmt.excluded.client_id,
+                    gross_floor_area=stmt.excluded.gross_floor_area,
+                    floors_above=stmt.excluded.floors_above,
+                    floors_below=stmt.excluded.floors_below,
+                    building_count=stmt.excluded.building_count,
+                    note=stmt.excluded.note,
+                    submission_date=stmt.excluded.submission_date,
+                    vat_inclusive=stmt.excluded.vat_inclusive,
+                    performance_design_amount=stmt.excluded.performance_design_amount,
+                    wind_tunnel_amount=stmt.excluded.wind_tunnel_amount,
+                    parent_lead_id=stmt.excluded.parent_lead_id,
+                    converted_project_id=stmt.excluded.converted_project_id,
+                    assignees=stmt.excluded.assignees,
+                    properties=stmt.excluded.properties,
+                    url=stmt.excluded.url,
+                    created_time=stmt.excluded.created_time,
                     last_edited_time=stmt.excluded.last_edited_time,
                     synced_at=stmt.excluded.synced_at,
                     archived=stmt.excluded.archived,

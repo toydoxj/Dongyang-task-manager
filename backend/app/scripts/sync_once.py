@@ -30,11 +30,40 @@ _KIND_ENV = {
     "cashflow": "NOTION_DB_CASHFLOW",
     "expense": "NOTION_DB_EXPENSE",
     "contract_items": "NOTION_DB_CONTRACT_ITEMS",
+    "sales": "NOTION_DB_SALES",
 }
+
+
+def _bootstrap_env_from_settings() -> None:
+    """pydantic-settings가 .env에서 로드한 값을 os.environ에 inject.
+
+    sync_once.py는 OS env로 검증하지만, 로컬 dev에서 .env로만 값을 둔 경우
+    OS env에는 값이 없다. pydantic-settings는 .env 자동 로드하므로 settings
+    값을 한 번 OS env에 펌프해서 두 경로를 일치시킨다 (이미 OS env에 값 있으면 보존).
+    """
+    from app.settings import get_settings
+
+    s = get_settings()
+    pairs = [
+        ("DATABASE_URL", s.database_url),
+        ("NOTION_API_KEY", s.notion_api_key),
+        ("NOTION_DB_PROJECTS", s.notion_db_projects),
+        ("NOTION_DB_TASKS", s.notion_db_tasks),
+        ("NOTION_DB_CLIENTS", s.notion_db_clients),
+        ("NOTION_DB_MASTER", s.notion_db_master),
+        ("NOTION_DB_CASHFLOW", s.notion_db_cashflow),
+        ("NOTION_DB_EXPENSE", s.notion_db_expense),
+        ("NOTION_DB_CONTRACT_ITEMS", s.notion_db_contract_items),
+        ("NOTION_DB_SALES", s.notion_db_sales),
+    ]
+    for env_key, val in pairs:
+        if val and not os.environ.get(env_key):
+            os.environ[env_key] = val
 
 
 def assert_required_env(kind: str) -> None:
     """cron 실행 전 필수 env 검증. 누락 시 0건 사일런트 성공 차단."""
+    _bootstrap_env_from_settings()
     common = ["DATABASE_URL", "NOTION_API_KEY"]
     if kind:
         required = common + [_KIND_ENV[kind]]
