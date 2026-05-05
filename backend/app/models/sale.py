@@ -10,7 +10,6 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, computed_field
 
 from app.services import notion_props as P
-from app.services.sales_probability import expected_revenue as _expected_revenue
 
 
 class Sale(BaseModel):
@@ -19,11 +18,13 @@ class Sale(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
     id: str
+    code: str = ""           # 영업코드 {YY}-영업-{NNN}
     name: str = ""           # 견적서명 (title)
     kind: str = ""           # 수주영업|기술지원
-    stage: str = ""          # 견적준비|입찰대기|우선협상|낙찰|실주 (수주영업) 또는 기술지원 단계
+    stage: str = ""          # 준비|진행|제출|완료|종결 (사장 5단계)
     category: list[str] = []  # 업무내용 multi_select (구조검토/입찰설계/...)
     estimated_amount: float | None = None  # 견적금액 KRW
+    probability: float | None = None  # 수주확률 0~100 (PM 직접 입력)
     is_bid: bool = False
     client_id: str = ""       # 의뢰처 relation 첫번째 (clients DB id)
     gross_floor_area: float | None = None  # 연면적 ㎡
@@ -45,12 +46,14 @@ class Sale(BaseModel):
     @computed_field  # type: ignore[prop-decorator]
     @property
     def expected_revenue(self) -> float:
-        """기대매출 = 견적금액 × 단계별 수주확률.
+        """기대매출 = 견적금액 × (수주확률 / 100).
 
-        sales_probability.py의 STAGE_PROBABILITY_BY_KIND를 참조.
-        기술지원의 미정의 단계는 default 10% 적용.
+        견적금액·수주확률 어느 한쪽이 비어 있으면 0. PM이 노션 '수주확률' number
+        컬럼에 0~100 직접 입력. 단계별 자동 확률 모델은 폐기됨.
         """
-        return _expected_revenue(self.estimated_amount, self.kind, self.stage)
+        if self.estimated_amount is None or self.probability is None:
+            return 0.0
+        return self.estimated_amount * (self.probability / 100.0)
 
     @classmethod
     def from_notion_page(cls, page: dict[str, Any]) -> "Sale":
@@ -58,11 +61,13 @@ class Sale(BaseModel):
         sub_start, _ = P.date_range(props, "제출일")
         return cls(
             id=page.get("id", ""),
+            code=P.rich_text(props, "영업코드"),
             name=P.title(props, "견적서명"),
             kind=P.select_name(props, "유형"),
             stage=P.select_name(props, "단계"),
             category=P.multi_select_names(props, "업무내용"),
             estimated_amount=P.number(props, "견적금액"),
+            probability=P.number(props, "수주확률"),
             is_bid=P.checkbox(props, "입찰여부"),
             client_id=_first_relation_id(props, "의뢰처"),
             gross_floor_area=P.number(props, "연면적"),
@@ -100,10 +105,12 @@ class SaleCreateRequest(BaseModel):
     """영업 생성 요청. 노션 견적서 작성 리스트에 새 페이지를 추가."""
 
     name: str  # 견적서명
+    code: str = ""  # 영업코드 — 빈 문자열이면 backend가 {YY}-영업-{NNN}으로 자동 부여
     kind: str = ""  # 수주영업|기술지원
     stage: str = ""
     category: list[str] = []
     estimated_amount: float | None = None
+    probability: float | None = None  # 수주확률 0~100 (PM 직접 입력)
     is_bid: bool = False
     client_id: str = ""
     gross_floor_area: float | None = None
@@ -123,10 +130,12 @@ class SaleUpdateRequest(BaseModel):
     """영업 수정 요청. None이 아닌 필드만 노션 properties로 변환."""
 
     name: str | None = None
+    code: str | None = None  # 노션에서 수동 수정 허용 (자동 부여 후 변경 가능)
     kind: str | None = None
     stage: str | None = None
     category: list[str] | None = None
     estimated_amount: float | None = None
+    probability: float | None = None
     is_bid: bool | None = None
     client_id: str | None = None
     gross_floor_area: float | None = None
@@ -183,8 +192,11 @@ def sale_create_to_props(req: SaleCreateRequest) -> dict[str, Any]:
     """SaleCreateRequest → 노션 properties dict.
 
     빈 값은 노션에 보내지 않아 default를 노션이 적용하도록 한다.
+    영업코드는 라우터에서 자동 부여 후 req.code에 채워서 전달.
     """
     props: dict[str, Any] = {"견적서명": _title(req.name)}
+    if req.code:
+        props["영업코드"] = _rich_text(req.code)
     if req.kind:
         props["유형"] = {"select": {"name": req.kind}}
     if req.stage:
@@ -194,6 +206,9 @@ def sale_create_to_props(req: SaleCreateRequest) -> dict[str, Any]:
     n = _number(req.estimated_amount)
     if n is not None:
         props["견적금액"] = n
+    n = _number(req.probability)
+    if n is not None:
+        props["수주확률"] = n
     if req.is_bid:
         props["입찰여부"] = {"checkbox": True}
     if req.client_id:
@@ -231,6 +246,8 @@ def sale_update_to_props(req: SaleUpdateRequest) -> dict[str, Any]:
     props: dict[str, Any] = {}
     if req.name is not None:
         props["견적서명"] = _title(req.name)
+    if req.code is not None:
+        props["영업코드"] = _rich_text(req.code)
     if req.kind is not None:
         props["유형"] = (
             {"select": None} if req.kind == "" else {"select": {"name": req.kind}}
@@ -243,6 +260,8 @@ def sale_update_to_props(req: SaleUpdateRequest) -> dict[str, Any]:
         props["업무내용"] = _multi_select(req.category)
     if req.estimated_amount is not None:
         props["견적금액"] = {"number": req.estimated_amount}
+    if req.probability is not None:
+        props["수주확률"] = {"number": req.probability}
     if req.is_bid is not None:
         props["입찰여부"] = {"checkbox": req.is_bid}
     if req.client_id is not None:

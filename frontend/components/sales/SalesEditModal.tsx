@@ -56,10 +56,12 @@ export default function SalesEditModal({
     if (sale) {
       setForm({
         name: sale.name,
+        code: sale.code || undefined,
         kind: sale.kind || undefined,
         stage: sale.stage || undefined,
         category: sale.category,
         estimated_amount: sale.estimated_amount ?? undefined,
+        probability: sale.probability ?? undefined,
         is_bid: sale.is_bid,
         client_id: sale.client_id || undefined,
         gross_floor_area: sale.gross_floor_area ?? undefined,
@@ -207,6 +209,21 @@ export default function SalesEditModal({
             />
           </Field>
 
+          <Field
+            label={
+              isEdit
+                ? "영업코드 (수정 가능)"
+                : "영업코드 (비워두면 자동 부여)"
+            }
+          >
+            <input
+              className={inputCls}
+              placeholder={isEdit ? "" : "예: 26-영업-001 (자동 부여)"}
+              value={form.code ?? ""}
+              onChange={(e) => setForm({ ...form, code: e.target.value })}
+            />
+          </Field>
+
           <div className="grid grid-cols-2 gap-3">
             <Field label="유형">
               <select
@@ -253,21 +270,42 @@ export default function SalesEditModal({
             </Field>
           </div>
 
-          <Field label="견적금액 (KRW)">
-            <input
-              type="number"
-              className={inputCls}
-              value={form.estimated_amount ?? ""}
-              onChange={(e) =>
-                setForm({
-                  ...form,
-                  estimated_amount: e.target.value
-                    ? Number(e.target.value)
-                    : undefined,
-                })
-              }
-            />
-          </Field>
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="견적금액 (KRW)">
+              <input
+                type="number"
+                className={inputCls}
+                value={form.estimated_amount ?? ""}
+                onChange={(e) =>
+                  setForm({
+                    ...form,
+                    estimated_amount: e.target.value
+                      ? Number(e.target.value)
+                      : undefined,
+                  })
+                }
+              />
+            </Field>
+            <Field label="수주확률 (%, 0~100)">
+              <input
+                type="number"
+                min={0}
+                max={100}
+                step={1}
+                className={inputCls}
+                placeholder="PM 직접 입력"
+                value={form.probability ?? ""}
+                onChange={(e) =>
+                  setForm({
+                    ...form,
+                    probability: e.target.value
+                      ? Number(e.target.value)
+                      : undefined,
+                  })
+                }
+              />
+            </Field>
+          </div>
 
           <div className="grid grid-cols-4 gap-2">
             <Field label="연면적 (㎡)">
@@ -379,7 +417,7 @@ export default function SalesEditModal({
           {isEdit && sale && sale.expected_revenue > 0 && (
             <div className="rounded-md border border-emerald-500/30 bg-emerald-500/5 px-3 py-2 text-xs text-emerald-700 dark:text-emerald-400">
               현재 기대매출: <strong>{sale.expected_revenue.toLocaleString("ko-KR")}원</strong>
-              <span className="ml-1 text-[10px] text-zinc-500">(견적금액 × 단계별 수주확률)</span>
+              <span className="ml-1 text-[10px] text-zinc-500">(견적금액 × 수주확률/100)</span>
             </div>
           )}
         </div>

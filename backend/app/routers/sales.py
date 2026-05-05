@@ -28,6 +28,7 @@ from app.models.sale import (
 from app.security import get_current_user, require_admin
 from app.services.mirror_dto import sale_from_mirror
 from app.services.notion import NotionService, get_notion
+from app.services.sales_code import next_sales_code
 from app.services.sales_probability import CONVERTIBLE_STAGES
 from app.services.sync import get_sync
 from app.settings import get_settings
@@ -108,6 +109,7 @@ async def get_sale(
 async def create_sale(
     body: SaleCreateRequest,
     user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
     notion: NotionService = Depends(get_notion),
 ) -> Sale:
     db_id = get_settings().notion_db_sales
@@ -120,12 +122,19 @@ async def create_sale(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail="견적서명 필수"
         )
+
     # 본인을 자동 담당자로 추가 (이미 담당자 list에 없을 때만)
     if user.name and user.name not in body.assignees:
         body = body.model_copy(update={"assignees": [*body.assignees, user.name]})
 
+    # 영업코드 자동 부여 (빈 값일 때만 — 명시적으로 지정한 경우 그 값 유지).
+    # advisory lock은 현재 트랜잭션 종료 시 자동 해제이므로 db.commit() 시점까지 유효.
+    if not body.code:
+        body = body.model_copy(update={"code": next_sales_code(db)})
+
     page = await notion.create_page(db_id, sale_create_to_props(body))
     get_sync().upsert_page("sales", page)
+    db.commit()  # advisory lock 해제 + mirror upsert 커밋
     return Sale.from_notion_page(page)
 
 

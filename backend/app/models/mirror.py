@@ -152,11 +152,13 @@ class MirrorSales(Base):
     __tablename__ = "mirror_sales"
 
     page_id: Mapped[str] = mapped_column(String, primary_key=True)
+    code: Mapped[str] = mapped_column(String, default="", index=True)  # 영업코드 {YY}-영업-{NNN}
     name: Mapped[str] = mapped_column(String, default="")  # 견적서명 (title)
     kind: Mapped[str] = mapped_column(String, default="", index=True)  # 수주영업|기술지원
     stage: Mapped[str] = mapped_column(String, default="", index=True)
     category: Mapped[list[str]] = mapped_column(ARRAY(String), default=list)  # 업무내용 multi_select
     estimated_amount: Mapped[float | None] = mapped_column(Float, nullable=True)  # 견적금액
+    probability: Mapped[float | None] = mapped_column(Float, nullable=True)  # 수주확률 0~100 (PM 직접 입력)
     is_bid: Mapped[bool] = mapped_column(Boolean, default=False)
     # 의뢰처(clients DB relation 첫번째) — text 빠른 join 용도. 정식 join은 mirror_clients
     client_id: Mapped[str] = mapped_column(String, default="", index=True)

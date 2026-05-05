@@ -57,13 +57,15 @@ export default function SalesTable({
 
   return (
     <div className="overflow-x-auto">
-      <table className="w-full min-w-[860px] text-sm">
+      <table className="w-full min-w-[920px] text-sm">
         <thead>
           <tr className="border-b border-zinc-200 text-left text-[11px] uppercase text-zinc-500 dark:border-zinc-800">
+            <th className="px-2 py-2">CODE</th>
             <th className="px-2 py-2">견적서명</th>
             {showKindColumn && <th className="px-2 py-2">유형</th>}
             <th className="px-2 py-2">단계</th>
             <th className="px-2 py-2 text-right">견적금액</th>
+            <th className="px-2 py-2 text-right">확률</th>
             <th className="px-2 py-2 text-right">기대매출</th>
             <th className="px-2 py-2">담당</th>
             <th className="px-2 py-2">제출일</th>
@@ -76,6 +78,9 @@ export default function SalesTable({
               className="cursor-pointer border-b border-zinc-100 hover:bg-zinc-50 dark:border-zinc-900 dark:hover:bg-zinc-800/50"
               onClick={() => onClickRow(s)}
             >
+              <td className="px-2 py-2 font-mono text-[11px] text-zinc-500">
+                {s.code || "—"}
+              </td>
               <td className="px-2 py-2">
                 <div className="font-medium">{s.name || "(이름 없음)"}</div>
                 {s.category.length > 0 && (
@@ -111,6 +116,9 @@ export default function SalesTable({
               <td className="px-2 py-2 text-right font-mono text-xs">
                 {s.estimated_amount != null ? KRW(s.estimated_amount) : "—"}
               </td>
+              <td className="px-2 py-2 text-right font-mono text-xs">
+                {s.probability != null ? `${s.probability}%` : "—"}
+              </td>
               <td className="px-2 py-2 text-right font-mono text-xs text-emerald-700 dark:text-emerald-400">
                 {s.expected_revenue > 0 ? KRW_SHORT(s.expected_revenue) : "—"}
               </td>
@@ -126,7 +134,7 @@ export default function SalesTable({
         <tfoot>
           <tr className="border-t border-zinc-200 dark:border-zinc-800">
             <td
-              colSpan={showKindColumn ? 4 : 3}
+              colSpan={showKindColumn ? 6 : 5}
               className="px-2 py-2 text-right text-xs font-medium text-zinc-600 dark:text-zinc-400"
             >
               기대매출 합계

@@ -151,7 +151,7 @@ SALES_DB_REQUIRED: dict[str, dict[str, Any]] = {
     # 사용자가 노션에서 select 옵션 이름을 rename하면 옵션 id가 유지되어
     # 기존 row의 단계 값이 자동으로 새 이름으로 보임 — 데이터 손실 없음.
     # rename 매핑: 견적준비→준비, 입찰대기→진행, 우선협상→제출, 낙찰→완료, 실주→종결.
-    # 기술지원 단계는 PM 합의 후 PRESALES_STAGES에서 시드 (default 10% fallback 가동).
+    # 수주확률은 별도 number 컬럼으로 PM이 직접 입력 (단계 자동 확률 모델 폐기).
     "단계": _select(
         [
             ("준비", "yellow"),
@@ -162,6 +162,11 @@ SALES_DB_REQUIRED: dict[str, dict[str, Any]] = {
         ]
     ),
     "입찰여부": {"checkbox": {}},
+    # 수주확률 — PM이 0~100 직접 입력. expected_revenue = 견적금액 × probability/100.
+    # 단계별 자동 확률은 폐기됨(사용자 결정 — 단계와 확률을 분리해 유연성 확보).
+    "수주확률": {"number": {}},
+    # 영업코드 — 자동 부여 ({YY}-영업-{NNN}). 노션에서 수동 수정 허용.
+    "영업코드": {"rich_text": {}},
     # 담당자 — 기존 견적서 DB가 multi_select 텍스트로 운영 중이므로 동일 패턴.
     # /me 페이지의 assignee 매칭 로직을 그대로 재사용한다. 옵션은 노션이 사용자
     # 입력 시 자동 등록 (task DB와 동일).

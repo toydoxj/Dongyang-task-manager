@@ -460,11 +460,13 @@ export const CONVERTIBLE_STAGES: readonly string[] = ["완료"];
 
 export interface Sale {
   id: string;
+  code: string;          // 영업코드 {YY}-영업-{NNN} (자동 부여, 노션 수정 가능)
   name: string;          // 견적서명
   kind: SalesKind;
   stage: string;
   category: string[];     // 업무내용 multi_select
   estimated_amount: number | null;  // 견적금액 KRW
+  probability: number | null;        // 수주확률 0~100 (PM 직접 입력)
   is_bid: boolean;
   client_id: string;      // 의뢰처 relation 첫번째
   gross_floor_area: number | null;
@@ -482,7 +484,7 @@ export interface Sale {
   created_time: string | null;
   last_edited_time: string | null;
   url: string | null;
-  expected_revenue: number;  // 백엔드 computed_field — 견적금액 × 단계별 수주확률
+  expected_revenue: number;  // 백엔드 computed_field — 견적금액 × 수주확률/100
 }
 
 export interface SaleListResponse {
@@ -492,10 +494,12 @@ export interface SaleListResponse {
 
 export interface SaleCreateRequest {
   name: string;
+  code?: string;  // 빈 값/미지정이면 backend가 {YY}-영업-{NNN} 자동 부여
   kind?: string;
   stage?: string;
   category?: string[];
   estimated_amount?: number;
+  probability?: number;
   is_bid?: boolean;
   client_id?: string;
   gross_floor_area?: number;

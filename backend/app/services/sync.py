@@ -569,11 +569,13 @@ class NotionSyncService:
         s = Sale.from_notion_page(page)
         stmt = pg_insert(M.MirrorSales).values(
             page_id=s.id,
+            code=s.code or "",
             name=s.name or "",
             kind=s.kind or "",
             stage=s.stage or "",
             category=list(s.category),
             estimated_amount=s.estimated_amount,
+            probability=s.probability,
             is_bid=bool(s.is_bid),
             client_id=s.client_id or "",
             gross_floor_area=s.gross_floor_area,
@@ -599,11 +601,13 @@ class NotionSyncService:
             stmt.on_conflict_do_update(
                 index_elements=["page_id"],
                 set_=dict(
+                    code=stmt.excluded.code,
                     name=stmt.excluded.name,
                     kind=stmt.excluded.kind,
                     stage=stmt.excluded.stage,
                     category=stmt.excluded.category,
                     estimated_amount=stmt.excluded.estimated_amount,
+                    probability=stmt.excluded.probability,
                     is_bid=stmt.excluded.is_bid,
                     client_id=stmt.excluded.client_id,
                     gross_floor_area=stmt.excluded.gross_floor_area,
