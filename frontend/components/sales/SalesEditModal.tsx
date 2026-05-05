@@ -4,17 +4,22 @@ import { useEffect, useState } from "react";
 import { useSWRConfig } from "swr";
 
 import { useAuth } from "@/components/AuthGuard";
+import QuoteForm from "@/components/sales/QuoteForm";
 import {
   archiveSale,
   convertSale,
   createSale,
+  downloadQuoteXlsx,
   linkSaleToProject,
+  saveQuoteToDrive,
   updateSale,
 } from "@/lib/api";
 import {
   BID_STAGES,
   CONVERTIBLE_STAGES,
   type Project,
+  type QuoteInput,
+  type QuoteResult,
   type Sale,
   type SaleCreateRequest,
 } from "@/lib/domain";
@@ -50,6 +55,16 @@ export default function SalesEditModal({
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [linkPickerOpen, setLinkPickerOpen] = useState(false);
+  // 탭 시스템 (신규 모드에서만 활성. 수정 모드는 'info' 탭만)
+  const [activeTab, setActiveTab] = useState<"info" | "quote">("info");
+  const [quoteInput, setQuoteInput] = useState<QuoteInput>({
+    type_rate: 1.0,
+    structure_rate: 1.0,
+    coefficient: 1.0,
+    adjustment_pct: 87,
+    printing_fee: 500_000,
+  });
+  const [quoteResult, setQuoteResult] = useState<QuoteResult | null>(null);
 
   const open = sale != null || openNew;
   const isEdit = sale != null;
@@ -87,6 +102,15 @@ export default function SalesEditModal({
         stage: "준비",
         assignees: defaultAssignee ? [defaultAssignee] : [],
       });
+      setActiveTab("info");
+      setQuoteInput({
+        type_rate: 1.0,
+        structure_rate: 1.0,
+        coefficient: 1.0,
+        adjustment_pct: 87,
+        printing_fee: 500_000,
+      });
+      setQuoteResult(null);
     }
   }, [open, sale, defaultAssignee]);
 
@@ -102,6 +126,44 @@ export default function SalesEditModal({
   };
 
   const handleSave = async (): Promise<void> => {
+    // 견적서 탭 저장 — 자동 매핑 후 영업 등록
+    if (!isEdit && activeTab === "quote") {
+      if (!quoteInput.service_name?.trim()) {
+        setErr("용역명은 필수입니다.");
+        return;
+      }
+      if (!quoteInput.gross_floor_area || quoteInput.gross_floor_area <= 0) {
+        setErr("연면적을 입력해야 산출이 됩니다.");
+        return;
+      }
+      if (!quoteResult) {
+        setErr("산출 결과가 아직 준비되지 않았습니다. 잠시 후 다시 시도하세요.");
+        return;
+      }
+      setBusy(true);
+      setErr(null);
+      try {
+        const body: SaleCreateRequest = {
+          name: quoteInput.service_name,
+          kind: "수주영업",
+          stage: "준비",
+          estimated_amount: quoteResult.final,
+          assignees: defaultAssignee ? [defaultAssignee] : [],
+          quote_form_data: { input: quoteInput, result: quoteResult },
+          // probability/code/quote_doc_number는 backend가 자동 부여 또는 빈 값
+        };
+        await createSale(body);
+        refreshSales();
+        onClose();
+      } catch (e) {
+        setErr(e instanceof Error ? e.message : "저장 실패");
+      } finally {
+        setBusy(false);
+      }
+      return;
+    }
+
+    // 영업 정보 탭 저장 (기존 흐름)
     if (!form.name?.trim()) {
       setErr("견적서명은 필수입니다.");
       return;
@@ -209,7 +271,7 @@ export default function SalesEditModal({
       onClick={onClose}
     >
       <div
-        className="w-full max-w-2xl rounded-lg border border-zinc-200 bg-white shadow-xl dark:border-zinc-700 dark:bg-zinc-900"
+        className="w-full max-w-4xl rounded-lg border border-zinc-200 bg-white shadow-xl dark:border-zinc-700 dark:bg-zinc-900"
         onClick={(e) => e.stopPropagation()}
       >
         <header className="flex items-center justify-between border-b border-zinc-200 px-4 py-3 dark:border-zinc-800">
@@ -226,6 +288,23 @@ export default function SalesEditModal({
           </button>
         </header>
 
+        {!isEdit && (
+          <div className="flex border-b border-zinc-200 px-4 dark:border-zinc-800">
+            <TabButton
+              active={activeTab === "info"}
+              onClick={() => setActiveTab("info")}
+            >
+              영업 정보
+            </TabButton>
+            <TabButton
+              active={activeTab === "quote"}
+              onClick={() => setActiveTab("quote")}
+            >
+              견적서 작성
+            </TabButton>
+          </div>
+        )}
+
         <div className="max-h-[70vh] space-y-3 overflow-y-auto px-4 py-3">
           {err && (
             <div className="rounded-md border border-red-500/40 bg-red-500/5 p-2 text-xs text-red-500">
@@ -233,6 +312,19 @@ export default function SalesEditModal({
             </div>
           )}
 
+          {activeTab === "quote" && !isEdit ? (
+            <>
+              <p className="rounded-md border border-blue-500/30 bg-blue-500/5 px-3 py-2 text-[11px] text-blue-700 dark:text-blue-400">
+                저장하면 영업 건이 자동 생성됩니다 (영업코드·문서번호 자동 부여, 단계 = 준비). 단계·수주확률은 영업 정보 탭/수정 모달에서 추후 변경 가능.
+              </p>
+              <QuoteForm
+                value={quoteInput}
+                onChange={setQuoteInput}
+                onResultChange={setQuoteResult}
+              />
+            </>
+          ) : (
+            <>
           <Field label="견적서명">
             <input
               className={inputCls}
@@ -452,10 +544,50 @@ export default function SalesEditModal({
               <span className="ml-1 text-[10px] text-zinc-500">(견적금액 × 수주확률/100)</span>
             </div>
           )}
+            </>
+          )}
         </div>
 
         <footer className="flex items-center justify-between gap-2 border-t border-zinc-200 px-4 py-3 dark:border-zinc-800">
           <div className="flex gap-2">
+            {isEdit && sale && sale.quote_doc_number && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => {
+                    void downloadQuoteXlsx(sale.id).catch((e) =>
+                      setErr(e instanceof Error ? e.message : "xlsx 다운로드 실패"),
+                    );
+                  }}
+                  disabled={busy}
+                  className="rounded-md border border-zinc-300 px-3 py-1.5 text-xs hover:bg-zinc-50 disabled:opacity-50 dark:border-zinc-700 dark:hover:bg-zinc-800"
+                >
+                  xlsx 다운로드
+                </button>
+                {isAdmin && (
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      setBusy(true);
+                      setErr(null);
+                      try {
+                        await saveQuoteToDrive(sale.id);
+                        refreshSales();
+                        alert("WORKS Drive [견적서]/" + new Date().getFullYear() + "년 폴더에 저장되었습니다.");
+                      } catch (e) {
+                        setErr(e instanceof Error ? e.message : "Drive 저장 실패");
+                      } finally {
+                        setBusy(false);
+                      }
+                    }}
+                    disabled={busy}
+                    className="rounded-md border border-blue-500/40 px-3 py-1.5 text-xs text-blue-700 hover:bg-blue-500/10 disabled:opacity-50 dark:text-blue-400"
+                  >
+                    Drive 저장
+                  </button>
+                )}
+              </>
+            )}
             {isEdit && isAdmin && (
               <button
                 type="button"
@@ -638,5 +770,29 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
       </label>
       {children}
     </div>
+  );
+}
+
+function TabButton({
+  active,
+  onClick,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={
+        active
+          ? "border-b-2 border-zinc-900 px-4 py-2 text-sm font-medium text-zinc-900 dark:border-zinc-100 dark:text-zinc-100"
+          : "px-4 py-2 text-sm text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-300"
+      }
+    >
+      {children}
+    </button>
   );
 }

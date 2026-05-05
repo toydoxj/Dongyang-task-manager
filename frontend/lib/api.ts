@@ -26,6 +26,8 @@ import type {
   ProjectCreateRequest,
   ProjectListResponse,
   ProjectOptions,
+  QuoteInput,
+  QuoteResult,
   Sale,
   SaleCreateRequest,
   SaleListResponse,
@@ -1020,4 +1022,54 @@ export async function linkSaleToProject(
     body: JSON.stringify({ project_id: projectId }),
   });
   return jsonOrThrow<Sale>(res);
+}
+
+/** 견적서 산출 미리보기 (저장 X) — 입력 변경 시 디바운스 호출. */
+export async function previewQuote(input: QuoteInput): Promise<QuoteResult> {
+  const res = await authFetch(`/api/sales/quote/preview`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  return jsonOrThrow<QuoteResult>(res);
+}
+
+/** 견적서 xlsx → WORKS Drive [견적서]/{YYYY}년 자동 업로드 + 노션 sale의 견적서첨부 갱신. */
+export async function saveQuoteToDrive(saleId: string): Promise<Sale> {
+  const res = await authFetch(`/api/sales/${saleId}/quote/save-to-drive`, {
+    method: "POST",
+  });
+  return jsonOrThrow<Sale>(res);
+}
+
+/** 견적서 xlsx 다운로드 — Content-Disposition의 filename* 으로 한글 파일명 자동 처리. */
+export async function downloadQuoteXlsx(saleId: string): Promise<void> {
+  const res = await authFetch(`/api/sales/${saleId}/quote.xlsx`);
+  if (!res.ok) {
+    const detail = await res.json().catch(() => null);
+    throw new Error(
+      (detail as { detail?: string } | null)?.detail ?? `${res.status} ${res.statusText}`,
+    );
+  }
+  const blob = await res.blob();
+  // Content-Disposition에서 filename 추출 (RFC 5987 filename*=UTF-8'' 형식)
+  const cd = res.headers.get("Content-Disposition") ?? "";
+  let filename = "quote.xlsx";
+  const star = cd.match(/filename\*=UTF-8''([^;]+)/i);
+  if (star) {
+    try {
+      filename = decodeURIComponent(star[1]);
+    } catch {
+      /* fallthrough */
+    }
+  }
+  // 임시 anchor로 download 트리거
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
 }

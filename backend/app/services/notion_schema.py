@@ -167,6 +167,10 @@ SALES_DB_REQUIRED: dict[str, dict[str, Any]] = {
     "수주확률": {"number": {}},
     # 영업코드 — 자동 부여 ({YY}-영업-{NNN}). 노션에서 수동 수정 허용.
     "영업코드": {"rich_text": {}},
+    # 견적서 문서번호 — 견적서 작성 툴(PR5) 자동 부여 ({YY}-{MM}-{NNN}).
+    "문서번호": {"rich_text": {}},
+    # 견적서 첨부 — WORKS Drive에 저장된 xlsx의 web url 보관
+    "견적서첨부": {"files": {}},
     # 담당자 — 기존 견적서 DB가 multi_select 텍스트로 운영 중이므로 동일 패턴.
     # /me 페이지의 assignee 매칭 로직을 그대로 재사용한다. 옵션은 노션이 사용자
     # 입력 시 자동 등록 (task DB와 동일).

@@ -39,6 +39,9 @@ class Sale(BaseModel):
     parent_lead_id: str = ""  # 상위 영업건 relation 첫번째 (self)
     converted_project_id: str = ""  # 전환된 프로젝트 relation 첫번째
     assignees: list[str] = []
+    # 견적서 작성 툴 (PR5)
+    quote_doc_number: str = ""  # {YY}-{MM}-{NNN}
+    quote_form_data: dict[str, Any] = {}  # input + result dump
     created_time: str | None = None
     last_edited_time: str | None = None
     url: str | None = None
@@ -82,6 +85,10 @@ class Sale(BaseModel):
             parent_lead_id=_first_relation_id(props, "상위 영업건"),
             converted_project_id=_first_relation_id(props, "전환된 프로젝트"),
             assignees=P.multi_select_names(props, "담당자"),
+            quote_doc_number=P.rich_text(props, "문서번호"),
+            # quote_form_data는 노션에 저장하지 않고 mirror_sales에만 보관
+            # (JSONB는 노션 column으로 표현 불가). from_notion_page에서 빈 dict로 초기화.
+            quote_form_data={},
             created_time=page.get("created_time"),
             last_edited_time=page.get("last_edited_time"),
             url=page.get("url"),
@@ -113,6 +120,9 @@ class SaleCreateRequest(BaseModel):
     probability: float | None = None  # 수주확률 0~100 (PM 직접 입력)
     is_bid: bool = False
     client_id: str = ""
+    # 견적서 작성 툴 (PR5) — 견적 폼으로 영업을 만들 때 사용
+    quote_doc_number: str = ""  # 빈 값이면 라우터에서 자동 부여 ({YY}-{MM}-{NNN})
+    quote_form_data: dict[str, Any] = {}  # mirror_sales.quote_form_data에 저장
     gross_floor_area: float | None = None
     floors_above: float | None = None
     floors_below: float | None = None
@@ -197,6 +207,8 @@ def sale_create_to_props(req: SaleCreateRequest) -> dict[str, Any]:
     props: dict[str, Any] = {"견적서명": _title(req.name)}
     if req.code:
         props["영업코드"] = _rich_text(req.code)
+    if req.quote_doc_number:
+        props["문서번호"] = _rich_text(req.quote_doc_number)
     if req.kind:
         props["유형"] = {"select": {"name": req.kind}}
     if req.stage:

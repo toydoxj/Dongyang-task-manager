@@ -77,6 +77,11 @@ EXPECTED: dict[str, dict[str, str]] = {
         "단계": "select",
         "입찰여부": "checkbox",
         "담당자": "multi_select",
+        "수주확률": "number",
+        "영업코드": "rich_text",
+        # 견적서 작성 툴 (PR5)
+        "문서번호": "rich_text",
+        "견적서첨부": "files",
     },
 }
 

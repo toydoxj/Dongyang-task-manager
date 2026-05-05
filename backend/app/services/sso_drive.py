@@ -476,6 +476,37 @@ async def find_review_folder(
         return None
 
 
+async def ensure_quote_year_folder(
+    year_yyyy: int,
+    *,
+    settings: Settings | None = None,
+) -> tuple[str, str]:
+    """`[견적서]/{YYYY}년` 폴더 idempotent 생성 (PR5).
+
+    settings.works_drive_quote_root_folder_id ([견적서] 폴더 fileId) 아래에
+    "{YYYY}년" 폴더를 만들거나 기존 것을 재사용 — create_folder의 409 fallback.
+
+    반환: (year_folder_id, year_folder_web_url) — upload_file의 parent로 사용.
+    """
+    s = settings or get_settings()
+    if not s.works_drive_enabled:
+        raise DriveError("WORKS_DRIVE_ENABLED=false")
+    if not s.works_drive_sharedrive_id:
+        raise DriveError("WORKS_DRIVE_SHAREDRIVE_ID 미설정")
+    if not s.works_drive_quote_root_folder_id:
+        raise DriveError(
+            "WORKS_DRIVE_QUOTE_ROOT_FOLDER_ID 미설정 — [견적서] 폴더 fileId 필요"
+        )
+    folder_name = f"{year_yyyy}년"
+    year_meta = await create_folder(
+        s, s.works_drive_quote_root_folder_id, folder_name
+    )
+    year_id = _extract_id(year_meta)
+    if not year_id:
+        raise DriveError(f"{folder_name} 폴더 fileId 추출 실패")
+    return year_id, _extract_url(year_meta)
+
+
 async def ensure_review_folder(
     project_root_file_id: str,
     ymd: str,

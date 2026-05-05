@@ -567,6 +567,8 @@ class NotionSyncService:
 
     def _upsert_sale(self, db: Session, page: dict) -> None:
         s = Sale.from_notion_page(page)
+        # quote_form_data는 노션 column으로 표현 불가 (JSONB) → mirror 전용 필드.
+        # sync는 quote_doc_number만 다루고 form_data는 라우터에서 별도 UPDATE.
         stmt = pg_insert(M.MirrorSales).values(
             page_id=s.id,
             code=s.code or "",
@@ -577,6 +579,7 @@ class NotionSyncService:
             estimated_amount=s.estimated_amount,
             probability=s.probability,
             is_bid=bool(s.is_bid),
+            quote_doc_number=s.quote_doc_number or "",
             client_id=s.client_id or "",
             gross_floor_area=s.gross_floor_area,
             floors_above=s.floors_above,
@@ -609,6 +612,8 @@ class NotionSyncService:
                     estimated_amount=stmt.excluded.estimated_amount,
                     probability=stmt.excluded.probability,
                     is_bid=stmt.excluded.is_bid,
+                    quote_doc_number=stmt.excluded.quote_doc_number,
+                    # quote_form_data는 노션에 없으므로 sync에서 갱신 X (보존)
                     client_id=stmt.excluded.client_id,
                     gross_floor_area=stmt.excluded.gross_floor_area,
                     floors_above=stmt.excluded.floors_above,

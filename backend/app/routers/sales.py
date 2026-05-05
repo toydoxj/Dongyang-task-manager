@@ -7,12 +7,14 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi.responses import Response
 from pydantic import BaseModel
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
+from urllib.parse import quote as url_quote
 
 from app.db import get_db
 from app.models import mirror as M
@@ -27,8 +29,12 @@ from app.models.sale import (
     sale_update_to_props,
 )
 from app.security import get_current_user, require_admin
+from app.services import sso_drive
 from app.services.mirror_dto import sale_from_mirror
 from app.services.notion import NotionService, get_notion
+from app.services.quote_calculator import QuoteInput, QuoteResult, calculate
+from app.services.quote_code import next_quote_doc_number
+from app.services.quote_xlsx import build_quote_xlsx, quote_filename
 from app.services.sales_code import next_sales_code
 from app.services.sales_probability import CONVERTIBLE_STAGES
 from app.services.sync import get_sync
@@ -133,10 +139,183 @@ async def create_sale(
     if not body.code:
         body = body.model_copy(update={"code": next_sales_code(db)})
 
+    # 견적서 모드 — quote_form_data가 있는데 문서번호 미지정이면 자동 부여 ({YY}-{MM}-{NNN})
+    if body.quote_form_data and not body.quote_doc_number:
+        body = body.model_copy(
+            update={"quote_doc_number": next_quote_doc_number(db)}
+        )
+
     page = await notion.create_page(db_id, sale_create_to_props(body))
     get_sync().upsert_page("sales", page)
+
+    # quote_form_data는 노션에 저장 불가 (JSONB). mirror_sales에만 별도 UPDATE.
+    if body.quote_form_data:
+        from sqlalchemy import update as sa_update
+
+        new_page_id = page.get("id", "")
+        db.execute(
+            sa_update(M.MirrorSales)
+            .where(M.MirrorSales.page_id == new_page_id)
+            .values(quote_form_data=body.quote_form_data)
+        )
+
     db.commit()  # advisory lock 해제 + mirror upsert 커밋
     return Sale.from_notion_page(page)
+
+
+# ── 견적서 산출 미리보기 (저장 없음) ──
+
+
+@router.post("/quote/preview", response_model=QuoteResult)
+async def preview_quote(
+    body: QuoteInput,
+    _user: User = Depends(get_current_user),
+) -> QuoteResult:
+    """견적서 입력 → 산출 결과만 반환 (저장 X). 프론트의 실시간 산출 패널용."""
+    return calculate(body)
+
+
+# ── 견적서 xlsx 다운로드 ──
+
+
+@router.get("/{page_id}/quote.xlsx")
+async def download_quote_xlsx(
+    page_id: str,
+    _user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> Response:
+    """저장된 견적서 입력값으로 xlsx 양식 생성 → 첨부 다운로드."""
+    row = db.get(M.MirrorSales, page_id)
+    if row is None or row.archived:
+        raise HTTPException(status_code=404, detail="영업 건을 찾을 수 없습니다")
+    form_data = row.quote_form_data or {}
+    if not form_data.get("input"):
+        raise HTTPException(
+            status_code=400,
+            detail="이 영업 건에는 견적서 데이터가 없습니다 (견적서 탭으로 만든 영업만 다운로드 가능)",
+        )
+
+    xlsx_bytes = build_quote_xlsx(form_data, doc_number=row.quote_doc_number or "")
+    filename = quote_filename(row.quote_doc_number or "no-doc", row.name or "견적서")
+    # RFC 5987 — 한글 파일명 안전 인코딩
+    encoded = url_quote(filename, safe="")
+    return Response(
+        content=xlsx_bytes,
+        media_type=(
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        ),
+        headers={
+            "Content-Disposition": (
+                f"attachment; filename=\"quote.xlsx\"; "
+                f"filename*=UTF-8''{encoded}"
+            )
+        },
+    )
+
+
+# ── 견적서 xlsx → WORKS Drive 자동 저장 ──
+
+
+_KST = timezone(timedelta(hours=9))
+
+
+@router.post("/{page_id}/quote/save-to-drive", response_model=Sale)
+async def save_quote_to_drive(
+    page_id: str,
+    _user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    notion: NotionService = Depends(get_notion),
+) -> Sale:
+    """견적서 xlsx 생성 → `공용 드라이브\\[견적서]\\{YYYY}년\\` 업로드 →
+    노션 sale의 `견적서첨부` 컬럼에 web url 저장.
+
+    `WORKS_DRIVE_ENABLED=false`거나 `WORKS_DRIVE_QUOTE_ROOT_FOLDER_ID` 미설정 시 503.
+    같은 견적의 두 번째 호출은 폴더 idempotent + 파일명 suffix로 안전 (`(1)` 추가).
+    """
+    settings_ = get_settings()
+    if not settings_.works_drive_enabled:
+        raise HTTPException(
+            status_code=503,
+            detail="WORKS Drive 통합이 비활성화되어 있습니다 (WORKS_DRIVE_ENABLED=false).",
+        )
+    if not settings_.works_drive_quote_root_folder_id:
+        raise HTTPException(
+            status_code=503,
+            detail="견적서 저장 폴더가 설정되지 않았습니다 (WORKS_DRIVE_QUOTE_ROOT_FOLDER_ID 미설정).",
+        )
+
+    row = db.get(M.MirrorSales, page_id)
+    if row is None or row.archived:
+        raise HTTPException(status_code=404, detail="영업 건을 찾을 수 없습니다")
+    form_data = row.quote_form_data or {}
+    if not form_data.get("input"):
+        raise HTTPException(
+            status_code=400,
+            detail="견적서 데이터가 없습니다 (견적서 탭으로 만든 영업만 Drive 저장 가능)",
+        )
+
+    # 1. xlsx 생성
+    xlsx_bytes = build_quote_xlsx(form_data, doc_number=row.quote_doc_number or "")
+    filename = quote_filename(row.quote_doc_number or "no-doc", row.name or "견적서")
+
+    # 2. {YYYY}년 폴더 ensure (KST 기준)
+    year_yyyy = datetime.now(_KST).year
+    try:
+        year_folder_id, _year_url = await sso_drive.ensure_quote_year_folder(
+            year_yyyy, settings=settings_
+        )
+    except sso_drive.DriveError as exc:
+        logger.exception("견적서 연도 폴더 ensure 실패")
+        raise HTTPException(
+            status_code=502, detail=f"WORKS Drive 폴더 준비 실패: {exc}"
+        ) from exc
+
+    # 3. 업로드
+    try:
+        meta = await sso_drive.upload_file(
+            parent_file_id=year_folder_id,
+            file_name=filename,
+            content=xlsx_bytes,
+            content_type=(
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            ),
+            settings=settings_,
+        )
+    except sso_drive.DriveError as exc:
+        logger.exception("견적서 xlsx Drive 업로드 실패")
+        raise HTTPException(
+            status_code=502, detail=f"WORKS Drive 업로드 실패: {exc}"
+        ) from exc
+
+    # 4. 노션 sale의 견적서첨부 컬럼에 url 저장 (external file)
+    file_id = meta.get("fileId") or ""
+    web_url = sso_drive.build_file_web_url(file_id, meta.get("resourceLocation"))
+    if not web_url:
+        # url 산출 실패해도 업로드는 성공 — 노션 attachment만 누락
+        logger.warning("Drive 업로드 OK but webUrl 산출 실패: %s", file_id)
+    else:
+        update_props = {
+            "견적서첨부": {
+                "files": [
+                    {
+                        "name": filename,
+                        "external": {"url": web_url},
+                        "type": "external",
+                    }
+                ]
+            }
+        }
+        try:
+            updated = await notion.update_page(page_id, update_props)
+            get_sync().upsert_page("sales", updated)
+        except Exception:  # noqa: BLE001
+            logger.exception(
+                "Drive 업로드 후 노션 견적서첨부 갱신 실패 — 운영 수동 보정 필요"
+            )
+
+    # 최신 상태 반환
+    row = db.get(M.MirrorSales, page_id)
+    return sale_from_mirror(row) if row else Sale.from_notion_page({"id": page_id})
 
 
 @router.patch("/{page_id}", response_model=Sale)

@@ -174,6 +174,9 @@ class MirrorSales(Base):
     parent_lead_id: Mapped[str] = mapped_column(String, default="", index=True)  # 상위 영업건
     converted_project_id: Mapped[str] = mapped_column(String, default="", index=True)
     assignees: Mapped[list[str]] = mapped_column(ARRAY(String), default=list)
+    # 견적서 작성 툴 (PR5) — 문서번호 {YY}-{MM}-{NNN} 형식, 입력값+산출결과 dump
+    quote_doc_number: Mapped[str] = mapped_column(String, default="", index=True)
+    quote_form_data: Mapped[dict] = mapped_column(JSONB, default=dict)
     properties: Mapped[dict] = mapped_column(JSONB, default=dict)
     url: Mapped[str] = mapped_column(String, default="")
     created_time: Mapped[datetime | None] = mapped_column(

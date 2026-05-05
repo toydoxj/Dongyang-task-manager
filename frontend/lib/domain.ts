@@ -469,6 +469,8 @@ export interface Sale {
   probability: number | null;        // 수주확률 0~100 (PM 직접 입력)
   is_bid: boolean;
   client_id: string;      // 의뢰처 relation 첫번째
+  quote_doc_number: string;  // 견적서 문서번호 {YY}-{MM}-{NNN}
+  quote_form_data: { input?: QuoteInput; result?: QuoteResult } | Record<string, never>;
   gross_floor_area: number | null;
   floors_above: number | null;
   floors_below: number | null;
@@ -502,6 +504,9 @@ export interface SaleCreateRequest {
   probability?: number;
   is_bid?: boolean;
   client_id?: string;
+  // 견적서 작성 툴 (PR5)
+  quote_doc_number?: string;  // 빈 값/미지정이면 자동 부여 ({YY}-{MM}-{NNN})
+  quote_form_data?: { input: QuoteInput; result: QuoteResult };
   gross_floor_area?: number;
   floors_above?: number;
   floors_below?: number;
@@ -516,3 +521,44 @@ export interface SaleCreateRequest {
 }
 
 export type SaleUpdateRequest = Partial<SaleCreateRequest>;
+
+// ── 견적서 작성 툴 (PR5) ──
+
+/** 견적서 입력값 — 백엔드 QuoteInput과 1:1 대응. */
+export interface QuoteInput {
+  service_name?: string;
+  location?: string;
+  floors_text?: string;
+  structure_form?: string;
+  recipient_company?: string;
+  recipient_person?: string;
+  recipient_phone?: string;
+  recipient_email?: string;
+  gross_floor_area?: number;
+  type_rate?: number;
+  structure_rate?: number;
+  coefficient?: number;
+  printing_fee?: number;
+  survey_fee?: number;
+  transport_persons?: number;
+  adjustment_pct?: number;
+  payment_terms?: string;
+  special_notes?: string;
+}
+
+/** 견적서 산출 결과 — 백엔드 QuoteResult. */
+export interface QuoteResult {
+  manhours_baseline: number;
+  manhours_baseline_rounded: number;
+  manhours_total: number;
+  direct_labor: number;
+  direct_expense: number;
+  overhead: number;
+  tech_fee: number;
+  subtotal: number;
+  adjusted: number;
+  truncated: number;
+  final: number;
+  per_pyeong_area: number;
+  per_pyeong: number;
+}
