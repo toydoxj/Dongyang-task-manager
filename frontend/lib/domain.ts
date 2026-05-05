@@ -446,14 +446,17 @@ export const NON_PROJECT_WORK_CATEGORIES = [
 /** 영업 유형. 노션 '유형' select 옵션과 일치. */
 export type SalesKind = "수주영업" | "기술지원" | "";
 
-/** 수주영업 단계. 노션 '단계' select 옵션. */
+/** 수주영업 단계. 노션 '단계' select 옵션. 사장 결정 5단계. */
 export const BID_STAGES = [
-  "견적준비",
-  "입찰대기",
-  "우선협상",
-  "낙찰",
-  "실주",
+  "준비",
+  "진행",
+  "제출",
+  "완료",
+  "종결",
 ] as const;
+
+/** /convert 가능한 단계 — 백엔드 CONVERTIBLE_STAGES와 일치. */
+export const CONVERTIBLE_STAGES: readonly string[] = ["완료"];
 
 export interface Sale {
   id: string;

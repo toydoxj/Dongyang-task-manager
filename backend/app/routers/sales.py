@@ -7,9 +7,10 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from datetime import date, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from app.db import get_db
@@ -27,11 +28,18 @@ from app.models.sale import (
 from app.security import get_current_user, require_admin
 from app.services.mirror_dto import sale_from_mirror
 from app.services.notion import NotionService, get_notion
+from app.services.sales_probability import CONVERTIBLE_STAGES
 from app.services.sync import get_sync
 from app.settings import get_settings
 
 logger = logging.getLogger("api.sales")
 router = APIRouter(prefix="/sales", tags=["sales"])
+
+# /me '내 영업'에서 완료·종결 단계는 가시화 부담을 줄이기 위해 숨김.
+# 제출 단계는 제출일 기준 60일 이내인 것만 노출 — 옛 제출 건 누적 방지.
+_MINE_HIDDEN_STAGES: frozenset[str] = frozenset({"완료", "종결"})
+_SUBMITTED_STAGE: str = "제출"
+_SUBMITTED_VISIBLE_DAYS: int = 60
 
 
 # ── 읽기 ──
@@ -62,6 +70,18 @@ async def list_sales(
         stmt = stmt.where(M.MirrorSales.kind == kind)
     if stage:
         stmt = stmt.where(M.MirrorSales.stage == stage)
+    if mine:
+        # /me '내 영업' 가시화 정책: 완료·종결 숨김 + 제출은 60일 이내만.
+        # 제출일이 비어 있는 제출 건은 데이터 누락 신호로 노출(PM에게 alert 효과).
+        cutoff = date.today() - timedelta(days=_SUBMITTED_VISIBLE_DAYS)
+        stmt = stmt.where(M.MirrorSales.stage.notin_(_MINE_HIDDEN_STAGES))
+        stmt = stmt.where(
+            or_(
+                M.MirrorSales.stage != _SUBMITTED_STAGE,
+                M.MirrorSales.submission_date.is_(None),
+                M.MirrorSales.submission_date >= cutoff,
+            )
+        )
     # 최신 영업이 위로 — 등록일 역순. created_time이 None이면 last_edited_time fallback.
     stmt = stmt.order_by(M.MirrorSales.created_time.desc().nullslast())
     rows = db.execute(stmt).scalars().all()
@@ -175,10 +195,10 @@ async def convert_to_project(
             status_code=400,
             detail="수주영업 단계의 영업만 프로젝트로 전환 가능합니다",
         )
-    if sale.stage not in {"우선협상", "낙찰"}:
+    if sale.stage not in CONVERTIBLE_STAGES:
         raise HTTPException(
             status_code=400,
-            detail="우선협상 또는 낙찰 단계의 영업만 전환 가능합니다",
+            detail=f"{', '.join(sorted(CONVERTIBLE_STAGES))} 단계의 영업만 전환 가능합니다",
         )
     if sale.converted_project_id:
         raise HTTPException(
@@ -208,13 +228,13 @@ async def convert_to_project(
         sale.name,
     )
 
-    # 영업 건 갱신: 단계=낙찰, 전환된 프로젝트 = new_project_id.
+    # 영업 건 갱신: 단계=완료, 전환된 프로젝트 = new_project_id.
     # 부분 실패 — 새 프로젝트는 만들었는데 여기서 실패하면 sale의 converted_project_id가
     # 비어 있어 멱등성이 깨짐(재시도 시 중복 프로젝트 생성). 클라이언트에 상태를 명확히
     # 전달하고 운영자가 수동 정리할 수 있도록 502를 보내며 new_project_id를 노출한다.
     try:
         update_props: dict = {
-            "단계": {"select": {"name": "낙찰"}},
+            "단계": {"select": {"name": "완료"}},
             "전환된 프로젝트": {"relation": [{"id": new_project_id}]},
         }
         updated_sale_page = await notion.update_page(page_id, update_props)

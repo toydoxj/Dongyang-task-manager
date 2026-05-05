@@ -13,14 +13,20 @@ from __future__ import annotations
 SALES_KIND_BID = "수주영업"
 SALES_KIND_PRESALES = "기술지원"
 
-# 수주영업 단계별 수주확률 — PLAN_REPORT_FORMAT §3.1 D 권장값
+# 수주영업 단계별 수주확률 (사장 결정 — 보수적 분포).
+# 사장이 운영하던 노션 단계 옵션을 사용자 결정에 따라 5단계로 재정렬.
+# 매핑(노션 옵션 rename으로 진행): 견적준비→준비, 입찰대기→진행,
+# 우선협상→제출, 낙찰→완료, 실주→종결.
 BID_STAGES: dict[str, float] = {
-    "견적준비": 0.30,
-    "입찰대기": 0.20,
-    "우선협상": 0.70,
-    "낙찰":     1.00,
-    "실주":     0.00,
+    "준비": 0.05,
+    "진행": 0.10,
+    "제출": 0.10,
+    "완료": 1.00,
+    "종결": 0.00,
 }
+
+# /convert 가능 단계 — 수주확정 시점.
+CONVERTIBLE_STAGES: frozenset[str] = frozenset({"완료"})
 
 # 기술지원 단계별 수주확률 — PM 합의 후 시드 작성 시 채움.
 # 미합의 상태에서는 PRESALES_DEFAULT_PROBABILITY fallback 적용 (사용자 결정: 10%).

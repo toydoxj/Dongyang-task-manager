@@ -10,7 +10,12 @@ import {
   createSale,
   updateSale,
 } from "@/lib/api";
-import { BID_STAGES, type Sale, type SaleCreateRequest } from "@/lib/domain";
+import {
+  BID_STAGES,
+  CONVERTIBLE_STAGES,
+  type Sale,
+  type SaleCreateRequest,
+} from "@/lib/domain";
 import { cn } from "@/lib/utils";
 
 interface Props {
@@ -73,7 +78,7 @@ export default function SalesEditModal({
       setForm({
         name: "",
         kind: "수주영업",
-        stage: "견적준비",
+        stage: "준비",
         assignees: defaultAssignee ? [defaultAssignee] : [],
       });
     }
@@ -156,9 +161,9 @@ export default function SalesEditModal({
   const canConvert =
     isEdit &&
     isAdmin &&
-    sale &&
+    sale != null &&
     sale.kind === "수주영업" &&
-    (sale.stage === "우선협상" || sale.stage === "낙찰") &&
+    CONVERTIBLE_STAGES.includes(sale.stage) &&
     !sale.converted_project_id;
 
   const stageOptions =

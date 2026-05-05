@@ -147,16 +147,18 @@ SALES_DB_REQUIRED: dict[str, dict[str, Any]] = {
             ("기술지원", "purple"),
         ]
     ),
-    # 단계: 수주영업 5종. 기술지원 단계는 PM 합의 후 PRESALES_STAGES에서 시드.
-    # default 10% fallback이 있으므로 옵션이 비어 있어도 시스템 동작.
-    # 사장 운영 견적서 DB의 기존 단계 옵션과 정확히 동일하므로 보강 시 무변경.
+    # 단계: 수주영업 5종 (사장 결정 — 보수적 5단계 체계).
+    # 사용자가 노션에서 select 옵션 이름을 rename하면 옵션 id가 유지되어
+    # 기존 row의 단계 값이 자동으로 새 이름으로 보임 — 데이터 손실 없음.
+    # rename 매핑: 견적준비→준비, 입찰대기→진행, 우선협상→제출, 낙찰→완료, 실주→종결.
+    # 기술지원 단계는 PM 합의 후 PRESALES_STAGES에서 시드 (default 10% fallback 가동).
     "단계": _select(
         [
-            ("견적준비", "yellow"),
-            ("입찰대기", "orange"),
-            ("우선협상", "blue"),
-            ("낙찰", "green"),
-            ("실주", "gray"),
+            ("준비", "yellow"),
+            ("진행", "orange"),
+            ("제출", "blue"),
+            ("완료", "green"),
+            ("종결", "gray"),
         ]
     ),
     "입찰여부": {"checkbox": {}},

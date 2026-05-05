@@ -25,15 +25,15 @@ const KRW_SHORT = (n: number): string => {
 
 const stageBadgeColor = (stage: string): string => {
   switch (stage) {
-    case "낙찰":
+    case "완료":
       return "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400";
-    case "우선협상":
+    case "제출":
       return "bg-blue-500/15 text-blue-700 dark:text-blue-400";
-    case "입찰대기":
+    case "진행":
       return "bg-orange-500/15 text-orange-700 dark:text-orange-400";
-    case "견적준비":
+    case "준비":
       return "bg-yellow-500/15 text-yellow-700 dark:text-yellow-400";
-    case "실주":
+    case "종결":
       return "bg-zinc-300/30 text-zinc-500";
     default:
       return "bg-purple-500/15 text-purple-700 dark:text-purple-400";
