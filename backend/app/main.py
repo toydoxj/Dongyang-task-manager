@@ -24,6 +24,7 @@ from app.routers import contract_items as contract_items_router
 from app.routers import employees as employees_router
 from app.routers import master_projects as master_projects_router
 from app.routers import projects as projects_router
+from app.routers import sales as sales_router
 from app.routers import seal_requests as seal_requests_router
 from app.routers import suggestions as suggestions_router
 from app.routers import tasks as tasks_router
@@ -105,6 +106,7 @@ app.include_router(tasks_router.router, prefix="/api")
 app.include_router(cashflow_router.router, prefix="/api")
 app.include_router(clients_router.router, prefix="/api")
 app.include_router(contract_items_router.router, prefix="/api")
+app.include_router(sales_router.router, prefix="/api")
 app.include_router(master_projects_router.router, prefix="/api")
 app.include_router(employees_router.router, prefix="/api")
 app.include_router(suggestions_router.router, prefix="/api")

@@ -10,6 +10,7 @@ from app.models import mirror as M
 from app.models.cashflow import CashflowEntry
 from app.models.contract_item import ContractItem
 from app.models.project import Project
+from app.models.sale import Sale
 from app.models.task import Task
 
 
@@ -41,6 +42,17 @@ def project_from_mirror(row: M.MirrorProject) -> Project:
 
 def task_from_mirror(row: M.MirrorTask) -> Task:
     return Task.from_notion_page(
+        _as_page(
+            page_id=row.page_id,
+            properties=row.properties,
+            url=row.url,
+            last_edited_time=row.last_edited_time,
+        )
+    )
+
+
+def sale_from_mirror(row: M.MirrorSales) -> Sale:
+    return Sale.from_notion_page(
         _as_page(
             page_id=row.page_id,
             properties=row.properties,

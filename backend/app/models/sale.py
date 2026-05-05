@@ -7,9 +7,10 @@ from __future__ import annotations
 
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, computed_field
 
 from app.services import notion_props as P
+from app.services.sales_probability import expected_revenue as _expected_revenue
 
 
 class Sale(BaseModel):
@@ -40,6 +41,16 @@ class Sale(BaseModel):
     created_time: str | None = None
     last_edited_time: str | None = None
     url: str | None = None
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def expected_revenue(self) -> float:
+        """기대매출 = 견적금액 × 단계별 수주확률.
+
+        sales_probability.py의 STAGE_PROBABILITY_BY_KIND를 참조.
+        기술지원의 미정의 단계는 default 10% 적용.
+        """
+        return _expected_revenue(self.estimated_amount, self.kind, self.stage)
 
     @classmethod
     def from_notion_page(cls, page: dict[str, Any]) -> "Sale":
@@ -83,3 +94,185 @@ def _first_relation_id(props: dict[str, Any], name: str) -> str:
 class SaleListResponse(BaseModel):
     items: list[Sale]
     count: int
+
+
+class SaleCreateRequest(BaseModel):
+    """영업 생성 요청. 노션 견적서 작성 리스트에 새 페이지를 추가."""
+
+    name: str  # 견적서명
+    kind: str = ""  # 수주영업|기술지원
+    stage: str = ""
+    category: list[str] = []
+    estimated_amount: float | None = None
+    is_bid: bool = False
+    client_id: str = ""
+    gross_floor_area: float | None = None
+    floors_above: float | None = None
+    floors_below: float | None = None
+    building_count: float | None = None
+    note: str = ""
+    submission_date: str | None = None
+    vat_inclusive: str = ""
+    performance_design_amount: float | None = None
+    wind_tunnel_amount: float | None = None
+    parent_lead_id: str = ""
+    assignees: list[str] = []
+
+
+class SaleUpdateRequest(BaseModel):
+    """영업 수정 요청. None이 아닌 필드만 노션 properties로 변환."""
+
+    name: str | None = None
+    kind: str | None = None
+    stage: str | None = None
+    category: list[str] | None = None
+    estimated_amount: float | None = None
+    is_bid: bool | None = None
+    client_id: str | None = None
+    gross_floor_area: float | None = None
+    floors_above: float | None = None
+    floors_below: float | None = None
+    building_count: float | None = None
+    note: str | None = None
+    submission_date: str | None = None
+    vat_inclusive: str | None = None
+    performance_design_amount: float | None = None
+    wind_tunnel_amount: float | None = None
+    parent_lead_id: str | None = None
+    assignees: list[str] | None = None
+
+
+# ── DTO → 노션 properties 변환 ──
+
+
+def _title(value: str) -> dict[str, Any]:
+    return {"title": [{"text": {"content": value}}]}
+
+
+def _rich_text(value: str) -> dict[str, Any]:
+    return {"rich_text": [{"text": {"content": value}}]}
+
+
+def _select(value: str | None) -> dict[str, Any] | None:
+    if not value:
+        return None
+    return {"select": {"name": value}}
+
+
+def _multi_select(values: list[str]) -> dict[str, Any]:
+    return {"multi_select": [{"name": v} for v in values]}
+
+
+def _relation(ids: list[str]) -> dict[str, Any]:
+    return {"relation": [{"id": i} for i in ids if i]}
+
+
+def _number(value: float | None) -> dict[str, Any] | None:
+    if value is None:
+        return None
+    return {"number": value}
+
+
+def _date(value: str | None) -> dict[str, Any] | None:
+    if not value:
+        return None
+    return {"date": {"start": value}}
+
+
+def sale_create_to_props(req: SaleCreateRequest) -> dict[str, Any]:
+    """SaleCreateRequest → 노션 properties dict.
+
+    빈 값은 노션에 보내지 않아 default를 노션이 적용하도록 한다.
+    """
+    props: dict[str, Any] = {"견적서명": _title(req.name)}
+    if req.kind:
+        props["유형"] = {"select": {"name": req.kind}}
+    if req.stage:
+        props["단계"] = {"select": {"name": req.stage}}
+    if req.category:
+        props["업무내용"] = _multi_select(req.category)
+    n = _number(req.estimated_amount)
+    if n is not None:
+        props["견적금액"] = n
+    if req.is_bid:
+        props["입찰여부"] = {"checkbox": True}
+    if req.client_id:
+        props["의뢰처"] = _relation([req.client_id])
+    for col, val in [
+        ("연면적", req.gross_floor_area),
+        ("지상층수", req.floors_above),
+        ("지하층수", req.floors_below),
+        ("동수", req.building_count),
+        ("성능설계", req.performance_design_amount),
+        ("풍동실험", req.wind_tunnel_amount),
+    ]:
+        n = _number(val)
+        if n is not None:
+            props[col] = n
+    if req.note:
+        props["비고"] = _rich_text(req.note)
+    d = _date(req.submission_date)
+    if d:
+        props["제출일"] = d
+    if req.vat_inclusive:
+        props["VAT포함"] = {"select": {"name": req.vat_inclusive}}
+    if req.parent_lead_id:
+        props["상위 영업건"] = _relation([req.parent_lead_id])
+    if req.assignees:
+        props["담당자"] = _multi_select(req.assignees)
+    return props
+
+
+def sale_update_to_props(req: SaleUpdateRequest) -> dict[str, Any]:
+    """SaleUpdateRequest → 노션 properties dict.
+
+    None이 아닌 필드만 변환. 빈 문자열은 'clear' 신호로 select=None 등 처리.
+    """
+    props: dict[str, Any] = {}
+    if req.name is not None:
+        props["견적서명"] = _title(req.name)
+    if req.kind is not None:
+        props["유형"] = (
+            {"select": None} if req.kind == "" else {"select": {"name": req.kind}}
+        )
+    if req.stage is not None:
+        props["단계"] = (
+            {"select": None} if req.stage == "" else {"select": {"name": req.stage}}
+        )
+    if req.category is not None:
+        props["업무내용"] = _multi_select(req.category)
+    if req.estimated_amount is not None:
+        props["견적금액"] = {"number": req.estimated_amount}
+    if req.is_bid is not None:
+        props["입찰여부"] = {"checkbox": req.is_bid}
+    if req.client_id is not None:
+        props["의뢰처"] = _relation([req.client_id] if req.client_id else [])
+    for col, val in [
+        ("연면적", req.gross_floor_area),
+        ("지상층수", req.floors_above),
+        ("지하층수", req.floors_below),
+        ("동수", req.building_count),
+        ("성능설계", req.performance_design_amount),
+        ("풍동실험", req.wind_tunnel_amount),
+    ]:
+        if val is not None:
+            props[col] = {"number": val}
+    if req.note is not None:
+        props["비고"] = _rich_text(req.note)
+    if req.submission_date is not None:
+        props["제출일"] = (
+            {"date": None} if req.submission_date == "" else {"date": {"start": req.submission_date}}
+        )
+    if req.vat_inclusive is not None:
+        props["VAT포함"] = (
+            {"select": None}
+            if req.vat_inclusive == ""
+            else {"select": {"name": req.vat_inclusive}}
+        )
+    if req.parent_lead_id is not None:
+        props["상위 영업건"] = _relation(
+            [req.parent_lead_id] if req.parent_lead_id else []
+        )
+    if req.assignees is not None:
+        props["담당자"] = _multi_select(req.assignees)
+    return props
