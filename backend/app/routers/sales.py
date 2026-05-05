@@ -243,6 +243,13 @@ async def save_quote_to_drive(
             status_code=503,
             detail="견적서 저장 폴더가 설정되지 않았습니다 (WORKS_DRIVE_QUOTE_ROOT_FOLDER_ID 미설정).",
         )
+    # [업무관리]와 [견적서]가 별도 sharedrive인 경우 견적 흐름만 다른 sharedrive로 라우팅.
+    # WORKS_DRIVE_QUOTE_SHAREDRIVE_ID 미설정이면 기존 동작과 동일.
+    quote_settings = settings_
+    if settings_.works_drive_quote_sharedrive_id:
+        quote_settings = settings_.model_copy(
+            update={"works_drive_sharedrive_id": settings_.works_drive_quote_sharedrive_id}
+        )
 
     row = db.get(M.MirrorSales, page_id)
     if row is None or row.archived:
@@ -262,7 +269,7 @@ async def save_quote_to_drive(
     year_yyyy = datetime.now(_KST).year
     try:
         year_folder_id, _year_url = await sso_drive.ensure_quote_year_folder(
-            year_yyyy, settings=settings_
+            year_yyyy, settings=quote_settings
         )
     except sso_drive.DriveError as exc:
         logger.exception("견적서 연도 폴더 ensure 실패")
@@ -279,7 +286,7 @@ async def save_quote_to_drive(
             content_type=(
                 "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             ),
-            settings=settings_,
+            settings=quote_settings,
         )
     except sso_drive.DriveError as exc:
         logger.exception("견적서 xlsx Drive 업로드 실패")
