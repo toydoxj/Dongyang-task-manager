@@ -1006,3 +1006,18 @@ export async function convertSale(pageId: string): Promise<Project> {
   const res = await authFetch(`/api/sales/${pageId}/convert`, { method: "POST" });
   return jsonOrThrow<Project>(res);
 }
+
+/** 영업을 기존 진행 프로젝트에 수동 연결. admin 전용.
+ * 영업의 단계가 '완료'로 자동 변경되고 전환된 프로젝트 relation이 채워진다.
+ */
+export async function linkSaleToProject(
+  pageId: string,
+  projectId: string,
+): Promise<Sale> {
+  const res = await authFetch(`/api/sales/${pageId}/link-project`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ project_id: projectId }),
+  });
+  return jsonOrThrow<Sale>(res);
+}

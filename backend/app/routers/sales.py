@@ -10,6 +10,7 @@ import logging
 from datetime import date, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from pydantic import BaseModel
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
@@ -265,3 +266,65 @@ async def convert_to_project(
         ) from exc
 
     return Project.from_notion_page(new_page)
+
+
+# ── 기존 진행 프로젝트에 수동 연결 ──
+
+
+class LinkProjectRequest(BaseModel):
+    project_id: str
+
+
+@router.post("/{page_id}/link-project", response_model=Sale)
+async def link_to_existing_project(
+    page_id: str,
+    body: LinkProjectRequest,
+    _admin: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+    notion: NotionService = Depends(get_notion),
+) -> Sale:
+    """이미 진행 중인 프로젝트에 영업을 수동 연결.
+
+    /convert(신규 프로젝트 생성)와 다름 — 기존 mirror_projects의 프로젝트에 영업의
+    `전환된 프로젝트` relation을 채워 넣고 단계를 `완료`로 갱신.
+
+    검증:
+    - 영업 미archived
+    - kind = 수주영업 (기술지원은 후속 수주영업 sale을 별도 생성)
+    - converted_project_id 비어 있음 (멱등성)
+    - project_id가 mirror_projects에 존재 + 미archived
+    """
+    row = db.get(M.MirrorSales, page_id)
+    if row is None or row.archived:
+        raise HTTPException(status_code=404, detail="영업 건을 찾을 수 없습니다")
+    sale = sale_from_mirror(row)
+
+    if sale.kind != "수주영업":
+        raise HTTPException(
+            status_code=400,
+            detail="수주영업 유형의 영업만 프로젝트에 연결 가능합니다",
+        )
+    if sale.converted_project_id:
+        raise HTTPException(
+            status_code=409,
+            detail="이미 프로젝트에 연결된 영업입니다",
+        )
+
+    project_row = db.get(M.MirrorProject, body.project_id)
+    if project_row is None or project_row.archived:
+        raise HTTPException(
+            status_code=404, detail="대상 프로젝트를 찾을 수 없습니다"
+        )
+
+    update_props: dict = {
+        "단계": {"select": {"name": "완료"}},
+        "전환된 프로젝트": {"relation": [{"id": body.project_id}]},
+    }
+    updated_page = await notion.update_page(page_id, update_props)
+    get_sync().upsert_page("sales", updated_page)
+    logger.info(
+        "sale → 기존 프로젝트 연결: sale=%s project=%s",
+        page_id[:8],
+        body.project_id[:8],
+    )
+    return Sale.from_notion_page(updated_page)
