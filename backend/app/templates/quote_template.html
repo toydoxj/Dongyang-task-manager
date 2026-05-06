@@ -16,25 +16,39 @@
     /* 상단 헤더 — 옅은 그린 배경 */
     .top-bar {
       background: #f0f7e3;
-      padding: 32px 40px 44px 40px;
+      padding: 18px 40px 22px 40px;
       position: relative;
+    }
+    .brand-line {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 4px;
+    }
+    .brand-line .logo {
+      display: inline-block;
+      line-height: 0;
+    }
+    .brand-line .logo svg {
+      width: 22px;
+      height: 22px;
+      display: block;
     }
     .brand-en {
       font-size: 9pt;
       font-weight: 600;
       letter-spacing: 0.15em;
       color: #6b9430;
-      margin-bottom: 6px;
     }
     .title {
-      font-size: 28pt;
+      font-size: 24pt;
       font-weight: 800;
-      letter-spacing: 0.55em;
+      letter-spacing: 0.25em;
       color: #2c2c2c;
     }
     .doc-meta {
       position: absolute;
-      top: 32px;
+      top: 22px;
       right: 40px;
       text-align: right;
       font-size: 10pt;
@@ -244,8 +258,11 @@
 <body>
 
   <div class="top-bar">
-    <div class="brand-en">DONGYANG STRUCTURE</div>
-    <div class="title">설계 견적서</div>
+    <div class="brand-line">
+      {% if logo_svg %}<span class="logo">{{ logo_svg | safe }}</span>{% endif %}
+      <span class="brand-en">DONGYANG STRUCTURE</span>
+    </div>
+    <div class="title">구조설계용역견적서</div>
     <div class="doc-meta">
       <div>문서번호 {{ doc_number or "—" }}</div>
       <div>작성일 {{ today }}</div>

@@ -16,10 +16,24 @@ from jinja2 import Environment, FileSystemLoader, select_autoescape
 from weasyprint import HTML
 
 _TEMPLATE_DIR = Path(__file__).resolve().parent.parent / "templates"
+_LOGO_PATH = _TEMPLATE_DIR / "dongyang_logo.svg"
 _env = Environment(
     loader=FileSystemLoader(_TEMPLATE_DIR),
     autoescape=select_autoescape(["html"]),
 )
+
+
+def _read_logo_svg() -> str:
+    """로고 SVG를 inline 삽입용 문자열로 반환. XML declaration은 제거."""
+    if not _LOGO_PATH.exists():
+        return ""
+    text = _LOGO_PATH.read_text(encoding="utf-8")
+    # HTML 안에서 처리되도록 XML declaration 제거
+    if text.startswith("<?xml"):
+        end = text.find("?>")
+        if end != -1:
+            text = text[end + 2 :].lstrip()
+    return text
 
 
 def _krw(value: int | float | None) -> str:
@@ -45,6 +59,7 @@ def build_quote_pdf(
         input=inp,
         result=result,
         today=date.today().strftime("%Y. %m. %d"),
+        logo_svg=_read_logo_svg(),
     )
     return HTML(string=html).write_pdf()
 
