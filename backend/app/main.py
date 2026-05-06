@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import time
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
@@ -79,6 +80,27 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+# 1초 이상 걸린 요청 자동 로그 — event loop block / DB pool 대기 / 외부 API
+# lag 등 hang 원인 진단용. Render Logs에서 "slow " 필터로 즉시 식별.
+_SLOW_REQUEST_MS = 1000
+
+
+@app.middleware("http")
+async def log_slow_requests(request: Request, call_next):  # type: ignore[no-untyped-def]
+    start = time.monotonic()
+    response = await call_next(request)
+    elapsed_ms = (time.monotonic() - start) * 1000
+    if elapsed_ms >= _SLOW_REQUEST_MS:
+        logging.getLogger("app.slow").warning(
+            "slow %s %s — %.0fms (status=%d)",
+            request.method,
+            request.url.path,
+            elapsed_ms,
+            response.status_code,
+        )
+    return response
 
 
 @app.exception_handler(AppError)

@@ -166,7 +166,7 @@ services:
     region: singapore
     plan: starter
     rootDir: backend
-    schedule: "*/30 * * * *"          # 30분마다 :00
+    schedule: "3,33 * * * *"          # 30분마다 :03/:33 — projects(:00,:05..)·tasks(:02,:07..)·others(:15/:45)와 충돌 회피
     buildCommand: |
       pip install --upgrade pip uv
       env -u VIRTUAL_ENV uv sync --frozen --no-dev
