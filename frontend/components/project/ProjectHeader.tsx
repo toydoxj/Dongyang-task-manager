@@ -211,7 +211,7 @@ export default function ProjectHeader({
                 </button>
               )}
             </div>
-          ) : user?.role === "admin" ? (
+          ) : (
             <button
               type="button"
               onClick={handleProvisionDrive}
@@ -221,7 +221,7 @@ export default function ProjectHeader({
             >
               {driveBusy ? "생성 중..." : "📁 Drive 폴더 만들기"}
             </button>
-          ) : null}
+          )}
           {driveError && (
             <p className="text-[10px] text-red-400" title={driveError}>
               {driveError}

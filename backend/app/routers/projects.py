@@ -274,11 +274,11 @@ async def create_project(
 @router.post("/{page_id}/works-drive", response_model=Project)
 async def retry_works_drive(
     page_id: str,
-    _admin: User = Depends(require_admin),
+    _user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
     notion: NotionService = Depends(get_notion),
 ) -> Project:
-    """admin이 누락된/실패한 WORKS Drive 폴더 생성을 다시 시도.
+    """누락된/실패한 WORKS Drive 폴더 생성을 다시 시도.
 
     동기 호출 — 결과를 즉시 응답에 반영. idempotent라 폴더 있으면 URL만 다시 저장.
     """
