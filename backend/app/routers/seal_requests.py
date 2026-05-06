@@ -45,6 +45,7 @@ from app.services import seal_logic as SL
 from app.services import sso_drive
 from app.services import sso_works_bot
 from app.services.notion import NotionService, get_notion
+from app.services.sync import get_sync
 from app.settings import get_settings
 
 logger = logging.getLogger("seal_requests")
