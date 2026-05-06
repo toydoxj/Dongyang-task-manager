@@ -3,7 +3,7 @@ services:
     name: dy-task-backend
     runtime: python
     region: singapore
-    plan: starter
+    plan: standard
     rootDir: backend
     buildCommand: |
       pip install --upgrade pip uv
