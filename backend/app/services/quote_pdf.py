@@ -47,9 +47,17 @@ _env.filters["krw"] = _krw
 
 
 def build_quote_pdf(
-    form_data: dict[str, Any], *, doc_number: str = ""
+    form_data: dict[str, Any],
+    *,
+    doc_number: str = "",
+    author_name: str = "",
+    author_position: str = "",
 ) -> bytes:
-    """form_data['input'] + ['result']를 quote_template.html로 렌더링 → PDF bytes."""
+    """form_data['input'] + ['result']를 quote_template.html로 렌더링 → PDF bytes.
+
+    author_name/author_position은 헤더 doc-meta에 '작성자 : 이름 직급' 형식으로 표시.
+    빈 값이면 작성자 라인 자체를 숨김.
+    """
     template = _env.get_template("quote_template.html")
     inp = form_data.get("input") or {}
     result = form_data.get("result") or {}
@@ -60,6 +68,8 @@ def build_quote_pdf(
         result=result,
         today=date.today().strftime("%Y. %m. %d"),
         logo_svg=_read_logo_svg(),
+        author_name=author_name,
+        author_position=author_position,
     )
     return HTML(string=html).write_pdf()
 

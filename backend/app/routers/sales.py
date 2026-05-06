@@ -18,6 +18,7 @@ from urllib.parse import quote as url_quote
 
 from app.db import get_db
 from app.models import mirror as M
+from app.models.employee import Employee
 from app.models.auth import User
 from app.models.project import Project, ProjectCreateRequest, project_create_to_props
 from app.models.sale import (
@@ -217,10 +218,14 @@ def download_quote_xlsx(
 @router.get("/{page_id}/quote.pdf")
 def download_quote_pdf(
     page_id: str,
-    _user: User = Depends(get_current_user),
+    user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> Response:
-    """저장된 견적서 입력값으로 PDF 생성 → 다운로드 (WeasyPrint, A4 1페이지)."""
+    """저장된 견적서 입력값으로 PDF 생성 → 다운로드 (WeasyPrint, A4 1페이지).
+
+    PDF 헤더의 '작성자 : 이름 직급'은 다운로드 트리거한 user의 Employee
+    매핑(linked_user_id)에서 채움. 매핑이 없으면 user.name fallback.
+    """
     row = db.get(M.MirrorSales, page_id)
     if row is None or row.archived:
         raise HTTPException(status_code=404, detail="영업 건을 찾을 수 없습니다")
@@ -231,7 +236,18 @@ def download_quote_pdf(
             detail="이 영업 건에는 견적서 데이터가 없습니다 (견적서 탭으로 만든 영업만 다운로드 가능)",
         )
 
-    pdf_bytes = build_quote_pdf(form_data, doc_number=row.quote_doc_number or "")
+    employee = (
+        db.query(Employee).filter(Employee.linked_user_id == user.id).first()
+    )
+    author_name = (employee.name if employee else "") or user.name or user.username
+    author_position = employee.position if employee else ""
+
+    pdf_bytes = build_quote_pdf(
+        form_data,
+        doc_number=row.quote_doc_number or "",
+        author_name=author_name,
+        author_position=author_position,
+    )
     filename = quote_pdf_filename(
         row.quote_doc_number or "no-doc", row.name or "견적서"
     )
