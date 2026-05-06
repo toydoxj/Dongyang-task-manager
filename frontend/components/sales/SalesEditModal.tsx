@@ -150,6 +150,17 @@ export default function SalesEditModal({
     setForm((f) => (f.client_id === id ? f : { ...f, client_id: id }));
   }, [clientMatch, clientsData, clientUserEdited]);
 
+  // 발주처(client) → 견적서 수신처(recipient_company) 자동 동기화.
+  // 사용자가 견적서 폼에서 수신처를 직접 편집한 경우에도 발주처를 다시 변경하지 않으면
+  // 덮어쓰지 않음. 발주처 != 수신처인 케이스는 실무상 없다는 결정에 따라 단순 동기화.
+  useEffect(() => {
+    setQuoteInput((prev) =>
+      prev.recipient_company === client
+        ? prev
+        : { ...prev, recipient_company: client },
+    );
+  }, [client]);
+
   if (!open) return null;
 
   const refreshSales = (): void => {

@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import QuoteResultPanel from "@/components/sales/QuoteResultPanel";
 import { previewQuote } from "@/lib/api";
 import type { QuoteInput, QuoteResult } from "@/lib/domain";
+import { useClients } from "@/lib/hooks";
 import { cn } from "@/lib/utils";
 
 // 견적서 양식의 N/O열 옵션 — xlsx 실제 옵션과 일치
@@ -35,6 +36,9 @@ interface Props {
 export default function QuoteForm({ value, onChange, onResultChange }: Props) {
   const [result, setResult] = useState<QuoteResult | null>(null);
   const [loading, setLoading] = useState(false);
+  // 수신처 회사명 자동완성용 — SalesEditModal에서도 useClients 호출하지만
+  // SWR 캐시가 동일 키로 dedupe하므로 추가 fetch 비용 없음.
+  const { data: clientsData } = useClients(true);
 
   // 산출에 필요한 핵심 입력만 변경되면 디바운스 호출.
   const pivotKey = useMemo(
@@ -99,9 +103,22 @@ export default function QuoteForm({ value, onChange, onResultChange }: Props) {
             <Field label="회사명">
               <input
                 className={inputCls}
+                list="dy-clients-quote"
                 value={value.recipient_company ?? ""}
                 onChange={(e) => set("recipient_company", e.target.value)}
+                placeholder={
+                  clientsData
+                    ? `목록 ${clientsData.count}개 자동완성, 발주처 변경 시 자동 갱신`
+                    : ""
+                }
               />
+              <datalist id="dy-clients-quote">
+                {clientsData?.items.map((c) => (
+                  <option key={c.id} value={c.name}>
+                    {c.category}
+                  </option>
+                ))}
+              </datalist>
             </Field>
             <Field label="참조자">
               <input
