@@ -364,19 +364,25 @@
       <tr>
         <td class="num">②</td>
         <td>직접경비</td>
-        <td class="formula">인쇄 · 조사 · 교통비</td>
+        <td class="formula">
+          {%- if input.direct_expense_items and input.direct_expense_items | length -%}
+            {{ input.direct_expense_items | map(attribute='name') | reject('equalto', '') | join(' · ') or '인쇄 · 조사 · 교통비' }}
+          {%- else -%}
+            인쇄 · 조사 · 교통비
+          {%- endif -%}
+        </td>
         <td class="right amount">{{ "{:,}".format(result.direct_expense | int) }}</td>
       </tr>
       <tr>
         <td class="num">⑥</td>
         <td>제경비</td>
-        <td class="formula">① × 110%</td>
+        <td class="formula">① × {{ input.overhead_pct or 110 }}%</td>
         <td class="right amount">{{ "{:,}".format(result.overhead | int) }}</td>
       </tr>
       <tr>
         <td class="num">⑦</td>
         <td>기술료</td>
-        <td class="formula">((① + ⑥) × 20%</td>
+        <td class="formula">(① + ⑥) × {{ input.tech_fee_pct or 20 }}%</td>
         <td class="right amount">{{ "{:,}".format(result.tech_fee | int) }}</td>
       </tr>
       <tr>
@@ -388,7 +394,7 @@
       <tr>
         <td class="num">⑨</td>
         <td>당사조정</td>
-        <td class="formula">⑧ × {{ input.adjustment_pct or 87 }}.0% + ②</td>
+        <td class="formula">⑧ × {{ input.adjustment_pct or 87 }}% + ②</td>
         <td class="right amount">{{ "{:,}".format(result.adjusted | int) }}</td>
       </tr>
       <tr class="deduction">

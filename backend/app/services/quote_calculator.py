@@ -25,6 +25,14 @@ from pydantic import BaseModel, ConfigDict, Field
 DAILY_RATE_SENIOR_ENGINEER = 310_884
 
 
+class DirectExpenseItem(BaseModel):
+    """직접경비 동적 항목 — 사용자가 항목명·금액 자유 입력."""
+
+    model_config = ConfigDict(populate_by_name=True)
+    name: str = ""
+    amount: float = Field(default=0, ge=0)
+
+
 class QuoteInput(BaseModel):
     """견적서 입력값. 사용자가 입력하는 모든 변수."""
 
@@ -45,19 +53,30 @@ class QuoteInput(BaseModel):
     type_rate: float = Field(default=1.0, gt=0)  # 종별 요율 (0.8~1.2)
     structure_rate: float = Field(default=1.0, gt=0)  # 구조방식 요율 (0.5~1.5)
     coefficient: float = Field(default=1.0, gt=0)  # 계수 (0.5: 계산서만, 1.0: 계산서+도면)
-    # 직접경비
-    printing_fee: float = Field(default=0, ge=0)  # 보고서인쇄비
-    survey_fee: float = Field(default=0, ge=0)  # 추가조사비
-    transport_persons: int = Field(default=0, ge=0)  # 교통비 인.일
+    # 투입인원 직접 입력 — None이면 (연면적 × 요율들)로 자동 산출.
+    # 정수면 그 값을 사용 (자동 산출 무시).
+    manhours_override: int | None = Field(default=None, ge=0)
+    # 직접경비 — 동적 항목 list. 비어 있으면 산출에 0원.
+    # legacy 필드(printing_fee/survey_fee/transport_persons)는 backward 호환용.
+    direct_expense_items: list[DirectExpenseItem] = []
+    # 제경비 / 기술료 % — default는 사장 운영 표준 (110% / 20%)
+    overhead_pct: float = Field(default=110, ge=0, le=500)
+    tech_fee_pct: float = Field(default=20, ge=0, le=200)
     # 조정·옵션
     adjustment_pct: float = Field(default=87, ge=0, le=200)  # 당사조정 % (default 87)
-    # VAT 포함 여부 — UI 표시 + xlsx 출력에만 영향. 영업 등록 금액(estimated_amount)
-    # 은 항상 공급가액(final, VAT 별도). True면 산출 패널/xlsx에 공급가액·VAT·합계
+    # VAT 포함 여부 — UI 표시 + PDF 출력에만 영향. 영업 등록 금액(estimated_amount)
+    # 은 항상 공급가액(final, VAT 별도). True면 산출 패널/PDF에 공급가액·VAT·합계
     # 3줄을 추가 표시.
     vat_included: bool = False
     # 자유 텍스트
     payment_terms: str = ""  # 지불방법
     special_notes: str = ""  # 특이사항
+    # ── legacy (기존 영업 호환) ──
+    # 기존 quote_form_data가 이 필드들을 갖고 있을 수 있음. direct_expense_items가
+    # 비었을 때만 합산해서 사용.
+    printing_fee: float = Field(default=0, ge=0)
+    survey_fee: float = Field(default=0, ge=0)
+    transport_persons: int = Field(default=0, ge=0)
 
 
 class QuoteResult(BaseModel):
@@ -129,22 +148,29 @@ def _excel_round_half_up(value: float, ndigits: int = 0) -> int | float:
 
 def calculate(inp: QuoteInput) -> QuoteResult:
     """견적서 산출 — xlsx 식 그대로 파이썬 재현."""
-    # 1. 인.일 산출 (ROUND 두 번)
+    # 1. 인.일 산출 — manhours_override가 있으면 그 값, 없으면 자동(ROUND 두 번)
     bm = baseline_manhours(inp.gross_floor_area)
     bm_rounded = int(_excel_round_half_up(bm, 0))
-    mh_total = int(
-        _excel_round_half_up(
-            bm_rounded * inp.type_rate * inp.structure_rate * inp.coefficient, 0
+    if inp.manhours_override is not None:
+        mh_total = int(inp.manhours_override)
+    else:
+        mh_total = int(
+            _excel_round_half_up(
+                bm_rounded * inp.type_rate * inp.structure_rate * inp.coefficient, 0
+            )
         )
-    )
 
     # 2. 산출
     direct_labor = mh_total * DAILY_RATE_SENIOR_ENGINEER
-    direct_expense = (
-        inp.printing_fee + inp.survey_fee + 25_000 * inp.transport_persons
-    )
-    overhead = direct_labor * 1.10
-    tech_fee = (direct_labor + overhead) * 0.20
+    # 직접경비: 새 동적 항목 list 우선, 없으면 legacy 필드 fallback
+    if inp.direct_expense_items:
+        direct_expense = sum(item.amount for item in inp.direct_expense_items)
+    else:
+        direct_expense = (
+            inp.printing_fee + inp.survey_fee + 25_000 * inp.transport_persons
+        )
+    overhead = direct_labor * (inp.overhead_pct / 100)
+    tech_fee = (direct_labor + overhead) * (inp.tech_fee_pct / 100)
     subtotal = direct_labor + overhead + tech_fee
 
     # 3. 당사 조정 (조정% 적용 + 직접경비 더함)

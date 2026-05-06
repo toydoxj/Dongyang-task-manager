@@ -48,10 +48,15 @@ export default function QuoteForm({ value, onChange, onResultChange }: Props) {
         t: value.type_rate,
         s: value.structure_rate,
         c: value.coefficient,
+        mh: value.manhours_override,
+        items: value.direct_expense_items,
+        oh: value.overhead_pct,
+        tf: value.tech_fee_pct,
+        adj: value.adjustment_pct,
+        // legacy
         p: value.printing_fee,
         v: value.survey_fee,
         n: value.transport_persons,
-        adj: value.adjustment_pct,
       }),
     [value],
   );
@@ -244,59 +249,120 @@ export default function QuoteForm({ value, onChange, onResultChange }: Props) {
               </select>
             </Field>
           </div>
+          <Field label="투입인원 (인.일) — 비우면 연면적·요율로 자동 산출">
+            <input
+              type="number"
+              min={0}
+              step={1}
+              className={inputCls}
+              placeholder="자동 산출"
+              value={value.manhours_override ?? ""}
+              onChange={(e) =>
+                set(
+                  "manhours_override",
+                  e.target.value ? Number(e.target.value) : null,
+                )
+              }
+            />
+          </Field>
         </Section>
 
-        <Section title="직접경비 + 조정">
+        <Section title="직접경비">
+          {(value.direct_expense_items ?? []).map((item, idx) => (
+            <div key={idx} className="flex items-center gap-2">
+              <input
+                className={cn(inputCls, "flex-1")}
+                placeholder="항목명 (예: 보고서 인쇄비)"
+                value={item.name}
+                onChange={(e) => {
+                  const next = [...(value.direct_expense_items ?? [])];
+                  next[idx] = { ...item, name: e.target.value };
+                  set("direct_expense_items", next);
+                }}
+              />
+              <input
+                type="number"
+                min={0}
+                className={cn(inputCls, "w-32")}
+                placeholder="금액"
+                value={item.amount || ""}
+                onChange={(e) => {
+                  const next = [...(value.direct_expense_items ?? [])];
+                  next[idx] = {
+                    ...item,
+                    amount: e.target.value ? Number(e.target.value) : 0,
+                  };
+                  set("direct_expense_items", next);
+                }}
+              />
+              <button
+                type="button"
+                onClick={() => {
+                  const next = [...(value.direct_expense_items ?? [])];
+                  next.splice(idx, 1);
+                  set("direct_expense_items", next);
+                }}
+                className="rounded border border-zinc-300 px-2 py-1 text-xs hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800"
+                aria-label="삭제"
+              >
+                ✕
+              </button>
+            </div>
+          ))}
+          <button
+            type="button"
+            onClick={() =>
+              set("direct_expense_items", [
+                ...(value.direct_expense_items ?? []),
+                { name: "", amount: 0 },
+              ])
+            }
+            className="rounded-md border border-dashed border-zinc-400 px-3 py-1.5 text-xs text-zinc-600 hover:bg-zinc-50 dark:border-zinc-600 dark:text-zinc-400 dark:hover:bg-zinc-800"
+          >
+            + 항목 추가
+          </button>
+        </Section>
+
+        <Section title="제경비 · 기술료 · 조정">
           <div className="grid grid-cols-3 gap-2">
-            <Field label="보고서인쇄비 (원)">
-              <input
-                type="number"
-                className={inputCls}
-                value={value.printing_fee ?? ""}
-                onChange={(e) =>
-                  set("printing_fee", e.target.value ? Number(e.target.value) : 0)
-                }
-              />
-            </Field>
-            <Field label="추가조사비 (원)">
-              <input
-                type="number"
-                className={inputCls}
-                value={value.survey_fee ?? ""}
-                onChange={(e) =>
-                  set("survey_fee", e.target.value ? Number(e.target.value) : 0)
-                }
-              />
-            </Field>
-            <Field label="교통비 (인.일)">
+            <Field label="제경비 (%)">
               <input
                 type="number"
                 min={0}
                 step={1}
                 className={inputCls}
-                value={value.transport_persons ?? ""}
+                value={value.overhead_pct ?? 110}
                 onChange={(e) =>
-                  set(
-                    "transport_persons",
-                    e.target.value ? Number(e.target.value) : 0,
-                  )
+                  set("overhead_pct", e.target.value ? Number(e.target.value) : 110)
+                }
+              />
+            </Field>
+            <Field label="기술료 (%)">
+              <input
+                type="number"
+                min={0}
+                step={1}
+                className={inputCls}
+                value={value.tech_fee_pct ?? 20}
+                onChange={(e) =>
+                  set("tech_fee_pct", e.target.value ? Number(e.target.value) : 20)
+                }
+              />
+            </Field>
+            <Field label="당사 조정 (%)">
+              <input
+                type="number"
+                min={0}
+                max={200}
+                step={1}
+                className={inputCls}
+                value={value.adjustment_pct ?? 87}
+                onChange={(e) =>
+                  set("adjustment_pct", e.target.value ? Number(e.target.value) : 87)
                 }
               />
             </Field>
           </div>
-          <Field label="당사 조정 (%)">
-            <input
-              type="number"
-              min={0}
-              max={200}
-              step={1}
-              className={inputCls}
-              value={value.adjustment_pct ?? 87}
-              onChange={(e) =>
-                set("adjustment_pct", e.target.value ? Number(e.target.value) : 87)
-              }
-            />
-          </Field>
           <label className="flex items-center gap-2 text-xs text-zinc-700 dark:text-zinc-300">
             <input
               type="checkbox"
@@ -304,7 +370,7 @@ export default function QuoteForm({ value, onChange, onResultChange }: Props) {
               checked={!!value.vat_included}
               onChange={(e) => set("vat_included", e.target.checked)}
             />
-            VAT 포함 표시 (산출 결과·xlsx에 공급가액·VAT·합계 추가)
+            VAT 포함 표시 (산출 결과·PDF에 공급가액·VAT·합계 추가)
           </label>
         </Section>
 

@@ -524,6 +524,12 @@ export type SaleUpdateRequest = Partial<SaleCreateRequest>;
 
 // ── 견적서 작성 툴 (PR5) ──
 
+/** 직접경비 동적 항목. */
+export interface DirectExpenseItem {
+  name: string;
+  amount: number;
+}
+
 /** 견적서 입력값 — 백엔드 QuoteInput과 1:1 대응. */
 export interface QuoteInput {
   service_name?: string;
@@ -538,13 +544,20 @@ export interface QuoteInput {
   type_rate?: number;
   structure_rate?: number;
   coefficient?: number;
-  printing_fee?: number;
-  survey_fee?: number;
-  transport_persons?: number;
+  /** null/undefined: 자동 산출. 정수: 그 값을 사용. */
+  manhours_override?: number | null;
+  /** 동적 직접경비 항목 (이름 + 금액). 비어있으면 legacy 합산 fallback. */
+  direct_expense_items?: DirectExpenseItem[];
+  overhead_pct?: number;
+  tech_fee_pct?: number;
   adjustment_pct?: number;
   vat_included?: boolean;
   payment_terms?: string;
   special_notes?: string;
+  // ── legacy (기존 영업 호환, 신규는 direct_expense_items 사용) ──
+  printing_fee?: number;
+  survey_fee?: number;
+  transport_persons?: number;
 }
 
 /** 견적서 산출 결과 — 백엔드 QuoteResult. */
