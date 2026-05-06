@@ -51,6 +51,10 @@ class QuoteInput(BaseModel):
     transport_persons: int = Field(default=0, ge=0)  # 교통비 인.일
     # 조정·옵션
     adjustment_pct: float = Field(default=87, ge=0, le=200)  # 당사조정 % (default 87)
+    # VAT 포함 여부 — UI 표시 + xlsx 출력에만 영향. 영업 등록 금액(estimated_amount)
+    # 은 항상 공급가액(final, VAT 별도). True면 산출 패널/xlsx에 공급가액·VAT·합계
+    # 3줄을 추가 표시.
+    vat_included: bool = False
     # 자유 텍스트
     payment_terms: str = ""  # 지불방법
     special_notes: str = ""  # 특이사항
@@ -71,7 +75,9 @@ class QuoteResult(BaseModel):
     subtotal: float  # K27
     adjusted: float  # K28
     truncated: int  # K29 (100만 미만)
-    final: int  # K30 (백만 단위 절삭 후 — 사장 표기용)
+    final: int  # K30 (백만 단위 절삭 후 — 사장 표기용, 항상 공급가액)
+    vat_amount: int  # final × 10% (한국 부가세, round 1원 단위)
+    final_with_vat: int  # final + vat_amount
     per_pyeong_area: float  # P28 (평수 = 연면적/3.3)
     per_pyeong: float  # Q28 (평당 단가 = final / per_pyeong_area)
 
@@ -151,7 +157,12 @@ def calculate(inp: QuoteInput) -> QuoteResult:
     # 5. 최종 — adjusted_int 기준으로 빼야 소수점 잔여가 안 남음 (Codex 검토)
     final_amount = adjusted_int - truncated
 
-    # 6. 평당 (P28, Q28)
+    # 6. VAT (한국 부가세 10%) — final은 항상 공급가액. UI/xlsx 표시 분기는
+    # vat_included 플래그가 결정하지만 계산값 자체는 항상 채워 응답에 일관성 유지.
+    vat_amount = int(_excel_round_half_up(final_amount * 0.1, 0))
+    final_with_vat = final_amount + vat_amount
+
+    # 7. 평당 (P28, Q28)
     per_pyeong_area = inp.gross_floor_area / 3.3 if inp.gross_floor_area else 0
     per_pyeong = final_amount / per_pyeong_area if per_pyeong_area else 0
 
@@ -167,6 +178,8 @@ def calculate(inp: QuoteInput) -> QuoteResult:
         adjusted=adjusted,
         truncated=truncated,
         final=final_amount,
+        vat_amount=vat_amount,
+        final_with_vat=final_with_vat,
         per_pyeong_area=per_pyeong_area,
         per_pyeong=per_pyeong,
     )

@@ -7,9 +7,15 @@ const KRW = (n: number): string => n.toLocaleString("ko-KR") + "원";
 interface Props {
   result: QuoteResult | null;
   loading?: boolean;
+  /** true면 ⑪ 용역대가 아래에 VAT(10%)·합계(VAT 포함) 두 줄 추가 표시. */
+  vatIncluded?: boolean;
 }
 
-export default function QuoteResultPanel({ result, loading }: Props) {
+export default function QuoteResultPanel({
+  result,
+  loading,
+  vatIncluded,
+}: Props) {
   if (loading && !result) {
     return (
       <div className="rounded-lg border border-zinc-200 bg-zinc-50 p-4 text-xs text-zinc-500 dark:border-zinc-800 dark:bg-zinc-900">
@@ -54,11 +60,22 @@ export default function QuoteResultPanel({ result, loading }: Props) {
       <Row label="⑩ 절삭 (백만 미만)" value={`-${KRW(result.truncated)}`} mono />
       <hr className="border-emerald-500/30" />
       <Row
-        label="⑪ 용역대가"
+        label={vatIncluded ? "⑪ 공급가액 (VAT 별도)" : "⑪ 용역대가"}
         value={KRW(result.final)}
         mono
         highlight
       />
+      {vatIncluded && (
+        <>
+          <Row label="⑫ VAT (10%)" value={KRW(result.vat_amount)} mono />
+          <Row
+            label="⑬ 합계 (VAT 포함)"
+            value={KRW(result.final_with_vat)}
+            mono
+            highlight
+          />
+        </>
+      )}
       {result.per_pyeong > 0 && (
         <Row
           label={`평당 단가 (${result.per_pyeong_area.toFixed(1)}평)`}

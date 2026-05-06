@@ -542,6 +542,7 @@ export interface QuoteInput {
   survey_fee?: number;
   transport_persons?: number;
   adjustment_pct?: number;
+  vat_included?: boolean;
   payment_terms?: string;
   special_notes?: string;
 }
@@ -559,6 +560,8 @@ export interface QuoteResult {
   adjusted: number;
   truncated: number;
   final: number;
+  vat_amount: number;
+  final_with_vat: number;
   per_pyeong_area: number;
   per_pyeong: number;
 }

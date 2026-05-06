@@ -297,6 +297,15 @@ export default function QuoteForm({ value, onChange, onResultChange }: Props) {
               }
             />
           </Field>
+          <label className="flex items-center gap-2 text-xs text-zinc-700 dark:text-zinc-300">
+            <input
+              type="checkbox"
+              className="size-3.5 accent-emerald-600"
+              checked={!!value.vat_included}
+              onChange={(e) => set("vat_included", e.target.checked)}
+            />
+            VAT 포함 표시 (산출 결과·xlsx에 공급가액·VAT·합계 추가)
+          </label>
         </Section>
 
         <Section title="기타">
@@ -323,7 +332,11 @@ export default function QuoteForm({ value, onChange, onResultChange }: Props) {
         <h3 className="mb-2 text-xs font-semibold text-emerald-700 dark:text-emerald-400">
           산출 결과
         </h3>
-        <QuoteResultPanel result={result} loading={loading} />
+        <QuoteResultPanel
+          result={result}
+          loading={loading}
+          vatIncluded={!!value.vat_included}
+        />
       </div>
     </div>
   );
