@@ -64,6 +64,10 @@ class QuoteInput(BaseModel):
     tech_fee_pct: float = Field(default=20, ge=0, le=200)
     # 조정·옵션
     adjustment_pct: float = Field(default=87, ge=0, le=200)  # 당사조정 % (default 87)
+    # 절삭 단위 — 백만(1,000,000) / 십만 / 만 등. 0이면 절삭 안 함.
+    truncate_unit: int = Field(default=1_000_000, ge=0)
+    # 최종 금액 직접 지정 — 정수면 truncate_unit 무시하고 그 값 사용 (수동 가격).
+    final_override: int | None = Field(default=None, ge=0)
     # VAT 포함 여부 — UI 표시 + PDF 출력에만 영향. 영업 등록 금액(estimated_amount)
     # 은 항상 공급가액(final, VAT 별도). True면 산출 패널/PDF에 공급가액·VAT·합계
     # 3줄을 추가 표시.
@@ -176,12 +180,15 @@ def calculate(inp: QuoteInput) -> QuoteResult:
     # 3. 당사 조정 (조정% 적용 + 직접경비 더함)
     adjusted = subtotal * (inp.adjustment_pct / 100) + direct_expense
 
-    # 4. 절삭 (Excel RIGHT(TEXT(adjusted, "0,000"), 7) — 100만 미만 부분)
+    # 4. 절삭 — final_override 우선, 없으면 truncate_unit으로 절삭
     adjusted_int = int(_excel_round_half_up(adjusted, 0))
-    truncated = adjusted_int % 1_000_000
-
-    # 5. 최종 — adjusted_int 기준으로 빼야 소수점 잔여가 안 남음 (Codex 검토)
-    final_amount = adjusted_int - truncated
+    if inp.final_override is not None:
+        final_amount = int(inp.final_override)
+        truncated = adjusted_int - final_amount  # 표시용 (음수 가능)
+    else:
+        unit = inp.truncate_unit if inp.truncate_unit > 0 else 1
+        truncated = adjusted_int % unit
+        final_amount = adjusted_int - truncated
 
     # 6. VAT (한국 부가세 10%) — final은 항상 공급가액. UI/xlsx 표시 분기는
     # vat_included 플래그가 결정하지만 계산값 자체는 항상 채워 응답에 일관성 유지.

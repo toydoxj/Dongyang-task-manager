@@ -551,6 +551,10 @@ export interface QuoteInput {
   overhead_pct?: number;
   tech_fee_pct?: number;
   adjustment_pct?: number;
+  /** 절삭 단위 — 1_000_000(백만) / 100_000(십만) / 10_000(만) / 0(절삭 없음). default 1_000_000 */
+  truncate_unit?: number;
+  /** 최종 금액 직접 지정 — 정수면 truncate_unit 무시. */
+  final_override?: number | null;
   vat_included?: boolean;
   payment_terms?: string;
   special_notes?: string;

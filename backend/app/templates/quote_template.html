@@ -399,9 +399,23 @@
       </tr>
       <tr class="deduction">
         <td class="num">⑩</td>
-        <td>절삭</td>
-        <td class="formula">백만 미만</td>
-        <td class="right amount">- {{ "{:,}".format(result.truncated | int) }}</td>
+        <td>{% if input.final_override is not none %}수동 조정{% else %}절삭{% endif %}</td>
+        <td class="formula">
+          {%- if input.final_override is not none -%}
+            금액 직접 지정
+          {%- elif (input.truncate_unit if input.truncate_unit is defined else 1000000) >= 1000000 -%}
+            백만 미만
+          {%- elif input.truncate_unit >= 100000 -%}
+            십만 미만
+          {%- elif input.truncate_unit >= 10000 -%}
+            만 미만
+          {%- elif input.truncate_unit > 0 -%}
+            {{ "{:,}".format(input.truncate_unit | int) }} 미만
+          {%- else -%}
+            절삭 없음
+          {%- endif -%}
+        </td>
+        <td class="right amount">{% if result.truncated %}- {{ "{:,}".format(result.truncated | int) }}{% else %}—{% endif %}</td>
       </tr>
       <tr>
         <td class="num">⑪</td>

@@ -53,6 +53,8 @@ export default function QuoteForm({ value, onChange, onResultChange }: Props) {
         oh: value.overhead_pct,
         tf: value.tech_fee_pct,
         adj: value.adjustment_pct,
+        tu: value.truncate_unit,
+        fo: value.final_override,
         // legacy
         p: value.printing_fee,
         v: value.survey_fee,
@@ -359,6 +361,39 @@ export default function QuoteForm({ value, onChange, onResultChange }: Props) {
                 value={value.adjustment_pct ?? 87}
                 onChange={(e) =>
                   set("adjustment_pct", e.target.value ? Number(e.target.value) : 87)
+                }
+              />
+            </Field>
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <Field label="절삭 단위">
+              <select
+                className={inputCls}
+                value={value.truncate_unit ?? 1_000_000}
+                onChange={(e) =>
+                  set("truncate_unit", Number(e.target.value))
+                }
+                disabled={value.final_override != null}
+              >
+                <option value={1_000_000}>백만 미만</option>
+                <option value={100_000}>십만 미만</option>
+                <option value={10_000}>만 미만</option>
+                <option value={0}>절삭 없음</option>
+              </select>
+            </Field>
+            <Field label="최종 금액 직접 입력 (선택)">
+              <input
+                type="number"
+                min={0}
+                step={1}
+                className={inputCls}
+                placeholder="비우면 자동 절삭"
+                value={value.final_override ?? ""}
+                onChange={(e) =>
+                  set(
+                    "final_override",
+                    e.target.value ? Number(e.target.value) : null,
+                  )
                 }
               />
             </Field>
