@@ -1034,20 +1034,9 @@ export async function previewQuote(input: QuoteInput): Promise<QuoteResult> {
   return jsonOrThrow<QuoteResult>(res);
 }
 
-/** 견적서 xlsx → WORKS Drive [견적서]/{YYYY}년 자동 업로드 + 노션 sale의 견적서첨부 갱신. */
-export async function saveQuoteToDrive(saleId: string): Promise<Sale> {
-  const res = await authFetch(`/api/sales/${saleId}/quote/save-to-drive`, {
-    method: "POST",
-  });
-  return jsonOrThrow<Sale>(res);
-}
-
-/** 견적서 파일 다운로드 — xlsx/pdf 공통. Content-Disposition filename*로 한글 파일명 자동. */
-async function _downloadQuoteFile(
-  saleId: string,
-  format: "xlsx" | "pdf",
-): Promise<void> {
-  const res = await authFetch(`/api/sales/${saleId}/quote.${format}`);
+/** 견적서 PDF 다운로드 — Content-Disposition filename*로 한글 파일명 자동. */
+export async function downloadQuotePdf(saleId: string): Promise<void> {
+  const res = await authFetch(`/api/sales/${saleId}/quote.pdf`);
   if (!res.ok) {
     const detail = await res.json().catch(() => null);
     throw new Error(
@@ -1057,7 +1046,7 @@ async function _downloadQuoteFile(
   }
   const blob = await res.blob();
   const cd = res.headers.get("Content-Disposition") ?? "";
-  let filename = `quote.${format}`;
+  let filename = "quote.pdf";
   const star = cd.match(/filename\*=UTF-8''([^;]+)/i);
   if (star) {
     try {
@@ -1075,8 +1064,3 @@ async function _downloadQuoteFile(
   a.remove();
   URL.revokeObjectURL(url);
 }
-
-export const downloadQuoteXlsx = (saleId: string) =>
-  _downloadQuoteFile(saleId, "xlsx");
-export const downloadQuotePdf = (saleId: string) =>
-  _downloadQuoteFile(saleId, "pdf");

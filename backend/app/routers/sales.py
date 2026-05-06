@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import Response
@@ -30,13 +30,11 @@ from app.models.sale import (
     sale_update_to_props,
 )
 from app.security import get_current_user, require_admin
-from app.services import sso_drive
 from app.services.mirror_dto import sale_from_mirror
 from app.services.notion import NotionService, get_notion
 from app.services.quote_calculator import QuoteInput, QuoteResult, calculate
 from app.services.quote_code import next_quote_doc_number
 from app.services.quote_pdf import build_quote_pdf, quote_pdf_filename
-from app.services.quote_xlsx import build_quote_xlsx, quote_filename
 from app.services.sales_code import next_sales_code
 from app.services.sales_probability import CONVERTIBLE_STAGES
 from app.services.sync import get_sync
@@ -177,42 +175,7 @@ def preview_quote(
     return calculate(body)
 
 
-# ── 견적서 xlsx 다운로드 ──
-
-
-@router.get("/{page_id}/quote.xlsx")
-def download_quote_xlsx(
-    page_id: str,
-    _user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-) -> Response:
-    """저장된 견적서 입력값으로 xlsx 양식 생성 → 첨부 다운로드."""
-    row = db.get(M.MirrorSales, page_id)
-    if row is None or row.archived:
-        raise HTTPException(status_code=404, detail="영업 건을 찾을 수 없습니다")
-    form_data = row.quote_form_data or {}
-    if not form_data.get("input"):
-        raise HTTPException(
-            status_code=400,
-            detail="이 영업 건에는 견적서 데이터가 없습니다 (견적서 탭으로 만든 영업만 다운로드 가능)",
-        )
-
-    xlsx_bytes = build_quote_xlsx(form_data, doc_number=row.quote_doc_number or "")
-    filename = quote_filename(row.quote_doc_number or "no-doc", row.name or "견적서")
-    # RFC 5987 — 한글 파일명 안전 인코딩
-    encoded = url_quote(filename, safe="")
-    return Response(
-        content=xlsx_bytes,
-        media_type=(
-            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        ),
-        headers={
-            "Content-Disposition": (
-                f"attachment; filename=\"quote.xlsx\"; "
-                f"filename*=UTF-8''{encoded}"
-            )
-        },
-    )
+# ── 견적서 PDF 다운로드 ──
 
 
 @router.get("/{page_id}/quote.pdf")
@@ -262,125 +225,6 @@ def download_quote_pdf(
             )
         },
     )
-
-
-# ── 견적서 xlsx → WORKS Drive 자동 저장 ──
-
-
-_KST = timezone(timedelta(hours=9))
-
-
-@router.post("/{page_id}/quote/save-to-drive", response_model=Sale)
-async def save_quote_to_drive(
-    page_id: str,
-    _user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-    notion: NotionService = Depends(get_notion),
-) -> Sale:
-    """견적서 xlsx 생성 → `공용 드라이브\\[견적서]\\{YYYY}년\\` 업로드 →
-    노션 sale의 `견적서첨부` 컬럼에 web url 저장.
-
-    `WORKS_DRIVE_ENABLED=false`거나 `WORKS_DRIVE_QUOTE_ROOT_FOLDER_ID` 미설정 시 503.
-    같은 견적의 두 번째 호출은 폴더 idempotent + 파일명 suffix로 안전 (`(1)` 추가).
-    """
-    settings_ = get_settings()
-    if not settings_.works_drive_enabled:
-        raise HTTPException(
-            status_code=503,
-            detail="WORKS Drive 통합이 비활성화되어 있습니다 (WORKS_DRIVE_ENABLED=false).",
-        )
-    if not settings_.works_drive_quote_root_folder_id:
-        raise HTTPException(
-            status_code=503,
-            detail="견적서 저장 폴더가 설정되지 않았습니다 (WORKS_DRIVE_QUOTE_ROOT_FOLDER_ID 미설정).",
-        )
-    # [업무관리]와 [견적서]가 별도 sharedrive인 경우 견적 흐름만 다른 sharedrive로 라우팅.
-    # WORKS_DRIVE_QUOTE_SHAREDRIVE_ID 미설정이면 기존 동작과 동일.
-    quote_settings = settings_
-    if settings_.works_drive_quote_sharedrive_id:
-        quote_settings = settings_.model_copy(
-            update={"works_drive_sharedrive_id": settings_.works_drive_quote_sharedrive_id}
-        )
-
-    row = db.get(M.MirrorSales, page_id)
-    if row is None or row.archived:
-        raise HTTPException(status_code=404, detail="영업 건을 찾을 수 없습니다")
-    form_data = row.quote_form_data or {}
-    if not form_data.get("input"):
-        raise HTTPException(
-            status_code=400,
-            detail="견적서 데이터가 없습니다 (견적서 탭으로 만든 영업만 Drive 저장 가능)",
-        )
-
-    # 1. xlsx 생성
-    xlsx_bytes = build_quote_xlsx(form_data, doc_number=row.quote_doc_number or "")
-    filename = quote_filename(row.quote_doc_number or "no-doc", row.name or "견적서")
-
-    # 2. {YYYY}년 폴더 ensure (KST 기준)
-    year_yyyy = datetime.now(_KST).year
-    try:
-        year_folder_id, _year_url = await sso_drive.ensure_quote_year_folder(
-            year_yyyy, settings=quote_settings
-        )
-    except sso_drive.DriveError as exc:
-        logger.exception("견적서 연도 폴더 ensure 실패")
-        raise HTTPException(
-            status_code=502, detail=f"WORKS Drive 폴더 준비 실패: {exc}"
-        ) from exc
-
-    # 3. 업로드
-    try:
-        meta = await sso_drive.upload_file(
-            parent_file_id=year_folder_id,
-            file_name=filename,
-            content=xlsx_bytes,
-            content_type=(
-                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-            ),
-            settings=quote_settings,
-        )
-    except sso_drive.DriveError as exc:
-        logger.exception("견적서 xlsx Drive 업로드 실패")
-        raise HTTPException(
-            status_code=502, detail=f"WORKS Drive 업로드 실패: {exc}"
-        ) from exc
-
-    # 4. 노션 sale 갱신 — 견적서첨부 + 제출일 자동 채움 (둘 다 같은 update_page 호출로 처리)
-    file_id = meta.get("fileId") or ""
-    web_url = sso_drive.build_file_web_url(file_id, meta.get("resourceLocation"))
-    if not web_url:
-        logger.warning("Drive 업로드 OK but webUrl 산출 실패: %s", file_id)
-
-    update_props: dict = {}
-    if web_url:
-        update_props["견적서첨부"] = {
-            "files": [
-                {
-                    "name": filename,
-                    "external": {"url": web_url},
-                    "type": "external",
-                }
-            ]
-        }
-    # 제출일이 비어 있으면 KST 기준 오늘 날짜 자동 채움 (사용자 입력 우선, 없으면 저장 시점).
-    # 노션 update 성공 시 get_sync().upsert_page가 mirror_sales.submission_date도 함께 sync.
-    if row.submission_date is None:
-        today_kst = datetime.now(_KST).date().isoformat()
-        update_props["제출일"] = {"date": {"start": today_kst}}
-
-    if update_props:
-        try:
-            updated = await notion.update_page(page_id, update_props)
-            get_sync().upsert_page("sales", updated)
-        except Exception:  # noqa: BLE001
-            logger.exception(
-                "Drive 업로드 후 노션 갱신 실패 — 운영 수동 보정 필요 (keys=%s)",
-                list(update_props.keys()),
-            )
-
-    # 최신 상태 반환
-    row = db.get(M.MirrorSales, page_id)
-    return sale_from_mirror(row) if row else Sale.from_notion_page({"id": page_id})
 
 
 @router.patch("/{page_id}", response_model=Sale)
