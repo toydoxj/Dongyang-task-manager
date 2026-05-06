@@ -57,7 +57,7 @@ export default function QuoteResultPanel({
         value={KRW(result.adjusted)}
         mono
       />
-      <Row label="⑩ 절삭 (백만 미만)" value={`-${KRW(result.truncated)}`} mono />
+      <Row label="⑩ 절삭" value={`-${KRW(result.truncated)}`} mono />
       <hr className="border-emerald-500/30" />
       <Row
         label={vatIncluded ? "⑪ 공급가액 (VAT 별도)" : "⑪ 용역대가"}

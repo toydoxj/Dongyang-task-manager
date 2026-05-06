@@ -79,7 +79,10 @@ export default function QuoteForm({ value, onChange, onResultChange }: Props) {
             onResultChange?.(r);
           }
         })
-        .catch(() => {
+        .catch((e) => {
+          // silent fail은 향후 디버깅 어려움 — 콘솔에 한 줄 남김
+          // eslint-disable-next-line no-console
+          console.error("previewQuote 실패:", e);
           if (!cancelled) {
             setResult(null);
             onResultChange?.(null);
