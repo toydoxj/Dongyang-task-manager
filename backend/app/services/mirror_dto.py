@@ -52,7 +52,7 @@ def task_from_mirror(row: M.MirrorTask) -> Task:
 
 
 def sale_from_mirror(row: M.MirrorSales) -> Sale:
-    return Sale.from_notion_page(
+    sale = Sale.from_notion_page(
         _as_page(
             page_id=row.page_id,
             properties=row.properties,
@@ -60,6 +60,9 @@ def sale_from_mirror(row: M.MirrorSales) -> Sale:
             last_edited_time=row.last_edited_time,
         )
     )
+    # quote_form_data는 노션에 저장하지 않고 mirror_sales에만 보관 — 응답에 직접 주입
+    sale.quote_form_data = row.quote_form_data or {}
+    return sale
 
 
 def cashflow_from_mirror(row: M.MirrorCashflow) -> CashflowEntry:

@@ -337,11 +337,33 @@ async def update_sale(
     page_id: str,
     body: SaleUpdateRequest,
     _user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
     notion: NotionService = Depends(get_notion),
 ) -> Sale:
     page = await notion.update_page(page_id, sale_update_to_props(body))
     get_sync().upsert_page("sales", page)
-    return Sale.from_notion_page(page)
+
+    # quote_form_data는 노션에 저장 불가 (JSONB) — mirror_sales에만 별도 UPDATE.
+    # POST 흐름과 동일 패턴.
+    if body.quote_form_data is not None:
+        from sqlalchemy import update as sa_update
+
+        db.execute(
+            sa_update(M.MirrorSales)
+            .where(M.MirrorSales.page_id == page_id)
+            .values(quote_form_data=body.quote_form_data)
+        )
+        db.commit()
+
+    sale = Sale.from_notion_page(page)
+    # 응답에도 갱신된 quote_form_data 포함 (frontend가 즉시 prefill)
+    if body.quote_form_data is not None:
+        sale.quote_form_data = body.quote_form_data
+    else:
+        row = db.get(M.MirrorSales, page_id)
+        if row is not None:
+            sale.quote_form_data = row.quote_form_data or {}
+    return sale
 
 
 @router.delete("/{page_id}")

@@ -159,6 +159,8 @@ class SaleUpdateRequest(BaseModel):
     wind_tunnel_amount: float | None = None
     parent_lead_id: str | None = None
     assignees: list[str] | None = None
+    # 견적서 데이터 — None이면 변경 안 함, dict면 mirror_sales JSONB 갱신 (노션 X)
+    quote_form_data: dict[str, Any] | None = None
 
 
 # ── DTO → 노션 properties 변환 ──

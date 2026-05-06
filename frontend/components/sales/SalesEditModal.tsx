@@ -61,7 +61,7 @@ export default function SalesEditModal({
   // (clientsData에 기존 client_id가 빠져 있어도 무심코 relation이 해제되는 회귀 차단)
   const [client, setClient] = useState("");
   const [clientUserEdited, setClientUserEdited] = useState(false);
-  // 탭 시스템 (신규 모드에서만 활성. 수정 모드는 'info' 탭만)
+  // 탭 시스템 — 수정 모드도 quote_form_data가 있으면 견적서 탭 활성 (수정/재제출)
   const [activeTab, setActiveTab] = useState<"info" | "quote">("info");
   const [quoteInput, setQuoteInput] = useState<QuoteInput>({
     type_rate: 1.0,
@@ -110,6 +110,21 @@ export default function SalesEditModal({
         parent_lead_id: sale.parent_lead_id || undefined,
         assignees: sale.assignees,
       });
+      // 견적서 데이터가 있으면 prefill — 수정/재제출 시나리오
+      if (sale.quote_form_data?.input) {
+        setQuoteInput(sale.quote_form_data.input);
+        setQuoteResult(sale.quote_form_data.result ?? null);
+      } else {
+        setQuoteInput({
+          type_rate: 1.0,
+          structure_rate: 1.0,
+          coefficient: 1.0,
+          adjustment_pct: 87,
+          printing_fee: 500_000,
+        });
+        setQuoteResult(null);
+      }
+      setActiveTab("info");
     } else {
       setForm({
         name: "",
@@ -173,8 +188,8 @@ export default function SalesEditModal({
   };
 
   const handleSave = async (): Promise<void> => {
-    // 견적서 탭 저장 — 자동 매핑 후 영업 등록
-    if (!isEdit && activeTab === "quote") {
+    // 견적서 탭 저장 — 신규/수정 모두 처리
+    if (activeTab === "quote") {
       if (!quoteInput.service_name?.trim()) {
         setErr("용역명은 필수입니다.");
         return;
@@ -187,19 +202,42 @@ export default function SalesEditModal({
         setErr("산출 결과가 아직 준비되지 않았습니다. 잠시 후 다시 시도하세요.");
         return;
       }
+      // 수신처 회사명을 clientsData에서 매칭해 client_id 자동 설정 — 영업 테이블
+      // 발주처 컬럼이 비지 않게. 사용자가 영업 정보 탭에서 명시적으로 발주처를
+      // 선택했으면 그 client_id 우선.
+      const recipientMatch = quoteInput.recipient_company
+        ? clientsData?.items.find(
+            (c) =>
+              c.name.trim().toLowerCase() ===
+              (quoteInput.recipient_company ?? "").trim().toLowerCase(),
+          )
+        : undefined;
+      const resolvedClientId = form.client_id || recipientMatch?.id;
+
       setBusy(true);
       setErr(null);
       try {
-        const body: SaleCreateRequest = {
-          name: quoteInput.service_name,
-          kind: "수주영업",
-          stage: "준비",
-          estimated_amount: quoteResult.final,
-          assignees: defaultAssignee ? [defaultAssignee] : [],
-          quote_form_data: { input: quoteInput, result: quoteResult },
-          // probability/code/quote_doc_number는 backend가 자동 부여 또는 빈 값
-        };
-        await createSale(body);
+        if (isEdit && sale) {
+          // 수정/재제출 — PATCH로 quote_form_data + estimated_amount + name 갱신
+          await updateSale(sale.id, {
+            name: quoteInput.service_name,
+            estimated_amount: quoteResult.final,
+            client_id: resolvedClientId,
+            quote_form_data: { input: quoteInput, result: quoteResult },
+          });
+        } else {
+          const body: SaleCreateRequest = {
+            name: quoteInput.service_name,
+            kind: "수주영업",
+            stage: "준비",
+            estimated_amount: quoteResult.final,
+            client_id: resolvedClientId,
+            assignees: defaultAssignee ? [defaultAssignee] : [],
+            quote_form_data: { input: quoteInput, result: quoteResult },
+            // probability/code/quote_doc_number는 backend가 자동 부여 또는 빈 값
+          };
+          await createSale(body);
+        }
         refreshSales();
         onClose();
       } catch (e) {
@@ -335,22 +373,22 @@ export default function SalesEditModal({
           </button>
         </header>
 
-        {!isEdit && (
-          <div className="flex border-b border-zinc-200 px-4 dark:border-zinc-800">
-            <TabButton
-              active={activeTab === "info"}
-              onClick={() => setActiveTab("info")}
-            >
-              영업 정보
-            </TabButton>
-            <TabButton
-              active={activeTab === "quote"}
-              onClick={() => setActiveTab("quote")}
-            >
-              견적서 작성
-            </TabButton>
-          </div>
-        )}
+        <div className="flex border-b border-zinc-200 px-4 dark:border-zinc-800">
+          <TabButton
+            active={activeTab === "info"}
+            onClick={() => setActiveTab("info")}
+          >
+            영업 정보
+          </TabButton>
+          <TabButton
+            active={activeTab === "quote"}
+            onClick={() => setActiveTab("quote")}
+          >
+            {isEdit && sale?.quote_form_data?.input
+              ? "견적서 수정"
+              : "견적서 작성"}
+          </TabButton>
+        </div>
 
         <div className="max-h-[70vh] space-y-3 overflow-y-auto px-4 py-3">
           {err && (
@@ -359,10 +397,12 @@ export default function SalesEditModal({
             </div>
           )}
 
-          {activeTab === "quote" && !isEdit ? (
+          {activeTab === "quote" ? (
             <>
               <p className="rounded-md border border-blue-500/30 bg-blue-500/5 px-3 py-2 text-[11px] text-blue-700 dark:text-blue-400">
-                저장하면 영업 건이 자동 생성됩니다 (영업코드·문서번호 자동 부여, 단계 = 준비). 단계·수주확률은 영업 정보 탭/수정 모달에서 추후 변경 가능.
+                {isEdit
+                  ? "저장하면 영업 건의 용역명·견적금액·발주처가 새 입력값으로 갱신되고, 견적서 xlsx도 다음 다운로드 시 새 버전으로 생성됩니다."
+                  : "저장하면 영업 건이 자동 생성됩니다 (영업코드·문서번호 자동 부여, 단계 = 준비). 단계·수주확률은 영업 정보 탭/수정 모달에서 추후 변경 가능."}
               </p>
               <QuoteForm
                 value={quoteInput}
