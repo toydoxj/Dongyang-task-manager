@@ -294,30 +294,37 @@ async def save_quote_to_drive(
             status_code=502, detail=f"WORKS Drive 업로드 실패: {exc}"
         ) from exc
 
-    # 4. 노션 sale의 견적서첨부 컬럼에 url 저장 (external file)
+    # 4. 노션 sale 갱신 — 견적서첨부 + 제출일 자동 채움 (둘 다 같은 update_page 호출로 처리)
     file_id = meta.get("fileId") or ""
     web_url = sso_drive.build_file_web_url(file_id, meta.get("resourceLocation"))
     if not web_url:
-        # url 산출 실패해도 업로드는 성공 — 노션 attachment만 누락
         logger.warning("Drive 업로드 OK but webUrl 산출 실패: %s", file_id)
-    else:
-        update_props = {
-            "견적서첨부": {
-                "files": [
-                    {
-                        "name": filename,
-                        "external": {"url": web_url},
-                        "type": "external",
-                    }
-                ]
-            }
+
+    update_props: dict = {}
+    if web_url:
+        update_props["견적서첨부"] = {
+            "files": [
+                {
+                    "name": filename,
+                    "external": {"url": web_url},
+                    "type": "external",
+                }
+            ]
         }
+    # 제출일이 비어 있으면 KST 기준 오늘 날짜 자동 채움 (사용자 입력 우선, 없으면 저장 시점).
+    # 노션 update 성공 시 get_sync().upsert_page가 mirror_sales.submission_date도 함께 sync.
+    if row.submission_date is None:
+        today_kst = datetime.now(_KST).date().isoformat()
+        update_props["제출일"] = {"date": {"start": today_kst}}
+
+    if update_props:
         try:
             updated = await notion.update_page(page_id, update_props)
             get_sync().upsert_page("sales", updated)
         except Exception:  # noqa: BLE001
             logger.exception(
-                "Drive 업로드 후 노션 견적서첨부 갱신 실패 — 운영 수동 보정 필요"
+                "Drive 업로드 후 노션 갱신 실패 — 운영 수동 보정 필요 (keys=%s)",
+                list(update_props.keys()),
             )
 
     # 최신 상태 반환

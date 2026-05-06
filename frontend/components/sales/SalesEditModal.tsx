@@ -23,7 +23,7 @@ import {
   type Sale,
   type SaleCreateRequest,
 } from "@/lib/domain";
-import { useProjects } from "@/lib/hooks";
+import { useClients, useProjects } from "@/lib/hooks";
 import { cn } from "@/lib/utils";
 
 interface Props {
@@ -55,6 +55,12 @@ export default function SalesEditModal({
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [linkPickerOpen, setLinkPickerOpen] = useState(false);
+  // 발주처(의뢰처) 자동완성 입력 — ProjectCreateModal과 동일 패턴.
+  // form.client_id에는 매칭 성공 시 client.id, 미매칭/빈값이면 ""로 동기화.
+  // clientUserEdited: 사용자가 입력란을 직접 건드렸을 때만 form.client_id를 덮어씀.
+  // (clientsData에 기존 client_id가 빠져 있어도 무심코 relation이 해제되는 회귀 차단)
+  const [client, setClient] = useState("");
+  const [clientUserEdited, setClientUserEdited] = useState(false);
   // 탭 시스템 (신규 모드에서만 활성. 수정 모드는 'info' 탭만)
   const [activeTab, setActiveTab] = useState<"info" | "quote">("info");
   const [quoteInput, setQuoteInput] = useState<QuoteInput>({
@@ -69,9 +75,18 @@ export default function SalesEditModal({
   const open = sale != null || openNew;
   const isEdit = sale != null;
 
+  // 발주처 자동완성 데이터 — 모달 열릴 때만 fetch.
+  const { data: clientsData } = useClients(open);
+  const normName = (s: string): string => s.trim().toLowerCase();
+  const clientMatch =
+    client.trim() === ""
+      ? undefined
+      : clientsData?.items.find((c) => normName(c.name) === normName(client));
+
   useEffect(() => {
     if (!open) return;
     setErr(null);
+    setClientUserEdited(false);
     if (sale) {
       setForm({
         name: sale.name,
@@ -102,6 +117,7 @@ export default function SalesEditModal({
         stage: "준비",
         assignees: defaultAssignee ? [defaultAssignee] : [],
       });
+      setClient("");
       setActiveTab("info");
       setQuoteInput({
         type_rate: 1.0,
@@ -113,6 +129,26 @@ export default function SalesEditModal({
       setQuoteResult(null);
     }
   }, [open, sale, defaultAssignee]);
+
+  // 수정 모드: clientsData 도착 시 sale.client_id로 name lookup → 발주처 input 채움.
+  // sale 로딩 useEffect와 분리한 이유 — clientsData가 늦게 도착해도 form 전체가 reset되지 않게.
+  useEffect(() => {
+    if (!open || !sale || clientsData == null) return;
+    if (!sale.client_id) {
+      setClient("");
+      return;
+    }
+    const found = clientsData.items.find((c) => c.id === sale.client_id);
+    setClient(found?.name ?? "");
+  }, [open, sale, clientsData]);
+
+  // client 입력 → form.client_id 동기화. 사용자가 입력란을 직접 변경한 경우에만 작동.
+  // (기존 sale.client_id가 clientsData 누락으로 lookup 실패해도 relation이 무심코 해제되지 않게)
+  useEffect(() => {
+    if (clientsData == null || !clientUserEdited) return;
+    const id = clientMatch?.id ?? "";
+    setForm((f) => (f.client_id === id ? f : { ...f, client_id: id }));
+  }, [clientMatch, clientsData, clientUserEdited]);
 
   if (!open) return null;
 
@@ -346,6 +382,42 @@ export default function SalesEditModal({
               value={form.code ?? ""}
               onChange={(e) => setForm({ ...form, code: e.target.value })}
             />
+          </Field>
+
+          <Field label="발주처">
+            <input
+              type="text"
+              list="dy-clients-sales"
+              value={client}
+              onChange={(e) => {
+                setClient(e.target.value);
+                setClientUserEdited(true);
+              }}
+              className={inputCls}
+              placeholder={
+                clientsData
+                  ? `목록 ${clientsData.count}개 자동완성`
+                  : "발주처 목록 불러오는 중..."
+              }
+            />
+            <datalist id="dy-clients-sales">
+              {clientsData?.items.map((c) => (
+                <option key={c.id} value={c.name}>
+                  {c.category}
+                </option>
+              ))}
+            </datalist>
+            {client.trim() !== "" && !clientMatch && (
+              <p className="mt-1 text-[10px] text-zinc-500">
+                미등록 발주처 — /admin/incomes/clients 에서 먼저 등록 후 선택하세요. (현재 입력은 저장되지 않습니다)
+              </p>
+            )}
+            {clientMatch && (
+              <p className="mt-1 text-[10px] text-emerald-500">
+                ✓ 매칭: {clientMatch.name}
+                {clientMatch.category ? ` (${clientMatch.category})` : ""}
+              </p>
+            )}
           </Field>
 
           <div className="grid grid-cols-2 gap-3">

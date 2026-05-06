@@ -1,7 +1,10 @@
 "use client";
 
+import { useMemo } from "react";
+
 import type { Sale } from "@/lib/domain";
 import { formatDate } from "@/lib/format";
+import { useClients } from "@/lib/hooks";
 import { cn } from "@/lib/utils";
 
 interface Props {
@@ -45,6 +48,14 @@ export default function SalesTable({
   onClickRow,
   showKindColumn = true,
 }: Props) {
+  // client_id → 발주처 이름 lookup. useClients()가 자체 cache를 가지므로 추가 비용 없음.
+  const { data: clientsData } = useClients(true);
+  const clientNameById = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const c of clientsData?.items ?? []) map.set(c.id, c.name);
+    return map;
+  }, [clientsData]);
+
   if (sales.length === 0) {
     return (
       <p className="rounded-md border border-zinc-200 bg-white p-4 text-sm text-zinc-500 dark:border-zinc-800 dark:bg-zinc-900">
@@ -61,7 +72,8 @@ export default function SalesTable({
         <thead>
           <tr className="border-b border-zinc-200 text-left text-[11px] uppercase text-zinc-500 dark:border-zinc-800">
             <th className="px-2 py-2">CODE</th>
-            <th className="px-2 py-2">견적서명</th>
+            <th className="px-2 py-2">용역명</th>
+            <th className="px-2 py-2">발주처</th>
             {showKindColumn && <th className="px-2 py-2">유형</th>}
             <th className="px-2 py-2">단계</th>
             <th className="px-2 py-2 text-right">견적금액</th>
@@ -88,6 +100,9 @@ export default function SalesTable({
                     {s.category.join(" · ")}
                   </div>
                 )}
+              </td>
+              <td className="px-2 py-2 text-xs text-zinc-700 dark:text-zinc-300">
+                {s.client_id ? clientNameById.get(s.client_id) || "—" : "—"}
               </td>
               {showKindColumn && (
                 <td className="px-2 py-2 text-xs">
@@ -134,7 +149,7 @@ export default function SalesTable({
         <tfoot>
           <tr className="border-t border-zinc-200 dark:border-zinc-800">
             <td
-              colSpan={showKindColumn ? 6 : 5}
+              colSpan={showKindColumn ? 7 : 6}
               className="px-2 py-2 text-right text-xs font-medium text-zinc-600 dark:text-zinc-400"
             >
               기대매출 합계
