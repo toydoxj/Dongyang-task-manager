@@ -34,6 +34,7 @@ from app.services.mirror_dto import sale_from_mirror
 from app.services.notion import NotionService, get_notion
 from app.services.quote_calculator import QuoteInput, QuoteResult, calculate
 from app.services.quote_code import next_quote_doc_number
+from app.services.quote_pdf import build_quote_pdf, quote_pdf_filename
 from app.services.quote_xlsx import build_quote_xlsx, quote_filename
 from app.services.sales_code import next_sales_code
 from app.services.sales_probability import CONVERTIBLE_STAGES
@@ -207,6 +208,40 @@ def download_quote_xlsx(
         headers={
             "Content-Disposition": (
                 f"attachment; filename=\"quote.xlsx\"; "
+                f"filename*=UTF-8''{encoded}"
+            )
+        },
+    )
+
+
+@router.get("/{page_id}/quote.pdf")
+def download_quote_pdf(
+    page_id: str,
+    _user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> Response:
+    """저장된 견적서 입력값으로 PDF 생성 → 다운로드 (WeasyPrint, A4 1페이지)."""
+    row = db.get(M.MirrorSales, page_id)
+    if row is None or row.archived:
+        raise HTTPException(status_code=404, detail="영업 건을 찾을 수 없습니다")
+    form_data = row.quote_form_data or {}
+    if not form_data.get("input"):
+        raise HTTPException(
+            status_code=400,
+            detail="이 영업 건에는 견적서 데이터가 없습니다 (견적서 탭으로 만든 영업만 다운로드 가능)",
+        )
+
+    pdf_bytes = build_quote_pdf(form_data, doc_number=row.quote_doc_number or "")
+    filename = quote_pdf_filename(
+        row.quote_doc_number or "no-doc", row.name or "견적서"
+    )
+    encoded = url_quote(filename, safe="")
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": (
+                f"attachment; filename=\"quote.pdf\"; "
                 f"filename*=UTF-8''{encoded}"
             )
         },
