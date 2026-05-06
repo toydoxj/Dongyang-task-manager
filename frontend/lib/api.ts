@@ -1042,19 +1042,22 @@ export async function saveQuoteToDrive(saleId: string): Promise<Sale> {
   return jsonOrThrow<Sale>(res);
 }
 
-/** 견적서 xlsx 다운로드 — Content-Disposition의 filename* 으로 한글 파일명 자동 처리. */
-export async function downloadQuoteXlsx(saleId: string): Promise<void> {
-  const res = await authFetch(`/api/sales/${saleId}/quote.xlsx`);
+/** 견적서 파일 다운로드 — xlsx/pdf 공통. Content-Disposition filename*로 한글 파일명 자동. */
+async function _downloadQuoteFile(
+  saleId: string,
+  format: "xlsx" | "pdf",
+): Promise<void> {
+  const res = await authFetch(`/api/sales/${saleId}/quote.${format}`);
   if (!res.ok) {
     const detail = await res.json().catch(() => null);
     throw new Error(
-      (detail as { detail?: string } | null)?.detail ?? `${res.status} ${res.statusText}`,
+      (detail as { detail?: string } | null)?.detail ??
+        `${res.status} ${res.statusText}`,
     );
   }
   const blob = await res.blob();
-  // Content-Disposition에서 filename 추출 (RFC 5987 filename*=UTF-8'' 형식)
   const cd = res.headers.get("Content-Disposition") ?? "";
-  let filename = "quote.xlsx";
+  let filename = `quote.${format}`;
   const star = cd.match(/filename\*=UTF-8''([^;]+)/i);
   if (star) {
     try {
@@ -1063,7 +1066,6 @@ export async function downloadQuoteXlsx(saleId: string): Promise<void> {
       /* fallthrough */
     }
   }
-  // 임시 anchor로 download 트리거
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
@@ -1073,3 +1075,8 @@ export async function downloadQuoteXlsx(saleId: string): Promise<void> {
   a.remove();
   URL.revokeObjectURL(url);
 }
+
+export const downloadQuoteXlsx = (saleId: string) =>
+  _downloadQuoteFile(saleId, "xlsx");
+export const downloadQuotePdf = (saleId: string) =>
+  _downloadQuoteFile(saleId, "pdf");

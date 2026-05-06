@@ -9,6 +9,7 @@ import {
   archiveSale,
   convertSale,
   createSale,
+  downloadQuotePdf,
   downloadQuoteXlsx,
   linkSaleToProject,
   saveQuoteToDrive,
@@ -675,6 +676,18 @@ export default function SalesEditModal({
           <div className="flex gap-2">
             {isEdit && sale && sale.quote_doc_number && (
               <>
+                <button
+                  type="button"
+                  onClick={() => {
+                    void downloadQuotePdf(sale.id).catch((e) =>
+                      setErr(e instanceof Error ? e.message : "PDF 다운로드 실패"),
+                    );
+                  }}
+                  disabled={busy}
+                  className="rounded-md border border-emerald-700/40 bg-emerald-600/10 px-3 py-1.5 text-xs font-medium text-emerald-700 hover:bg-emerald-600/20 disabled:opacity-50 dark:text-emerald-400"
+                >
+                  PDF 다운로드
+                </button>
                 <button
                   type="button"
                   onClick={() => {
