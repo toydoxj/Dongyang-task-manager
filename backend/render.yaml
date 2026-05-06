@@ -1,15 +1,13 @@
 services:
   - type: web
     name: dy-task-backend
-    runtime: python
+    runtime: docker
     region: singapore
     plan: standard
     rootDir: backend
-    buildCommand: |
-      pip install --upgrade pip uv
-      env -u VIRTUAL_ENV uv sync --frozen --no-dev
-      env -u VIRTUAL_ENV uv run alembic upgrade head
-    startCommand: env -u VIRTUAL_ENV uv run uvicorn app.main:app --host 0.0.0.0 --port $PORT --workers 2
+    # Dockerfile이 dependency 설치 + alembic upgrade + uvicorn 기동을 모두 처리.
+    # WeasyPrint(한글 PDF)용 cairo/pango/fonts-nanum이 image에 포함됨.
+    dockerfilePath: ./Dockerfile
     healthCheckPath: /health
     envVars:
       - key: PYTHON_VERSION
