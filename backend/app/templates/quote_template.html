@@ -4,241 +4,364 @@
   <meta charset="utf-8">
   <title>설계 견적서</title>
   <style>
-    @page {
-      size: A4;
-      margin: 14mm 16mm;
-    }
-    * { box-sizing: border-box; }
+    @page { size: A4; margin: 0; }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
       font-family: 'NanumGothic', 'Nanum Gothic', sans-serif;
-      color: #1a1a1a;
+      color: #2c2c2c;
       font-size: 10pt;
-      line-height: 1.45;
-      margin: 0;
+      line-height: 1.5;
     }
 
-    /* 헤더 — 큰 제목 + 우측 문서번호 */
-    .header {
-      display: flex;
-      justify-content: space-between;
-      align-items: flex-end;
-      border-bottom: 2.5px solid #1a1a1a;
-      padding-bottom: 6px;
-      margin-bottom: 10px;
+    /* 상단 헤더 — 옅은 그린 배경 */
+    .top-bar {
+      background: #f0f7e3;
+      padding: 32px 40px 44px 40px;
+      position: relative;
     }
-    .header h1 {
-      font-size: 24pt;
+    .brand-en {
+      font-size: 9pt;
+      font-weight: 600;
+      letter-spacing: 0.15em;
+      color: #6b9430;
+      margin-bottom: 6px;
+    }
+    .title {
+      font-size: 28pt;
       font-weight: 800;
-      letter-spacing: 0.45em;
-      margin: 0;
-      padding-left: 0.45em;
+      letter-spacing: 0.55em;
+      color: #2c2c2c;
     }
-    .doc-no {
+    .doc-meta {
+      position: absolute;
+      top: 32px;
+      right: 40px;
+      text-align: right;
       font-size: 10pt;
       color: #555;
     }
-    .doc-no strong {
-      color: #1a1a1a;
-      font-size: 12pt;
-      font-weight: 700;
-      margin-left: 6px;
-    }
+    .doc-meta div { margin-top: 4px; }
 
-    /* 섹션 */
-    .sec { margin-bottom: 8px; }
-    .sec-title {
-      background: linear-gradient(to right, #1a1a1a 0%, #1a1a1a 5px, #f0f0f0 5px);
-      color: #1a1a1a;
-      padding: 4px 10px 4px 14px;
-      font-weight: 700;
-      font-size: 9.5pt;
+    /* 메인 컨텐츠 */
+    .content { padding: 0 40px; }
+
+    /* 카드 박스 (수신처/작성, 위치/규모/구조형식) */
+    .card-row {
+      display: flex;
+      gap: 14px;
+      margin-top: -22px;
+      margin-bottom: 22px;
+    }
+    .card {
+      flex: 1;
+      background: #f8f4ea;
+      padding: 14px 18px;
+      border-radius: 4px;
+    }
+    .card-label {
+      font-size: 8.5pt;
+      color: #999;
+      margin-bottom: 5px;
       letter-spacing: 0.05em;
     }
-
-    table { width: 100%; border-collapse: collapse; }
-    table.info { margin-top: 2px; }
-    table.info td {
-      border: 0.5px solid #aaa;
-      padding: 4px 8px;
-      font-size: 9.5pt;
-    }
-    table.info td.label {
-      background: #f7f7f7;
-      width: 14%;
-      font-weight: 600;
-      color: #444;
-    }
-
-    /* 산출 표 */
-    table.calc { margin-top: 2px; }
-    table.calc td {
-      border: 0.5px solid #aaa;
-      padding: 5px 10px;
-      font-size: 9.5pt;
-    }
-    table.calc td.lbl { width: 65%; }
-    table.calc td.val {
-      text-align: right;
-      font-family: 'NanumGothicCoding', 'NanumGothic', monospace;
-    }
-    table.calc tr.head td {
-      background: #fff8e1;
-      font-weight: 700;
-      font-size: 11pt;
-      color: #8a5a00;
-    }
-    table.calc tr.vat-line td {
-      background: #e3f2fd;
-      color: #0d47a1;
-    }
-    table.calc tr.total td {
-      background: #1a1a1a;
-      color: #fff;
-      font-weight: 700;
+    .card-name {
       font-size: 12pt;
+      font-weight: 700;
+      margin-bottom: 3px;
+    }
+    .card-sub {
+      font-size: 9pt;
+      color: #666;
+    }
+
+    /* 섹션 — 좌측 체크 아이콘 + 라벨 + 그린 underline */
+    .section { margin-bottom: 18px; }
+    .section-head {
+      display: flex;
+      align-items: center;
+      border-bottom: 1.5px solid #7baa3c;
+      padding-bottom: 6px;
+      margin-bottom: 12px;
+    }
+    .section-head::before {
+      content: '';
+      display: inline-block;
+      width: 11px;
+      height: 11px;
+      border: 1.5px solid #999;
+      margin-right: 9px;
+    }
+    .section-head .name {
+      font-size: 13pt;
+      font-weight: 700;
+      letter-spacing: 0.3em;
+    }
+
+    /* 용역명 큰 텍스트 */
+    .service-name {
+      font-size: 14pt;
+      font-weight: 600;
+      margin-bottom: 12px;
+    }
+
+    /* 산출 행 */
+    .calc-row {
+      display: flex;
+      align-items: center;
+      padding: 9px 10px;
+      border-bottom: 1px solid #e9e9e9;
+      font-size: 10.5pt;
+    }
+    .calc-row .num {
+      width: 32px;
+      text-align: left;
+      color: #888;
+      font-size: 11pt;
+    }
+    .calc-row .lbl { flex: 1; }
+    .calc-row .lbl .formula {
+      color: #999;
+      font-size: 9pt;
+      margin-left: 6px;
+    }
+    .calc-row .amount {
+      font-family: 'NanumGothicCoding', 'NanumGothic', monospace;
+      font-weight: 500;
+    }
+    .calc-row.subtotal {
+      background: #f4f9ec;
+    }
+    .calc-row.subtotal .lbl,
+    .calc-row.subtotal .amount {
+      font-weight: 700;
+    }
+    .calc-row.deduction .amount {
+      color: #c0392b;
+    }
+
+    /* 합계 bar */
+    .total-bar {
+      background: #7baa3c;
+      color: #fff;
+      padding: 18px 26px;
+      border-radius: 4px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-top: 16px;
+    }
+    .total-bar .label-line .top {
+      font-size: 9pt;
+      opacity: 0.9;
+      margin-bottom: 2px;
+      letter-spacing: 0.05em;
+    }
+    .total-bar .label-line .main {
+      font-size: 12pt;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+    }
+    .total-bar .grand {
+      font-size: 22pt;
+      font-weight: 800;
+      letter-spacing: 0.02em;
+    }
+
+    /* 기타 사항 */
+    .extra-row {
+      display: flex;
+      padding: 5px 10px;
+      font-size: 10pt;
+    }
+    .extra-row .key {
+      width: 90px;
+      color: #777;
+    }
+    .extra-row .val { flex: 1; }
+    .extra-row .val .item {
+      display: flex;
+      align-items: flex-start;
+      gap: 6px;
+      margin-bottom: 3px;
+    }
+    .extra-row .val .item::before {
+      content: '';
+      display: inline-block;
+      width: 8px;
+      height: 8px;
+      border: 1px solid #c0392b;
+      margin-top: 5px;
+      flex-shrink: 0;
     }
 
     /* 푸터 */
     .footer {
-      margin-top: 14px;
-      border-top: 1.5px solid #1a1a1a;
-      padding-top: 10px;
+      background: #f8f7f0;
+      padding: 20px 40px;
+      margin-top: 24px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
       font-size: 9pt;
     }
-    .date-row {
-      text-align: right;
-      margin-bottom: 8px;
-      color: #444;
+    .footer .info { flex: 1; line-height: 1.75; }
+    .footer .info .brand {
+      font-size: 11pt;
+      font-weight: 700;
+      margin-bottom: 3px;
     }
-    .company {
-      text-align: center;
-      line-height: 1.7;
-    }
-    .company .brand {
-      font-size: 13pt;
-      font-weight: 800;
-      letter-spacing: 0.1em;
-    }
-    .company .cert {
-      font-size: 8pt;
-      color: #666;
-      margin-top: 2px;
-    }
-    .seal-row {
-      display: flex;
-      justify-content: space-around;
-      margin-top: 14px;
-    }
-    .seal {
-      text-align: center;
-      width: 220px;
-    }
-    .seal .role {
-      font-size: 10pt;
-      letter-spacing: 0.3em;
-      color: #444;
-    }
-    .seal .name {
-      border-bottom: 1.5px solid #1a1a1a;
-      padding: 6px 0;
-      margin-top: 4px;
-      font-size: 12pt;
+    .footer .info .cert {
+      color: #7baa3c;
       font-weight: 600;
-      letter-spacing: 0.3em;
+      margin-top: 5px;
+    }
+    .seals {
+      display: flex;
+      gap: 18px;
+    }
+    .seal { text-align: center; }
+    .seal .role {
+      font-size: 8.5pt;
+      color: #777;
+      margin-bottom: 6px;
+    }
+    .seal .stamp {
+      width: 58px;
+      height: 58px;
+      border: 1.5px solid #c0392b;
+      border-radius: 50%;
+      color: #c0392b;
+      font-size: 9pt;
+      font-weight: 700;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      line-height: 1.2;
     }
   </style>
 </head>
 <body>
 
-  <div class="header">
-    <h1>설계 견적서</h1>
-    <div class="doc-no">문서번호 <strong>{{ doc_number or "—" }}</strong></div>
+  <div class="top-bar">
+    <div class="brand-en">DONGYANG STRUCTURE</div>
+    <div class="title">설계 견적서</div>
+    <div class="doc-meta">
+      <div>문서번호 {{ doc_number or "—" }}</div>
+      <div>작성일 {{ today }}</div>
+    </div>
   </div>
 
-  <div class="sec">
-    <div class="sec-title">수신</div>
-    <table class="info">
-      <tr>
-        <td class="label">회사명</td><td>{{ input.recipient_company or "" }}</td>
-        <td class="label">참조</td><td>{{ input.recipient_person or "" }}</td>
-      </tr>
-      <tr>
-        <td class="label">전화</td><td>{{ input.recipient_phone or "" }}</td>
-        <td class="label">E-mail</td><td>{{ input.recipient_email or "" }}</td>
-      </tr>
-    </table>
-  </div>
+  <div class="content">
 
-  <div class="sec">
-    <div class="sec-title">용역 정보</div>
-    <table class="info">
-      <tr>
-        <td class="label">용역명</td><td colspan="3">{{ input.service_name or "" }}</td>
-      </tr>
-      <tr>
-        <td class="label">위치</td><td colspan="3">{{ input.location or "" }}</td>
-      </tr>
-      <tr>
-        <td class="label">연면적</td>
-        <td>{% if input.gross_floor_area %}{{ "{:,}".format(input.gross_floor_area | int) }} m²{% endif %}</td>
-        <td class="label">층수</td><td>{{ input.floors_text or "" }}</td>
-      </tr>
-      <tr>
-        <td class="label">구조형식</td><td colspan="3">{{ input.structure_form or "" }}</td>
-      </tr>
-    </table>
-  </div>
+    <div class="card-row">
+      <div class="card">
+        <div class="card-label">수신처</div>
+        <div class="card-name">{{ input.recipient_company or "—" }}</div>
+        <div class="card-sub">
+          {%- if input.recipient_person %}참조 {{ input.recipient_person }}{% endif -%}
+          {%- if input.recipient_phone %} · {{ input.recipient_phone }}{% endif -%}
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-label">작성</div>
+        <div class="card-name">(주) 동양구조</div>
+        <div class="card-sub">02-549-4566 · www.dyceworld.com</div>
+      </div>
+    </div>
 
-  <div class="sec">
-    <div class="sec-title">산출</div>
-    <table class="calc">
-      <tr><td class="lbl">① 직접인건비 (인.일 {{ result.manhours_total }} × 단가)</td><td class="val">{{ result.direct_labor | krw }}</td></tr>
-      <tr><td class="lbl">② 직접경비 (인쇄 + 조사 + 교통비)</td><td class="val">{{ result.direct_expense | krw }}</td></tr>
-      <tr><td class="lbl">⑥ 제경비 (① × 110%)</td><td class="val">{{ result.overhead | krw }}</td></tr>
-      <tr><td class="lbl">⑦ 기술료 ((① + ⑥) × 20%)</td><td class="val">{{ result.tech_fee | krw }}</td></tr>
-      <tr><td class="lbl">⑧ 합계 (① + ⑥ + ⑦)</td><td class="val">{{ result.subtotal | krw }}</td></tr>
-      <tr><td class="lbl">⑨ 당사조정 (⑧ × {{ input.adjustment_pct or 87 }}% + ②)</td><td class="val">{{ result.adjusted | krw }}</td></tr>
-      <tr><td class="lbl">⑩ 절삭 (백만 미만)</td><td class="val">- {{ result.truncated | krw }}</td></tr>
-      {% if input.vat_included %}
-        <tr class="head"><td class="lbl">⑪ 공급가액 (VAT 별도)</td><td class="val">{{ result.final | krw }}</td></tr>
-        <tr class="vat-line"><td class="lbl">⑫ VAT (10%)</td><td class="val">{{ result.vat_amount | krw }}</td></tr>
-        <tr class="total"><td class="lbl">⑬ 합계 (VAT 포함)</td><td class="val">{{ result.final_with_vat | krw }}</td></tr>
-      {% else %}
-        <tr class="total"><td class="lbl">⑪ 용역대가</td><td class="val">{{ result.final | krw }}</td></tr>
+    <div class="section">
+      <div class="section-head"><div class="name">용역 정보</div></div>
+      {% if input.service_name %}
+      <div class="service-name">{{ input.service_name }}</div>
       {% endif %}
-    </table>
-  </div>
+      <div class="card-row" style="margin-top:0">
+        <div class="card">
+          <div class="card-label">위치</div>
+          <div class="card-name" style="font-size:11pt">{{ input.location or "—" }}</div>
+        </div>
+        <div class="card">
+          <div class="card-label">규모</div>
+          <div class="card-name" style="font-size:11pt">
+            {%- if input.gross_floor_area %}{{ "{:,}".format(input.gross_floor_area | int) }} m²{% endif -%}
+            {%- if input.floors_text %} · {{ input.floors_text }}{% endif -%}
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-label">구조형식</div>
+          <div class="card-name" style="font-size:11pt">{{ input.structure_form or "—" }}</div>
+        </div>
+      </div>
+    </div>
 
-  {% if input.payment_terms or input.special_notes %}
-  <div class="sec">
-    <div class="sec-title">기타</div>
-    <table class="info">
+    <div class="section">
+      <div class="section-head"><div class="name">산출 내역</div></div>
+
+      <div class="calc-row"><div class="num">①</div><div class="lbl">직접인건비 <span class="formula">(인.일 {{ result.manhours_total }} × 단가)</span></div><div class="amount">{{ "{:,}".format(result.direct_labor | int) }}</div></div>
+      <div class="calc-row"><div class="num">②</div><div class="lbl">직접경비 <span class="formula">(인쇄·조사·교통비)</span></div><div class="amount">{{ "{:,}".format(result.direct_expense | int) }}</div></div>
+      <div class="calc-row"><div class="num">⑥</div><div class="lbl">제경비 <span class="formula">(① × 110%)</span></div><div class="amount">{{ "{:,}".format(result.overhead | int) }}</div></div>
+      <div class="calc-row"><div class="num">⑦</div><div class="lbl">기술료 <span class="formula">((① + ⑥) × 20%)</span></div><div class="amount">{{ "{:,}".format(result.tech_fee | int) }}</div></div>
+      <div class="calc-row subtotal"><div class="num">⑧</div><div class="lbl">소계 <span class="formula">(① + ⑥ + ⑦)</span></div><div class="amount">{{ "{:,}".format(result.subtotal | int) }}</div></div>
+      <div class="calc-row"><div class="num">⑨</div><div class="lbl">당사조정 <span class="formula">(⑧ × {{ input.adjustment_pct or 87 }}.0% + ②)</span></div><div class="amount">{{ "{:,}".format(result.adjusted | int) }}</div></div>
+      <div class="calc-row deduction"><div class="num">⑩</div><div class="lbl">절삭 <span class="formula">(백만 미만)</span></div><div class="amount">- {{ "{:,}".format(result.truncated | int) }}</div></div>
+
+      {% if input.vat_included %}
+        <div class="calc-row"><div class="num">⑪</div><div class="lbl">공급가액 <span class="formula">(VAT 별도)</span></div><div class="amount">{{ "{:,}".format(result.final | int) }}</div></div>
+        <div class="calc-row"><div class="num">⑫</div><div class="lbl">VAT (10%)</div><div class="amount">{{ "{:,}".format(result.vat_amount | int) }}</div></div>
+        <div class="total-bar">
+          <div class="label-line">
+            <div class="top">⑬ TOTAL · VAT 포함</div>
+            <div class="main">합계 금액</div>
+          </div>
+          <div class="grand">₩ {{ "{:,}".format(result.final_with_vat | int) }}</div>
+        </div>
+      {% else %}
+        <div class="total-bar">
+          <div class="label-line">
+            <div class="top">⑪</div>
+            <div class="main">용역대가</div>
+          </div>
+          <div class="grand">₩ {{ "{:,}".format(result.final | int) }}</div>
+        </div>
+      {% endif %}
+    </div>
+
+    {% if input.payment_terms or input.special_notes %}
+    <div class="section">
+      <div class="section-head"><div class="name">기타 사항</div></div>
       {% if input.payment_terms %}
-      <tr><td class="label">지불방법</td><td>{{ input.payment_terms }}</td></tr>
+      <div class="extra-row"><div class="key">지불방법</div><div class="val">{{ input.payment_terms }}</div></div>
       {% endif %}
       {% if input.special_notes %}
-      <tr><td class="label">특이사항</td><td style="white-space: pre-wrap;">{{ input.special_notes }}</td></tr>
+      <div class="extra-row">
+        <div class="key">특이사항</div>
+        <div class="val">
+          {% for line in input.special_notes.split('\n') if line.strip() %}
+          <div class="item">{{ line }}</div>
+          {% endfor %}
+        </div>
+      </div>
       {% endif %}
-    </table>
+    </div>
+    {% endif %}
+
   </div>
-  {% endif %}
 
   <div class="footer">
-    <div class="date-row">작성일 {{ today }}</div>
-    <div class="company">
+    <div class="info">
       <div class="brand">(주) 동양구조</div>
       <div>서울시 송파구 법원로11길 11 현대지식산업센터 A동 707호</div>
-      <div>TEL 02-549-4566(代) &nbsp;|&nbsp; FAX 02-547-1263 / 4 &nbsp;|&nbsp; www.dyceworld.com</div>
-      <div class="cert">【국토교통부 지정 안전진단 전문기관 제15호】</div>
+      <div>TEL 02-549-4566 · FAX 02-547-1263 · www.dyceworld.com</div>
+      <div class="cert">국토교통부 지정 안전진단 전문기관 제15호</div>
     </div>
-    <div class="seal-row">
+    <div class="seals">
       <div class="seal">
-        <div class="role">대 표 이 사</div>
-        <div class="name">김 효 진 &nbsp;(인)</div>
+        <div class="role">대표이사</div>
+        <div class="stamp">김효진<br>(인)</div>
       </div>
       <div class="seal">
         <div class="role">건축구조기술사</div>
-        <div class="name">　　　　 (인)</div>
+        <div class="stamp">(인)</div>
       </div>
     </div>
   </div>
