@@ -271,7 +271,7 @@ export default function SalesEditModal({
 
   const handleDelete = async (): Promise<void> => {
     if (!sale) return;
-    if (!confirm(`"${sale.name}" 영업 건을 보관(archive) 처리할까요?`)) return;
+    if (!confirm(`"${sale.name}" 영업 건을 삭제할까요?`)) return;
     setBusy(true);
     setErr(null);
     try {
@@ -693,7 +693,7 @@ export default function SalesEditModal({
                 disabled={busy}
                 className="rounded-md border border-red-500/40 px-3 py-1.5 text-xs text-red-500 hover:bg-red-500/10 disabled:opacity-50"
               >
-                보관
+                삭제
               </button>
             )}
             {canConvert && (
