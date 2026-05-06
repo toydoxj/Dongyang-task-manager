@@ -69,7 +69,7 @@ def _resolve_contract_item_labels(
 
 
 @router.get("", response_model=CashflowResponse)
-async def get_cashflow(
+def get_cashflow(
     project_id: str | None = Query(default=None),
     date_from: str | None = Query(default=None),
     date_to: str | None = Query(default=None),

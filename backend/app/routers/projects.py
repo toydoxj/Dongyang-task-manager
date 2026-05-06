@@ -195,7 +195,7 @@ async def get_project_options(
 
 
 @router.get("", response_model=ProjectListResponse)
-async def list_projects(
+def list_projects(
     assignee: str | None = Query(default=None),
     stage: str | None = Query(default=None),
     team: str | None = Query(default=None),
@@ -823,7 +823,7 @@ def _verify_drive_stream_token(token: str, jwt_secret: str) -> dict[str, Any]:
     "/{page_id}/drive/issue-token/{file_id}",
     response_model=DriveStreamTokenResponse,
 )
-async def issue_drive_stream_token(
+def issue_drive_stream_token(
     page_id: str,
     file_id: str,
     user: User = Depends(get_current_user),

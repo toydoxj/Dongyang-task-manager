@@ -54,7 +54,7 @@ _SUBMITTED_VISIBLE_DAYS: int = 60
 
 
 @router.get("", response_model=SaleListResponse)
-async def list_sales(
+def list_sales(
     assignee: str | None = Query(default=None),
     kind: str | None = Query(default=None, description="수주영업|기술지원"),
     stage: str | None = Query(default=None),
@@ -98,7 +98,7 @@ async def list_sales(
 
 
 @router.get("/{page_id}", response_model=Sale)
-async def get_sale(
+def get_sale(
     page_id: str,
     _user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
@@ -167,7 +167,7 @@ async def create_sale(
 
 
 @router.post("/quote/preview", response_model=QuoteResult)
-async def preview_quote(
+def preview_quote(
     body: QuoteInput,
     _user: User = Depends(get_current_user),
 ) -> QuoteResult:
@@ -179,7 +179,7 @@ async def preview_quote(
 
 
 @router.get("/{page_id}/quote.xlsx")
-async def download_quote_xlsx(
+def download_quote_xlsx(
     page_id: str,
     _user: User = Depends(get_current_user),
     db: Session = Depends(get_db),

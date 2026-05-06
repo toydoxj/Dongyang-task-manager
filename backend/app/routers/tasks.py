@@ -48,7 +48,7 @@ def _ensure_can_modify_task(user: User, assignees: list[str] | None) -> None:
 
 
 @router.get("", response_model=TaskListResponse)
-async def list_tasks(
+def list_tasks(
     project_id: str | None = Query(default=None),
     assignee: str | None = Query(default=None),
     status_name: str | None = Query(default=None, alias="status"),

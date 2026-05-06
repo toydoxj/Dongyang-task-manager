@@ -47,7 +47,7 @@ def _resolve_client_names(db: Session, items: list[ContractItem]) -> None:
 
 
 @router.get("", response_model=ContractItemListResponse)
-async def list_contract_items(
+def list_contract_items(
     project_id: str | None = Query(default=None),
     _user: User = Depends(get_current_user),
     db: Session = Depends(get_db),

@@ -39,7 +39,7 @@ class ClientCreateRequest(BaseModel):
 
 
 @router.get("", response_model=ClientListResponse)
-async def list_clients(
+def list_clients(
     _user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> ClientListResponse:

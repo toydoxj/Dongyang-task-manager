@@ -96,7 +96,7 @@ def _is_https(redirect_uri: str) -> bool:
 
 
 @router.get("/works/login")
-async def works_login(
+def works_login(
     next: str = Query("/"),
     drive: int = Query(default=0, description="1이면 file scope 추가 요청 (Drive 위임)"),
     silent: int = Query(
