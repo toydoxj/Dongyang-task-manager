@@ -22,23 +22,34 @@
     .brand-line {
       display: flex;
       align-items: center;
-      gap: 8px;
-      margin-bottom: 4px;
+      gap: 10px;
+      margin-bottom: 6px;
     }
     .brand-line .logo {
       display: inline-block;
       line-height: 0;
     }
     .brand-line .logo svg {
-      width: 22px;
-      height: 22px;
+      width: 26px;
+      height: 26px;
       display: block;
     }
+    .brand-text {
+      display: flex;
+      flex-direction: column;
+      line-height: 1.25;
+    }
+    .brand-ko {
+      font-size: 11pt;
+      font-weight: 700;
+      color: #2c2c2c;
+      letter-spacing: 0.02em;
+    }
     .brand-en {
-      font-size: 9pt;
-      font-weight: 600;
-      letter-spacing: 0.15em;
+      font-size: 8pt;
+      font-weight: 500;
       color: #6b9430;
+      letter-spacing: 0.04em;
     }
     .title {
       font-size: 24pt;
@@ -260,7 +271,10 @@
   <div class="top-bar">
     <div class="brand-line">
       {% if logo_svg %}<span class="logo">{{ logo_svg | safe }}</span>{% endif %}
-      <span class="brand-en">DONGYANG STRUCTURE</span>
+      <span class="brand-text">
+        <span class="brand-ko">(주) 동양구조</span>
+        <span class="brand-en">Dongyang Consulting Engineers. Co., Ltd.</span>
+      </span>
     </div>
     <div class="title">구조설계용역견적서</div>
     <div class="doc-meta">
