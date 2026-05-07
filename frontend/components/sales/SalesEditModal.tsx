@@ -111,15 +111,31 @@ export default function SalesEditModal({
       });
       // 견적서 데이터가 있으면 prefill — 수정/재제출 시나리오
       if (sale.quote_form_data?.input) {
-        setQuoteInput(sale.quote_form_data.input);
+        // 영업 정보 row의 규모 4종이 견적서 입력보다 최신일 수 있어 우선 적용
+        setQuoteInput({
+          ...sale.quote_form_data.input,
+          gross_floor_area:
+            sale.gross_floor_area ?? sale.quote_form_data.input.gross_floor_area,
+          floors_above:
+            sale.floors_above ?? sale.quote_form_data.input.floors_above,
+          floors_below:
+            sale.floors_below ?? sale.quote_form_data.input.floors_below,
+          building_count:
+            sale.building_count ?? sale.quote_form_data.input.building_count,
+        });
         setQuoteResult(sale.quote_form_data.result ?? null);
       } else {
+        // 견적서 없는 영업도 영업 정보의 규모는 prefill — 견적서 새로 작성 시 활용
         setQuoteInput({
           type_rate: 1.0,
           structure_rate: 1.0,
           coefficient: 1.0,
           adjustment_pct: 87,
           printing_fee: 500_000,
+          gross_floor_area: sale.gross_floor_area ?? undefined,
+          floors_above: sale.floors_above ?? null,
+          floors_below: sale.floors_below ?? null,
+          building_count: sale.building_count ?? null,
         });
         setQuoteResult(null);
       }
@@ -213,6 +229,14 @@ export default function SalesEditModal({
         : undefined;
       const resolvedClientId = form.client_id || recipientMatch?.id;
 
+      // 견적서 입력의 규모 4종(연면적/지상층/지하층/동수)을 영업 정보 row와 동기화
+      const scaleFields = {
+        gross_floor_area: quoteInput.gross_floor_area,
+        floors_above: quoteInput.floors_above ?? undefined,
+        floors_below: quoteInput.floors_below ?? undefined,
+        building_count: quoteInput.building_count ?? undefined,
+      };
+
       setBusy(true);
       setErr(null);
       try {
@@ -222,6 +246,7 @@ export default function SalesEditModal({
             name: quoteInput.service_name,
             estimated_amount: quoteResult.final,
             client_id: resolvedClientId,
+            ...scaleFields,
             quote_form_data: { input: quoteInput, result: quoteResult },
           });
         } else {
@@ -232,6 +257,7 @@ export default function SalesEditModal({
             estimated_amount: quoteResult.final,
             client_id: resolvedClientId,
             assignees: defaultAssignee ? [defaultAssignee] : [],
+            ...scaleFields,
             quote_form_data: { input: quoteInput, result: quoteResult },
             // probability/code/quote_doc_number는 backend가 자동 부여 또는 빈 값
           };

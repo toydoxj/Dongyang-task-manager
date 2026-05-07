@@ -169,7 +169,7 @@ export default function QuoteForm({ value, onChange, onResultChange }: Props) {
               onChange={(e) => set("location", e.target.value)}
             />
           </Field>
-          <div className="grid grid-cols-2 gap-2">
+          <div className="grid grid-cols-4 gap-2">
             <Field label="연면적 (m²)">
               <input
                 type="number"
@@ -185,12 +185,49 @@ export default function QuoteForm({ value, onChange, onResultChange }: Props) {
                 }
               />
             </Field>
-            <Field label="층수">
+            <Field label="지상층수">
               <input
+                type="number"
+                min={0}
+                step={1}
                 className={inputCls}
-                placeholder="지하1층/지상3층"
-                value={value.floors_text ?? ""}
-                onChange={(e) => set("floors_text", e.target.value)}
+                value={value.floors_above ?? ""}
+                onChange={(e) =>
+                  set(
+                    "floors_above",
+                    e.target.value ? Number(e.target.value) : null,
+                  )
+                }
+              />
+            </Field>
+            <Field label="지하층수">
+              <input
+                type="number"
+                min={0}
+                step={1}
+                className={inputCls}
+                value={value.floors_below ?? ""}
+                onChange={(e) =>
+                  set(
+                    "floors_below",
+                    e.target.value ? Number(e.target.value) : null,
+                  )
+                }
+              />
+            </Field>
+            <Field label="동수">
+              <input
+                type="number"
+                min={0}
+                step={1}
+                className={inputCls}
+                value={value.building_count ?? ""}
+                onChange={(e) =>
+                  set(
+                    "building_count",
+                    e.target.value ? Number(e.target.value) : null,
+                  )
+                }
               />
             </Field>
           </div>

@@ -534,8 +534,15 @@ export interface DirectExpenseItem {
 export interface QuoteInput {
   service_name?: string;
   location?: string;
-  floors_text?: string;
   structure_form?: string;
+  /** 지상층수 — 영업 정보 Sale.floors_above와 동일 필드 */
+  floors_above?: number | null;
+  /** 지하층수 — 영업 정보 Sale.floors_below와 동일 필드 */
+  floors_below?: number | null;
+  /** 동수 — 영업 정보 Sale.building_count와 동일 필드 */
+  building_count?: number | null;
+  /** legacy 자유 텍스트 — 비면 above/below로 자동 표기 */
+  floors_text?: string;
   recipient_company?: string;
   recipient_person?: string;
   recipient_phone?: string;

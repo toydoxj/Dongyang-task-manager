@@ -41,8 +41,13 @@ class QuoteInput(BaseModel):
     # 메타
     service_name: str = ""  # 용역명
     location: str = ""  # 위치
-    floors_text: str = ""  # 층수 (예: "지하1층/지상3층")
     structure_form: str = ""  # 구조형식
+    # 규모 — 영업 정보(Sale 모델)와 동일 필드. 견적서 입력이 영업 row의
+    # gross_floor_area/floors_above/floors_below/building_count를 채움.
+    floors_above: int | None = Field(default=None, ge=0)  # 지상층수
+    floors_below: int | None = Field(default=None, ge=0)  # 지하층수
+    building_count: int | None = Field(default=None, ge=0)  # 동수
+    floors_text: str = ""  # legacy 자유 텍스트 — 비면 above/below로 자동 표기
     # 수신처
     recipient_company: str = ""
     recipient_person: str = ""

@@ -4,13 +4,27 @@
   <meta charset="utf-8">
   <title>ESTIMATE</title>
   <style>
-    @page { size: A4; margin: 14mm 18mm; }
+    /* 푸터 묶음을 @bottom-center running element로 페이지 하단 영역에 배치.
+       WeasyPrint paged media spec — flex/absolute보다 안정적. */
+    @page {
+      size: A4;
+      margin: 14mm 18mm 70mm 18mm;
+      @bottom-center {
+        content: element(page-footer);
+        width: 100%;
+        vertical-align: bottom;
+      }
+    }
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
       font-family: 'NanumGothic', 'Nanum Gothic', sans-serif;
       color: #1a1a1a;
       font-size: 10pt;
       line-height: 1.6;
+    }
+    /* 페이지 bottom margin 영역에 자동 배치 — 컨텐츠 길이와 무관 */
+    .bottom-section {
+      position: running(page-footer);
     }
 
     /* ── 헤더 ── */
@@ -328,7 +342,16 @@
         {%- if input.gross_floor_area -%}
           연면적 {{ "{:,}".format(input.gross_floor_area | int) }} m²
         {%- endif -%}
-        {%- if input.floors_text %} &nbsp;|&nbsp; {{ input.floors_text }}{% endif -%}
+        {# 층수: floors_text(legacy) 우선, 없으면 above/below로 자동 표기 #}
+        {%- if input.floors_text -%}
+          &nbsp;|&nbsp; {{ input.floors_text }}
+        {%- else -%}
+          {%- set floor_parts = [] -%}
+          {%- if input.floors_below %}{%- set _ = floor_parts.append("지하 " ~ (input.floors_below | int) ~ "층") -%}{%- endif -%}
+          {%- if input.floors_above %}{%- set _ = floor_parts.append("지상 " ~ (input.floors_above | int) ~ "층") -%}{%- endif -%}
+          {%- if floor_parts %} &nbsp;|&nbsp; {{ floor_parts | join(' / ') }}{%- endif -%}
+        {%- endif -%}
+        {%- if input.building_count %} &nbsp;|&nbsp; {{ input.building_count | int }}동{% endif -%}
         {%- if input.structure_form %} &nbsp;|&nbsp; {{ input.structure_form }}{% endif -%}
       </div>
     </div>
@@ -435,6 +458,7 @@
   </table>
   </div>
 
+  <div class="bottom-section">
   <div class="extra-section">
     <div class="extra-title">특이사항</div>
     {% if input.payment_terms %}
@@ -492,6 +516,7 @@
   <div class="note-footer">
     <span class="marker">※</span>
     <span>의문사항이나 불명확한 내용에 대해서는 즉시 담당자에게 연락바랍니다. 본 견적서는 상호합의 하에 조정될 수 있습니다.</span>
+  </div>
   </div>
 
 </body>
