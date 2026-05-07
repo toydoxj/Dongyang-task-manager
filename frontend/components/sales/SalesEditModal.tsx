@@ -261,7 +261,7 @@ export default function SalesEditModal({
       setErr(null);
       try {
         if (isEdit && sale) {
-          // 수정/재제출 — PATCH로 quote_form_data + estimated_amount + name 갱신
+          // 견적서 저장 — quote_form_data + 핵심 4필드 PATCH. 창은 유지.
           await updateSale(sale.id, {
             name: quoteInput.service_name,
             estimated_amount: quoteResult.final,
@@ -269,7 +269,11 @@ export default function SalesEditModal({
             ...scaleFields,
             quote_form_data: { input: quoteInput, result: quoteResult },
           });
+          refreshSales();
+          // 창 안 닫음 — 사용자가 PDF 다운로드/저장 등 후속 작업 가능
+          alert("견적서가 저장되었습니다.");
         } else {
+          // 신규: 영업 row 자동 생성 + quote_form_data 함께. 생성 후 창 닫음.
           const body: SaleCreateRequest = {
             name: quoteInput.service_name,
             kind: "수주영업",
@@ -279,12 +283,11 @@ export default function SalesEditModal({
             assignees: defaultAssignee ? [defaultAssignee] : [],
             ...scaleFields,
             quote_form_data: { input: quoteInput, result: quoteResult },
-            // probability/code/quote_doc_number는 backend가 자동 부여 또는 빈 값
           };
           await createSale(body);
+          refreshSales();
+          onClose();
         }
-        refreshSales();
-        onClose();
       } catch (e) {
         setErr(e instanceof Error ? e.message : "저장 실패");
       } finally {
@@ -293,9 +296,10 @@ export default function SalesEditModal({
       return;
     }
 
-    // 영업 정보 탭 저장 (기존 흐름)
+    // 영업 정보 탭 저장 — quote_form_data는 건드리지 않음 (form에 미포함).
+    // backend update_sale은 quote_form_data가 None이면 변경 안 함.
     if (!form.name?.trim()) {
-      setErr("견적서명은 필수입니다.");
+      setErr("용역명은 필수입니다.");
       return;
     }
     setBusy(true);
@@ -814,7 +818,13 @@ export default function SalesEditModal({
               disabled={busy}
               className="rounded-md bg-zinc-900 px-3 py-1.5 text-xs text-white hover:bg-zinc-700 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300 disabled:opacity-50"
             >
-              {busy ? "저장 중…" : "저장"}
+              {busy
+                ? "저장 중…"
+                : activeTab === "quote"
+                  ? "견적서 저장"
+                  : isEdit
+                    ? "영업 저장"
+                    : "영업 등록"}
             </button>
           </div>
         </footer>
