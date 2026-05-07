@@ -31,9 +31,17 @@ interface Props {
   onChange: (next: QuoteInput) => void;
   /** 부모(SalesEditModal)가 산출 결과를 알아야 저장 시 quote_form_data에 포함 가능 */
   onResultChange?: (result: QuoteResult | null) => void;
+  /** true면 영업정보 탭 echo 필드(수신처/용역명/위치/규모) input을 disabled —
+   *  사용자가 영업정보 탭에서 입력하도록 유도. */
+  echoReadOnly?: boolean;
 }
 
-export default function QuoteForm({ value, onChange, onResultChange }: Props) {
+export default function QuoteForm({
+  value,
+  onChange,
+  onResultChange,
+  echoReadOnly = false,
+}: Props) {
   const [result, setResult] = useState<QuoteResult | null>(null);
   const [loading, setLoading] = useState(false);
   // 수신처 회사명 자동완성용 — SalesEditModal에서도 useClients 호출하지만
@@ -108,6 +116,11 @@ export default function QuoteForm({ value, onChange, onResultChange }: Props) {
     <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
       {/* 입력 컬럼 */}
       <div className="space-y-3">
+        {echoReadOnly && (
+          <p className="rounded-md border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-[11px] text-amber-700 dark:text-amber-400">
+            수신처·용역명·위치·규모는 영업 정보 탭에서 수정합니다 (여기서는 echo).
+          </p>
+        )}
         <Section title="수신처">
           <div className="grid grid-cols-2 gap-2">
             <Field label="회사명">
@@ -116,6 +129,7 @@ export default function QuoteForm({ value, onChange, onResultChange }: Props) {
                 list="dy-clients-quote"
                 value={value.recipient_company ?? ""}
                 onChange={(e) => set("recipient_company", e.target.value)}
+                disabled={echoReadOnly}
                 placeholder={
                   clientsData
                     ? `목록 ${clientsData.count}개 자동완성, 발주처 변경 시 자동 갱신`
@@ -160,6 +174,7 @@ export default function QuoteForm({ value, onChange, onResultChange }: Props) {
               className={inputCls}
               value={value.service_name ?? ""}
               onChange={(e) => set("service_name", e.target.value)}
+              disabled={echoReadOnly}
             />
           </Field>
           <Field label="위치">
@@ -167,6 +182,7 @@ export default function QuoteForm({ value, onChange, onResultChange }: Props) {
               className={inputCls}
               value={value.location ?? ""}
               onChange={(e) => set("location", e.target.value)}
+              disabled={echoReadOnly}
             />
           </Field>
           <div className="grid grid-cols-4 gap-2">
@@ -183,6 +199,7 @@ export default function QuoteForm({ value, onChange, onResultChange }: Props) {
                     e.target.value ? Number(e.target.value) : 0,
                   )
                 }
+                disabled={echoReadOnly}
               />
             </Field>
             <Field label="지상층수">
@@ -198,6 +215,7 @@ export default function QuoteForm({ value, onChange, onResultChange }: Props) {
                     e.target.value ? Number(e.target.value) : null,
                   )
                 }
+                disabled={echoReadOnly}
               />
             </Field>
             <Field label="지하층수">
@@ -213,6 +231,7 @@ export default function QuoteForm({ value, onChange, onResultChange }: Props) {
                     e.target.value ? Number(e.target.value) : null,
                   )
                 }
+                disabled={echoReadOnly}
               />
             </Field>
             <Field label="동수">
@@ -228,6 +247,7 @@ export default function QuoteForm({ value, onChange, onResultChange }: Props) {
                     e.target.value ? Number(e.target.value) : null,
                   )
                 }
+                disabled={echoReadOnly}
               />
             </Field>
           </div>

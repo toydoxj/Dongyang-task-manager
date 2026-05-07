@@ -8,8 +8,8 @@
        WeasyPrint paged media spec — flex/absolute보다 안정적. */
     @page {
       size: A4;
-      /* top 14mm → 28mm (×2). bottom은 footer area 사이즈 그대로 유지 */
-      margin: 28mm 18mm 70mm 18mm;
+      /* top/right/left 18mm 통일, bottom은 footer area 사이즈로 유지 */
+      margin: 18mm 18mm 70mm 18mm;
       @bottom-center {
         content: element(page-footer);
         width: 100%;

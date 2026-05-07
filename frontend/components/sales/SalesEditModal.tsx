@@ -192,6 +192,25 @@ export default function SalesEditModal({
     );
   }, [client]);
 
+  // 영업정보 탭의 핵심 6필드 → 견적서 quoteInput 자동 echo.
+  // 견적서 탭은 read-only로 표시 (영업정보에서만 입력).
+  useEffect(() => {
+    setQuoteInput((prev) => ({
+      ...prev,
+      service_name: form.name ?? prev.service_name,
+      gross_floor_area: form.gross_floor_area ?? prev.gross_floor_area,
+      floors_above: form.floors_above ?? prev.floors_above,
+      floors_below: form.floors_below ?? prev.floors_below,
+      building_count: form.building_count ?? prev.building_count,
+    }));
+  }, [
+    form.name,
+    form.gross_floor_area,
+    form.floors_above,
+    form.floors_below,
+    form.building_count,
+  ]);
+
   if (!open) return null;
 
   const refreshSales = (): void => {
@@ -432,11 +451,12 @@ export default function SalesEditModal({
                 value={quoteInput}
                 onChange={setQuoteInput}
                 onResultChange={setQuoteResult}
+                echoReadOnly
               />
             </>
           ) : (
             <>
-          <Field label="견적서명">
+          <Field label="용역명">
             <input
               className={inputCls}
               value={form.name ?? ""}
@@ -493,6 +513,17 @@ export default function SalesEditModal({
                 {clientMatch.category ? ` (${clientMatch.category})` : ""}
               </p>
             )}
+          </Field>
+
+          <Field label="위치">
+            <input
+              className={inputCls}
+              value={quoteInput.location ?? ""}
+              onChange={(e) =>
+                setQuoteInput((q) => ({ ...q, location: e.target.value }))
+              }
+              placeholder="예: 경기 고양시 일산서구"
+            />
           </Field>
 
           <div className="grid grid-cols-2 gap-3">
