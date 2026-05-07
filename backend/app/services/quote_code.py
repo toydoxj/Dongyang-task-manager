@@ -42,6 +42,9 @@ _CODE_MAP: dict[QuoteType, str] = {
     QuoteType.SEISMIC_EVAL: "08",
     QuoteType.SUPERVISION: "09",
     QuoteType.FIELD_SUPPORT: "10",
+    # 내진평가 패키지 부속 모듈 — α 패턴 (별 영업 + 통합 PDF)
+    QuoteType.REINFORCEMENT_DESIGN: "11",
+    QuoteType.THIRD_PARTY_REVIEW: "12",
     QuoteType.CUSTOM: "99",
 }
 

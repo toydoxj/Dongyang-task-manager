@@ -131,7 +131,12 @@ export default function QuoteForm({
     qt === "정기안전점검" || qt === "정밀점검" || qt === "정밀안전진단";
   const isInspectionBma = qt === "건축물관리법점검";
   const isSeismicEval = qt === "내진성능평가";
-  const isSimpleManhours = qt === "구조감리" || qt === "현장기술지원";
+  // 내진평가 패키지 부속 (내진보강설계/3자검토)도 단일 인.일 입력 모델
+  const isSimpleManhours =
+    qt === "구조감리" ||
+    qt === "현장기술지원" ||
+    qt === "내진보강설계" ||
+    qt === "3자검토";
 
   return (
     <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
@@ -383,7 +388,11 @@ export default function QuoteForm({
               label={
                 qt === "구조감리"
                   ? "투입인원 (인.일) — 현장 방문회수 × 3 (예: 27회 × 3 = 81)"
-                  : "투입인원 (인.일) — 회당 3 기준 권장"
+                  : qt === "내진보강설계"
+                    ? "투입인원 (인.일) — 단가 242,055원/일 (예: 9)"
+                    : qt === "3자검토"
+                      ? "투입인원 (인.일) — 단가 292,249원/일 (예: 6)"
+                      : "투입인원 (인.일) — 회당 3 기준 권장"
               }
             >
               <input
@@ -474,6 +483,32 @@ export default function QuoteForm({
 
         {isSeismicEval && (
           <Section title="투입인원 (현장조사 · 해석)">
+            <Field label="구조도면 보유 — 면적 입력 시 자동 보간 채움 (PR-Q8b)">
+              <select
+                className={inputCls}
+                value={
+                  value.has_structural_drawings === true
+                    ? "Y"
+                    : value.has_structural_drawings === false
+                      ? "N"
+                      : ""
+                }
+                onChange={(e) =>
+                  set(
+                    "has_structural_drawings",
+                    e.target.value === "Y"
+                      ? true
+                      : e.target.value === "N"
+                        ? false
+                        : null,
+                  )
+                }
+              >
+                <option value="">— 수동 입력 모드 —</option>
+                <option value="Y">유 (도면 있음)</option>
+                <option value="N">무 (도면 없음)</option>
+              </select>
+            </Field>
             <div className="grid grid-cols-2 gap-2">
               <Field label="현장조사 외업 인.일">
                 <input

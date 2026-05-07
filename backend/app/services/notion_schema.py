@@ -174,7 +174,7 @@ SALES_DB_REQUIRED: dict[str, dict[str, Any]] = {
     # 통합 견적서 첨부 (PR-G2) — parent_lead_id로 묶인 자식 견적까지 1 PDF로
     # 합친 통합본의 web url. parent 영업에만 의미. 단일 PDF는 견적서첨부에 그대로 보존.
     "통합견적서첨부": {"files": {}},
-    # 견적서 종류 (PR-Q1) — 8가지 분류, 점검 4종 sub 포함 11 옵션
+    # 견적서 종류 — 11종 + 내진평가 패키지 부속 2종 = 13 옵션
     "견적서종류": _select(
         [
             ("구조설계", "blue"),
@@ -185,6 +185,9 @@ SALES_DB_REQUIRED: dict[str, dict[str, Any]] = {
             ("정밀안전진단", "red"),
             ("건축물관리법점검", "brown"),
             ("내진성능평가", "green"),
+            # 내진평가 패키지 부속 — 별 영업 row + 통합 PDF (PR-G1) 패턴
+            ("내진보강설계", "green"),
+            ("3자검토", "green"),
             ("구조감리", "default"),
             ("현장기술지원", "gray"),
             ("기타", "default"),

@@ -544,6 +544,8 @@ export const QUOTE_TYPES = [
   "정밀안전진단",
   "건축물관리법점검",
   "내진성능평가",
+  "내진보강설계",
+  "3자검토",
   "구조감리",
   "현장기술지원",
   "기타",
@@ -582,10 +584,12 @@ export interface QuoteInput {
   inspection_responsible_days?: number | null;
   inspection_inspector_days?: number | null;
   /** 내진성능평가 (PR-Q8) — ① 현장조사 외업/내업, ② 해석 인.일 (3 필드 분리).
-   * 보간 table(연면적·구조도면 유무·해석방법·등급)은 사용자가 xlsx 보고 수동 입력. */
+   * has_structural_drawings + gross_floor_area 있으면 PR-Q8b 보간 자동 채움. */
   field_outdoor_days?: number | null;
   field_indoor_days?: number | null;
   analysis_days?: number | null;
+  /** 내진성능평가 보간용 — 구조도면 보유 여부 (xlsx F44). null=수동 입력 모드. */
+  has_structural_drawings?: boolean | null;
   /** 동적 직접경비 항목 (이름 + 금액). 비어있으면 legacy 합산 fallback. */
   direct_expense_items?: DirectExpenseItem[];
   overhead_pct?: number;

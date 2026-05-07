@@ -37,6 +37,8 @@ _TITLE_MAP: dict[QuoteType, str] = {
     QuoteType.INSPECTION_DIAGNOSIS: "정밀안전진단 견적서",
     QuoteType.INSPECTION_BMA: "건축물관리법점검 견적서",
     QuoteType.SEISMIC_EVAL: "내진성능평가 견적서",
+    QuoteType.REINFORCEMENT_DESIGN: "내진보강설계 견적서",
+    QuoteType.THIRD_PARTY_REVIEW: "3자검토 견적서",
     QuoteType.SUPERVISION: "구조감리용역견적서",
     QuoteType.FIELD_SUPPORT: "현장기술지원용역견적서",
     QuoteType.CUSTOM: "견적서",  # custom_title이 있으면 그것 사용
@@ -52,6 +54,8 @@ _FILENAME_PREFIX_MAP: dict[QuoteType, str] = {
     QuoteType.INSPECTION_DIAGNOSIS: "정밀진단견적",
     QuoteType.INSPECTION_BMA: "건축물관리법점검견적",
     QuoteType.SEISMIC_EVAL: "내진성능평가견적",
+    QuoteType.REINFORCEMENT_DESIGN: "내진보강설계견적",
+    QuoteType.THIRD_PARTY_REVIEW: "3자검토견적",
     QuoteType.SUPERVISION: "구조감리견적",
     QuoteType.FIELD_SUPPORT: "현장지원견적",
     QuoteType.CUSTOM: "견적",
