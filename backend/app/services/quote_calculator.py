@@ -22,9 +22,12 @@ from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict, Field
 
-# 직접인건비 단가 — 정부 기술자 등급별 노임단가 (고급기술자, 2026 기준).
-# 매년 단가 발표 시 갱신.
-DAILY_RATE_SENIOR_ENGINEER = 310_884
+# 직접인건비 단가 — 정부 기술자 등급별 노임단가 (2026 기준). 매년 갱신.
+# 종류별 strategy가 적합한 등급을 import해 사용.
+DAILY_RATE_SENIOR_ENGINEER = 310_884       # 고급기술자 — 구조설계·점검류
+DAILY_RATE_FIELD_SUPPORT = 253_985         # 현장기술지원 단가 (xlsx 실 사례)
+DAILY_RATE_PROFESSIONAL_ENGINEER = 446_055  # 기술사 — 구조감리
+DAILY_RATE_ENGINEER = 300_980              # 기술자 — 내진성능평가
 
 
 class QuoteType(StrEnum):
@@ -256,6 +259,79 @@ def _calculate_struct_design(inp: QuoteInput) -> QuoteResult:
     )
 
 
+def _calculate_field_support(inp: QuoteInput) -> QuoteResult:
+    """현장기술지원용역견적서 산출 (PR-Q2).
+
+    구조설계와 거의 동일 흐름이나 핵심 차이:
+    - baseline_manhours 자동 산출 X — 사용자가 인.일을 직접 입력
+      (manhours_override 필수, 없으면 0)
+    - 단가가 다름: 고급기술자 253,985원/인.일
+    - 산출 행 라벨이 동일하므로 PDF template 그대로 재사용 가능
+    - 직접경비/제경비(110%)/기술료(20%)/조정/절삭 모두 구조설계와 동일
+    - default 조정%는 80 (xlsx 실 사례)
+
+    xlsx 검증 (현장지원26-07-002.xlsx):
+    K17=5인.일, H27=80%, 직접경비=50,000(교통비 25,000×2)
+    → K27=2,610,168.8 → K28=610,169 (백만 미만) → K29=2,000,000
+    """
+    # 인.일 — 직접 입력 우선, 없으면 0 (현장지원은 자동 산출 모델 없음)
+    mh_total = (
+        int(inp.manhours_override) if inp.manhours_override is not None else 0
+    )
+
+    # 직접인건비 — 단가만 다름 (253,985원/인.일)
+    direct_labor = mh_total * DAILY_RATE_FIELD_SUPPORT
+
+    # 직접경비: 동적 list 우선, 없으면 legacy 합산
+    if inp.direct_expense_items:
+        direct_expense = sum(item.amount for item in inp.direct_expense_items)
+    else:
+        direct_expense = (
+            inp.printing_fee + inp.survey_fee + 25_000 * inp.transport_persons
+        )
+
+    overhead = direct_labor * (inp.overhead_pct / 100)
+    tech_fee = (direct_labor + overhead) * (inp.tech_fee_pct / 100)
+    subtotal = direct_labor + overhead + tech_fee
+    adjusted = subtotal * (inp.adjustment_pct / 100) + direct_expense
+
+    # 절삭 — final_override 우선, 없으면 truncate_unit으로 절삭
+    adjusted_int = int(_excel_round_half_up(adjusted, 0))
+    if inp.final_override is not None:
+        final_amount = int(inp.final_override)
+        truncated = adjusted_int - final_amount
+    else:
+        unit = inp.truncate_unit if inp.truncate_unit > 0 else 1
+        truncated = adjusted_int % unit
+        final_amount = adjusted_int - truncated
+
+    # VAT
+    vat_amount = int(_excel_round_half_up(final_amount * 0.1, 0))
+    final_with_vat = final_amount + vat_amount
+
+    # 평당 — 현장지원은 회당 견적이라 의미 약함. 호환을 위해 채워둠.
+    per_pyeong_area = inp.gross_floor_area / 3.3 if inp.gross_floor_area else 0
+    per_pyeong = final_amount / per_pyeong_area if per_pyeong_area else 0
+
+    return QuoteResult(
+        manhours_baseline=0,
+        manhours_baseline_rounded=0,
+        manhours_total=mh_total,
+        direct_labor=direct_labor,
+        direct_expense=direct_expense,
+        overhead=overhead,
+        tech_fee=tech_fee,
+        subtotal=subtotal,
+        adjusted=adjusted,
+        truncated=truncated,
+        final=final_amount,
+        vat_amount=vat_amount,
+        final_with_vat=final_with_vat,
+        per_pyeong_area=per_pyeong_area,
+        per_pyeong=per_pyeong,
+    )
+
+
 # ── 종류별 산출 strategy dispatch ──
 # PR-Q1: 모든 종류가 임시로 구조설계 strategy로 fallback. PR-Q2~Q9에서 점진적
 # 으로 종류별 strategy 함수로 교체된다.
@@ -269,6 +345,6 @@ _DISPATCH: dict[QuoteType, "callable"] = {
     QuoteType.INSPECTION_BMA: _calculate_struct_design,
     QuoteType.SEISMIC_EVAL: _calculate_struct_design,
     QuoteType.SUPERVISION: _calculate_struct_design,
-    QuoteType.FIELD_SUPPORT: _calculate_struct_design,
+    QuoteType.FIELD_SUPPORT: _calculate_field_support,  # PR-Q2
     QuoteType.CUSTOM: _calculate_struct_design,
 }
