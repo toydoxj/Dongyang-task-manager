@@ -1034,6 +1034,14 @@ export async function previewQuote(input: QuoteInput): Promise<QuoteResult> {
   return jsonOrThrow<QuoteResult>(res);
 }
 
+/** 견적서 PDF → WORKS Drive [견적서]/{YYYY}년 자동 업로드 + 노션 sale 견적서첨부 갱신. */
+export async function saveQuotePdfToDrive(saleId: string): Promise<Sale> {
+  const res = await authFetch(`/api/sales/${saleId}/quote/save-pdf-to-drive`, {
+    method: "POST",
+  });
+  return jsonOrThrow<Sale>(res);
+}
+
 /** 견적서 PDF 다운로드 — Content-Disposition filename*로 한글 파일명 자동. */
 export async function downloadQuotePdf(saleId: string): Promise<void> {
   const res = await authFetch(`/api/sales/${saleId}/quote.pdf`);

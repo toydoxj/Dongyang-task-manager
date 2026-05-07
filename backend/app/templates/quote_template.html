@@ -8,7 +8,8 @@
        WeasyPrint paged media spec — flex/absolute보다 안정적. */
     @page {
       size: A4;
-      margin: 14mm 18mm 70mm 18mm;
+      /* top 14mm → 28mm (×2). bottom은 footer area 사이즈 그대로 유지 */
+      margin: 28mm 18mm 70mm 18mm;
       @bottom-center {
         content: element(page-footer);
         width: 100%;
@@ -25,6 +26,7 @@
     /* 페이지 bottom margin 영역에 자동 배치 — 컨텐츠 길이와 무관 */
     .bottom-section {
       position: running(page-footer);
+      padding-bottom: 50px;  /* footer가 페이지 바닥에서 떨어진 호흡 확보 */
     }
 
     /* ── 헤더 ── */
@@ -35,7 +37,7 @@
       margin-bottom: 20px;
     }
     .brand h1 {
-      font-size: 30pt;
+      font-size: 21pt;  /* 30pt × 0.7 */
       font-weight: 700;
       letter-spacing: 0.1em;
       line-height: 1;

@@ -11,6 +11,7 @@ import {
   createSale,
   downloadQuotePdf,
   linkSaleToProject,
+  saveQuotePdfToDrive,
   updateSale,
 } from "@/lib/api";
 import {
@@ -358,16 +359,14 @@ export default function SalesEditModal({
 
   const canConvert =
     isEdit &&
-    isAdmin &&
     sale != null &&
     sale.kind === "수주영업" &&
     CONVERTIBLE_STAGES.includes(sale.stage) &&
     !sale.converted_project_id;
 
-  // 기존 프로젝트 연결 — 단계 무관, 수주영업이고 미전환이면 가능 (admin)
+  // 기존 프로젝트 연결 — 단계 무관, 수주영업이고 미전환이면 가능 (전 직원)
   const canLink =
     isEdit &&
-    isAdmin &&
     sale != null &&
     sale.kind === "수주영업" &&
     !sale.converted_project_id;
@@ -699,20 +698,46 @@ export default function SalesEditModal({
         <footer className="flex items-center justify-between gap-2 border-t border-zinc-200 px-4 py-3 dark:border-zinc-800">
           <div className="flex gap-2">
             {isEdit && sale && sale.quote_doc_number && (
-              <button
-                type="button"
-                onClick={() => {
-                  void downloadQuotePdf(sale.id).catch((e) =>
-                    setErr(e instanceof Error ? e.message : "PDF 다운로드 실패"),
-                  );
-                }}
-                disabled={busy}
-                className="rounded-md border border-emerald-700/40 bg-emerald-600/10 px-3 py-1.5 text-xs font-medium text-emerald-700 hover:bg-emerald-600/20 disabled:opacity-50 dark:text-emerald-400"
-              >
-                PDF 다운로드
-              </button>
+              <>
+                <button
+                  type="button"
+                  onClick={() => {
+                    void downloadQuotePdf(sale.id).catch((e) =>
+                      setErr(e instanceof Error ? e.message : "PDF 다운로드 실패"),
+                    );
+                  }}
+                  disabled={busy}
+                  className="rounded-md border border-emerald-700/40 bg-emerald-600/10 px-3 py-1.5 text-xs font-medium text-emerald-700 hover:bg-emerald-600/20 disabled:opacity-50 dark:text-emerald-400"
+                >
+                  PDF 다운로드
+                </button>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    setBusy(true);
+                    setErr(null);
+                    try {
+                      await saveQuotePdfToDrive(sale.id);
+                      refreshSales();
+                      alert(
+                        "WORKS Drive [견적서]/" +
+                          new Date().getFullYear() +
+                          "년 폴더에 저장되었습니다.",
+                      );
+                    } catch (e) {
+                      setErr(e instanceof Error ? e.message : "PDF 저장 실패");
+                    } finally {
+                      setBusy(false);
+                    }
+                  }}
+                  disabled={busy}
+                  className="rounded-md border border-blue-500/40 px-3 py-1.5 text-xs text-blue-700 hover:bg-blue-500/10 disabled:opacity-50 dark:text-blue-400"
+                >
+                  PDF 저장
+                </button>
+              </>
             )}
-            {isEdit && isAdmin && (
+            {isEdit && (
               <button
                 type="button"
                 onClick={handleDelete}
