@@ -89,6 +89,9 @@ class QuoteInput(BaseModel):
     # 투입인원 직접 입력 — None이면 (연면적 × 요율들)로 자동 산출.
     # 정수면 그 값을 사용 (자동 산출 무시).
     manhours_override: int | None = Field(default=None, ge=0)
+    # 점검류 (PR-Q4~Q7) — 책임자/점검자 인.일 분리 입력
+    inspection_responsible_days: float | None = Field(default=None, ge=0)
+    inspection_inspector_days: float | None = Field(default=None, ge=0)
     # 직접경비 — 동적 항목 list. 비어 있으면 산출에 0원.
     # legacy 필드(printing_fee/survey_fee/transport_persons)는 backward 호환용.
     direct_expense_items: list[DirectExpenseItem] = []
@@ -403,6 +406,84 @@ def _calculate_supervision(inp: QuoteInput) -> QuoteResult:
     )
 
 
+def _calculate_inspection_bma(inp: QuoteInput) -> QuoteResult:
+    """건축물관리법점검 strategy (PR-Q4).
+
+    xlsx '건축물관리법점검견적26-09-02.xls' 양식 transcribe.
+
+    산출 모델
+    - 책임자 인.일 × 456,237 + 점검자 인.일 × 235,459 (등급별 단가)
+    - 매 단계 INT() (xlsx 수식이 INT()로 wrap, 결과 정수만 누적)
+    - subtotal에 직접경비 포함 (구조감리와 동일 흐름) → adjusted = subtotal × adj%
+    - 절삭은 truncate_unit (xlsx 양식은 ROUNDDOWN(_, -5) = 100,000 단위)
+      → 사용자가 truncate_unit=100_000 선택 권장
+
+    xlsx 검증 (책임자 1.44, 점검자 0.44, 직접경비 100,000, 조정 90%):
+    - 직접인건비 = INT(456237×1.44) + INT(235459×0.44) = 656,981 + 103,601 = 760,582
+    - 제경비    = INT(760,582 × 1.1)            = 836,640
+    - 기술료    = INT((760,582+836,640) × 0.2)   = 319,444
+    - 합계      = 760,582+836,640+319,444+100,000 = 2,016,666
+    - 조정      = 2,016,666 × 0.9                = 1,814,999.4
+    - 절삭(10만) = 14,999
+    - 최종      = 1,800,000 (xlsx F23)
+    """
+    responsible = inp.inspection_responsible_days or 0
+    inspector = inp.inspection_inspector_days or 0
+
+    # 매 단계 INT() — xlsx 수식과 동일한 정수 누적 (truncation 보존)
+    direct_labor = (
+        int(responsible * 456_237) + int(inspector * 235_459)
+    )
+    direct_labor = int(direct_labor)  # F7 = INT(F8+F9)
+
+    if inp.direct_expense_items:
+        direct_expense = sum(item.amount for item in inp.direct_expense_items)
+    else:
+        direct_expense = (
+            inp.printing_fee + inp.survey_fee + 25_000 * inp.transport_persons
+        )
+
+    overhead = int(direct_labor * (inp.overhead_pct / 100))           # F11=INT(F7*1.1)
+    tech_fee = int((direct_labor + overhead) * (inp.tech_fee_pct / 100))  # F13=INT(...×0.2)
+    subtotal = direct_labor + overhead + tech_fee + direct_expense    # F17 (직접경비 포함)
+    adjusted = subtotal * (inp.adjustment_pct / 100)                  # F19 = F17 × adj
+
+    adjusted_int = int(_excel_round_half_up(adjusted, 0))
+    if inp.final_override is not None:
+        final_amount = int(inp.final_override)
+        truncated = adjusted_int - final_amount
+    else:
+        unit = inp.truncate_unit if inp.truncate_unit > 0 else 1
+        truncated = adjusted_int % unit
+        final_amount = adjusted_int - truncated
+
+    vat_amount = int(_excel_round_half_up(final_amount * 0.1, 0))
+    final_with_vat = final_amount + vat_amount
+
+    # 인.일 합산은 표시용
+    mh_total = int(round((responsible + inspector) * 100)) / 100
+    per_pyeong_area = inp.gross_floor_area / 3.3 if inp.gross_floor_area else 0
+    per_pyeong = final_amount / per_pyeong_area if per_pyeong_area else 0
+
+    return QuoteResult(
+        manhours_baseline=0,
+        manhours_baseline_rounded=0,
+        manhours_total=int(mh_total),
+        direct_labor=direct_labor,
+        direct_expense=direct_expense,
+        overhead=overhead,
+        tech_fee=tech_fee,
+        subtotal=subtotal,
+        adjusted=adjusted,
+        truncated=truncated,
+        final=final_amount,
+        vat_amount=vat_amount,
+        final_with_vat=final_with_vat,
+        per_pyeong_area=per_pyeong_area,
+        per_pyeong=per_pyeong,
+    )
+
+
 # ── 종류별 산출 strategy dispatch ──
 # PR-Q1: 모든 종류가 임시로 구조설계 strategy로 fallback. PR-Q2~Q9에서 점진적
 # 으로 종류별 strategy 함수로 교체된다.
@@ -413,7 +494,7 @@ _DISPATCH: dict[QuoteType, "callable"] = {
     QuoteType.INSPECTION_REGULAR: _calculate_struct_design,
     QuoteType.INSPECTION_DETAIL: _calculate_struct_design,
     QuoteType.INSPECTION_DIAGNOSIS: _calculate_struct_design,
-    QuoteType.INSPECTION_BMA: _calculate_struct_design,
+    QuoteType.INSPECTION_BMA: _calculate_inspection_bma,  # PR-Q4
     QuoteType.SEISMIC_EVAL: _calculate_struct_design,
     QuoteType.SUPERVISION: _calculate_supervision,  # PR-Q3
     QuoteType.FIELD_SUPPORT: _calculate_field_support,  # PR-Q2
