@@ -42,6 +42,8 @@ class Sale(BaseModel):
     # 견적서 작성 툴 (PR5)
     quote_doc_number: str = ""  # {YY}-{MM}-{NNN}
     quote_form_data: dict[str, Any] = {}  # input + result dump
+    # 견적서 종류 (PR-Q1) — 빈 값이면 '구조설계' fallback
+    quote_type: str = ""
     created_time: str | None = None
     last_edited_time: str | None = None
     url: str | None = None
@@ -86,6 +88,7 @@ class Sale(BaseModel):
             converted_project_id=_first_relation_id(props, "전환된 프로젝트"),
             assignees=P.multi_select_names(props, "담당자"),
             quote_doc_number=P.rich_text(props, "문서번호"),
+            quote_type=P.select_name(props, "견적서종류"),
             # quote_form_data는 노션에 저장하지 않고 mirror_sales에만 보관
             # (JSONB는 노션 column으로 표현 불가). from_notion_page에서 빈 dict로 초기화.
             quote_form_data={},
@@ -123,6 +126,7 @@ class SaleCreateRequest(BaseModel):
     # 견적서 작성 툴 (PR5) — 견적 폼으로 영업을 만들 때 사용
     quote_doc_number: str = ""  # 빈 값이면 라우터에서 자동 부여 ({YY}-{MM}-{NNN})
     quote_form_data: dict[str, Any] = {}  # mirror_sales.quote_form_data에 저장
+    quote_type: str = ""  # PR-Q1: 빈 값이면 '구조설계' fallback
     gross_floor_area: float | None = None
     floors_above: float | None = None
     floors_below: float | None = None
@@ -159,6 +163,7 @@ class SaleUpdateRequest(BaseModel):
     wind_tunnel_amount: float | None = None
     parent_lead_id: str | None = None
     assignees: list[str] | None = None
+    quote_type: str | None = None  # PR-Q1
     # 견적서 데이터 — None이면 변경 안 함, dict면 mirror_sales JSONB 갱신 (노션 X)
     quote_form_data: dict[str, Any] | None = None
 
@@ -249,6 +254,8 @@ def sale_create_to_props(req: SaleCreateRequest) -> dict[str, Any]:
         props["상위 영업건"] = _relation([req.parent_lead_id])
     if req.assignees:
         props["담당자"] = _multi_select(req.assignees)
+    if req.quote_type:
+        props["견적서종류"] = {"select": {"name": req.quote_type}}
     return props
 
 
@@ -308,4 +315,10 @@ def sale_update_to_props(req: SaleUpdateRequest) -> dict[str, Any]:
         )
     if req.assignees is not None:
         props["담당자"] = _multi_select(req.assignees)
+    if req.quote_type is not None:
+        props["견적서종류"] = (
+            {"select": None}
+            if req.quote_type == ""
+            else {"select": {"name": req.quote_type}}
+        )
     return props

@@ -469,8 +469,10 @@ export interface Sale {
   probability: number | null;        // 수주확률 0~100 (PM 직접 입력)
   is_bid: boolean;
   client_id: string;      // 의뢰처 relation 첫번째
-  quote_doc_number: string;  // 견적서 문서번호 {YY}-{MM}-{NNN}
+  quote_doc_number: string;  // 견적서 문서번호 {YY}-{CC}-{NNN}
   quote_form_data: { input?: QuoteInput; result?: QuoteResult } | Record<string, never>;
+  /** 견적서 종류 (PR-Q1) — 빈 값이면 '구조설계' fallback */
+  quote_type: string;
   gross_floor_area: number | null;
   floors_above: number | null;
   floors_below: number | null;
@@ -505,8 +507,10 @@ export interface SaleCreateRequest {
   is_bid?: boolean;
   client_id?: string;
   // 견적서 작성 툴 (PR5)
-  quote_doc_number?: string;  // 빈 값/미지정이면 자동 부여 ({YY}-{MM}-{NNN})
+  quote_doc_number?: string;  // 빈 값/미지정이면 자동 부여 ({YY}-{CC}-{NNN})
   quote_form_data?: { input: QuoteInput; result: QuoteResult };
+  /** 견적서 종류 (PR-Q1) — 빈 값이면 '구조설계' fallback */
+  quote_type?: string;
   gross_floor_area?: number;
   floors_above?: number;
   floors_below?: number;
@@ -530,8 +534,28 @@ export interface DirectExpenseItem {
   amount: number;
 }
 
+/** 견적서 종류 — 백엔드 QuoteType enum과 일치 (값=한글 라벨, 노션 select name). */
+export const QUOTE_TYPES = [
+  "구조설계",
+  "구조검토",
+  "성능기반내진설계",
+  "정기안전점검",
+  "정밀점검",
+  "정밀안전진단",
+  "건축물관리법점검",
+  "내진성능평가",
+  "구조감리",
+  "현장기술지원",
+  "기타",
+] as const;
+export type QuoteType = (typeof QUOTE_TYPES)[number];
+
 /** 견적서 입력값 — 백엔드 QuoteInput과 1:1 대응. */
 export interface QuoteInput {
+  /** 견적서 종류 — 빈 값/미지정이면 '구조설계' fallback */
+  quote_type?: QuoteType;
+  /** quote_type='기타'일 때만 PDF 헤더 제목으로 사용 */
+  custom_title?: string;
   service_name?: string;
   location?: string;
   structure_form?: string;

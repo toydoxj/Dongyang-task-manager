@@ -18,11 +18,32 @@
 """
 from __future__ import annotations
 
+from enum import StrEnum
+
 from pydantic import BaseModel, ConfigDict, Field
 
 # 직접인건비 단가 — 정부 기술자 등급별 노임단가 (고급기술자, 2026 기준).
 # 매년 단가 발표 시 갱신.
 DAILY_RATE_SENIOR_ENGINEER = 310_884
+
+
+class QuoteType(StrEnum):
+    """견적서 종류 — PDF 헤더·파일명·문서번호 분류 코드·산출 strategy 분기 키.
+
+    값은 노션 select 옵션 명·DB 저장값과 일치 (한글). 프론트 select 라벨도 동일.
+    """
+
+    STRUCT_DESIGN = "구조설계"
+    STRUCT_REVIEW = "구조검토"
+    PERF_SEISMIC = "성능기반내진설계"
+    INSPECTION_REGULAR = "정기안전점검"
+    INSPECTION_DETAIL = "정밀점검"
+    INSPECTION_DIAGNOSIS = "정밀안전진단"
+    INSPECTION_BMA = "건축물관리법점검"
+    SEISMIC_EVAL = "내진성능평가"
+    SUPERVISION = "구조감리"
+    FIELD_SUPPORT = "현장기술지원"
+    CUSTOM = "기타"
 
 
 class DirectExpenseItem(BaseModel):
@@ -38,6 +59,10 @@ class QuoteInput(BaseModel):
 
     model_config = ConfigDict(populate_by_name=True)
 
+    # 견적서 종류 — dispatch 키. 빈 값/미지정이면 STRUCT_DESIGN으로 처리.
+    quote_type: QuoteType = QuoteType.STRUCT_DESIGN
+    # CUSTOM(기타)일 때만 PDF 헤더 제목으로 사용. 다른 종류는 _TITLE_MAP 참조.
+    custom_title: str = ""
     # 메타
     service_name: str = ""  # 용역명
     location: str = ""  # 위치
@@ -156,7 +181,15 @@ def _excel_round_half_up(value: float, ndigits: int = 0) -> int | float:
 
 
 def calculate(inp: QuoteInput) -> QuoteResult:
-    """견적서 산출 — xlsx 식 그대로 파이썬 재현."""
+    """견적서 종류별 dispatch. 미구현 종류는 임시로 구조설계 strategy fallback —
+    PR-Q2~Q9에서 종류별 strategy로 교체 예정.
+    """
+    strategy = _DISPATCH.get(inp.quote_type, _calculate_struct_design)
+    return strategy(inp)
+
+
+def _calculate_struct_design(inp: QuoteInput) -> QuoteResult:
+    """구조설계용역견적서 산출 — xlsx 식 그대로 파이썬 재현."""
     # 1. 인.일 산출 — manhours_override가 있으면 그 값, 없으면 자동(ROUND 두 번)
     bm = baseline_manhours(inp.gross_floor_area)
     bm_rounded = int(_excel_round_half_up(bm, 0))
@@ -221,3 +254,21 @@ def calculate(inp: QuoteInput) -> QuoteResult:
         per_pyeong_area=per_pyeong_area,
         per_pyeong=per_pyeong,
     )
+
+
+# ── 종류별 산출 strategy dispatch ──
+# PR-Q1: 모든 종류가 임시로 구조설계 strategy로 fallback. PR-Q2~Q9에서 점진적
+# 으로 종류별 strategy 함수로 교체된다.
+_DISPATCH: dict[QuoteType, "callable"] = {
+    QuoteType.STRUCT_DESIGN: _calculate_struct_design,
+    QuoteType.STRUCT_REVIEW: _calculate_struct_design,
+    QuoteType.PERF_SEISMIC: _calculate_struct_design,
+    QuoteType.INSPECTION_REGULAR: _calculate_struct_design,
+    QuoteType.INSPECTION_DETAIL: _calculate_struct_design,
+    QuoteType.INSPECTION_DIAGNOSIS: _calculate_struct_design,
+    QuoteType.INSPECTION_BMA: _calculate_struct_design,
+    QuoteType.SEISMIC_EVAL: _calculate_struct_design,
+    QuoteType.SUPERVISION: _calculate_struct_design,
+    QuoteType.FIELD_SUPPORT: _calculate_struct_design,
+    QuoteType.CUSTOM: _calculate_struct_design,
+}

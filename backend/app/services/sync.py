@@ -580,6 +580,7 @@ class NotionSyncService:
             probability=s.probability,
             is_bid=bool(s.is_bid),
             quote_doc_number=s.quote_doc_number or "",
+            quote_type=s.quote_type or "",
             client_id=s.client_id or "",
             gross_floor_area=s.gross_floor_area,
             floors_above=s.floors_above,
@@ -613,6 +614,7 @@ class NotionSyncService:
                     probability=stmt.excluded.probability,
                     is_bid=stmt.excluded.is_bid,
                     quote_doc_number=stmt.excluded.quote_doc_number,
+                    quote_type=stmt.excluded.quote_type,
                     # quote_form_data는 노션에 없으므로 sync에서 갱신 X (보존)
                     client_id=stmt.excluded.client_id,
                     gross_floor_area=stmt.excluded.gross_floor_area,

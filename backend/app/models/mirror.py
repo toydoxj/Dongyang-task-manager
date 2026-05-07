@@ -177,6 +177,8 @@ class MirrorSales(Base):
     # 견적서 작성 툴 (PR5) — 문서번호 {YY}-{MM}-{NNN} 형식, 입력값+산출결과 dump
     quote_doc_number: Mapped[str] = mapped_column(String, default="", index=True)
     quote_form_data: Mapped[dict] = mapped_column(JSONB, default=dict)
+    # 견적서 종류 (PR-Q1) — 빈 값이면 '구조설계' fallback
+    quote_type: Mapped[str] = mapped_column(String, default="", index=True)
     properties: Mapped[dict] = mapped_column(JSONB, default=dict)
     url: Mapped[str] = mapped_column(String, default="")
     created_time: Mapped[datetime | None] = mapped_column(

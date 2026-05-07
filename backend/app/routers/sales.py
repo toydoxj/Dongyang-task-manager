@@ -33,7 +33,12 @@ from app.security import get_current_user, require_admin
 from app.services import sso_drive
 from app.services.mirror_dto import sale_from_mirror
 from app.services.notion import NotionService, get_notion
-from app.services.quote_calculator import QuoteInput, QuoteResult, calculate
+from app.services.quote_calculator import (
+    QuoteInput,
+    QuoteResult,
+    QuoteType,
+    calculate,
+)
 from app.services.quote_code import next_quote_doc_number
 from app.services.quote_pdf import build_quote_pdf, quote_pdf_filename
 from app.services.sales_code import next_sales_code
@@ -140,10 +145,17 @@ async def create_sale(
     if not body.code:
         body = body.model_copy(update={"code": next_sales_code(db)})
 
-    # 견적서 모드 — quote_form_data가 있는데 문서번호 미지정이면 자동 부여 ({YY}-{MM}-{NNN})
+    # 견적서 모드 — quote_form_data가 있는데 문서번호 미지정이면 자동 부여
+    # ({YY}-{CC}-{NNN}, CC = 견적서 종류 분류 코드. quote_type은 form input
+    # 또는 body.quote_type에서 결정, 빈 값은 구조설계 fallback)
     if body.quote_form_data and not body.quote_doc_number:
+        qtype_val = (
+            body.quote_type
+            or (body.quote_form_data.get("input") or {}).get("quote_type")
+            or ""
+        )
         body = body.model_copy(
-            update={"quote_doc_number": next_quote_doc_number(db)}
+            update={"quote_doc_number": next_quote_doc_number(db, qtype_val)}
         )
 
     page = await notion.create_page(db_id, sale_create_to_props(body))
@@ -174,6 +186,17 @@ def preview_quote(
 ) -> QuoteResult:
     """견적서 입력 → 산출 결과만 반환 (저장 X). 프론트의 실시간 산출 패널용."""
     return calculate(body)
+
+
+@router.get("/quote/types")
+def list_quote_types(
+    _user: User = Depends(get_current_user),
+) -> list[dict[str, str]]:
+    """견적서 종류 enum + 한글 라벨. frontend select 옵션용.
+
+    value/label 모두 한글 동일 (enum 값이 그대로 노션 select option name).
+    """
+    return [{"value": t.value, "label": t.value} for t in QuoteType]
 
 
 # ── 견적서 PDF 다운로드 ──
@@ -213,7 +236,9 @@ def download_quote_pdf(
         author_position=author_position,
     )
     filename = quote_pdf_filename(
-        row.quote_doc_number or "no-doc", row.name or "견적서"
+        row.quote_doc_number or "no-doc",
+        row.name or "견적서",
+        row.quote_type or "",
     )
     encoded = url_quote(filename, safe="")
     return Response(
@@ -285,7 +310,9 @@ async def save_quote_pdf_to_drive(
         author_position=author_position,
     )
     filename = quote_pdf_filename(
-        row.quote_doc_number or "no-doc", row.name or "견적서"
+        row.quote_doc_number or "no-doc",
+        row.name or "견적서",
+        row.quote_type or "",
     )
 
     # 2. {YYYY}년 폴더 ensure

@@ -20,6 +20,8 @@ import {
   type Project,
   type QuoteInput,
   type QuoteResult,
+  QUOTE_TYPES,
+  type QuoteType,
   type Sale,
   type SaleCreateRequest,
 } from "@/lib/domain";
@@ -109,6 +111,7 @@ export default function SalesEditModal({
         wind_tunnel_amount: sale.wind_tunnel_amount ?? undefined,
         parent_lead_id: sale.parent_lead_id || undefined,
         assignees: sale.assignees,
+        quote_type: sale.quote_type || undefined,
       });
       // 견적서 데이터가 있으면 prefill — 수정/재제출 시나리오
       if (sale.quote_form_data?.input) {
@@ -192,7 +195,7 @@ export default function SalesEditModal({
     );
   }, [client]);
 
-  // 영업정보 탭의 핵심 6필드 → 견적서 quoteInput 자동 echo.
+  // 영업정보 탭의 핵심 필드 → 견적서 quoteInput 자동 echo.
   // 견적서 탭은 read-only로 표시 (영업정보에서만 입력).
   useEffect(() => {
     setQuoteInput((prev) => ({
@@ -202,6 +205,7 @@ export default function SalesEditModal({
       floors_above: form.floors_above ?? prev.floors_above,
       floors_below: form.floors_below ?? prev.floors_below,
       building_count: form.building_count ?? prev.building_count,
+      quote_type: (form.quote_type as QuoteType | undefined) ?? prev.quote_type,
     }));
   }, [
     form.name,
@@ -209,6 +213,7 @@ export default function SalesEditModal({
     form.floors_above,
     form.floors_below,
     form.building_count,
+    form.quote_type,
   ]);
 
   if (!open) return null;
@@ -249,19 +254,23 @@ export default function SalesEditModal({
         : undefined;
       const resolvedClientId = form.client_id || recipientMatch?.id;
 
-      // 견적서 입력의 규모 4종(연면적/지상층/지하층/동수)을 영업 정보 row와 동기화
+      // 견적서 입력의 규모 4종(연면적/지상층/지하층/동수) + quote_type을 영업 row와 동기화
       const scaleFields = {
         gross_floor_area: quoteInput.gross_floor_area,
         floors_above: quoteInput.floors_above ?? undefined,
         floors_below: quoteInput.floors_below ?? undefined,
         building_count: quoteInput.building_count ?? undefined,
+        quote_type:
+          (form.quote_type as QuoteType | undefined) ??
+          quoteInput.quote_type ??
+          undefined,
       };
 
       setBusy(true);
       setErr(null);
       try {
         if (isEdit && sale) {
-          // 견적서 저장 — quote_form_data + 핵심 4필드 PATCH. 창은 유지.
+          // 견적서 저장 — quote_form_data + 핵심 필드 PATCH. 창은 유지.
           await updateSale(sale.id, {
             name: quoteInput.service_name,
             estimated_amount: quoteResult.final,
@@ -466,6 +475,35 @@ export default function SalesEditModal({
               value={form.name ?? ""}
               onChange={(e) => setForm({ ...form, name: e.target.value })}
             />
+          </Field>
+
+          <Field label="견적서 종류">
+            <select
+              className={inputCls}
+              value={form.quote_type ?? "구조설계"}
+              onChange={(e) =>
+                setForm({ ...form, quote_type: e.target.value })
+              }
+            >
+              {QUOTE_TYPES.map((t) => (
+                <option key={t} value={t}>
+                  {t}
+                </option>
+              ))}
+            </select>
+            {form.quote_type === "기타" && (
+              <input
+                className={cn(inputCls, "mt-1")}
+                placeholder="PDF 헤더 제목 (예: 구조사전검토 견적서)"
+                value={quoteInput.custom_title ?? ""}
+                onChange={(e) =>
+                  setQuoteInput((q) => ({
+                    ...q,
+                    custom_title: e.target.value,
+                  }))
+                }
+              />
+            )}
           </Field>
 
           <Field

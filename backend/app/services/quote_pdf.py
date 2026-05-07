@@ -15,12 +15,55 @@ from typing import Any
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 from weasyprint import HTML
 
+from app.services.quote_calculator import QuoteType
+
 _TEMPLATE_DIR = Path(__file__).resolve().parent.parent / "templates"
 _LOGO_PATH = _TEMPLATE_DIR / "dongyang_logo.svg"
 _env = Environment(
     loader=FileSystemLoader(_TEMPLATE_DIR),
     autoescape=select_autoescape(["html"]),
 )
+
+
+# PDF 헤더 제목 — quote_type별 고정 라벨. CUSTOM은 input.custom_title 사용.
+_TITLE_MAP: dict[QuoteType, str] = {
+    QuoteType.STRUCT_DESIGN: "구조설계용역견적서",
+    QuoteType.STRUCT_REVIEW: "구조검토용역견적서",
+    QuoteType.PERF_SEISMIC: "성능기반내진설계용역견적서",
+    QuoteType.INSPECTION_REGULAR: "정기안전점검 견적서",
+    QuoteType.INSPECTION_DETAIL: "정밀점검 견적서",
+    QuoteType.INSPECTION_DIAGNOSIS: "정밀안전진단 견적서",
+    QuoteType.INSPECTION_BMA: "건축물관리법점검 견적서",
+    QuoteType.SEISMIC_EVAL: "내진성능평가 견적서",
+    QuoteType.SUPERVISION: "구조감리용역견적서",
+    QuoteType.FIELD_SUPPORT: "현장기술지원용역견적서",
+    QuoteType.CUSTOM: "견적서",  # custom_title이 있으면 그것 사용
+}
+
+# 파일명 prefix — xlsx 운영 파일명 패턴과 일치
+_FILENAME_PREFIX_MAP: dict[QuoteType, str] = {
+    QuoteType.STRUCT_DESIGN: "설계견적",
+    QuoteType.STRUCT_REVIEW: "검토견적",
+    QuoteType.PERF_SEISMIC: "성능내진견적",
+    QuoteType.INSPECTION_REGULAR: "정기점검견적",
+    QuoteType.INSPECTION_DETAIL: "정밀점검견적",
+    QuoteType.INSPECTION_DIAGNOSIS: "정밀진단견적",
+    QuoteType.INSPECTION_BMA: "건축물관리법점검견적",
+    QuoteType.SEISMIC_EVAL: "내진성능평가견적",
+    QuoteType.SUPERVISION: "구조감리견적",
+    QuoteType.FIELD_SUPPORT: "현장지원견적",
+    QuoteType.CUSTOM: "견적",
+}
+
+
+def _resolve_quote_type(value: str) -> QuoteType:
+    """저장된 한글 문자열을 QuoteType으로. 빈 값/미지정은 STRUCT_DESIGN fallback."""
+    if not value:
+        return QuoteType.STRUCT_DESIGN
+    try:
+        return QuoteType(value)
+    except ValueError:
+        return QuoteType.STRUCT_DESIGN
 
 
 def _read_logo_svg() -> str:
@@ -62,6 +105,15 @@ def build_quote_pdf(
     inp = form_data.get("input") or {}
     result = form_data.get("result") or {}
 
+    # 헤더 제목 — quote_type 별 고정 라벨, CUSTOM이면 custom_title 우선
+    qtype = _resolve_quote_type(inp.get("quote_type", ""))
+    custom_title = (inp.get("custom_title") or "").strip()
+    quote_title = (
+        custom_title
+        if qtype is QuoteType.CUSTOM and custom_title
+        else _TITLE_MAP[qtype]
+    )
+
     html = template.render(
         doc_number=doc_number,
         input=inp,
@@ -70,12 +122,20 @@ def build_quote_pdf(
         logo_svg=_read_logo_svg(),
         author_name=author_name,
         author_position=author_position,
+        quote_title=quote_title,
     )
     return HTML(string=html).write_pdf()
 
 
-def quote_pdf_filename(doc_number: str, service_name: str) -> str:
-    """xlsx와 동일 패턴: 설계견적{doc_number}({service_name 안전 일부}).pdf"""
+def quote_pdf_filename(
+    doc_number: str, service_name: str, quote_type: str = ""
+) -> str:
+    """{prefix}{doc_number}({service_name 안전 일부}).pdf — quote_type별 prefix.
+
+    예: 설계견적26-01-007(...).pdf, 정기점검견적26-04-002(...).pdf
+    """
+    qtype = _resolve_quote_type(quote_type)
+    prefix = _FILENAME_PREFIX_MAP[qtype]
     safe = "".join(c for c in service_name if c not in r'\/:*?"<>|' + "\r\n")
     safe = safe.strip()[:30]
-    return f"설계견적{doc_number}({safe}).pdf"
+    return f"{prefix}{doc_number}({safe}).pdf"
