@@ -459,6 +459,146 @@ async def save_quote_pdf_to_drive(
     return sale_from_mirror(row) if row else Sale.from_notion_page({"id": page_id})
 
 
+# ── 통합 견적서 PDF → WORKS Drive 자동 저장 (PR-G2) ──
+
+
+@router.post("/{parent_id}/quote-bundle/save-pdf-to-drive", response_model=Sale)
+async def save_quote_bundle_pdf_to_drive(
+    parent_id: str,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    notion: NotionService = Depends(get_notion),
+) -> Sale:
+    """parent + 자식 견적을 묶은 통합 PDF를 `[견적서]\\{YYYY}년\\` 폴더에 업로드 →
+    parent 영업의 노션 `통합견적서첨부` 컬럼에 web url 저장. 단일 PDF
+    (`견적서첨부`)는 영향 없이 그대로 보존됨.
+    """
+    settings_ = get_settings()
+    if not settings_.works_drive_enabled:
+        raise HTTPException(
+            status_code=503,
+            detail="WORKS Drive 통합이 비활성화되어 있습니다 (WORKS_DRIVE_ENABLED=false).",
+        )
+    if not settings_.works_drive_quote_root_folder_id:
+        raise HTTPException(
+            status_code=503,
+            detail="견적서 저장 폴더가 설정되지 않았습니다 (WORKS_DRIVE_QUOTE_ROOT_FOLDER_ID 미설정).",
+        )
+    quote_settings = settings_
+    if settings_.works_drive_quote_sharedrive_id:
+        quote_settings = settings_.model_copy(
+            update={"works_drive_sharedrive_id": settings_.works_drive_quote_sharedrive_id}
+        )
+
+    parent = db.get(M.MirrorSales, parent_id)
+    if parent is None or parent.archived:
+        raise HTTPException(status_code=404, detail="상위 영업 건을 찾을 수 없습니다")
+
+    children = (
+        db.query(M.MirrorSales)
+        .filter(
+            M.MirrorSales.parent_lead_id == parent_id,
+            M.MirrorSales.archived.is_(False),
+        )
+        .order_by(M.MirrorSales.created_time.asc())
+        .all()
+    )
+
+    sections: list[dict[str, object]] = []
+    if parent.quote_form_data and (parent.quote_form_data or {}).get("input"):
+        sections.append(
+            {
+                "form_data": parent.quote_form_data,
+                "doc_number": parent.quote_doc_number or "",
+            }
+        )
+    for child in children:
+        if child.quote_form_data and (child.quote_form_data or {}).get("input"):
+            sections.append(
+                {
+                    "form_data": child.quote_form_data,
+                    "doc_number": child.quote_doc_number or "",
+                }
+            )
+
+    if not sections:
+        raise HTTPException(
+            status_code=400,
+            detail="이 묶음에는 견적서가 없습니다 (parent·자식 모두 quote_form_data 누락)",
+        )
+
+    # 1. 통합 PDF 생성
+    employee = (
+        db.query(Employee).filter(Employee.linked_user_id == user.id).first()
+    )
+    author_name = (employee.name if employee else "") or user.name or user.username
+    author_position = employee.position if employee else ""
+    pdf_bytes = build_quote_bundle_pdf(
+        sections,
+        author_name=author_name,
+        author_position=author_position,
+    )
+    filename = quote_bundle_pdf_filename(
+        parent.quote_doc_number or "no-doc",
+        parent.name or "통합견적",
+    )
+
+    # 2. {YYYY}년 폴더 ensure
+    year_yyyy = datetime.now(_KST).year
+    try:
+        year_folder_id, _ = await sso_drive.ensure_quote_year_folder(
+            year_yyyy, settings=quote_settings
+        )
+    except sso_drive.DriveError as exc:
+        logger.exception("통합 견적서 연도 폴더 ensure 실패")
+        raise HTTPException(
+            status_code=502, detail=f"WORKS Drive 폴더 준비 실패: {exc}"
+        ) from exc
+
+    # 3. PDF 업로드
+    try:
+        meta = await sso_drive.upload_file(
+            parent_file_id=year_folder_id,
+            file_name=filename,
+            content=pdf_bytes,
+            content_type="application/pdf",
+            settings=quote_settings,
+        )
+    except sso_drive.DriveError as exc:
+        logger.exception("통합 견적서 PDF Drive 업로드 실패")
+        raise HTTPException(
+            status_code=502, detail=f"WORKS Drive 업로드 실패: {exc}"
+        ) from exc
+
+    # 4. parent 노션 row의 통합견적서첨부 컬럼 갱신
+    file_id = meta.get("fileId") or ""
+    web_url = sso_drive.build_file_web_url(file_id, meta.get("resourceLocation"))
+    update_props: dict = {}
+    if web_url:
+        update_props["통합견적서첨부"] = {
+            "files": [
+                {
+                    "name": filename,
+                    "external": {"url": web_url},
+                    "type": "external",
+                }
+            ]
+        }
+
+    if update_props:
+        try:
+            updated = await notion.update_page(parent_id, update_props)
+            get_sync().upsert_page("sales", updated)
+        except Exception:  # noqa: BLE001
+            logger.exception(
+                "통합 PDF 업로드 후 노션 갱신 실패 — 운영 수동 보정 필요 (keys=%s)",
+                list(update_props.keys()),
+            )
+
+    parent = db.get(M.MirrorSales, parent_id)
+    return sale_from_mirror(parent) if parent else Sale.from_notion_page({"id": parent_id})
+
+
 @router.patch("/{page_id}", response_model=Sale)
 async def update_sale(
     page_id: str,

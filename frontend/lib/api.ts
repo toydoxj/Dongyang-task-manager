@@ -1084,3 +1084,20 @@ export async function downloadQuoteBundlePdf(parentSaleId: string): Promise<void
     "quote-bundle.pdf",
   );
 }
+
+/** 통합 견적서 PDF를 WORKS Drive에 자동 저장 (PR-G2). parent의 `통합견적서첨부`
+ * 컬럼에 web url 저장. 단일 PDF (`견적서첨부`)는 그대로 보존. */
+export async function saveQuoteBundlePdfToDrive(parentSaleId: string): Promise<Sale> {
+  const res = await authFetch(
+    `/api/sales/${parentSaleId}/quote-bundle/save-pdf-to-drive`,
+    { method: "POST" },
+  );
+  if (!res.ok) {
+    const detail = await res.json().catch(() => null);
+    throw new Error(
+      (detail as { detail?: string } | null)?.detail ??
+        `${res.status} ${res.statusText}`,
+    );
+  }
+  return (await res.json()) as Sale;
+}

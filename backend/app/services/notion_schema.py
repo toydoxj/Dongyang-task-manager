@@ -171,6 +171,9 @@ SALES_DB_REQUIRED: dict[str, dict[str, Any]] = {
     "문서번호": {"rich_text": {}},
     # 견적서 첨부 — WORKS Drive에 저장된 PDF의 web url 보관
     "견적서첨부": {"files": {}},
+    # 통합 견적서 첨부 (PR-G2) — parent_lead_id로 묶인 자식 견적까지 1 PDF로
+    # 합친 통합본의 web url. parent 영업에만 의미. 단일 PDF는 견적서첨부에 그대로 보존.
+    "통합견적서첨부": {"files": {}},
     # 견적서 종류 (PR-Q1) — 8가지 분류, 점검 4종 sub 포함 11 옵션
     "견적서종류": _select(
         [

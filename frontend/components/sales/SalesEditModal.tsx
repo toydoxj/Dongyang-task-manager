@@ -12,6 +12,7 @@ import {
   downloadQuoteBundlePdf,
   downloadQuotePdf,
   linkSaleToProject,
+  saveQuoteBundlePdfToDrive,
   saveQuotePdfToDrive,
   updateSale,
 } from "@/lib/api";
@@ -905,23 +906,52 @@ export default function SalesEditModal({
                   PDF 저장
                 </button>
                 {hasChildren && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      void downloadQuoteBundlePdf(sale.id).catch((e) =>
-                        setErr(
-                          e instanceof Error
-                            ? e.message
-                            : "묶음 PDF 다운로드 실패",
-                        ),
-                      );
-                    }}
-                    disabled={busy}
-                    className="rounded-md border border-amber-600/40 bg-amber-500/10 px-3 py-1.5 text-xs font-medium text-amber-700 hover:bg-amber-500/20 disabled:opacity-50 dark:text-amber-400"
-                    title="이 영업을 상위로 둔 자식 영업의 견적까지 1 PDF로 묶어 다운로드"
-                  >
-                    묶음 PDF 다운로드
-                  </button>
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        void downloadQuoteBundlePdf(sale.id).catch((e) =>
+                          setErr(
+                            e instanceof Error
+                              ? e.message
+                              : "묶음 PDF 다운로드 실패",
+                          ),
+                        );
+                      }}
+                      disabled={busy}
+                      className="rounded-md border border-amber-600/40 bg-amber-500/10 px-3 py-1.5 text-xs font-medium text-amber-700 hover:bg-amber-500/20 disabled:opacity-50 dark:text-amber-400"
+                      title="이 영업을 상위로 둔 자식 영업의 견적까지 1 PDF로 묶어 다운로드"
+                    >
+                      묶음 PDF 다운로드
+                    </button>
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        setBusy(true);
+                        setErr(null);
+                        try {
+                          await saveQuoteBundlePdfToDrive(sale.id);
+                          refreshSales();
+                          alert(
+                            "WORKS Drive [견적서]/" +
+                              new Date().getFullYear() +
+                              "년 폴더에 통합 PDF가 저장되었습니다.",
+                          );
+                        } catch (e) {
+                          setErr(
+                            e instanceof Error ? e.message : "묶음 PDF 저장 실패",
+                          );
+                        } finally {
+                          setBusy(false);
+                        }
+                      }}
+                      disabled={busy}
+                      className="rounded-md border border-amber-700/40 px-3 py-1.5 text-xs text-amber-700 hover:bg-amber-500/10 disabled:opacity-50 dark:text-amber-400"
+                      title="통합 PDF를 WORKS Drive에 저장하고 노션 통합견적서첨부 컬럼에 url 등록"
+                    >
+                      묶음 PDF 저장
+                    </button>
+                  </>
                 )}
               </>
             )}
