@@ -332,6 +332,77 @@ def _calculate_field_support(inp: QuoteInput) -> QuoteResult:
     )
 
 
+def _calculate_supervision(inp: QuoteInput) -> QuoteResult:
+    """구조감리용역견적서 산출 (PR-Q3).
+
+    구조설계와 산출 모델 자체가 다름:
+    - 인.일 = 현장 방문회수 × 3 (회당 3인.일 hardcoded — xlsx K16=H14*3).
+      사용자가 manhours_override로 81 직접 입력하는 패턴 (또는 visit_count
+      신규 필드는 추후). 현 PR은 manhours_override 활용.
+    - 단가: 기술사 446,055원/인.일 (xlsx E18 표기는 452,718이나 K18 수식은
+      446055로 hardcoded — xlsx 사본 정정 안 된 oldest로 보임. 446055 사용)
+    - tech_fee 30% (구조설계 20%)
+    - **K25 합계가 직접경비 포함** (구조설계는 ⑧=①+⑥+⑦, 감리는
+      ⑤+①+⑥+⑦ 모두 더함). 따라서 K26 조정은 단순 ×adj% (직접경비 더함 X)
+
+    xlsx 검증 (구조감리26-08-003.xlsx K28=54,000,000):
+    K16=81 (=H14*3, H14=27회), K22=800,000 (=200,000*4 외업), H26=55%
+    → K18=36,130,455 → K23=39,743,500.5 → K24=22,762,186.65
+    → K25=99,436,142.15 → K26=54,689,878.1825 → K28=54,000,000
+    """
+    mh_total = (
+        int(inp.manhours_override) if inp.manhours_override is not None else 0
+    )
+
+    direct_labor = mh_total * DAILY_RATE_PROFESSIONAL_ENGINEER
+
+    if inp.direct_expense_items:
+        direct_expense = sum(item.amount for item in inp.direct_expense_items)
+    else:
+        direct_expense = (
+            inp.printing_fee + inp.survey_fee + 25_000 * inp.transport_persons
+        )
+
+    overhead = direct_labor * (inp.overhead_pct / 100)
+    tech_fee = (direct_labor + overhead) * (inp.tech_fee_pct / 100)
+    # 구조감리: subtotal에 직접경비 포함, adjusted는 직접경비 더하지 않음
+    subtotal = direct_labor + overhead + tech_fee + direct_expense
+    adjusted = subtotal * (inp.adjustment_pct / 100)
+
+    adjusted_int = int(_excel_round_half_up(adjusted, 0))
+    if inp.final_override is not None:
+        final_amount = int(inp.final_override)
+        truncated = adjusted_int - final_amount
+    else:
+        unit = inp.truncate_unit if inp.truncate_unit > 0 else 1
+        truncated = adjusted_int % unit
+        final_amount = adjusted_int - truncated
+
+    vat_amount = int(_excel_round_half_up(final_amount * 0.1, 0))
+    final_with_vat = final_amount + vat_amount
+
+    per_pyeong_area = inp.gross_floor_area / 3.3 if inp.gross_floor_area else 0
+    per_pyeong = final_amount / per_pyeong_area if per_pyeong_area else 0
+
+    return QuoteResult(
+        manhours_baseline=0,
+        manhours_baseline_rounded=0,
+        manhours_total=mh_total,
+        direct_labor=direct_labor,
+        direct_expense=direct_expense,
+        overhead=overhead,
+        tech_fee=tech_fee,
+        subtotal=subtotal,
+        adjusted=adjusted,
+        truncated=truncated,
+        final=final_amount,
+        vat_amount=vat_amount,
+        final_with_vat=final_with_vat,
+        per_pyeong_area=per_pyeong_area,
+        per_pyeong=per_pyeong,
+    )
+
+
 # ── 종류별 산출 strategy dispatch ──
 # PR-Q1: 모든 종류가 임시로 구조설계 strategy로 fallback. PR-Q2~Q9에서 점진적
 # 으로 종류별 strategy 함수로 교체된다.
@@ -344,7 +415,7 @@ _DISPATCH: dict[QuoteType, "callable"] = {
     QuoteType.INSPECTION_DIAGNOSIS: _calculate_struct_design,
     QuoteType.INSPECTION_BMA: _calculate_struct_design,
     QuoteType.SEISMIC_EVAL: _calculate_struct_design,
-    QuoteType.SUPERVISION: _calculate_struct_design,
+    QuoteType.SUPERVISION: _calculate_supervision,  # PR-Q3
     QuoteType.FIELD_SUPPORT: _calculate_field_support,  # PR-Q2
     QuoteType.CUSTOM: _calculate_struct_design,
 }
