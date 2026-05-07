@@ -268,6 +268,22 @@ def _calculate_struct_design(inp: QuoteInput) -> QuoteResult:
     )
 
 
+def _calculate_struct_review(inp: QuoteInput) -> QuoteResult:
+    """구조검토용역견적서 산출.
+
+    산식은 구조설계와 동일하나 인.일 자동 산출 흐름은 사용 안 함 — 사용자가
+    manhours_override(인.일)를 직접 입력하는 모델. 미입력(None)이면 0으로
+    처리해 자동 산출 트리거를 차단한다.
+    """
+    if inp.manhours_override is None:
+        # manhours_override를 0으로 강제 → struct_design 자동 산출 분기 안 탐.
+        # type_rate/structure_rate/coefficient도 산출에 영향 없음 (mh가 직접 0).
+        return _calculate_struct_design(
+            inp.model_copy(update={"manhours_override": 0})
+        )
+    return _calculate_struct_design(inp)
+
+
 def _calculate_field_support(inp: QuoteInput) -> QuoteResult:
     """현장기술지원용역견적서 산출 (PR-Q2).
 
@@ -707,8 +723,8 @@ def _calculate_seismic_eval(inp: QuoteInput) -> QuoteResult:
 # 으로 종류별 strategy 함수로 교체된다.
 _DISPATCH: dict[QuoteType, "callable"] = {
     QuoteType.STRUCT_DESIGN: _calculate_struct_design,
-    QuoteType.STRUCT_REVIEW: _calculate_struct_design,
-    QuoteType.PERF_SEISMIC: _calculate_struct_design,
+    QuoteType.STRUCT_REVIEW: _calculate_struct_review,  # 인.일 직접 입력
+    QuoteType.PERF_SEISMIC: _calculate_struct_design,   # 구조설계와 산식 동일
     QuoteType.INSPECTION_REGULAR: _calculate_inspection_legal,  # PR-Q5
     QuoteType.INSPECTION_DETAIL: _calculate_inspection_legal,   # PR-Q5
     QuoteType.INSPECTION_DIAGNOSIS: _calculate_inspection_legal,  # PR-Q6

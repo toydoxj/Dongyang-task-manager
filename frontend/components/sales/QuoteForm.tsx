@@ -122,9 +122,11 @@ export default function QuoteForm({
 
   // 견적서 종류별 입력 분기 — 요율 3종은 구조설계계열만 표시. 점검류/내진평가는
   // 시특법·xlsx 보조 영역의 보간 결과를 사용자가 수동 입력하는 모델.
+  // 구조검토는 자동 산출 없음 (사용자가 manhours_override 직접 입력) → 별도 분기.
   const qt = value.quote_type ?? "구조설계";
+  const isStructReview = qt === "구조검토";
   const isStructDesignLike =
-    qt === "구조설계" || qt === "구조검토" || qt === "성능기반내진설계" || qt === "기타";
+    qt === "구조설계" || qt === "성능기반내진설계" || qt === "기타";
   const isInspectionLegal =
     qt === "정기안전점검" || qt === "정밀점검" || qt === "정밀안전진단";
   const isInspectionBma = qt === "건축물관리법점검";
@@ -347,6 +349,31 @@ export default function QuoteForm({
                 }
               />
             </Field>
+          </Section>
+        )}
+
+        {isStructReview && (
+          <Section title="투입인원">
+            <Field label="인.일 — 직접 입력 (자동 산출 없음)">
+              <input
+                type="number"
+                min={0}
+                step={1}
+                className={inputCls}
+                placeholder="예: 30"
+                value={value.manhours_override ?? ""}
+                onChange={(e) =>
+                  set(
+                    "manhours_override",
+                    e.target.value ? Number(e.target.value) : null,
+                  )
+                }
+              />
+            </Field>
+            <p className="text-[11px] text-stone-500">
+              구조검토는 단가 310,884원/일 (고급기술자) × 입력 인.일로 산출.
+              요율은 적용되지 않음.
+            </p>
           </Section>
         )}
 
