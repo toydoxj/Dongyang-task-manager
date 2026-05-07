@@ -575,7 +575,8 @@ export interface QuoteInput {
   type_rate?: number;
   structure_rate?: number;
   coefficient?: number;
-  /** null/undefined: 자동 산출. 정수: 그 값을 사용. */
+  /** null/undefined: 자동 산출. 값이 있으면 그 값 사용. 정기/정밀점검은 시특법 4계수
+   * 곱한 소수 인.일(15.24, 36.19 등) 입력이 필요해 float 허용. */
   manhours_override?: number | null;
   /** 동적 직접경비 항목 (이름 + 금액). 비어있으면 legacy 합산 fallback. */
   direct_expense_items?: DirectExpenseItem[];

@@ -1043,8 +1043,8 @@ export async function saveQuotePdfToDrive(saleId: string): Promise<Sale> {
 }
 
 /** 견적서 PDF 다운로드 — Content-Disposition filename*로 한글 파일명 자동. */
-export async function downloadQuotePdf(saleId: string): Promise<void> {
-  const res = await authFetch(`/api/sales/${saleId}/quote.pdf`);
+async function downloadPdfBlob(url: string, fallbackFilename: string): Promise<void> {
+  const res = await authFetch(url);
   if (!res.ok) {
     const detail = await res.json().catch(() => null);
     throw new Error(
@@ -1054,7 +1054,7 @@ export async function downloadQuotePdf(saleId: string): Promise<void> {
   }
   const blob = await res.blob();
   const cd = res.headers.get("Content-Disposition") ?? "";
-  let filename = "quote.pdf";
+  let filename = fallbackFilename;
   const star = cd.match(/filename\*=UTF-8''([^;]+)/i);
   if (star) {
     try {
@@ -1063,12 +1063,24 @@ export async function downloadQuotePdf(saleId: string): Promise<void> {
       /* fallthrough */
     }
   }
-  const url = URL.createObjectURL(blob);
+  const blobUrl = URL.createObjectURL(blob);
   const a = document.createElement("a");
-  a.href = url;
+  a.href = blobUrl;
   a.download = filename;
   document.body.appendChild(a);
   a.click();
   a.remove();
-  URL.revokeObjectURL(url);
+  URL.revokeObjectURL(blobUrl);
+}
+
+export async function downloadQuotePdf(saleId: string): Promise<void> {
+  await downloadPdfBlob(`/api/sales/${saleId}/quote.pdf`, "quote.pdf");
+}
+
+/** 통합 견적서 PDF 다운로드 — parent_lead_id로 묶인 자식들과 함께 1 PDF (PR-G1). */
+export async function downloadQuoteBundlePdf(parentSaleId: string): Promise<void> {
+  await downloadPdfBlob(
+    `/api/sales/${parentSaleId}/quote-bundle.pdf`,
+    "quote-bundle.pdf",
+  );
 }

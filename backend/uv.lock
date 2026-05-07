@@ -405,6 +405,7 @@ dependencies = [
     { name = "openpyxl" },
     { name = "psycopg", extra = ["binary"] },
     { name = "pydantic-settings" },
+    { name = "pypdf" },
     { name = "python-dotenv" },
     { name = "python-jose", extra = ["cryptography"] },
     { name = "python-multipart" },
@@ -436,6 +437,7 @@ requires-dist = [
     { name = "openpyxl", specifier = ">=3.1.5" },
     { name = "psycopg", extras = ["binary"], specifier = ">=3.2.0" },
     { name = "pydantic-settings", specifier = ">=2.14.0" },
+    { name = "pypdf", specifier = ">=5.0.0" },
     { name = "python-dotenv", specifier = ">=1.2.2" },
     { name = "python-jose", extras = ["cryptography"], specifier = ">=3.5.0" },
     { name = "python-multipart", specifier = ">=0.0.26" },
@@ -1260,6 +1262,15 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/c7/fe/9278c29394bf69169febc21f96b4252c3ee7c8ec22c2fc545004bed47e71/pyinstaller_hooks_contrib-2026.4.tar.gz", hash = "sha256:766c281acb1ecc32e21c8c667056d7ebf5da0aabd5e30c219f9c2a283620eeaa", size = 173050, upload-time = "2026-03-31T14:10:51.188Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/88/f4/035fb8c06deff827f540a9a4ed9122c54e5376fca3e42eddf0c263730775/pyinstaller_hooks_contrib-2026.4-py3-none-any.whl", hash = "sha256:1de1a5e49a878122010b88c7e295502bc69776c157c4a4dc78741a4e6178b00f", size = 455496, upload-time = "2026-03-31T14:10:49.867Z" },
+]
+
+[[package]]
+name = "pypdf"
+version = "6.10.2"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/7b/3f/9f2167401c2e94833ca3b69535bad89e533b5de75fefe4197a2c224baec2/pypdf-6.10.2.tar.gz", hash = "sha256:7d09ce108eff6bf67465d461b6ef352dcb8d84f7a91befc02f904455c6eea11d", size = 5315679, upload-time = "2026-04-15T16:37:36.978Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/0c/d6/1d5c60cc17bbdf37c1552d9c03862fc6d32c5836732a0415b2d637edc2d0/pypdf-6.10.2-py3-none-any.whl", hash = "sha256:aa53be9826655b51c96741e5d7983ca224d898ac0a77896e64636810517624aa", size = 336308, upload-time = "2026-04-15T16:37:34.851Z" },
 ]
 
 [[package]]

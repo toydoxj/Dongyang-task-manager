@@ -87,8 +87,9 @@ class QuoteInput(BaseModel):
     structure_rate: float = Field(default=1.0, gt=0)  # 구조방식 요율 (0.5~1.5)
     coefficient: float = Field(default=1.0, gt=0)  # 계수 (0.5: 계산서만, 1.0: 계산서+도면)
     # 투입인원 직접 입력 — None이면 (연면적 × 요율들)로 자동 산출.
-    # 정수면 그 값을 사용 (자동 산출 무시).
-    manhours_override: int | None = Field(default=None, ge=0)
+    # 값이 있으면 그 값을 사용 (자동 산출 무시). 정기/정밀점검은 시특법 4계수 곱한
+    # 소수 인.일(15.24, 36.19 등) 입력이 필요해 float 허용.
+    manhours_override: float | None = Field(default=None, ge=0)
     # 점검류 (PR-Q4~Q7) — 책임자/점검자 인.일 분리 입력
     inspection_responsible_days: float | None = Field(default=None, ge=0)
     inspection_inspector_days: float | None = Field(default=None, ge=0)
@@ -484,6 +485,101 @@ def _calculate_inspection_bma(inp: QuoteInput) -> QuoteResult:
     )
 
 
+def _calculate_inspection_legal(inp: QuoteInput) -> QuoteResult:
+    """정기안전점검 + 정밀점검 + 정밀안전진단 통합 strategy (PR-Q5/Q6).
+
+    xlsx 시특법상 대가기준 sheet의 산출 흐름 transcribe.
+    종류 분기는 시특법 sheet F11 코드(1=정밀안전진단/2=정밀점검/3=정기점검)에
+    해당하지만 backend 흐름은 단일 — overhead/tech/adj/truncate default 차이만
+    frontend QUOTE_TYPE_DEFAULTS에서 적용.
+
+    산출
+    - 인.일 = manhours_override (사용자가 시특법 sheet 4계수 곱한 H40 결과 입력)
+    - direct_labor = ROUNDDOWN(인.일 × 310,884, 0)            # C59
+    - overhead     = INT(direct_labor × 1.1)                  # D59 = INT(C59 × D54)
+    - tech_fee     = INT((direct_labor + overhead) × 0.2)     # E59 = INT((C59+D59) × E54)
+    - direct_expense = Σ direct_expense_items                  # F59 = J51 (사용자 입력 합계)
+    - subtotal     = direct_labor + overhead + tech_fee + direct_expense   # J53
+    - adjusted     = subtotal × adjustment_pct/100             # J56/J57
+    - 절삭: 정기 100_000 / 정밀 1_000_000 (frontend default 분기, 사용자 변경 가능)
+
+    xlsx 검증
+    - 정기 (시특법 F11=3, mh=15.24, adj=0.27, unit=100_000, 직접경비=1,237,272):
+        direct_labor = floor(15.24 × 310884) = 4,737,872   # C59
+        overhead     = int(4737872 × 1.1)    = 5,211,659   # D59
+        tech_fee     = int(9949531 × 0.2)    = 1,989,906   # E59
+        subtotal     = 13,176,709                          # J53 (xlsx 13,176,708.75)
+        adjusted     = 13,176,709 × 0.27     = 3,557,711.43
+        truncated    = 57,711, final         = 3,500,000   # J58 ≈ xlsx 3,500,000.36
+    - 정밀 (시특법 F11=2, mh=36.19, adj=0.88, unit=1_000_000, 직접경비=5,796,625):
+        direct_labor = floor(36.19 × 310884) = 11,250,891  # C59
+        overhead     = int(11250891 × 1.1)   = 12,375,980  # D59
+        tech_fee     = int(23626871 × 0.2)   = 4,725,374   # E59
+        subtotal     = 34,148,870                          # J54
+        adjusted     = 34,148,870 × 0.88     = 30,051,005.6
+        truncated    = 51,006, final         = 30,000,000  # J59 ≈ xlsx 29,999,999.6
+    - 정밀안전진단 (시특법 F11=1, mh=54.42, overhead=1.2, tech=0.4, adj=0.45,
+      unit=1_000_000, 직접경비=4,498,265):
+        direct_labor = floor(54.42 × 310884) = 16,918,307  # C59
+        overhead     = int(16918307 × 1.2)   = 20,301,968  # D59
+        tech_fee     = int(37220275 × 0.4)   = 14,888,110  # E59
+        subtotal     = 56,606,650                          # J54
+        adjusted     = 56,606,650 × 0.45     = 25,472,992.5
+        truncated    = 472,993, final        = 25,000,000  # J59 ≈ xlsx 24,999,999.5
+    """
+    import math
+
+    mh = float(inp.manhours_override) if inp.manhours_override is not None else 0.0
+
+    # 직접인건비 — ROUNDDOWN(인.일 × 단가, 0). 양수만 다루므로 floor와 동등.
+    direct_labor = int(math.floor(mh * DAILY_RATE_SENIOR_ENGINEER))
+
+    if inp.direct_expense_items:
+        direct_expense = sum(item.amount for item in inp.direct_expense_items)
+    else:
+        direct_expense = (
+            inp.printing_fee + inp.survey_fee + 25_000 * inp.transport_persons
+        )
+
+    overhead = int(direct_labor * (inp.overhead_pct / 100))
+    tech_fee = int((direct_labor + overhead) * (inp.tech_fee_pct / 100))
+    subtotal = direct_labor + overhead + tech_fee + direct_expense
+    adjusted = subtotal * (inp.adjustment_pct / 100)
+
+    adjusted_int = int(_excel_round_half_up(adjusted, 0))
+    if inp.final_override is not None:
+        final_amount = int(inp.final_override)
+        truncated = adjusted_int - final_amount
+    else:
+        unit = inp.truncate_unit if inp.truncate_unit > 0 else 1
+        truncated = adjusted_int % unit
+        final_amount = adjusted_int - truncated
+
+    vat_amount = int(_excel_round_half_up(final_amount * 0.1, 0))
+    final_with_vat = final_amount + vat_amount
+
+    per_pyeong_area = inp.gross_floor_area / 3.3 if inp.gross_floor_area else 0
+    per_pyeong = final_amount / per_pyeong_area if per_pyeong_area else 0
+
+    return QuoteResult(
+        manhours_baseline=0,
+        manhours_baseline_rounded=0,
+        manhours_total=int(round(mh)),
+        direct_labor=direct_labor,
+        direct_expense=direct_expense,
+        overhead=overhead,
+        tech_fee=tech_fee,
+        subtotal=subtotal,
+        adjusted=adjusted,
+        truncated=truncated,
+        final=final_amount,
+        vat_amount=vat_amount,
+        final_with_vat=final_with_vat,
+        per_pyeong_area=per_pyeong_area,
+        per_pyeong=per_pyeong,
+    )
+
+
 # ── 종류별 산출 strategy dispatch ──
 # PR-Q1: 모든 종류가 임시로 구조설계 strategy로 fallback. PR-Q2~Q9에서 점진적
 # 으로 종류별 strategy 함수로 교체된다.
@@ -491,9 +587,9 @@ _DISPATCH: dict[QuoteType, "callable"] = {
     QuoteType.STRUCT_DESIGN: _calculate_struct_design,
     QuoteType.STRUCT_REVIEW: _calculate_struct_design,
     QuoteType.PERF_SEISMIC: _calculate_struct_design,
-    QuoteType.INSPECTION_REGULAR: _calculate_struct_design,
-    QuoteType.INSPECTION_DETAIL: _calculate_struct_design,
-    QuoteType.INSPECTION_DIAGNOSIS: _calculate_struct_design,
+    QuoteType.INSPECTION_REGULAR: _calculate_inspection_legal,  # PR-Q5
+    QuoteType.INSPECTION_DETAIL: _calculate_inspection_legal,   # PR-Q5
+    QuoteType.INSPECTION_DIAGNOSIS: _calculate_inspection_legal,  # PR-Q6
     QuoteType.INSPECTION_BMA: _calculate_inspection_bma,  # PR-Q4
     QuoteType.SEISMIC_EVAL: _calculate_struct_design,
     QuoteType.SUPERVISION: _calculate_supervision,  # PR-Q3

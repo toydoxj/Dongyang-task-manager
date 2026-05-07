@@ -40,7 +40,12 @@ from app.services.quote_calculator import (
     calculate,
 )
 from app.services.quote_code import next_quote_doc_number
-from app.services.quote_pdf import build_quote_pdf, quote_pdf_filename
+from app.services.quote_pdf import (
+    build_quote_bundle_pdf,
+    build_quote_pdf,
+    quote_bundle_pdf_filename,
+    quote_pdf_filename,
+)
 from app.services.sales_code import next_sales_code
 from app.services.sales_probability import CONVERTIBLE_STAGES
 from app.services.sync import get_sync
@@ -247,6 +252,86 @@ def download_quote_pdf(
         headers={
             "Content-Disposition": (
                 f"attachment; filename=\"quote.pdf\"; "
+                f"filename*=UTF-8''{encoded}"
+            )
+        },
+    )
+
+
+# ── 통합 견적서 PDF 다운로드 (parent_lead_id grouping) ──
+
+
+@router.get("/{parent_id}/quote-bundle.pdf")
+def download_quote_bundle_pdf(
+    parent_id: str,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> Response:
+    """parent 영업 + 자식들(parent_lead_id로 연결)의 견적을 1 PDF로 묶어 다운로드.
+
+    같은 용역에 견적이 2~3개 분리 제출되는 케이스를 한 번에 출력하기 위한
+    엔드포인트. parent 자신도 견적이 있으면 첫 페이지로, 없으면 자식들만.
+    archived 자식은 제외.
+    """
+    parent = db.get(M.MirrorSales, parent_id)
+    if parent is None or parent.archived:
+        raise HTTPException(status_code=404, detail="상위 영업 건을 찾을 수 없습니다")
+
+    children = (
+        db.query(M.MirrorSales)
+        .filter(
+            M.MirrorSales.parent_lead_id == parent_id,
+            M.MirrorSales.archived.is_(False),
+        )
+        .order_by(M.MirrorSales.created_time.asc())
+        .all()
+    )
+
+    sections: list[dict[str, object]] = []
+    if parent.quote_form_data and (parent.quote_form_data or {}).get("input"):
+        sections.append(
+            {
+                "form_data": parent.quote_form_data,
+                "doc_number": parent.quote_doc_number or "",
+            }
+        )
+    for child in children:
+        if child.quote_form_data and (child.quote_form_data or {}).get("input"):
+            sections.append(
+                {
+                    "form_data": child.quote_form_data,
+                    "doc_number": child.quote_doc_number or "",
+                }
+            )
+
+    if not sections:
+        raise HTTPException(
+            status_code=400,
+            detail="이 묶음에는 견적서가 없습니다 (parent·자식 모두 quote_form_data 누락)",
+        )
+
+    employee = (
+        db.query(Employee).filter(Employee.linked_user_id == user.id).first()
+    )
+    author_name = (employee.name if employee else "") or user.name or user.username
+    author_position = employee.position if employee else ""
+
+    pdf_bytes = build_quote_bundle_pdf(
+        sections,
+        author_name=author_name,
+        author_position=author_position,
+    )
+    filename = quote_bundle_pdf_filename(
+        parent.quote_doc_number or "no-doc",
+        parent.name or "통합견적",
+    )
+    encoded = url_quote(filename, safe="")
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": (
+                f"attachment; filename=\"quote-bundle.pdf\"; "
                 f"filename*=UTF-8''{encoded}"
             )
         },

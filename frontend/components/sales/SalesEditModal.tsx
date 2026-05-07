@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useSWRConfig } from "swr";
 
 import { useAuth } from "@/components/AuthGuard";
@@ -9,6 +9,7 @@ import {
   archiveSale,
   convertSale,
   createSale,
+  downloadQuoteBundlePdf,
   downloadQuotePdf,
   linkSaleToProject,
   saveQuotePdfToDrive,
@@ -25,7 +26,7 @@ import {
   type Sale,
   type SaleCreateRequest,
 } from "@/lib/domain";
-import { useClients, useProjects } from "@/lib/hooks";
+import { useClients, useProjects, useSales } from "@/lib/hooks";
 import { cn } from "@/lib/utils";
 
 interface Props {
@@ -41,6 +42,35 @@ interface Props {
 }
 
 const KIND_OPTIONS = ["수주영업", "기술지원"] as const;
+
+// 견적서 종류별 산출 default 값 — 사장이 운영하는 xlsx 양식의 표준 요율/조정/절삭
+// 단위. 사용자가 종류 select를 변경할 때 자동 적용 (모달 prefill 시에는 미적용 —
+// 기존 견적의 사용자 정의 값을 보존).
+//   overhead_pct: 제경비 % (직접인건비 대비)
+//   tech_fee_pct: 기술료 %  (직접인건비 + 제경비 대비)
+//   adjustment_pct: 당사 조정 % (subtotal 대비)
+//   truncate_unit: 절삭 단위 (1_000_000 = 백만, 100_000 = 십만)
+const QUOTE_TYPE_DEFAULTS: Record<
+  QuoteType,
+  Pick<QuoteInput, "overhead_pct" | "tech_fee_pct" | "adjustment_pct" | "truncate_unit">
+> = {
+  구조설계: { overhead_pct: 110, tech_fee_pct: 20, adjustment_pct: 87, truncate_unit: 1_000_000 },
+  구조검토: { overhead_pct: 110, tech_fee_pct: 20, adjustment_pct: 87, truncate_unit: 1_000_000 },
+  성능기반내진설계: { overhead_pct: 110, tech_fee_pct: 20, adjustment_pct: 87, truncate_unit: 1_000_000 },
+  // 정기/정밀점검 (PR-Q5) — xlsx 시특법 sheet 실 사례 조정률·절삭
+  정기안전점검: { overhead_pct: 110, tech_fee_pct: 20, adjustment_pct: 27, truncate_unit: 100_000 },
+  정밀점검: { overhead_pct: 110, tech_fee_pct: 20, adjustment_pct: 88, truncate_unit: 1_000_000 },
+  // 정밀안전진단 (PR-Q6) — xlsx 시특법 F11=1, overhead 120%·tech 40%·조정 45%
+  정밀안전진단: { overhead_pct: 120, tech_fee_pct: 40, adjustment_pct: 45, truncate_unit: 1_000_000 },
+  // 건축물관리법점검 (PR-Q4) — xlsx 90% × 십만 절삭
+  건축물관리법점검: { overhead_pct: 110, tech_fee_pct: 20, adjustment_pct: 90, truncate_unit: 100_000 },
+  내진성능평가: { overhead_pct: 110, tech_fee_pct: 20, adjustment_pct: 87, truncate_unit: 1_000_000 },
+  // 구조감리 (PR-Q3) — tech 30, 사장 운영 조정률 55%
+  구조감리: { overhead_pct: 110, tech_fee_pct: 30, adjustment_pct: 55, truncate_unit: 1_000_000 },
+  // 현장기술지원 (PR-Q2) — xlsx 80% 조정
+  현장기술지원: { overhead_pct: 110, tech_fee_pct: 20, adjustment_pct: 80, truncate_unit: 1_000_000 },
+  기타: { overhead_pct: 110, tech_fee_pct: 20, adjustment_pct: 87, truncate_unit: 1_000_000 },
+};
 
 export default function SalesEditModal({
   sale,
@@ -74,11 +104,27 @@ export default function SalesEditModal({
   });
   const [quoteResult, setQuoteResult] = useState<QuoteResult | null>(null);
 
+  // 종류별 default 자동 적용 — useRef로 prev type 추적해 모달 첫 prefill 시에는
+  // skip (기존 견적의 사용자 정의 값을 보존), 사용자가 select 변경할 때만 reset.
+  const prevQuoteTypeRef = useRef<QuoteType | undefined>(undefined);
+
   const open = sale != null || openNew;
   const isEdit = sale != null;
 
   // 발주처 자동완성 데이터 — 모달 열릴 때만 fetch.
   const { data: clientsData } = useClients(open);
+  // 상위 영업건(parent_lead_id) 후보 — 같은 용역에 견적이 분리 제출되는 경우의
+  // 묶음 키. 자기 자신·archived 제외. 22건 정도라 단순 select로 충분.
+  const { data: salesData } = useSales(undefined, open);
+  // listSales는 archived 제외하고 응답하므로 frontend에서 추가 필터 불필요.
+  // 자기 자신만 parent 후보에서 제외.
+  const parentCandidates = (salesData?.items ?? []).filter(
+    (s) => s.id !== sale?.id,
+  );
+  // 현 sale을 parent로 지정한 자식 영업 존재 여부 — "묶음 PDF" 버튼 노출 조건
+  const hasChildren = (salesData?.items ?? []).some(
+    (s) => s.parent_lead_id === sale?.id,
+  );
   const normName = (s: string): string => s.trim().toLowerCase();
   const clientMatch =
     client.trim() === ""
@@ -215,6 +261,27 @@ export default function SalesEditModal({
     form.building_count,
     form.quote_type,
   ]);
+
+  // 모달 닫힘 시 prev type 추적 ref 초기화 — 다음 모달 열림 시 첫 prefill을 skip
+  // 시점으로 처리하기 위함.
+  useEffect(() => {
+    if (!open) prevQuoteTypeRef.current = undefined;
+  }, [open]);
+
+  // 종류 변경 시 산출 default 자동 적용 (overhead/tech/adj/truncate).
+  // 모달 첫 prefill (prev=undefined → next=type)은 skip — 기존 견적의 사용자
+  // 정의 값을 보존.
+  useEffect(() => {
+    const next = form.quote_type as QuoteType | undefined;
+    const prev = prevQuoteTypeRef.current;
+    if (prev !== undefined && prev !== next && next) {
+      const def = QUOTE_TYPE_DEFAULTS[next];
+      if (def) {
+        setQuoteInput((q) => ({ ...q, ...def }));
+      }
+    }
+    prevQuoteTypeRef.current = next;
+  }, [form.quote_type]);
 
   if (!open) return null;
 
@@ -504,6 +571,34 @@ export default function SalesEditModal({
                 }
               />
             )}
+          </Field>
+
+          <Field label="상위 영업건 (선택)">
+            <select
+              className={inputCls}
+              value={form.parent_lead_id ?? ""}
+              onChange={(e) =>
+                setForm({
+                  ...form,
+                  parent_lead_id: e.target.value || undefined,
+                })
+              }
+            >
+              <option value="">— 단독 영업 —</option>
+              {parentCandidates.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.code ? `${s.code} · ` : ""}
+                  {s.name}
+                  {s.estimated_amount
+                    ? ` · ₩${s.estimated_amount.toLocaleString()}`
+                    : ""}
+                </option>
+              ))}
+            </select>
+            <p className="mt-1 text-[11px] text-stone-500">
+              같은 용역에 견적이 분리 제출되는 경우 상위 영업건을 지정. 상위에서
+              "묶음 PDF 다운로드"로 자식 견적까지 1 PDF로 출력됩니다.
+            </p>
           </Field>
 
           <Field
@@ -808,6 +903,25 @@ export default function SalesEditModal({
                 >
                   PDF 저장
                 </button>
+                {hasChildren && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      void downloadQuoteBundlePdf(sale.id).catch((e) =>
+                        setErr(
+                          e instanceof Error
+                            ? e.message
+                            : "묶음 PDF 다운로드 실패",
+                        ),
+                      );
+                    }}
+                    disabled={busy}
+                    className="rounded-md border border-amber-600/40 bg-amber-500/10 px-3 py-1.5 text-xs font-medium text-amber-700 hover:bg-amber-500/20 disabled:opacity-50 dark:text-amber-400"
+                    title="이 영업을 상위로 둔 자식 영업의 견적까지 1 PDF로 묶어 다운로드"
+                  >
+                    묶음 PDF 다운로드
+                  </button>
+                )}
               </>
             )}
             {isEdit && (
