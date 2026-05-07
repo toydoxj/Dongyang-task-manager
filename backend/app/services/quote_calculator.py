@@ -93,6 +93,11 @@ class QuoteInput(BaseModel):
     # 점검류 (PR-Q4~Q7) — 책임자/점검자 인.일 분리 입력
     inspection_responsible_days: float | None = Field(default=None, ge=0)
     inspection_inspector_days: float | None = Field(default=None, ge=0)
+    # 내진성능평가 (PR-Q8) — ① 현장조사 외업/내업, ② 해석 인.일 (3 필드 분리)
+    # 보간 table(연면적·구조도면 유무·해석방법·등급)은 사용자가 xlsx 보고 수동 입력
+    field_outdoor_days: float | None = Field(default=None, ge=0)
+    field_indoor_days: float | None = Field(default=None, ge=0)
+    analysis_days: float | None = Field(default=None, ge=0)
     # 직접경비 — 동적 항목 list. 비어 있으면 산출에 0원.
     # legacy 필드(printing_fee/survey_fee/transport_persons)는 backward 호환용.
     direct_expense_items: list[DirectExpenseItem] = []
@@ -580,6 +585,123 @@ def _calculate_inspection_legal(inp: QuoteInput) -> QuoteResult:
     )
 
 
+def _calculate_seismic_eval(inp: QuoteInput) -> QuoteResult:
+    """내진성능평가 strategy (PR-Q8).
+
+    xlsx 산출 흐름은 두 섹션 합산:
+
+    ① 현장조사 (외업/내업 인.일 분리)
+       direct_labor = (외업 + 내업) × 300,980 (기술자 단가)
+       lodging      = 30,000 × 외업                  (현장체제비, L50)
+       machinery    = direct_labor × 10%             (기계기구 손료, L51)
+       other        = direct_labor × 10%             (기타 현장경비, L52)
+       overhead     = direct_labor × overhead_pct/100 (L53, default 110%)
+       tech_fee     = (direct_labor + overhead) × tech_fee_pct/100 (L54, 20%)
+       subtotal_1   = ① 모든 항목 합                 (L55)
+
+    ② 내진성능평가 (해석 인.일 단일)
+       direct_labor_2 = 해석인일 × 300,980           (L56)
+       overhead_2     = direct_labor_2 × 110%        (L57)
+       tech_fee_2     = (direct_labor_2 + overhead_2) × 20% (L58)
+       subtotal_2     = ② 합                         (L59)
+
+    ③ 합산·조정·절삭
+       total          = subtotal_1 + subtotal_2 + direct_expense (L60)
+       adjusted       = total × adjustment_pct/100   (L61, default 45%)
+       truncated      = adjusted % truncate_unit     (L62, default 백만)
+       final          = adjusted - truncated         (L63)
+
+    인.일 자동 산출(연면적·구조도면 유무·해석방법·등급 보간 — xlsx V47~AC59)은
+    table 너무 복잡해 backend에 옮기지 않음. 사용자가 xlsx 보고 수동 입력
+    (field_outdoor_days/field_indoor_days/analysis_days 신규 필드).
+
+    xlsx 검증 (외업 22.64092, 내업 12, 해석 67.667, adj=0.45, 백만 절삭):
+    - field_direct  = 34.64092 × 300,980 = 10,426,224.10  # L48
+    - lodging       = 30,000 × 22.64092  =    679,227.6   # L50
+    - machinery     = 10,426,224.10×0.1  =  1,042,622.41  # L51
+    - other         = 10,426,224.10×0.1  =  1,042,622.41  # L52
+    - field_oh      = 10,426,224.10×1.1  = 11,468,846.51  # L53
+    - field_tech    = 21,895,070.61×0.2  =  4,379,014.12  # L54
+    - subtotal_1   = 29,038,557.16                        # L55
+    - analysis_d    = 67.667 × 300,980    = 20,366,413.66  # L56
+    - analysis_oh   = 22,403,055.03                       # L57
+    - analysis_tech = 8,553,893.74                        # L58
+    - subtotal_2   = 51,323,362.42                        # L59
+    - total         = 80,361,919.58                        # L60
+    - adjusted      = 36,162,863.81                        # L61
+    - final         = 36,000,000                           # L63 ≈ xlsx 35,999,999.81
+    """
+    field_outdoor = inp.field_outdoor_days or 0
+    field_indoor = inp.field_indoor_days or 0
+    analysis = inp.analysis_days or 0
+    rate = DAILY_RATE_ENGINEER  # 300,980 — 기술자
+
+    # ① 현장조사
+    field_direct = (field_outdoor + field_indoor) * rate
+    lodging = 30_000 * field_outdoor
+    machinery = field_direct * 0.1
+    other_expense = field_direct * 0.1
+    field_overhead = field_direct * (inp.overhead_pct / 100)
+    field_tech = (field_direct + field_overhead) * (inp.tech_fee_pct / 100)
+    field_subtotal = (
+        field_direct + lodging + machinery + other_expense + field_overhead + field_tech
+    )
+
+    # ② 내진성능평가
+    analysis_direct = analysis * rate
+    analysis_overhead = analysis_direct * (inp.overhead_pct / 100)
+    analysis_tech = (analysis_direct + analysis_overhead) * (inp.tech_fee_pct / 100)
+    analysis_subtotal = analysis_direct + analysis_overhead + analysis_tech
+
+    # ③ 추가 직접경비 (사용자 입력) → 합산·조정·절삭
+    if inp.direct_expense_items:
+        direct_expense = sum(item.amount for item in inp.direct_expense_items)
+    else:
+        direct_expense = (
+            inp.printing_fee + inp.survey_fee + 25_000 * inp.transport_persons
+        )
+
+    total = field_subtotal + analysis_subtotal + direct_expense
+    adjusted = total * (inp.adjustment_pct / 100)
+
+    adjusted_int = int(_excel_round_half_up(adjusted, 0))
+    if inp.final_override is not None:
+        final_amount = int(inp.final_override)
+        truncated = adjusted_int - final_amount
+    else:
+        unit = inp.truncate_unit if inp.truncate_unit > 0 else 1
+        truncated = adjusted_int % unit
+        final_amount = adjusted_int - truncated
+
+    vat_amount = int(_excel_round_half_up(final_amount * 0.1, 0))
+    final_with_vat = final_amount + vat_amount
+
+    # QuoteResult는 단일 direct_labor/overhead/tech 슬롯 — 두 섹션 합산해 표시
+    mh_total = int(round(field_outdoor + field_indoor + analysis))
+    per_pyeong_area = inp.gross_floor_area / 3.3 if inp.gross_floor_area else 0
+    per_pyeong = final_amount / per_pyeong_area if per_pyeong_area else 0
+
+    return QuoteResult(
+        manhours_baseline=0,
+        manhours_baseline_rounded=0,
+        manhours_total=mh_total,
+        direct_labor=field_direct + analysis_direct,
+        # 직접경비는 (체제비 + 기계 + 기타 + 사용자 입력)을 합산 — PDF 표는 단일
+        # ②행에 표시되므로 모두 묶음. 추후 PDF 분기 필요.
+        direct_expense=lodging + machinery + other_expense + direct_expense,
+        overhead=field_overhead + analysis_overhead,
+        tech_fee=field_tech + analysis_tech,
+        subtotal=field_subtotal + analysis_subtotal,
+        adjusted=adjusted,
+        truncated=truncated,
+        final=final_amount,
+        vat_amount=vat_amount,
+        final_with_vat=final_with_vat,
+        per_pyeong_area=per_pyeong_area,
+        per_pyeong=per_pyeong,
+    )
+
+
 # ── 종류별 산출 strategy dispatch ──
 # PR-Q1: 모든 종류가 임시로 구조설계 strategy로 fallback. PR-Q2~Q9에서 점진적
 # 으로 종류별 strategy 함수로 교체된다.
@@ -591,7 +713,7 @@ _DISPATCH: dict[QuoteType, "callable"] = {
     QuoteType.INSPECTION_DETAIL: _calculate_inspection_legal,   # PR-Q5
     QuoteType.INSPECTION_DIAGNOSIS: _calculate_inspection_legal,  # PR-Q6
     QuoteType.INSPECTION_BMA: _calculate_inspection_bma,  # PR-Q4
-    QuoteType.SEISMIC_EVAL: _calculate_struct_design,
+    QuoteType.SEISMIC_EVAL: _calculate_seismic_eval,  # PR-Q8
     QuoteType.SUPERVISION: _calculate_supervision,  # PR-Q3
     QuoteType.FIELD_SUPPORT: _calculate_field_support,  # PR-Q2
     QuoteType.CUSTOM: _calculate_struct_design,

@@ -64,7 +64,8 @@ const QUOTE_TYPE_DEFAULTS: Record<
   정밀안전진단: { overhead_pct: 120, tech_fee_pct: 40, adjustment_pct: 45, truncate_unit: 1_000_000 },
   // 건축물관리법점검 (PR-Q4) — xlsx 90% × 십만 절삭
   건축물관리법점검: { overhead_pct: 110, tech_fee_pct: 20, adjustment_pct: 90, truncate_unit: 100_000 },
-  내진성능평가: { overhead_pct: 110, tech_fee_pct: 20, adjustment_pct: 87, truncate_unit: 1_000_000 },
+  // 내진성능평가 (PR-Q8) — xlsx 실 사례 (서울대 치과병원) 조정 45%
+  내진성능평가: { overhead_pct: 110, tech_fee_pct: 20, adjustment_pct: 45, truncate_unit: 1_000_000 },
   // 구조감리 (PR-Q3) — tech 30, 사장 운영 조정률 55%
   구조감리: { overhead_pct: 110, tech_fee_pct: 30, adjustment_pct: 55, truncate_unit: 1_000_000 },
   // 현장기술지원 (PR-Q2) — xlsx 80% 조정
