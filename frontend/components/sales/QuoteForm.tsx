@@ -52,17 +52,25 @@ export default function QuoteForm({
   const pivotKey = useMemo(
     () =>
       JSON.stringify({
+        qt: value.quote_type,
         a: value.gross_floor_area,
         t: value.type_rate,
         s: value.structure_rate,
         c: value.coefficient,
         mh: value.manhours_override,
+        // 점검류 (PR-Q4) — 책임자/점검자 인.일 분리
+        ir: value.inspection_responsible_days,
+        ii: value.inspection_inspector_days,
+        // 내진성능평가 (PR-Q8) — 외업/내업/해석
+        fo: value.field_outdoor_days,
+        fi: value.field_indoor_days,
+        ad: value.analysis_days,
         items: value.direct_expense_items,
         oh: value.overhead_pct,
         tf: value.tech_fee_pct,
         adj: value.adjustment_pct,
         tu: value.truncate_unit,
-        fo: value.final_override,
+        fov: value.final_override,
         // legacy
         p: value.printing_fee,
         v: value.survey_fee,
@@ -111,6 +119,17 @@ export default function QuoteForm({
   const set = <K extends keyof QuoteInput>(k: K, v: QuoteInput[K]): void => {
     onChange({ ...value, [k]: v });
   };
+
+  // 견적서 종류별 입력 분기 — 요율 3종은 구조설계계열만 표시. 점검류/내진평가는
+  // 시특법·xlsx 보조 영역의 보간 결과를 사용자가 수동 입력하는 모델.
+  const qt = value.quote_type ?? "구조설계";
+  const isStructDesignLike =
+    qt === "구조설계" || qt === "구조검토" || qt === "성능기반내진설계" || qt === "기타";
+  const isInspectionLegal =
+    qt === "정기안전점검" || qt === "정밀점검" || qt === "정밀안전진단";
+  const isInspectionBma = qt === "건축물관리법점검";
+  const isSeismicEval = qt === "내진성능평가";
+  const isSimpleManhours = qt === "구조감리" || qt === "현장기술지원";
 
   return (
     <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
@@ -267,67 +286,223 @@ export default function QuoteForm({
           </Field>
         </Section>
 
-        <Section title="요율">
-          <div className="grid grid-cols-3 gap-2">
-            <Field label="종별 요율">
-              <select
+        {isStructDesignLike && (
+          <Section title="요율 · 인.일">
+            <div className="grid grid-cols-3 gap-2">
+              <Field label="종별 요율">
+                <select
+                  className={inputCls}
+                  value={value.type_rate ?? 1}
+                  onChange={(e) => set("type_rate", Number(e.target.value))}
+                >
+                  {TYPE_RATES.map((r) => (
+                    <option key={r} value={r}>
+                      {r}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+              <Field label="구조방식 요율">
+                <select
+                  className={inputCls}
+                  value={value.structure_rate ?? 1}
+                  onChange={(e) =>
+                    set("structure_rate", Number(e.target.value))
+                  }
+                >
+                  {STRUCTURE_RATES.map((r) => (
+                    <option key={r} value={r}>
+                      {r}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+              <Field label="계수">
+                <select
+                  className={inputCls}
+                  value={value.coefficient ?? 1}
+                  onChange={(e) => set("coefficient", Number(e.target.value))}
+                >
+                  {COEFFICIENTS.map((c) => (
+                    <option key={c.value} value={c.value}>
+                      {c.label}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+            </div>
+            <Field label="투입인원 (인.일) — 비우면 연면적·요율로 자동 산출">
+              <input
+                type="number"
+                min={0}
+                step={1}
                 className={inputCls}
-                value={value.type_rate ?? 1}
-                onChange={(e) => set("type_rate", Number(e.target.value))}
-              >
-                {TYPE_RATES.map((r) => (
-                  <option key={r} value={r}>
-                    {r}
-                  </option>
-                ))}
-              </select>
-            </Field>
-            <Field label="구조방식 요율">
-              <select
-                className={inputCls}
-                value={value.structure_rate ?? 1}
+                placeholder="자동 산출"
+                value={value.manhours_override ?? ""}
                 onChange={(e) =>
-                  set("structure_rate", Number(e.target.value))
+                  set(
+                    "manhours_override",
+                    e.target.value ? Number(e.target.value) : null,
+                  )
                 }
-              >
-                {STRUCTURE_RATES.map((r) => (
-                  <option key={r} value={r}>
-                    {r}
-                  </option>
-                ))}
-              </select>
+              />
             </Field>
-            <Field label="계수">
-              <select
-                className={inputCls}
-                value={value.coefficient ?? 1}
-                onChange={(e) => set("coefficient", Number(e.target.value))}
-              >
-                {COEFFICIENTS.map((c) => (
-                  <option key={c.value} value={c.value}>
-                    {c.label}
-                  </option>
-                ))}
-              </select>
-            </Field>
-          </div>
-          <Field label="투입인원 (인.일) — 비우면 연면적·요율로 자동 산출">
-            <input
-              type="number"
-              min={0}
-              step={1}
-              className={inputCls}
-              placeholder="자동 산출"
-              value={value.manhours_override ?? ""}
-              onChange={(e) =>
-                set(
-                  "manhours_override",
-                  e.target.value ? Number(e.target.value) : null,
-                )
+          </Section>
+        )}
+
+        {isSimpleManhours && (
+          <Section title="투입인원">
+            <Field
+              label={
+                qt === "구조감리"
+                  ? "투입인원 (인.일) — 현장 방문회수 × 3 (예: 27회 × 3 = 81)"
+                  : "투입인원 (인.일) — 회당 3 기준 권장"
               }
-            />
-          </Field>
-        </Section>
+            >
+              <input
+                type="number"
+                min={0}
+                step={1}
+                className={inputCls}
+                placeholder="0"
+                value={value.manhours_override ?? ""}
+                onChange={(e) =>
+                  set(
+                    "manhours_override",
+                    e.target.value ? Number(e.target.value) : null,
+                  )
+                }
+              />
+            </Field>
+          </Section>
+        )}
+
+        {isInspectionLegal && (
+          <Section title="투입인원">
+            <Field label="조정 인.일 — 시특법 sheet의 4계수 곱 결과 (예: 15.24)">
+              <input
+                type="number"
+                min={0}
+                step={0.01}
+                className={inputCls}
+                placeholder="0.00"
+                value={value.manhours_override ?? ""}
+                onChange={(e) =>
+                  set(
+                    "manhours_override",
+                    e.target.value ? Number(e.target.value) : null,
+                  )
+                }
+              />
+            </Field>
+            <p className="text-[11px] text-stone-500">
+              xlsx 시특법 sheet의 H40 = ROUNDDOWN(C40·D40·E40·F40·G40, 2)
+              결과를 그대로 입력하세요. 직접경비는 아래 항목 list로.
+            </p>
+          </Section>
+        )}
+
+        {isInspectionBma && (
+          <Section title="투입인원 (책임자 · 점검자)">
+            <div className="grid grid-cols-2 gap-2">
+              <Field label="책임자 인.일">
+                <input
+                  type="number"
+                  min={0}
+                  step={0.01}
+                  className={inputCls}
+                  placeholder="예: 1.44"
+                  value={value.inspection_responsible_days ?? ""}
+                  onChange={(e) =>
+                    set(
+                      "inspection_responsible_days",
+                      e.target.value ? Number(e.target.value) : null,
+                    )
+                  }
+                />
+              </Field>
+              <Field label="점검자 인.일">
+                <input
+                  type="number"
+                  min={0}
+                  step={0.01}
+                  className={inputCls}
+                  placeholder="예: 0.44"
+                  value={value.inspection_inspector_days ?? ""}
+                  onChange={(e) =>
+                    set(
+                      "inspection_inspector_days",
+                      e.target.value ? Number(e.target.value) : null,
+                    )
+                  }
+                />
+              </Field>
+            </div>
+            <p className="text-[11px] text-stone-500">
+              건축물관리법점검은 책임자(456,237원/일) + 점검자(235,459원/일)
+              등급별 단가 분리 산출.
+            </p>
+          </Section>
+        )}
+
+        {isSeismicEval && (
+          <Section title="투입인원 (현장조사 · 해석)">
+            <div className="grid grid-cols-2 gap-2">
+              <Field label="현장조사 외업 인.일">
+                <input
+                  type="number"
+                  min={0}
+                  step={0.001}
+                  className={inputCls}
+                  placeholder="예: 22.641"
+                  value={value.field_outdoor_days ?? ""}
+                  onChange={(e) =>
+                    set(
+                      "field_outdoor_days",
+                      e.target.value ? Number(e.target.value) : null,
+                    )
+                  }
+                />
+              </Field>
+              <Field label="현장조사 내업 인.일">
+                <input
+                  type="number"
+                  min={0}
+                  step={0.001}
+                  className={inputCls}
+                  placeholder="예: 12"
+                  value={value.field_indoor_days ?? ""}
+                  onChange={(e) =>
+                    set(
+                      "field_indoor_days",
+                      e.target.value ? Number(e.target.value) : null,
+                    )
+                  }
+                />
+              </Field>
+            </div>
+            <Field label="해석 인.일 — 구조해석 소요 인.일 (xlsx I56)">
+              <input
+                type="number"
+                min={0}
+                step={0.001}
+                className={inputCls}
+                placeholder="예: 67.667"
+                value={value.analysis_days ?? ""}
+                onChange={(e) =>
+                  set(
+                    "analysis_days",
+                    e.target.value ? Number(e.target.value) : null,
+                  )
+                }
+              />
+            </Field>
+            <p className="text-[11px] text-stone-500">
+              연면적·구조도면 유무·해석방법·등급 보간 table은 xlsx에서 확인 후
+              인.일 3종을 직접 입력하세요. 단가는 300,980원/일 (기술자) 고정.
+            </p>
+          </Section>
+        )}
 
         <Section title="직접경비">
           {(value.direct_expense_items ?? []).map((item, idx) => (
