@@ -140,11 +140,16 @@ def build_bundle_cover_pdf(
     parent_doc_number: str = "",
     author_name: str = "",
     author_position: str = "",
+    parent_meta: dict[str, Any] | None = None,
 ) -> bytes:
-    """통합 PDF 첫 페이지 갑지(cover) — 견적 종합 표 + 총합.
+    """통합 PDF 첫 페이지 갑지(cover) — 영업 정보 + 견적 종합 표 + 총합.
 
     각 section의 input.quote_type을 업무내용으로, result.final을 금액으로 표기.
     수신처는 첫 견적의 recipient_company를 자동 채움.
+
+    parent_meta dict (영업 정보 — 라우터에서 sale 필드 추출):
+      code, assignees, submission_date, gross_floor_area,
+      floors_above, floors_below, building_count
     """
     template = _env.get_template("quote_bundle_cover_template.html")
     rows: list[dict[str, Any]] = []
@@ -176,6 +181,7 @@ def build_bundle_cover_pdf(
         recipient_company=recipient_company,
         parent_name=parent_name,
         parent_doc_number=parent_doc_number,
+        parent_meta=parent_meta or {},
         today=date.today().strftime("%Y. %m. %d"),
         logo_svg=_read_logo_svg(),
         author_name=author_name,
@@ -191,6 +197,7 @@ def build_quote_bundle_pdf(
     author_position: str = "",
     parent_name: str = "",
     parent_doc_number: str = "",
+    parent_meta: dict[str, Any] | None = None,
 ) -> bytes:
     """영업 내 다중 견적을 1 PDF로 묶음. 첫 페이지는 갑지(cover, 견적 종합 표
     + 총합), 후속 페이지는 자식 견적별 단일 PDF (build_quote_pdf 결과).
@@ -213,6 +220,7 @@ def build_quote_bundle_pdf(
         parent_doc_number=parent_doc_number,
         author_name=author_name,
         author_position=author_position,
+        parent_meta=parent_meta,
     )
     cover_reader = PdfReader(io.BytesIO(cover_bytes))
     for page in cover_reader.pages:

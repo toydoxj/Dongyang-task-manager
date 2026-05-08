@@ -290,6 +290,39 @@
       <div class="meta-value service-name">{{ parent_name }}</div>
     </div>
     {% endif %}
+    {% if parent_meta.code %}
+    <div class="meta-row">
+      <div class="meta-label">영업코드</div>
+      <div class="meta-value">{{ parent_meta.code }}</div>
+    </div>
+    {% endif %}
+    {% if parent_meta.gross_floor_area or parent_meta.floors_above or parent_meta.floors_below or parent_meta.building_count %}
+    <div class="meta-row">
+      <div class="meta-label">규모</div>
+      <div class="meta-value">
+        {%- if parent_meta.gross_floor_area -%}
+          연면적 {{ "{:,}".format(parent_meta.gross_floor_area | int) }} m²
+        {%- endif -%}
+        {%- set floor_parts = [] -%}
+        {%- if parent_meta.floors_below %}{%- set _ = floor_parts.append("지하 " ~ (parent_meta.floors_below | int) ~ "층") -%}{%- endif -%}
+        {%- if parent_meta.floors_above %}{%- set _ = floor_parts.append("지상 " ~ (parent_meta.floors_above | int) ~ "층") -%}{%- endif -%}
+        {%- if floor_parts %} &nbsp;|&nbsp; {{ floor_parts | join(' / ') }}{%- endif -%}
+        {%- if parent_meta.building_count %} &nbsp;|&nbsp; {{ parent_meta.building_count | int }}동{%- endif -%}
+      </div>
+    </div>
+    {% endif %}
+    {% if parent_meta.assignees %}
+    <div class="meta-row">
+      <div class="meta-label">담당자</div>
+      <div class="meta-value">{{ parent_meta.assignees | join(' · ') }}</div>
+    </div>
+    {% endif %}
+    {% if parent_meta.submission_date %}
+    <div class="meta-row">
+      <div class="meta-label">제출일</div>
+      <div class="meta-value">{{ parent_meta.submission_date }}</div>
+    </div>
+    {% endif %}
   </div>
 
   <div class="total-line">

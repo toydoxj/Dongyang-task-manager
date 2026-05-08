@@ -553,6 +553,17 @@ def download_quote_bundle_pdf(
         author_position=author_position,
         parent_name=sale.name or "",
         parent_doc_number=sale.quote_doc_number or "",
+        parent_meta={
+            "code": sale.code or "",
+            "assignees": list(sale.assignees or []),
+            "submission_date": (
+                sale.submission_date.isoformat() if sale.submission_date else ""
+            ),
+            "gross_floor_area": sale.gross_floor_area,
+            "floors_above": sale.floors_above,
+            "floors_below": sale.floors_below,
+            "building_count": sale.building_count,
+        },
     )
     filename = quote_bundle_pdf_filename(
         sale.quote_doc_number or "no-doc",
@@ -762,6 +773,17 @@ async def save_quote_bundle_pdf_to_drive(
         author_position=author_position,
         parent_name=sale.name or "",
         parent_doc_number=sale.quote_doc_number or "",
+        parent_meta={
+            "code": sale.code or "",
+            "assignees": list(sale.assignees or []),
+            "submission_date": (
+                sale.submission_date.isoformat() if sale.submission_date else ""
+            ),
+            "gross_floor_area": sale.gross_floor_area,
+            "floors_above": sale.floors_above,
+            "floors_below": sale.floors_below,
+            "building_count": sale.building_count,
+        },
     )
     filename = quote_bundle_pdf_filename(
         sale.quote_doc_number or "no-doc",
