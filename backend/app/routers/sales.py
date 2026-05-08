@@ -485,88 +485,60 @@ def download_quote_pdf(
     )
 
 
-# ── 통합 견적서 PDF 다운로드 (영업 내 다중 견적 + parent_lead_id 자식 합산) ──
+# ── 통합 견적서 PDF 다운로드 (영업 내 다중 견적 묶음, PR-M4a) ──
 
 
 def _collect_bundle_sections(
-    db: Session, parent_id: str
+    db: Session, sale_id: str
 ) -> list[dict[str, object]]:
-    """묶음 PDF용 sections 수집 — 영업 내 견적 list (PR-M0 list-wrapped) +
-    parent_lead_id 자식 영업의 견적까지 모두 평탄화.
+    """묶음 PDF용 sections 수집 — 영업 1건 안 견적 list 평탄화 (PR-M4a).
 
-    PR-M4에서 parent_lead_id 폐기 후 child loop 제거하면 영업 1건 안 견적만
-    묶음 됨. 현재는 두 모드 모두 지원.
+    parent_lead_id 자식 영업 query는 M4a에서 제거. 영업당 다중 견적 모델로
+    완전 전환되어 묶음 PDF는 영업 N건이 아닌 영업 1건의 견적 N개를 묶음.
     """
-    parent = db.get(M.MirrorSales, parent_id)
-    if parent is None or parent.archived:
-        raise HTTPException(status_code=404, detail="상위 영업 건을 찾을 수 없습니다")
+    sale = db.get(M.MirrorSales, sale_id)
+    if sale is None or sale.archived:
+        raise HTTPException(status_code=404, detail="영업 건을 찾을 수 없습니다")
 
     sections: list[dict[str, object]] = []
-
-    def _push(forms: list[dict]) -> None:
-        for form in forms:
-            if not form.get("input") or not form.get("result"):
-                continue
-            sections.append(
-                {
-                    "form_data": _form_to_pdf_data(form),
-                    "doc_number": format_doc_full(
-                        form.get("doc_number", ""), form.get("suffix", "")
-                    ),
-                }
-            )
-
-    # 1) 영업 1건 안 견적 list (PR-M1 list-wrapped 또는 옛 단일 schema)
-    _push(
-        normalize_quote_forms(
-            parent.quote_form_data,
-            legacy_doc_number=parent.quote_doc_number or "",
-        )
+    forms = normalize_quote_forms(
+        sale.quote_form_data,
+        legacy_doc_number=sale.quote_doc_number or "",
     )
-
-    # 2) parent_lead_id 자식 영업의 견적 (PR-M4에서 제거 예정)
-    children = (
-        db.query(M.MirrorSales)
-        .filter(
-            M.MirrorSales.parent_lead_id == parent_id,
-            M.MirrorSales.archived.is_(False),
+    for form in forms:
+        if not form.get("input") or not form.get("result"):
+            continue
+        sections.append(
+            {
+                "form_data": _form_to_pdf_data(form),
+                "doc_number": format_doc_full(
+                    form.get("doc_number", ""), form.get("suffix", "")
+                ),
+            }
         )
-        .order_by(M.MirrorSales.created_time.asc())
-        .all()
-    )
-    for child in children:
-        _push(
-            normalize_quote_forms(
-                child.quote_form_data,
-                legacy_doc_number=child.quote_doc_number or "",
-            )
-        )
-
     return sections
 
 
-@router.get("/{parent_id}/quote-bundle.pdf")
+@router.get("/{page_id}/quote-bundle.pdf")
 def download_quote_bundle_pdf(
-    parent_id: str,
+    page_id: str,
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> Response:
-    """영업 1건의 견적 N개 + (선택) parent_lead_id 자식 영업의 견적까지 합산해
-    1 PDF로 다운로드.
+    """영업 1건의 견적 N개를 1 PDF로 묶어 다운로드 (PR-M4a 이후).
 
-    영업 한 건에 견적 여러 개를 만든 케이스 (PR-M)와 영업 N개 + parent_lead_id
-    묶음 케이스 (PR-G) 모두 동일 라우터로 처리. PR-M4에서 parent_lead_id 폐기 시
-    영업 내 견적만 묶음 됨.
+    영업 안에서 견적을 N개 작성한 경우 (PR-M0~M3 모델) 모두 합산해 page_break
+    분리된 단일 PDF 생성. 견적이 1개여도 동작.
     """
-    parent = db.get(M.MirrorSales, parent_id)
-    if parent is None or parent.archived:
-        raise HTTPException(status_code=404, detail="상위 영업 건을 찾을 수 없습니다")
+    sale = db.get(M.MirrorSales, page_id)
+    if sale is None or sale.archived:
+        raise HTTPException(status_code=404, detail="영업 건을 찾을 수 없습니다")
 
-    sections = _collect_bundle_sections(db, parent_id)
+    sections = _collect_bundle_sections(db, page_id)
     if not sections:
         raise HTTPException(
             status_code=400,
-            detail="이 묶음에는 견적서가 없습니다 (영업 내 견적·자식 영업 모두 누락)",
+            detail="이 영업에는 견적이 없습니다",
         )
 
     employee = (
@@ -581,8 +553,8 @@ def download_quote_bundle_pdf(
         author_position=author_position,
     )
     filename = quote_bundle_pdf_filename(
-        parent.quote_doc_number or "no-doc",
-        parent.name or "통합견적",
+        sale.quote_doc_number or "no-doc",
+        sale.name or "통합견적",
     )
     encoded = url_quote(filename, safe="")
     return Response(
@@ -737,16 +709,16 @@ async def save_quote_pdf_to_drive(
 # ── 통합 견적서 PDF → WORKS Drive 자동 저장 (PR-G2) ──
 
 
-@router.post("/{parent_id}/quote-bundle/save-pdf-to-drive", response_model=Sale)
+@router.post("/{page_id}/quote-bundle/save-pdf-to-drive", response_model=Sale)
 async def save_quote_bundle_pdf_to_drive(
-    parent_id: str,
+    page_id: str,
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
     notion: NotionService = Depends(get_notion),
 ) -> Sale:
-    """parent + 자식 견적을 묶은 통합 PDF를 `[견적서]\\{YYYY}년\\` 폴더에 업로드 →
-    parent 영업의 노션 `통합견적서첨부` 컬럼에 web url 저장. 단일 PDF
-    (`견적서첨부`)는 영향 없이 그대로 보존됨.
+    """영업 1건의 견적 N개를 묶은 통합 PDF → `[견적서]\\{YYYY}년\\` 업로드 →
+    노션 `통합견적서첨부` 컬럼에 web url 저장. 단일 견적 PDF (`견적서첨부`)는
+    영향 없이 그대로 보존됨 (PR-M4a).
     """
     settings_ = get_settings()
     if not settings_.works_drive_enabled:
@@ -765,15 +737,15 @@ async def save_quote_bundle_pdf_to_drive(
             update={"works_drive_sharedrive_id": settings_.works_drive_quote_sharedrive_id}
         )
 
-    parent = db.get(M.MirrorSales, parent_id)
-    if parent is None or parent.archived:
-        raise HTTPException(status_code=404, detail="상위 영업 건을 찾을 수 없습니다")
+    sale = db.get(M.MirrorSales, page_id)
+    if sale is None or sale.archived:
+        raise HTTPException(status_code=404, detail="영업 건을 찾을 수 없습니다")
 
-    sections = _collect_bundle_sections(db, parent_id)
+    sections = _collect_bundle_sections(db, page_id)
     if not sections:
         raise HTTPException(
             status_code=400,
-            detail="이 묶음에는 견적서가 없습니다 (영업 내 견적·자식 영업 모두 누락)",
+            detail="이 영업에는 견적이 없습니다",
         )
 
     # 1. 통합 PDF 생성
@@ -788,8 +760,8 @@ async def save_quote_bundle_pdf_to_drive(
         author_position=author_position,
     )
     filename = quote_bundle_pdf_filename(
-        parent.quote_doc_number or "no-doc",
-        parent.name or "통합견적",
+        sale.quote_doc_number or "no-doc",
+        sale.name or "통합견적",
     )
 
     # 2. {YYYY}년 폴더 ensure
@@ -836,7 +808,7 @@ async def save_quote_bundle_pdf_to_drive(
 
     if update_props:
         try:
-            updated = await notion.update_page(parent_id, update_props)
+            updated = await notion.update_page(page_id, update_props)
             get_sync().upsert_page("sales", updated)
         except Exception:  # noqa: BLE001
             logger.exception(
@@ -844,8 +816,8 @@ async def save_quote_bundle_pdf_to_drive(
                 list(update_props.keys()),
             )
 
-    parent = db.get(M.MirrorSales, parent_id)
-    return sale_from_mirror(parent) if parent else Sale.from_notion_page({"id": parent_id})
+    sale = db.get(M.MirrorSales, page_id)
+    return sale_from_mirror(sale) if sale else Sale.from_notion_page({"id": page_id})
 
 
 @router.patch("/{page_id}", response_model=Sale)

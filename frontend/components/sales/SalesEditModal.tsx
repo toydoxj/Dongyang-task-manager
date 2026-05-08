@@ -32,7 +32,7 @@ import {
   type Sale,
   type SaleCreateRequest,
 } from "@/lib/domain";
-import { useClients, useProjects, useSales } from "@/lib/hooks";
+import { useClients, useProjects } from "@/lib/hooks";
 import { cn } from "@/lib/utils";
 
 interface Props {
@@ -129,18 +129,9 @@ export default function SalesEditModal({
 
   // 발주처 자동완성 데이터 — 모달 열릴 때만 fetch.
   const { data: clientsData } = useClients(open);
-  // 상위 영업건(parent_lead_id) 후보 — 같은 용역에 견적이 분리 제출되는 경우의
-  // 묶음 키. 자기 자신·archived 제외. 22건 정도라 단순 select로 충분.
-  const { data: salesData } = useSales(undefined, open);
-  // listSales는 archived 제외하고 응답하므로 frontend에서 추가 필터 불필요.
-  // 자기 자신만 parent 후보에서 제외.
-  const parentCandidates = (salesData?.items ?? []).filter(
-    (s) => s.id !== sale?.id,
-  );
-  // 현 sale을 parent로 지정한 자식 영업 존재 여부 — "묶음 PDF" 버튼 노출 조건
-  const hasChildren = (salesData?.items ?? []).some(
-    (s) => s.parent_lead_id === sale?.id,
-  );
+  // 묶음 PDF는 영업 1건 안 견적 N개 모델로 변경 (PR-M4a). parent_lead_id grouping
+  // 폐기 — quoteList.length > 1 일 때만 묶음 PDF 버튼 노출.
+  const hasMultipleQuotes = quoteList.length > 1;
   const normName = (s: string): string => s.trim().toLowerCase();
   const clientMatch =
     client.trim() === ""
@@ -786,34 +777,6 @@ export default function SalesEditModal({
             )}
           </Field>
 
-          <Field label="상위 영업건 (선택)">
-            <select
-              className={inputCls}
-              value={form.parent_lead_id ?? ""}
-              onChange={(e) =>
-                setForm({
-                  ...form,
-                  parent_lead_id: e.target.value || undefined,
-                })
-              }
-            >
-              <option value="">— 단독 영업 —</option>
-              {parentCandidates.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.code ? `${s.code} · ` : ""}
-                  {s.name}
-                  {s.estimated_amount
-                    ? ` · ₩${s.estimated_amount.toLocaleString()}`
-                    : ""}
-                </option>
-              ))}
-            </select>
-            <p className="mt-1 text-[11px] text-stone-500">
-              같은 용역에 견적이 분리 제출되는 경우 상위 영업건을 지정. 상위에서
-              "묶음 PDF 다운로드"로 자식 견적까지 1 PDF로 출력됩니다.
-            </p>
-          </Field>
-
           <Field
             label={
               isEdit
@@ -1116,7 +1079,7 @@ export default function SalesEditModal({
                 >
                   PDF 저장
                 </button>
-                {hasChildren && (
+                {hasMultipleQuotes && (
                   <>
                     <button
                       type="button"
@@ -1131,7 +1094,7 @@ export default function SalesEditModal({
                       }}
                       disabled={busy}
                       className="rounded-md border border-amber-600/40 bg-amber-500/10 px-3 py-1.5 text-xs font-medium text-amber-700 hover:bg-amber-500/20 disabled:opacity-50 dark:text-amber-400"
-                      title="이 영업을 상위로 둔 자식 영업의 견적까지 1 PDF로 묶어 다운로드"
+                      title="영업 내 모든 견적을 1 PDF로 묶어 다운로드"
                     >
                       묶음 PDF 다운로드
                     </button>
