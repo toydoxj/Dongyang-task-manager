@@ -171,6 +171,13 @@
       margin-right: 4px;
       vertical-align: middle;
     }
+    .summary-table .attach-link {
+      display: inline-block;
+      margin-left: 6px;
+      font-size: 7.5pt;
+      color: #1f7a4a;
+      text-decoration: underline;
+    }
 
     /* ── 푸터 (quote_template 동일) ── */
     .footer-divider {
@@ -359,6 +366,7 @@
             {% if row.is_external %}<span class="ext-tag">외부</span>{% endif %}
             {{ row.service }}
             {% if row.doc_number %}<span class="doc">{{ row.doc_number }}</span>{% endif %}
+            {% if row.attached_pdf_url %}<a class="attach-link" href="{{ row.attached_pdf_url }}">첨부 →</a>{% endif %}
           </td>
           <td class="right amount">{{ "{:,}".format(row.amount | int) }}</td>
         </tr>

@@ -175,6 +175,8 @@ def build_bundle_cover_pdf(
                 "doc_number": s.get("doc_number", "") or "",
                 "amount": amount,
                 "is_external": is_external,
+                "attached_pdf_url": s.get("attached_pdf_url") or "",
+                "attached_pdf_name": s.get("attached_pdf_name") or "",
             }
         )
         total += amount

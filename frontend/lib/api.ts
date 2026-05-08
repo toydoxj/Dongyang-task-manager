@@ -1189,6 +1189,29 @@ export async function updateSaleExternalQuote(
   return (await res.json()) as QuoteFormResponse;
 }
 
+/** 외부 견적 PDF 첨부 (PR-EXT-2) — multipart upload → Drive [견적서]/{YYYY}년/.
+ * form.attached_pdf_url/name/file_id 갱신. 갑지 표에 첨부 → 링크 노출. */
+export async function attachExternalQuotePdf(
+  saleId: string,
+  quoteId: string,
+  file: File,
+): Promise<QuoteFormResponse> {
+  const fd = new FormData();
+  fd.append("file", file);
+  const res = await authFetch(
+    `/api/sales/${saleId}/quotes/external/${quoteId}/attach-pdf`,
+    { method: "POST", body: fd },
+  );
+  if (!res.ok) {
+    const detail = await res.json().catch(() => null);
+    throw new Error(
+      (detail as { detail?: string } | null)?.detail ??
+        `${res.status} ${res.statusText}`,
+    );
+  }
+  return (await res.json()) as QuoteFormResponse;
+}
+
 /** 견적 삭제 (PR-M1). suffix 재할당 X — hole 보존. */
 export async function deleteSaleQuote(
   saleId: string,

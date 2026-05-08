@@ -9,7 +9,7 @@ import asyncio
 import logging
 from datetime import date, datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
 from sqlalchemy import or_, select
@@ -475,6 +475,121 @@ def add_external_quote(
     )
     db.commit()
     return _form_to_response(new_form)
+
+
+@router.post(
+    "/{page_id}/quotes/external/{quote_id}/attach-pdf",
+    response_model=QuoteFormResponse,
+)
+async def attach_external_pdf(
+    page_id: str,
+    quote_id: str,
+    file: UploadFile = File(...),
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> QuoteFormResponse:
+    """외부 견적의 첨부 PDF를 WORKS Drive [견적서]/{YYYY}년/ 폴더에 업로드 →
+    form.attached_pdf_url/name/file_id 갱신 (PR-EXT-2).
+
+    파일명에 "외부_" prefix + 영업코드 + service 일부 자동 추가. 통합 PDF
+    다운로드 시 attached_pdf_url을 갑지 표에서 hyperlink로 노출.
+    """
+    from sqlalchemy import update as sa_update
+
+    settings_ = get_settings()
+    if not settings_.works_drive_enabled:
+        raise HTTPException(
+            status_code=503,
+            detail="WORKS Drive 통합이 비활성화되어 있습니다.",
+        )
+    if not settings_.works_drive_quote_root_folder_id:
+        raise HTTPException(
+            status_code=503,
+            detail="견적서 저장 폴더 미설정 (WORKS_DRIVE_QUOTE_ROOT_FOLDER_ID)",
+        )
+    quote_settings = settings_
+    if settings_.works_drive_quote_sharedrive_id:
+        quote_settings = settings_.model_copy(
+            update={
+                "works_drive_sharedrive_id": settings_.works_drive_quote_sharedrive_id
+            }
+        )
+
+    row = db.get(M.MirrorSales, page_id)
+    if row is None or row.archived:
+        raise HTTPException(status_code=404, detail="영업 건을 찾을 수 없습니다")
+
+    forms = normalize_quote_forms(
+        row.quote_form_data, legacy_doc_number=row.quote_doc_number or ""
+    )
+    target_idx = next(
+        (i for i, f in enumerate(forms) if f.get("id") == quote_id), -1
+    )
+    if target_idx < 0 or not forms[target_idx].get("is_external"):
+        raise HTTPException(status_code=404, detail="외부 견적을 찾을 수 없습니다")
+
+    # 1. 파일 read
+    raw = await file.read()
+    if not raw:
+        raise HTTPException(status_code=400, detail="빈 파일입니다")
+    if len(raw) > 50 * 1024 * 1024:  # 50MB cap
+        raise HTTPException(status_code=413, detail="파일 크기 50MB 초과")
+
+    # 2. 파일명 정책: 외부_{영업코드}_{service 안전한 30자}.{확장자}
+    target_form = forms[target_idx]
+    service = (target_form.get("service") or "외부견적").strip()
+    safe_service = "".join(c for c in service if c not in r'\/:*?"<>|' + "\r\n")[:30].strip()
+    sale_code = (row.code or "no-code").replace("-", "")
+    orig_name = file.filename or "external.pdf"
+    ext = orig_name.rsplit(".", 1)[-1] if "." in orig_name else "pdf"
+    upload_filename = f"외부_{sale_code}_{safe_service}.{ext}"
+
+    # 3. {YYYY}년 폴더 ensure
+    year_yyyy = datetime.now(_KST).year
+    try:
+        year_folder_id, _ = await sso_drive.ensure_quote_year_folder(
+            year_yyyy, settings=quote_settings
+        )
+    except sso_drive.DriveError as exc:
+        logger.exception("외부 견적 PDF 연도 폴더 ensure 실패")
+        raise HTTPException(
+            status_code=502, detail=f"WORKS Drive 폴더 준비 실패: {exc}"
+        ) from exc
+
+    # 4. PDF upload
+    try:
+        meta = await sso_drive.upload_file(
+            parent_file_id=year_folder_id,
+            file_name=upload_filename,
+            content=raw,
+            content_type=file.content_type or "application/pdf",
+            settings=quote_settings,
+        )
+    except sso_drive.DriveError as exc:
+        logger.exception("외부 견적 PDF Drive 업로드 실패")
+        raise HTTPException(
+            status_code=502, detail=f"WORKS Drive 업로드 실패: {exc}"
+        ) from exc
+
+    file_id = meta.get("fileId") or ""
+    web_url = sso_drive.build_file_web_url(
+        file_id, meta.get("resourceLocation")
+    )
+
+    # 5. form 갱신
+    forms[target_idx] = {
+        **target_form,
+        "attached_pdf_url": web_url,
+        "attached_pdf_name": upload_filename,
+        "attached_pdf_file_id": file_id,
+    }
+    db.execute(
+        sa_update(M.MirrorSales)
+        .where(M.MirrorSales.page_id == page_id)
+        .values(quote_form_data=pack_quote_forms(forms))
+    )
+    db.commit()
+    return _form_to_response(forms[target_idx])
 
 
 @router.patch(

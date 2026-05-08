@@ -9,6 +9,7 @@ import {
   addSaleExternalQuote,
   addSaleQuote,
   archiveSale,
+  attachExternalQuotePdf,
   convertSale,
   createSale,
   deleteSaleQuote,
@@ -736,6 +737,11 @@ export default function SalesEditModal({
                                 ? `₩${(q.amount ?? 0).toLocaleString()}`
                                 : `${q.input.service_name ?? "—"} · ₩${(q.result.final ?? 0).toLocaleString()}`}
                             </div>
+                            {q.is_external && q.attached_pdf_name && (
+                              <div className="mt-0.5 truncate text-[10px] text-amber-700 dark:text-amber-400">
+                                📎 {q.attached_pdf_name}
+                              </div>
+                            )}
                             {!q.is_external &&
                               (() => {
                                 const items = (
@@ -756,20 +762,71 @@ export default function SalesEditModal({
                           </div>
                           <div className="flex shrink-0 gap-1">
                             {q.is_external ? (
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setExternalDraft({
-                                    service: q.service ?? "",
-                                    amount: q.amount ?? 0,
-                                  });
-                                  setEditingExternalId(q.id);
-                                  setExternalFormOpen(true);
-                                }}
-                                className="rounded border border-zinc-300 px-2 py-1 text-[11px] hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800"
-                              >
-                                편집
-                              </button>
+                              <>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setExternalDraft({
+                                      service: q.service ?? "",
+                                      amount: q.amount ?? 0,
+                                    });
+                                    setEditingExternalId(q.id);
+                                    setExternalFormOpen(true);
+                                  }}
+                                  className="rounded border border-zinc-300 px-2 py-1 text-[11px] hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800"
+                                >
+                                  편집
+                                </button>
+                                <label
+                                  className={cn(
+                                    "cursor-pointer rounded border border-amber-600/40 px-2 py-1 text-[11px] text-amber-700 hover:bg-amber-500/10 dark:text-amber-400",
+                                    busy && "opacity-50",
+                                  )}
+                                >
+                                  {q.attached_pdf_url ? "재첨부" : "PDF 첨부"}
+                                  <input
+                                    type="file"
+                                    accept="application/pdf"
+                                    className="hidden"
+                                    disabled={busy}
+                                    onChange={async (e) => {
+                                      const f = e.target.files?.[0];
+                                      e.target.value = "";
+                                      if (!f || !sale) return;
+                                      setBusy(true);
+                                      setErr(null);
+                                      try {
+                                        await attachExternalQuotePdf(
+                                          sale.id,
+                                          q.id,
+                                          f,
+                                        );
+                                        await refreshQuoteList();
+                                        refreshSales();
+                                        alert("PDF 첨부 완료");
+                                      } catch (err2) {
+                                        setErr(
+                                          err2 instanceof Error
+                                            ? err2.message
+                                            : "PDF 첨부 실패",
+                                        );
+                                      } finally {
+                                        setBusy(false);
+                                      }
+                                    }}
+                                  />
+                                </label>
+                                {q.attached_pdf_url && (
+                                  <a
+                                    href={q.attached_pdf_url}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="rounded border border-emerald-700/40 px-2 py-1 text-[11px] text-emerald-700 hover:bg-emerald-600/10 dark:text-emerald-400"
+                                  >
+                                    보기
+                                  </a>
+                                )}
+                              </>
                             ) : (
                               <>
                                 <button
