@@ -517,7 +517,26 @@
       <div class="val">{{ input.payment_terms }}</div>
     </div>
     {% endif %}
-    {% if input.special_notes %}
+    {# 용역범위 — 신: special_notes_items list 우선. 없으면 legacy special_notes split. #}
+    {% set scope_items = input.special_notes_items or [] %}
+    {% if scope_items | length %}
+    <div class="extra-row">
+      <div class="key">용역범위</div>
+      <div class="val">
+        {% for it in scope_items %}
+          {% if it.text %}
+            {% if it.type == 'exclude' %}
+              <div class="item"><span class="tag-excl">[제외]</span>{{ it.text }}</div>
+            {% elif it.type == 'include' %}
+              <div class="item"><span class="tag-incl">[포함]</span>{{ it.text }}</div>
+            {% else %}
+              <div class="item">{{ it.text }}</div>
+            {% endif %}
+          {% endif %}
+        {% endfor %}
+      </div>
+    </div>
+    {% elif input.special_notes %}
     <div class="extra-row">
       <div class="key">용역범위</div>
       <div class="val">

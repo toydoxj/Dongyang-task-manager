@@ -11,6 +11,8 @@ import {
   type QuoteInput,
   type QuoteResult,
   type QuoteType,
+  type SpecialNoteItem,
+  type SpecialNoteType,
 } from "@/lib/domain";
 import { useClients } from "@/lib/hooks";
 import { cn } from "@/lib/utils";
@@ -834,12 +836,64 @@ export default function QuoteForm({
               onChange={(e) => set("payment_terms", e.target.value)}
             />
           </Field>
-          <Field label="용역범위 (라인별 입력 — '~포함' / '~제외' 끝맺음 시 PDF에 [포함]/[제외] 태그)">
-            <textarea
-              className={cn(inputCls, "min-h-[60px]")}
-              value={value.special_notes ?? ""}
-              onChange={(e) => set("special_notes", e.target.value)}
-            />
+          <Field label="용역범위 (항목별 라벨 + 텍스트 — PDF에 [포함]/[제외] 태그)">
+            <div className="space-y-1">
+              {(value.special_notes_items ?? []).map((item, idx) => (
+                <div key={idx} className="flex items-center gap-2">
+                  <select
+                    className={cn(inputCls, "w-20")}
+                    value={item.type}
+                    onChange={(e) => {
+                      const next = [...(value.special_notes_items ?? [])];
+                      next[idx] = {
+                        ...item,
+                        type: e.target.value as SpecialNoteType,
+                      };
+                      set("special_notes_items", next);
+                    }}
+                  >
+                    <option value="plain">—</option>
+                    <option value="include">포함</option>
+                    <option value="exclude">제외</option>
+                  </select>
+                  <input
+                    className={cn(inputCls, "flex-1")}
+                    placeholder="항목 설명"
+                    value={item.text}
+                    onChange={(e) => {
+                      const next = [...(value.special_notes_items ?? [])];
+                      next[idx] = { ...item, text: e.target.value };
+                      set("special_notes_items", next);
+                    }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const next = [...(value.special_notes_items ?? [])];
+                      next.splice(idx, 1);
+                      set("special_notes_items", next);
+                    }}
+                    className="rounded border border-zinc-300 px-2 py-1 text-xs hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800"
+                    aria-label="삭제"
+                  >
+                    ✕
+                  </button>
+                </div>
+              ))}
+              <button
+                type="button"
+                onClick={() => {
+                  const next: SpecialNoteItem[] = [
+                    ...(value.special_notes_items ?? []),
+                    { type: "plain", text: "" },
+                  ];
+                  set("special_notes_items", next);
+                }}
+                className="rounded border border-emerald-700/40 bg-emerald-600/10 px-3 py-1 text-xs font-medium text-emerald-700 hover:bg-emerald-600/20 dark:text-emerald-400"
+              >
+                + 항목 추가
+              </button>
+            </div>
           </Field>
           <Field label="비고">
             <textarea

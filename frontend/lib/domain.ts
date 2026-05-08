@@ -536,6 +536,13 @@ export interface DirectExpenseItem {
   amount: number;
 }
 
+/** 용역범위 list 항목 — 라벨(포함/제외/일반) + 텍스트. PDF에 [포함]/[제외] 태그 표시. */
+export type SpecialNoteType = "include" | "exclude" | "plain";
+export interface SpecialNoteItem {
+  type: SpecialNoteType;
+  text: string;
+}
+
 /** 견적서 종류 — 백엔드 QuoteType enum과 일치 (값=한글 라벨, 노션 select name). */
 /** 한국엔지니어링협회 통계법 기반 기술자 등급 (건설분야 단가 적용).
  * 매년 1월 단가 표 갱신 시 backend ENGINEERING_RATES_BY_GRADE도 동기 업데이트. */
@@ -623,7 +630,9 @@ export interface QuoteInput {
   final_override?: number | null;
   vat_included?: boolean;
   payment_terms?: string;
-  /** 용역범위 — PDF에 [포함]/[제외] 태그로 라인별 표시. */
+  /** 용역범위 list (신) — 항목별 라벨(포함/제외/일반) + 텍스트. */
+  special_notes_items?: SpecialNoteItem[];
+  /** 용역범위 legacy — textarea 라인별 [포함]/[제외] 끝맺음 (backward 호환). */
   special_notes?: string;
   /** 견적 비고 — 자유 입력. */
   quote_note?: string;
