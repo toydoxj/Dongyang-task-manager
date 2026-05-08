@@ -174,14 +174,31 @@ async def create_sale(
     get_sync().upsert_page("sales", page)
 
     # quote_form_data는 노션에 저장 불가 (JSONB). mirror_sales에만 별도 UPDATE.
+    # frontend가 단일 schema {input, result}로 보내면 list-wrapped로 변환 후 저장
+    # (그렇지 않으면 listSaleQuotes 호출 때마다 normalize_quote_forms가 새 uuid 생성
+    #  → quote_id 매번 달라져 update/delete 라우터에서 "견적을 찾을 수 없습니다" 에러).
     if body.quote_form_data:
         from sqlalchemy import update as sa_update
 
         new_page_id = page.get("id", "")
+        raw_fd = body.quote_form_data
+        if "forms" not in raw_fd and "input" in raw_fd:
+            # 단일 schema → list-wrapped (DB에 stable form id로 저장)
+            wrapped = pack_quote_forms([
+                {
+                    "id": next_form_id(),
+                    "doc_number": body.quote_doc_number or "",
+                    "suffix": "A",
+                    "input": raw_fd.get("input") or {},
+                    "result": raw_fd.get("result") or {},
+                }
+            ])
+        else:
+            wrapped = raw_fd
         db.execute(
             sa_update(M.MirrorSales)
             .where(M.MirrorSales.page_id == new_page_id)
-            .values(quote_form_data=body.quote_form_data)
+            .values(quote_form_data=wrapped)
         )
 
     db.commit()  # advisory lock 해제 + mirror upsert 커밋
@@ -325,13 +342,25 @@ def list_sale_quotes(
     _user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> list[QuoteFormResponse]:
-    """영업의 모든 견적 list. 옛 단일 schema는 자동 wrap (PR-M0 helper)."""
+    """영업의 모든 견적 list. 옛 단일 schema는 자동 wrap (PR-M0 helper) +
+    DB에 list-wrapped로 lazy 마이그레이션 (다음 호출부터 stable form id 보장)."""
+    from sqlalchemy import update as sa_update
+
     row = db.get(M.MirrorSales, page_id)
     if row is None or row.archived:
         raise HTTPException(status_code=404, detail="영업 건을 찾을 수 없습니다")
     forms = normalize_quote_forms(
         row.quote_form_data, legacy_doc_number=row.quote_doc_number or ""
     )
+    # legacy 단일 schema → list-wrapped로 마이그레이션 (stable id)
+    raw_fd = row.quote_form_data or {}
+    if forms and "forms" not in raw_fd:
+        db.execute(
+            sa_update(M.MirrorSales)
+            .where(M.MirrorSales.page_id == page_id)
+            .values(quote_form_data=pack_quote_forms(forms))
+        )
+        db.commit()
     return [_form_to_response(f) for f in forms]
 
 
@@ -1207,14 +1236,30 @@ async def update_sale(
     get_sync().upsert_page("sales", page)
 
     # quote_form_data는 노션에 저장 불가 (JSONB) — mirror_sales에만 별도 UPDATE.
-    # POST 흐름과 동일 패턴.
+    # 단일 schema는 list-wrapped로 변환 (POST 흐름과 동일 — stable form id 보장).
     if body.quote_form_data is not None:
         from sqlalchemy import update as sa_update
 
+        raw_fd = body.quote_form_data
+        if "forms" not in raw_fd and "input" in raw_fd:
+            # 영업 row의 기존 quote_doc_number 가져와 legacy_doc_number로 사용
+            row_for_doc = db.get(M.MirrorSales, page_id)
+            legacy_doc = row_for_doc.quote_doc_number if row_for_doc else ""
+            wrapped = pack_quote_forms([
+                {
+                    "id": next_form_id(),
+                    "doc_number": legacy_doc or "",
+                    "suffix": "A",
+                    "input": raw_fd.get("input") or {},
+                    "result": raw_fd.get("result") or {},
+                }
+            ])
+        else:
+            wrapped = raw_fd
         db.execute(
             sa_update(M.MirrorSales)
             .where(M.MirrorSales.page_id == page_id)
-            .values(quote_form_data=body.quote_form_data)
+            .values(quote_form_data=wrapped)
         )
         db.commit()
 
