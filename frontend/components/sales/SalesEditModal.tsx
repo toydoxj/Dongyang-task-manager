@@ -615,6 +615,22 @@ export default function SalesEditModal({
                               {q.input.service_name ?? "—"} ·{" "}
                               ₩{(q.result.final ?? 0).toLocaleString()}
                             </div>
+                            {(() => {
+                              const items = (q.input.direct_expense_items ?? []).filter(
+                                (it) => (it.amount ?? 0) > 0,
+                              );
+                              if (items.length === 0) return null;
+                              return (
+                                <ul className="mt-1 space-y-0.5 pl-2 text-[10px] text-zinc-500 dark:text-zinc-400">
+                                  {items.map((it, i) => (
+                                    <li key={i}>
+                                      └ {it.name || "항목명 없음"} ·{" "}
+                                      ₩{(it.amount ?? 0).toLocaleString()}
+                                    </li>
+                                  ))}
+                                </ul>
+                              );
+                            })()}
                           </div>
                           <div className="flex shrink-0 gap-1">
                             <button

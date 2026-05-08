@@ -122,6 +122,20 @@
       font-weight: 500;
     }
     .calc-table tr.deduction .amount { color: #888; }
+    /* 직접경비 sub-row — 항목별 detail. 옅은 배경 + 작은 글자 + 들여쓰기 */
+    .calc-table tr.expense-detail td {
+      padding: 2px 4px;
+      border-bottom: 1px dashed #f0f0f0;
+      background: #fafafa;
+      font-size: 7.5pt;
+      color: #666;
+    }
+    .calc-table tr.expense-detail .expense-name {
+      padding-left: 18px;
+    }
+    .calc-table tr.expense-detail .expense-amount {
+      font-family: 'NanumGothicCoding', 'NanumGothic', monospace;
+    }
 
     /* ── 합계 줄 (박스 없이 위/아래 라인) ── */
     .total-line {
@@ -390,14 +404,25 @@
         <td class="num">②</td>
         <td>직접경비</td>
         <td class="formula">
-          {%- if input.direct_expense_items and input.direct_expense_items | length -%}
-            {{ input.direct_expense_items | map(attribute='name') | reject('equalto', '') | join(' · ') or '인쇄 · 조사 · 교통비' }}
+          {%- if input.direct_expense_items and (input.direct_expense_items | selectattr('amount') | list | length) -%}
+            {{ input.direct_expense_items | selectattr('amount') | list | length }}건 합계
           {%- else -%}
             인쇄 · 조사 · 교통비
           {%- endif -%}
         </td>
         <td class="right amount">{{ "{:,}".format(result.direct_expense | int) }}</td>
       </tr>
+      {# 직접경비 항목별 sub-row — 사용자가 입력한 동적 항목 list. 금액 0 항목은 skip #}
+      {%- for item in input.direct_expense_items or [] -%}
+        {%- if item.amount and item.amount > 0 -%}
+      <tr class="expense-detail">
+        <td></td>
+        <td class="expense-name">└ {{ item.name or '항목명 없음' }}</td>
+        <td></td>
+        <td class="right expense-amount">{{ "{:,}".format(item.amount | int) }}</td>
+      </tr>
+        {%- endif -%}
+      {%- endfor -%}
       <tr>
         <td class="num">⑥</td>
         <td>제경비</td>
