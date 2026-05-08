@@ -17,7 +17,6 @@
       }
     }
     * { box-sizing: border-box; margin: 0; padding: 0; }
-    html, body { height: 100%; }
     body {
       font-family: 'NanumGothic', 'Nanum Gothic', sans-serif;
       color: #1a1a1a;
@@ -25,14 +24,21 @@
       line-height: 1.5;
       display: flex;
       flex-direction: column;
+      min-height: 195mm;  /* page content area 209mm에서 안전 여유 14mm */
     }
     /* middle-area — total-line과 extra-section(특이사항) 사이 가용 영역.
+       basis 0 + flex 1: 다른 형제(extra-section 포함)가 자기 height 차지한 후
+       남은 공간만 차지. extra-section 잘림 방지.
        inner flex로 detail-section을 vertical center. */
     .middle-area {
-      flex: 1 1 auto;
+      flex: 1 1 0;
       display: flex;
       flex-direction: column;
       justify-content: center;
+    }
+    /* extra-section은 자기 content height 보장 (잘림 방지) */
+    .extra-section {
+      flex-shrink: 0;
     }
     /* 페이지 bottom margin 영역에 자동 배치 — 컨텐츠 길이와 무관 */
     .bottom-section {
