@@ -36,7 +36,6 @@ class Sale(BaseModel):
     vat_inclusive: str = ""   # 별도|포함
     performance_design_amount: float | None = None
     wind_tunnel_amount: float | None = None
-    parent_lead_id: str = ""  # 상위 영업건 relation 첫번째 (self)
     converted_project_id: str = ""  # 전환된 프로젝트 relation 첫번째
     assignees: list[str] = []
     # 견적서 작성 툴 (PR5)
@@ -84,7 +83,6 @@ class Sale(BaseModel):
             vat_inclusive=P.select_name(props, "VAT포함"),
             performance_design_amount=P.number(props, "성능설계"),
             wind_tunnel_amount=P.number(props, "풍동실험"),
-            parent_lead_id=_first_relation_id(props, "상위 영업건"),
             converted_project_id=_first_relation_id(props, "전환된 프로젝트"),
             assignees=P.multi_select_names(props, "담당자"),
             quote_doc_number=P.rich_text(props, "문서번호"),
@@ -136,7 +134,6 @@ class SaleCreateRequest(BaseModel):
     vat_inclusive: str = ""
     performance_design_amount: float | None = None
     wind_tunnel_amount: float | None = None
-    parent_lead_id: str = ""
     assignees: list[str] = []
 
 
@@ -161,7 +158,6 @@ class SaleUpdateRequest(BaseModel):
     vat_inclusive: str | None = None
     performance_design_amount: float | None = None
     wind_tunnel_amount: float | None = None
-    parent_lead_id: str | None = None
     assignees: list[str] | None = None
     quote_type: str | None = None  # PR-Q1
     # 견적서 데이터 — None이면 변경 안 함, dict면 mirror_sales JSONB 갱신 (노션 X)
@@ -250,8 +246,6 @@ def sale_create_to_props(req: SaleCreateRequest) -> dict[str, Any]:
         props["제출일"] = d
     if req.vat_inclusive:
         props["VAT포함"] = {"select": {"name": req.vat_inclusive}}
-    if req.parent_lead_id:
-        props["상위 영업건"] = _relation([req.parent_lead_id])
     if req.assignees:
         props["담당자"] = _multi_select(req.assignees)
     if req.quote_type:
@@ -308,10 +302,6 @@ def sale_update_to_props(req: SaleUpdateRequest) -> dict[str, Any]:
             {"select": None}
             if req.vat_inclusive == ""
             else {"select": {"name": req.vat_inclusive}}
-        )
-    if req.parent_lead_id is not None:
-        props["상위 영업건"] = _relation(
-            [req.parent_lead_id] if req.parent_lead_id else []
         )
     if req.assignees is not None:
         props["담당자"] = _multi_select(req.assignees)

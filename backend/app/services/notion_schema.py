@@ -139,7 +139,8 @@ SEAL_REQUEST_DB_REQUIRED: dict[str, dict[str, Any]] = {
 # UI에서 kind에 따라 노출 옵션을 필터링하지만 노션 자체는 자유 선택.
 # `전환된 프로젝트`(프로젝트 DB relation)는 update_data_source_schema가 relation
 # 자동 생성을 지원하지 않으므로 운영자가 노션 UI에서 직접 추가해야 한다.
-# `상위 영업건` self relation은 이미 견적서 DB에 존재.
+# `상위 영업건` self relation은 PR-M4b에서 사용 폐기 — 노션 UI에서 운영자가
+# 수동 정리 권장 (data 없음 확인 후 삭제).
 SALES_DB_REQUIRED: dict[str, dict[str, Any]] = {
     "유형": _select(
         [

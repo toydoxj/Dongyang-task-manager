@@ -162,7 +162,6 @@ export default function SalesEditModal({
         vat_inclusive: sale.vat_inclusive || undefined,
         performance_design_amount: sale.performance_design_amount ?? undefined,
         wind_tunnel_amount: sale.wind_tunnel_amount ?? undefined,
-        parent_lead_id: sale.parent_lead_id || undefined,
         assignees: sale.assignees,
         quote_type: sale.quote_type || undefined,
       });

@@ -171,7 +171,6 @@ class MirrorSales(Base):
     vat_inclusive: Mapped[str] = mapped_column(String, default="")  # 별도|포함
     performance_design_amount: Mapped[float | None] = mapped_column(Float, nullable=True)
     wind_tunnel_amount: Mapped[float | None] = mapped_column(Float, nullable=True)
-    parent_lead_id: Mapped[str] = mapped_column(String, default="", index=True)  # 상위 영업건
     converted_project_id: Mapped[str] = mapped_column(String, default="", index=True)
     assignees: Mapped[list[str]] = mapped_column(ARRAY(String), default=list)
     # 견적서 작성 툴 (PR5) — 문서번호 {YY}-{MM}-{NNN} 형식, 입력값+산출결과 dump

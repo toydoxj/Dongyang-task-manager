@@ -482,7 +482,6 @@ export interface Sale {
   vat_inclusive: string;
   performance_design_amount: number | null;
   wind_tunnel_amount: number | null;
-  parent_lead_id: string;
   converted_project_id: string;
   assignees: string[];
   created_time: string | null;
@@ -520,7 +519,6 @@ export interface SaleCreateRequest {
   vat_inclusive?: string;
   performance_design_amount?: number;
   wind_tunnel_amount?: number;
-  parent_lead_id?: string;
   assignees?: string[];
 }
 
