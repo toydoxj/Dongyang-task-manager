@@ -6,20 +6,25 @@ import { useSWRConfig } from "swr";
 import { useAuth } from "@/components/AuthGuard";
 import QuoteForm from "@/components/sales/QuoteForm";
 import {
+  addSaleQuote,
   archiveSale,
   convertSale,
   createSale,
+  deleteSaleQuote,
   downloadQuoteBundlePdf,
   downloadQuotePdf,
   linkSaleToProject,
+  listSaleQuotes,
   saveQuoteBundlePdfToDrive,
   saveQuotePdfToDrive,
   updateSale,
+  updateSaleQuote,
 } from "@/lib/api";
 import {
   BID_STAGES,
   CONVERTIBLE_STAGES,
   type Project,
+  type QuoteFormResponse,
   type QuoteInput,
   type QuoteResult,
   QUOTE_TYPES,
@@ -108,6 +113,12 @@ export default function SalesEditModal({
     printing_fee: 500_000,
   });
   const [quoteResult, setQuoteResult] = useState<QuoteResult | null>(null);
+
+  // 영업당 다중 견적 (PR-M3) — 모달 열릴 때 listSaleQuotes로 fetch.
+  // quoteMode: list = 견적 N개 row 표시, new = 신규 작성 form, edit = 기존 수정 form.
+  const [quoteList, setQuoteList] = useState<QuoteFormResponse[]>([]);
+  const [quoteMode, setQuoteMode] = useState<"list" | "new" | "edit">("list");
+  const [editingQuoteId, setEditingQuoteId] = useState<string | null>(null);
 
   // 종류별 default 자동 적용 — useRef로 prev type 추적해 모달 첫 prefill 시에는
   // skip (기존 견적의 사용자 정의 값을 보존), 사용자가 select 변경할 때만 reset.
@@ -273,6 +284,33 @@ export default function SalesEditModal({
     if (!open) prevQuoteTypeRef.current = undefined;
   }, [open]);
 
+  // 견적 list fetch — 모달 열림 + sale 있음. 닫힘 시 reset.
+  useEffect(() => {
+    if (!open || !sale) {
+      setQuoteList([]);
+      setQuoteMode("list");
+      setEditingQuoteId(null);
+      return;
+    }
+    listSaleQuotes(sale.id)
+      .then((qs) => setQuoteList(qs))
+      .catch((e) => {
+        // eslint-disable-next-line no-console
+        console.error("견적 list fetch:", e);
+      });
+  }, [open, sale]);
+
+  // 견적 list 새로고침 helper
+  const refreshQuoteList = async (): Promise<void> => {
+    if (!sale) return;
+    try {
+      const qs = await listSaleQuotes(sale.id);
+      setQuoteList(qs);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "견적 list 갱신 실패");
+    }
+  };
+
   // 종류 변경 시 산출 default 자동 적용 (overhead/tech/adj/truncate).
   // 모달 첫 prefill (prev=undefined → next=type)은 skip — 기존 견적의 사용자
   // 정의 값을 보존.
@@ -300,8 +338,14 @@ export default function SalesEditModal({
   };
 
   const handleSave = async (): Promise<void> => {
-    // 견적서 탭 저장 — 신규/수정 모두 처리
+    // 견적서 탭 저장 (PR-M3) — list mode: disabled, new/edit: CRUD 호출
     if (activeTab === "quote") {
+      if (quoteMode === "list") {
+        setErr(
+          "list 모드에서는 저장할 견적이 없습니다 — 견적 row의 [편집] 또는 [+ 신규 견적]을 사용하세요.",
+        );
+        return;
+      }
       if (!quoteInput.service_name?.trim()) {
         setErr("용역명은 필수입니다.");
         return;
@@ -314,9 +358,6 @@ export default function SalesEditModal({
         setErr("산출 결과가 아직 준비되지 않았습니다. 잠시 후 다시 시도하세요.");
         return;
       }
-      // 수신처 회사명을 clientsData에서 매칭해 client_id 자동 설정 — 영업 테이블
-      // 발주처 컬럼이 비지 않게. 사용자가 영업 정보 탭에서 명시적으로 발주처를
-      // 선택했으면 그 client_id 우선.
       const recipientMatch = quoteInput.recipient_company
         ? clientsData?.items.find(
             (c) =>
@@ -326,7 +367,6 @@ export default function SalesEditModal({
         : undefined;
       const resolvedClientId = form.client_id || recipientMatch?.id;
 
-      // 견적서 입력의 규모 4종(연면적/지상층/지하층/동수) + quote_type을 영업 row와 동기화
       const scaleFields = {
         gross_floor_area: quoteInput.gross_floor_area,
         floors_above: quoteInput.floors_above ?? undefined,
@@ -341,20 +381,9 @@ export default function SalesEditModal({
       setBusy(true);
       setErr(null);
       try {
-        if (isEdit && sale) {
-          // 견적서 저장 — quote_form_data + 핵심 필드 PATCH. 창은 유지.
-          await updateSale(sale.id, {
-            name: quoteInput.service_name,
-            estimated_amount: quoteResult.final,
-            client_id: resolvedClientId,
-            ...scaleFields,
-            quote_form_data: { input: quoteInput, result: quoteResult },
-          });
-          refreshSales();
-          // 창 안 닫음 — 사용자가 PDF 다운로드/저장 등 후속 작업 가능
-          alert("견적서가 저장되었습니다.");
-        } else {
-          // 신규: 영업 row 자동 생성 + quote_form_data 함께. 생성 후 창 닫음.
+        if (!isEdit) {
+          // 신규 영업 + 첫 견적 동시 저장 (legacy 흐름 유지). 단일 schema는
+          // backend normalize_quote_forms가 list[0]으로 자동 wrap.
           const body: SaleCreateRequest = {
             name: quoteInput.service_name,
             kind: "수주영업",
@@ -368,6 +397,20 @@ export default function SalesEditModal({
           await createSale(body);
           refreshSales();
           onClose();
+        } else if (sale && quoteMode === "new") {
+          // 영업 수정 모드 + 신규 견적 추가
+          await addSaleQuote(sale.id, quoteInput);
+          await refreshQuoteList();
+          setQuoteMode("list");
+          refreshSales();
+          alert("견적이 추가되었습니다.");
+        } else if (sale && quoteMode === "edit" && editingQuoteId) {
+          await updateSaleQuote(sale.id, editingQuoteId, quoteInput);
+          await refreshQuoteList();
+          setQuoteMode("list");
+          setEditingQuoteId(null);
+          refreshSales();
+          alert("견적이 수정되었습니다.");
         }
       } catch (e) {
         setErr(e instanceof Error ? e.message : "저장 실패");
@@ -526,19 +569,184 @@ export default function SalesEditModal({
           )}
 
           {activeTab === "quote" ? (
-            <>
-              <p className="rounded-md border border-blue-500/30 bg-blue-500/5 px-3 py-2 text-[11px] text-blue-700 dark:text-blue-400">
-                {isEdit
-                  ? "저장하면 영업 건의 용역명·견적금액·발주처가 새 입력값으로 갱신되고, 견적서 xlsx도 다음 다운로드 시 새 버전으로 생성됩니다."
-                  : "저장하면 영업 건이 자동 생성됩니다 (영업코드·문서번호 자동 부여, 단계 = 준비). 단계·수주확률은 영업 정보 탭/수정 모달에서 추후 변경 가능."}
-              </p>
-              <QuoteForm
-                value={quoteInput}
-                onChange={setQuoteInput}
-                onResultChange={setQuoteResult}
-                echoReadOnly
-              />
-            </>
+            isEdit && quoteMode === "list" ? (
+              // PR-M3 List view — 영업당 견적 N개 표시
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-sm font-medium">
+                    견적서 ({quoteList.length}건)
+                  </h3>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      // 새 견적: input default reset (단가 등급/조정 등은 그대로)
+                      setQuoteInput({
+                        type_rate: 1.0,
+                        structure_rate: 1.0,
+                        coefficient: 1.0,
+                        adjustment_pct: 87,
+                        printing_fee: 500_000,
+                        gross_floor_area: form.gross_floor_area ?? undefined,
+                        floors_above: form.floors_above ?? null,
+                        floors_below: form.floors_below ?? null,
+                        building_count: form.building_count ?? null,
+                        service_name: form.name ?? "",
+                        quote_type:
+                          (form.quote_type as QuoteType | undefined) ?? "구조설계",
+                      });
+                      setQuoteResult(null);
+                      setEditingQuoteId(null);
+                      setQuoteMode("new");
+                    }}
+                    className="rounded-md border border-emerald-700/40 bg-emerald-600/10 px-3 py-1.5 text-xs font-medium text-emerald-700 hover:bg-emerald-600/20 dark:text-emerald-400"
+                  >
+                    + 신규 견적
+                  </button>
+                </div>
+                {quoteList.length === 0 ? (
+                  <p className="rounded-md border border-dashed border-zinc-300 px-3 py-4 text-center text-xs text-zinc-500 dark:border-zinc-700">
+                    아직 견적 없음. "+ 신규 견적"으로 작성하세요.
+                  </p>
+                ) : (
+                  <ul className="space-y-1">
+                    {quoteList.map((q) => (
+                      <li
+                        key={q.id}
+                        className="rounded border border-zinc-200 px-3 py-2 dark:border-zinc-800"
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="flex-1 min-w-0">
+                            <div className="text-sm font-medium">
+                              {q.full_doc || "—"} · {q.input.quote_type ?? "구조설계"}
+                            </div>
+                            <div className="truncate text-xs text-zinc-500">
+                              {q.input.service_name ?? "—"} ·{" "}
+                              ₩{(q.result.final ?? 0).toLocaleString()}
+                            </div>
+                          </div>
+                          <div className="flex shrink-0 gap-1">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setQuoteInput(q.input);
+                                setQuoteResult(q.result);
+                                setEditingQuoteId(q.id);
+                                setQuoteMode("edit");
+                              }}
+                              className="rounded border border-zinc-300 px-2 py-1 text-[11px] hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800"
+                            >
+                              편집
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (!sale) return;
+                                void downloadQuotePdf(sale.id, q.id).catch(
+                                  (e) =>
+                                    setErr(
+                                      e instanceof Error
+                                        ? e.message
+                                        : "PDF 다운로드 실패",
+                                    ),
+                                );
+                              }}
+                              className="rounded border border-emerald-700/40 px-2 py-1 text-[11px] text-emerald-700 hover:bg-emerald-600/10 dark:text-emerald-400"
+                            >
+                              PDF
+                            </button>
+                            <button
+                              type="button"
+                              onClick={async () => {
+                                if (!sale) return;
+                                setBusy(true);
+                                setErr(null);
+                                try {
+                                  await saveQuotePdfToDrive(sale.id, q.id);
+                                  refreshSales();
+                                  alert("Drive 저장 완료");
+                                } catch (e) {
+                                  setErr(
+                                    e instanceof Error
+                                      ? e.message
+                                      : "PDF 저장 실패",
+                                  );
+                                } finally {
+                                  setBusy(false);
+                                }
+                              }}
+                              disabled={busy}
+                              className="rounded border border-blue-500/40 px-2 py-1 text-[11px] text-blue-700 hover:bg-blue-500/10 disabled:opacity-50 dark:text-blue-400"
+                            >
+                              저장
+                            </button>
+                            <button
+                              type="button"
+                              onClick={async () => {
+                                if (!sale) return;
+                                if (
+                                  !confirm(
+                                    `견적 [${q.full_doc}]을 삭제하시겠습니까?\n(파일은 보존, 노션 row만 갱신)`,
+                                  )
+                                )
+                                  return;
+                                setBusy(true);
+                                setErr(null);
+                                try {
+                                  await deleteSaleQuote(sale.id, q.id);
+                                  await refreshQuoteList();
+                                  refreshSales();
+                                } catch (e) {
+                                  setErr(
+                                    e instanceof Error
+                                      ? e.message
+                                      : "삭제 실패",
+                                  );
+                                } finally {
+                                  setBusy(false);
+                                }
+                              }}
+                              disabled={busy}
+                              className="rounded border border-red-500/40 px-2 py-1 text-[11px] text-red-600 hover:bg-red-500/10 disabled:opacity-50 dark:text-red-400"
+                            >
+                              삭제
+                            </button>
+                          </div>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            ) : (
+              // PR-M3 New/Edit form view (또는 신규 영업 시 기존 단일 form)
+              <>
+                {isEdit && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setQuoteMode("list");
+                      setEditingQuoteId(null);
+                    }}
+                    className="text-xs text-blue-600 hover:underline dark:text-blue-400"
+                  >
+                    ← 견적 목록
+                  </button>
+                )}
+                <p className="rounded-md border border-blue-500/30 bg-blue-500/5 px-3 py-2 text-[11px] text-blue-700 dark:text-blue-400">
+                  {!isEdit
+                    ? "저장하면 영업 건이 자동 생성됩니다 (영업코드·문서번호 자동 부여, 단계 = 준비). 추가 견적은 영업 저장 후 모달 다시 열어 작성."
+                    : quoteMode === "edit"
+                      ? "기존 견적 수정 — doc_number/suffix는 보존됩니다."
+                      : "신규 견적 추가 — 분류별 sequence + suffix(A/B/C) 자동 부여."}
+                </p>
+                <QuoteForm
+                  value={quoteInput}
+                  onChange={setQuoteInput}
+                  onResultChange={setQuoteResult}
+                  echoReadOnly
+                />
+              </>
+            )
           ) : (
             <>
           <Field label="용역명">

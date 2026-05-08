@@ -26,6 +26,7 @@ import type {
   ProjectCreateRequest,
   ProjectListResponse,
   ProjectOptions,
+  QuoteFormResponse,
   QuoteInput,
   QuoteResult,
   Sale,
@@ -1034,11 +1035,17 @@ export async function previewQuote(input: QuoteInput): Promise<QuoteResult> {
   return jsonOrThrow<QuoteResult>(res);
 }
 
-/** 견적서 PDF → WORKS Drive [견적서]/{YYYY}년 자동 업로드 + 노션 sale 견적서첨부 갱신. */
-export async function saveQuotePdfToDrive(saleId: string): Promise<Sale> {
-  const res = await authFetch(`/api/sales/${saleId}/quote/save-pdf-to-drive`, {
-    method: "POST",
-  });
+/** 단일 견적 PDF → WORKS Drive [견적서]/{YYYY}년 자동 업로드 + 노션 sale 견적서첨부 갱신.
+ * quoteId 미지정 시 첫 견적 (legacy 호환). */
+export async function saveQuotePdfToDrive(
+  saleId: string,
+  quoteId?: string,
+): Promise<Sale> {
+  const qs = quoteId ? `?quote_id=${encodeURIComponent(quoteId)}` : "";
+  const res = await authFetch(
+    `/api/sales/${saleId}/quote/save-pdf-to-drive${qs}`,
+    { method: "POST" },
+  );
   return jsonOrThrow<Sale>(res);
 }
 
@@ -1073,8 +1080,86 @@ async function downloadPdfBlob(url: string, fallbackFilename: string): Promise<v
   URL.revokeObjectURL(blobUrl);
 }
 
-export async function downloadQuotePdf(saleId: string): Promise<void> {
-  await downloadPdfBlob(`/api/sales/${saleId}/quote.pdf`, "quote.pdf");
+/** 단일 견적 PDF 다운로드. quoteId 미지정 시 첫 견적 (legacy 호환). */
+export async function downloadQuotePdf(
+  saleId: string,
+  quoteId?: string,
+): Promise<void> {
+  const qs = quoteId ? `?quote_id=${encodeURIComponent(quoteId)}` : "";
+  await downloadPdfBlob(`/api/sales/${saleId}/quote.pdf${qs}`, "quote.pdf");
+}
+
+/** 영업의 모든 견적 list (PR-M1). */
+export async function listSaleQuotes(
+  saleId: string,
+): Promise<QuoteFormResponse[]> {
+  const res = await authFetch(`/api/sales/${saleId}/quotes`);
+  if (!res.ok) {
+    const detail = await res.json().catch(() => null);
+    throw new Error(
+      (detail as { detail?: string } | null)?.detail ??
+        `${res.status} ${res.statusText}`,
+    );
+  }
+  return (await res.json()) as QuoteFormResponse[];
+}
+
+/** 영업에 견적 1건 추가 (PR-M1). suffix·doc_number 자동 부여. */
+export async function addSaleQuote(
+  saleId: string,
+  input: QuoteInput,
+): Promise<QuoteFormResponse> {
+  const res = await authFetch(`/api/sales/${saleId}/quotes`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  if (!res.ok) {
+    const detail = await res.json().catch(() => null);
+    throw new Error(
+      (detail as { detail?: string } | null)?.detail ??
+        `${res.status} ${res.statusText}`,
+    );
+  }
+  return (await res.json()) as QuoteFormResponse;
+}
+
+/** 견적 수정 — input/result만 갱신, doc_number/suffix 보존 (PR-M1). */
+export async function updateSaleQuote(
+  saleId: string,
+  quoteId: string,
+  input: QuoteInput,
+): Promise<QuoteFormResponse> {
+  const res = await authFetch(`/api/sales/${saleId}/quotes/${quoteId}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  if (!res.ok) {
+    const detail = await res.json().catch(() => null);
+    throw new Error(
+      (detail as { detail?: string } | null)?.detail ??
+        `${res.status} ${res.statusText}`,
+    );
+  }
+  return (await res.json()) as QuoteFormResponse;
+}
+
+/** 견적 삭제 (PR-M1). suffix 재할당 X — hole 보존. */
+export async function deleteSaleQuote(
+  saleId: string,
+  quoteId: string,
+): Promise<void> {
+  const res = await authFetch(`/api/sales/${saleId}/quotes/${quoteId}`, {
+    method: "DELETE",
+  });
+  if (!res.ok && res.status !== 204) {
+    const detail = await res.json().catch(() => null);
+    throw new Error(
+      (detail as { detail?: string } | null)?.detail ??
+        `${res.status} ${res.statusText}`,
+    );
+  }
 }
 
 /** 통합 견적서 PDF 다운로드 — parent_lead_id로 묶인 자식들과 함께 1 PDF (PR-G1). */

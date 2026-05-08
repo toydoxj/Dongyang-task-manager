@@ -628,6 +628,17 @@ export interface QuoteInput {
   transport_persons?: number;
 }
 
+/** 영업 1건 안 단일 견적 form (PR-M0~M2). 영업당 N개 가능 — 각자 doc_number와
+ * suffix(영업 내 인덱스 영문, A/B/C/...). full_doc은 표시 형식 "26-04-001A". */
+export interface QuoteFormResponse {
+  id: string;
+  doc_number: string;
+  suffix: string;
+  full_doc: string;
+  input: QuoteInput;
+  result: QuoteResult;
+}
+
 /** 견적서 산출 결과 — 백엔드 QuoteResult. */
 export interface QuoteResult {
   manhours_baseline: number;
