@@ -89,13 +89,14 @@
       margin: 16px 0 22px 0;
     }
     .total-line .label {
-      font-size: 11pt;
-      color: #444;
-      letter-spacing: 0.3em;
+      font-size: 13pt;
+      font-weight: 700;
+      color: #1a1a1a;
+      letter-spacing: 0.05em;
     }
     .total-line .grand {
       font-family: 'NanumGothicCoding', 'NanumGothic', monospace;
-      font-size: 22pt;
+      font-size: 13pt;
       font-weight: 700;
       color: #1f7a4a;
     }
@@ -272,8 +273,8 @@
     .signature-line .seal-stack {
       position: relative;
       display: inline-block;
-      width: 56px;
-      height: 56px;
+      width: 84px;
+      height: 84px;
       margin-left: -4px;
       vertical-align: middle;
     }
@@ -288,8 +289,8 @@
       position: absolute;
       top: 0;
       left: 0;
-      width: 56px;
-      height: 56px;
+      width: 84px;
+      height: 84px;
       z-index: 1;
       opacity: 0.85;
     }
@@ -369,7 +370,7 @@
   </div>
 
   <div class="total-line">
-    <div class="label">TOTAL</div>
+    <div class="label">견적가</div>
     <div class="grand">₩ {{ "{:,}".format(total | int) }}<span class="vat-mark">VAT 별도</span></div>
   </div>
 

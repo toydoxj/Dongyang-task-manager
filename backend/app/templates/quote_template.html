@@ -106,7 +106,7 @@
       text-align: left;
       font-weight: 500;
       color: #888;
-      font-size: 8pt;
+      font-size: 9pt;
       padding: 5px 4px;
       border-top: 1.2px solid #1a1a1a;
       border-bottom: 1px solid #d0d0d0;
@@ -115,12 +115,12 @@
     .calc-table tbody td {
       padding: 4px 4px;
       border-bottom: 1px solid #ececec;
-      font-size: 8pt;
+      font-size: 9pt;
       color: #1a1a1a;
     }
     .calc-table .num { width: 24px; color: #999; }
     .calc-table .item { width: 80px; }
-    .calc-table .formula { color: #555; font-size: 7.5pt; }
+    .calc-table .formula { color: #555; font-size: 8.5pt; }
     .calc-table .right { text-align: right; }
     .calc-table .amount {
       font-family: 'NanumGothicCoding', 'NanumGothic', monospace;
@@ -132,7 +132,7 @@
       padding: 2px 4px;
       border-bottom: 1px dashed #f0f0f0;
       background: #fafafa;
-      font-size: 7.5pt;
+      font-size: 8.5pt;
       color: #666;
     }
     .calc-table tr.expense-detail .expense-name {
@@ -154,11 +154,13 @@
       margin-top: 4px;
     }
     .total-line .label {
-      font-size: 10.5pt;
-      color: #555;
+      font-size: 13pt;
+      font-weight: 700;
+      color: #1a1a1a;
+      letter-spacing: 0.05em;
     }
     .total-line .grand {
-      font-size: 22pt;
+      font-size: 13pt;
       font-weight: 700;
       letter-spacing: 0.02em;
     }
@@ -308,8 +310,8 @@
     .signature-line .seal-stack {
       position: relative;
       display: inline-block;
-      width: 56px;
-      height: 56px;
+      width: 84px;
+      height: 84px;
       margin-left: -4px;
       vertical-align: middle;
     }
@@ -324,8 +326,8 @@
       position: absolute;
       top: 0;
       left: 0;
-      width: 56px;
-      height: 56px;
+      width: 84px;
+      height: 84px;
       z-index: 1;
       opacity: 0.85;
     }
@@ -405,7 +407,7 @@
   </div>
 
   <div class="total-line">
-    <div class="label">TOTAL</div>
+    <div class="label">견적가</div>
     {% if input.vat_included %}
       <div class="grand">₩ {{ "{:,}".format(result.final_with_vat | int) }}<span class="vat-mark">VAT 포함</span></div>
     {% else %}
@@ -457,31 +459,31 @@
         {%- endif -%}
       {%- endfor -%}
       <tr>
-        <td class="num">⑥</td>
+        <td class="num">③</td>
         <td>제경비</td>
         <td class="formula">① × {{ input.overhead_pct or 110 }}%</td>
         <td class="right amount">{{ "{:,}".format(result.overhead | int) }}</td>
       </tr>
       <tr>
-        <td class="num">⑦</td>
+        <td class="num">④</td>
         <td>기술료</td>
-        <td class="formula">(① + ⑥) × {{ input.tech_fee_pct or 20 }}%</td>
+        <td class="formula">(① + ③) × {{ input.tech_fee_pct or 20 }}%</td>
         <td class="right amount">{{ "{:,}".format(result.tech_fee | int) }}</td>
       </tr>
       <tr>
-        <td class="num">⑧</td>
+        <td class="num">⑤</td>
         <td>소계</td>
-        <td class="formula">① + ⑥ + ⑦</td>
+        <td class="formula">① + ③ + ④</td>
         <td class="right amount">{{ "{:,}".format(result.subtotal | int) }}</td>
       </tr>
       <tr>
-        <td class="num">⑨</td>
+        <td class="num">⑥</td>
         <td>당사조정</td>
-        <td class="formula">⑧ × {{ input.adjustment_pct or 87 }}% + ②</td>
+        <td class="formula">⑤ × {{ input.adjustment_pct or 87 }}% + ②</td>
         <td class="right amount">{{ "{:,}".format(result.adjusted | int) }}</td>
       </tr>
       <tr class="deduction">
-        <td class="num">⑩</td>
+        <td class="num">⑦</td>
         <td>{% if input.final_override is not none %}수동 조정{% else %}절삭{% endif %}</td>
         <td class="formula">
           {%- if input.final_override is not none -%}
@@ -501,14 +503,14 @@
         <td class="right amount">{% if result.truncated %}- {{ "{:,}".format(result.truncated | int) }}{% else %}—{% endif %}</td>
       </tr>
       <tr>
-        <td class="num">⑪</td>
+        <td class="num">⑧</td>
         <td>{% if input.vat_included %}공급가액{% else %}용역대가{% endif %}</td>
         <td class="formula">{% if input.vat_included %}VAT 별도{% endif %}</td>
         <td class="right amount">{{ "{:,}".format(result.final | int) }}</td>
       </tr>
       {% if input.vat_included %}
       <tr>
-        <td class="num">⑫</td>
+        <td class="num">⑨</td>
         <td>VAT</td>
         <td class="formula">10%</td>
         <td class="right amount">{{ "{:,}".format(result.vat_amount | int) }}</td>
