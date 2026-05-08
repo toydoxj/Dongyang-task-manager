@@ -26,14 +26,13 @@
       display: flex;
       flex-direction: column;
     }
-    /* middle-area — total-line과 footer 사이 가용 영역. inner flex로
-       detail-section을 vertical center. 디버그용 옅은 lime 배경 (영역 시각화). */
+    /* middle-area — total-line과 extra-section(특이사항) 사이 가용 영역.
+       inner flex로 detail-section을 vertical center. */
     .middle-area {
       flex: 1 1 auto;
       display: flex;
       flex-direction: column;
       justify-content: center;
-      background: rgba(123, 170, 60, 0.08);  /* TODO: 영역 확인 후 제거 */
     }
     /* 페이지 bottom margin 영역에 자동 배치 — 컨텐츠 길이와 무관 */
     .bottom-section {
@@ -560,7 +559,6 @@
   </div>
   </div>
 
-  <div class="bottom-section">
   <div class="extra-section">
     <div class="extra-title">특이사항</div>
     {% if input.payment_terms %}
@@ -617,6 +615,7 @@
     {% endif %}
   </div>
 
+  <div class="bottom-section">
   <hr class="footer-divider">
 
   <div class="footer">
