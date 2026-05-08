@@ -4,7 +4,14 @@ import { useEffect, useMemo, useState } from "react";
 
 import QuoteResultPanel from "@/components/sales/QuoteResultPanel";
 import { previewQuote } from "@/lib/api";
-import { ENGINEER_GRADES, type EngineerGrade, type QuoteInput, type QuoteResult } from "@/lib/domain";
+import {
+  ENGINEER_GRADES,
+  type EngineerGrade,
+  QUOTE_TYPES,
+  type QuoteInput,
+  type QuoteResult,
+  type QuoteType,
+} from "@/lib/domain";
 import { useClients } from "@/lib/hooks";
 import { cn } from "@/lib/utils";
 
@@ -160,9 +167,34 @@ export default function QuoteForm({
       <div className="space-y-3">
         {echoReadOnly && (
           <p className="rounded-md border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-[11px] text-amber-700 dark:text-amber-400">
-            수신처·용역명·위치·규모는 영업 정보 탭에서 수정합니다 (여기서는 echo).
+            용역명·위치·규모는 영업 정보 탭에서 수정합니다 (여기서는 echo).
           </p>
         )}
+        <Section title="견적서 종류">
+          <Field label="종류 — 견적별 자유 선택 (분류별 sequence + suffix 자동 부여)">
+            <select
+              className={inputCls}
+              value={value.quote_type ?? "구조설계"}
+              onChange={(e) =>
+                set("quote_type", e.target.value as QuoteType)
+              }
+            >
+              {QUOTE_TYPES.map((t) => (
+                <option key={t} value={t}>
+                  {t}
+                </option>
+              ))}
+            </select>
+            {value.quote_type === "기타" && (
+              <input
+                className={cn(inputCls, "mt-1")}
+                placeholder="PDF 헤더 제목 (예: 구조사전검토 견적서)"
+                value={value.custom_title ?? ""}
+                onChange={(e) => set("custom_title", e.target.value)}
+              />
+            )}
+          </Field>
+        </Section>
         <Section title="수신처">
           <div className="grid grid-cols-2 gap-2">
             <Field label="회사명">

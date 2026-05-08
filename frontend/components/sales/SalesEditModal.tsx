@@ -27,7 +27,6 @@ import {
   type QuoteFormResponse,
   type QuoteInput,
   type QuoteResult,
-  QUOTE_TYPES,
   type QuoteType,
   type Sale,
   type SaleCreateRequest,
@@ -257,7 +256,6 @@ export default function SalesEditModal({
       floors_above: form.floors_above ?? prev.floors_above,
       floors_below: form.floors_below ?? prev.floors_below,
       building_count: form.building_count ?? prev.building_count,
-      quote_type: (form.quote_type as QuoteType | undefined) ?? prev.quote_type,
     }));
   }, [
     form.name,
@@ -265,7 +263,6 @@ export default function SalesEditModal({
     form.floors_above,
     form.floors_below,
     form.building_count,
-    form.quote_type,
   ]);
 
   // 모달 닫힘 시 prev type 추적 ref 초기화 — 다음 모달 열림 시 첫 prefill을 skip
@@ -274,8 +271,8 @@ export default function SalesEditModal({
     if (!open) prevQuoteTypeRef.current = undefined;
   }, [open]);
 
-  // 견적 list fetch — 모달 열림 + sale 있음. 닫힘 시 reset.
-  // 신규 영업(!sale): list 모드 의미 X → "new" 모드로 (영업+첫 견적 동시 저장 flow).
+  // 견적 list fetch — 신규/수정 모두 모달 열릴 때 list 모드로 시작.
+  // 신규 영업: 빈 list + "+ 신규 견적" → createSale flow. 수정: backend list fetch.
   useEffect(() => {
     if (!open) {
       setQuoteList([]);
@@ -283,13 +280,12 @@ export default function SalesEditModal({
       setEditingQuoteId(null);
       return;
     }
+    setEditingQuoteId(null);
+    setQuoteMode("list");
     if (!sale) {
       setQuoteList([]);
-      setQuoteMode("new");
-      setEditingQuoteId(null);
       return;
     }
-    setQuoteMode("list");
     listSaleQuotes(sale.id)
       .then((qs) => setQuoteList(qs))
       .catch((e) => {
@@ -311,9 +307,9 @@ export default function SalesEditModal({
 
   // 종류 변경 시 산출 default 자동 적용 (overhead/tech/adj/truncate).
   // 모달 첫 prefill (prev=undefined → next=type)은 skip — 기존 견적의 사용자
-  // 정의 값을 보존.
+  // 정의 값을 보존. quoteInput.quote_type은 QuoteForm의 종류 select가 set.
   useEffect(() => {
-    const next = form.quote_type as QuoteType | undefined;
+    const next = quoteInput.quote_type as QuoteType | undefined;
     const prev = prevQuoteTypeRef.current;
     if (prev !== undefined && prev !== next && next) {
       const def = QUOTE_TYPE_DEFAULTS[next];
@@ -322,7 +318,7 @@ export default function SalesEditModal({
       }
     }
     prevQuoteTypeRef.current = next;
-  }, [form.quote_type]);
+  }, [quoteInput.quote_type]);
 
   if (!open) return null;
 
@@ -336,10 +332,11 @@ export default function SalesEditModal({
   };
 
   const handleSave = async (): Promise<void> => {
-    // 견적서 탭 저장 (PR-M3) — 신규 영업은 list mode check skip (영업+첫 견적
-    // 동시 createSale flow), 영업 수정 모드만 list/new/edit 분기.
+    // 견적서 탭 저장 (PR-M3) — list 모드는 저장 X (신규/수정 공통).
+    // new 모드: 신규 영업이면 createSale, 영업 수정이면 addSaleQuote.
+    // edit 모드: updateSaleQuote.
     if (activeTab === "quote") {
-      if (isEdit && quoteMode === "list") {
+      if (quoteMode === "list") {
         setErr(
           "list 모드에서는 저장할 견적이 없습니다 — 견적 row의 [편집] 또는 [+ 신규 견적]을 사용하세요.",
         );
@@ -371,10 +368,7 @@ export default function SalesEditModal({
         floors_above: quoteInput.floors_above ?? undefined,
         floors_below: quoteInput.floors_below ?? undefined,
         building_count: quoteInput.building_count ?? undefined,
-        quote_type:
-          (form.quote_type as QuoteType | undefined) ??
-          quoteInput.quote_type ??
-          undefined,
+        quote_type: quoteInput.quote_type ?? undefined,
       };
 
       setBusy(true);
@@ -568,7 +562,7 @@ export default function SalesEditModal({
           )}
 
           {activeTab === "quote" ? (
-            isEdit && quoteMode === "list" ? (
+            quoteMode === "list" ? (
               // PR-M3 List view — 영업당 견적 N개 표시
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
@@ -590,8 +584,7 @@ export default function SalesEditModal({
                         floors_below: form.floors_below ?? null,
                         building_count: form.building_count ?? null,
                         service_name: form.name ?? "",
-                        quote_type:
-                          (form.quote_type as QuoteType | undefined) ?? "구조설계",
+                        quote_type: "구조설계",
                       });
                       setQuoteResult(null);
                       setEditingQuoteId(null);
@@ -717,23 +710,21 @@ export default function SalesEditModal({
                 )}
               </div>
             ) : (
-              // PR-M3 New/Edit form view (또는 신규 영업 시 기존 단일 form)
+              // PR-M3 New/Edit form view
               <>
-                {isEdit && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setQuoteMode("list");
-                      setEditingQuoteId(null);
-                    }}
-                    className="text-xs text-blue-600 hover:underline dark:text-blue-400"
-                  >
-                    ← 견적 목록
-                  </button>
-                )}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setQuoteMode("list");
+                    setEditingQuoteId(null);
+                  }}
+                  className="text-xs text-blue-600 hover:underline dark:text-blue-400"
+                >
+                  ← 견적 목록
+                </button>
                 <p className="rounded-md border border-blue-500/30 bg-blue-500/5 px-3 py-2 text-[11px] text-blue-700 dark:text-blue-400">
                   {!isEdit
-                    ? "저장하면 영업 건이 자동 생성됩니다 (영업코드·문서번호 자동 부여, 단계 = 준비). 추가 견적은 영업 저장 후 모달 다시 열어 작성."
+                    ? "저장하면 영업 건이 자동 생성되고 첫 견적이 함께 등록됩니다 (영업코드·문서번호 자동 부여, 단계 = 준비). 추가 견적은 영업 저장 후 list view에서 작성."
                     : quoteMode === "edit"
                       ? "기존 견적 수정 — doc_number/suffix는 보존됩니다."
                       : "신규 견적 추가 — 분류별 sequence + suffix(A/B/C) 자동 부여."}
@@ -754,35 +745,6 @@ export default function SalesEditModal({
               value={form.name ?? ""}
               onChange={(e) => setForm({ ...form, name: e.target.value })}
             />
-          </Field>
-
-          <Field label="견적서 종류">
-            <select
-              className={inputCls}
-              value={form.quote_type ?? "구조설계"}
-              onChange={(e) =>
-                setForm({ ...form, quote_type: e.target.value })
-              }
-            >
-              {QUOTE_TYPES.map((t) => (
-                <option key={t} value={t}>
-                  {t}
-                </option>
-              ))}
-            </select>
-            {form.quote_type === "기타" && (
-              <input
-                className={cn(inputCls, "mt-1")}
-                placeholder="PDF 헤더 제목 (예: 구조사전검토 견적서)"
-                value={quoteInput.custom_title ?? ""}
-                onChange={(e) =>
-                  setQuoteInput((q) => ({
-                    ...q,
-                    custom_title: e.target.value,
-                  }))
-                }
-              />
-            )}
           </Field>
 
           <Field
