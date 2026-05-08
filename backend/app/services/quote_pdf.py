@@ -21,6 +21,7 @@ from app.services.quote_calculator import QuoteType
 
 _TEMPLATE_DIR = Path(__file__).resolve().parent.parent / "templates"
 _LOGO_PATH = _TEMPLATE_DIR / "dongyang_logo.svg"
+_SEAL_PATH = _TEMPLATE_DIR / "seal.png"
 _env = Environment(
     loader=FileSystemLoader(_TEMPLATE_DIR),
     autoescape=select_autoescape(["html"]),
@@ -85,6 +86,17 @@ def _read_logo_svg() -> str:
     return text
 
 
+def _read_seal_data_uri() -> str:
+    """도장 PNG를 data: URI로 inline (PDF에 자동 찍기). 파일 없으면 빈 문자열."""
+    if not _SEAL_PATH.exists():
+        return ""
+    import base64
+
+    data = _SEAL_PATH.read_bytes()
+    b64 = base64.b64encode(data).decode("ascii")
+    return f"data:image/png;base64,{b64}"
+
+
 def _krw(value: int | float | None) -> str:
     """₩ 표기 — None/0/빈 값은 빈 문자열로."""
     if value is None or value == 0:
@@ -126,6 +138,7 @@ def build_quote_pdf(
         result=result,
         today=date.today().strftime("%Y. %m. %d"),
         logo_svg=_read_logo_svg(),
+        seal_data_uri=_read_seal_data_uri(),
         author_name=author_name,
         author_position=author_position,
         quote_title=quote_title,
@@ -192,6 +205,7 @@ def build_bundle_cover_pdf(
         parent_meta=parent_meta or {},
         today=date.today().strftime("%Y. %m. %d"),
         logo_svg=_read_logo_svg(),
+        seal_data_uri=_read_seal_data_uri(),
         author_name=author_name,
         author_position=author_position,
     )

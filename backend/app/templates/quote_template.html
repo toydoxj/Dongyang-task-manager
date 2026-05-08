@@ -86,10 +86,19 @@
       margin-left: 33%;
     }
     .note-line {
-      color: #999;
-      font-size: 8pt;
-      font-style: italic;
-      margin: 8px 0 2px 0;
+      color: #1a1a1a;
+      font-size: 11pt;
+      font-weight: 700;
+      letter-spacing: 0.05em;
+      margin: 8px 0 6px 0;
+    }
+    /* 견적 안내문 — 총금액과 내역 상세 사이 중앙 정렬 */
+    .quote-greeting {
+      text-align: center;
+      margin: 16px 0 22px 0;
+      font-size: 10.5pt;
+      color: #1a1a1a;
+      letter-spacing: 0.01em;
     }
 
     /* ── 산출 표 (작은 폰트) ── */
@@ -298,6 +307,14 @@
       font-size: 10pt;
       color: #555;
     }
+    /* 도장 이미지 — 이름 옆에 자국처럼 살짝 겹치게 (전통 인감 스타일) */
+    .signature-line .seal-img {
+      width: 48px;
+      height: 48px;
+      margin-left: -10px;
+      vertical-align: middle;
+      opacity: 0.92;
+    }
 
     /* 맨 아래 주기 (※) — 견적서 안내문 */
     .note-footer {
@@ -381,6 +398,12 @@
       <div class="grand">₩ {{ "{:,}".format(result.final | int) }}<span class="vat-mark">VAT 별도</span></div>
     {% endif %}
   </div>
+
+  {% if input.service_name %}
+  <div class="quote-greeting">
+    본 <strong>{{ input.service_name }}</strong>에 대해 아래와 같이 견적합니다.
+  </div>
+  {% endif %}
 
   <div class="detail-section">
     <div class="note-line">내역 상세</div>
@@ -546,7 +569,11 @@
         <span>건축구조기술사</span>
       </div>
       <span class="name">김 효 진</span>
-      <span class="seal-mark">(인)</span>
+      {% if seal_data_uri %}
+        <img class="seal-img" src="{{ seal_data_uri }}" alt="(인)">
+      {% else %}
+        <span class="seal-mark">(인)</span>
+      {% endif %}
     </div>
   </div>
 

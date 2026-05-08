@@ -184,7 +184,7 @@ export default function SalesEditModal({
       });
       // 견적서 데이터가 있으면 prefill — 수정/재제출 시나리오
       if (sale.quote_form_data?.input) {
-        // 영업 정보 row의 규모 4종이 견적서 입력보다 최신일 수 있어 우선 적용
+        // 영업 정보 row의 규모 4종 + 위치는 견적서 입력보다 최신일 수 있어 우선 적용
         setQuoteInput({
           ...sale.quote_form_data.input,
           gross_floor_area:
@@ -195,6 +195,8 @@ export default function SalesEditModal({
             sale.floors_below ?? sale.quote_form_data.input.floors_below,
           building_count:
             sale.building_count ?? sale.quote_form_data.input.building_count,
+          location:
+            sale.location || sale.quote_form_data.input.location || "",
         });
         setQuoteResult(sale.quote_form_data.result ?? null);
       } else {
@@ -209,6 +211,7 @@ export default function SalesEditModal({
           floors_above: sale.floors_above ?? null,
           floors_below: sale.floors_below ?? null,
           building_count: sale.building_count ?? null,
+          location: sale.location ?? "",
         });
         setQuoteResult(null);
       }
@@ -636,6 +639,7 @@ export default function SalesEditModal({
                         service_name: form.name ?? "",
                         quote_type: "구조설계",
                         recipient_company: client,
+                        location: form.location ?? sale?.location ?? "",
                         payment_terms: "쌍방의 협의에 의함.",
                       });
                       setQuoteResult(null);
