@@ -275,13 +275,21 @@ export default function SalesEditModal({
   }, [open]);
 
   // 견적 list fetch — 모달 열림 + sale 있음. 닫힘 시 reset.
+  // 신규 영업(!sale): list 모드 의미 X → "new" 모드로 (영업+첫 견적 동시 저장 flow).
   useEffect(() => {
-    if (!open || !sale) {
+    if (!open) {
       setQuoteList([]);
       setQuoteMode("list");
       setEditingQuoteId(null);
       return;
     }
+    if (!sale) {
+      setQuoteList([]);
+      setQuoteMode("new");
+      setEditingQuoteId(null);
+      return;
+    }
+    setQuoteMode("list");
     listSaleQuotes(sale.id)
       .then((qs) => setQuoteList(qs))
       .catch((e) => {
@@ -328,9 +336,10 @@ export default function SalesEditModal({
   };
 
   const handleSave = async (): Promise<void> => {
-    // 견적서 탭 저장 (PR-M3) — list mode: disabled, new/edit: CRUD 호출
+    // 견적서 탭 저장 (PR-M3) — 신규 영업은 list mode check skip (영업+첫 견적
+    // 동시 createSale flow), 영업 수정 모드만 list/new/edit 분기.
     if (activeTab === "quote") {
-      if (quoteMode === "list") {
+      if (isEdit && quoteMode === "list") {
         setErr(
           "list 모드에서는 저장할 견적이 없습니다 — 견적 row의 [편집] 또는 [+ 신규 견적]을 사용하세요.",
         );
