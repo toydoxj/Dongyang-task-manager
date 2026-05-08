@@ -1,0 +1,365 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <title>BUNDLE COVER</title>
+  <style>
+    @page {
+      size: A4;
+      margin: 18mm 18mm 70mm 18mm;
+      @bottom-center {
+        content: element(page-footer);
+        width: 100%;
+        vertical-align: bottom;
+      }
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'NanumGothic', 'Nanum Gothic', sans-serif;
+      color: #1a1a1a;
+      font-size: 10pt;
+      line-height: 1.6;
+    }
+    .bottom-section {
+      position: running(page-footer);
+      padding-bottom: 50px;
+    }
+
+    /* ── 헤더 (quote_template 동일) ── */
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      margin-bottom: 20px;
+    }
+    .brand h1 {
+      font-size: 21pt;
+      font-weight: 700;
+      letter-spacing: 0.1em;
+      line-height: 1;
+      color: #1a1a1a;
+    }
+    .brand-underline {
+      width: 80px;
+      height: 2.5px;
+      background: #7baa3c;
+      margin-top: 12px;
+    }
+    .header-meta {
+      text-align: right;
+      font-size: 9pt;
+      color: #666;
+      line-height: 1.7;
+    }
+
+    /* ── 메타 (수신처/용역명) ── */
+    .meta-section {
+      margin-bottom: 14px;
+    }
+    .meta-row {
+      display: flex;
+      padding: 3px 0;
+      align-items: flex-start;
+    }
+    .meta-label {
+      width: 80px;
+      color: #888;
+      font-size: 9.5pt;
+      flex-shrink: 0;
+    }
+    .meta-value {
+      flex: 1;
+      font-size: 10pt;
+      color: #1a1a1a;
+    }
+    .meta-value.service-name {
+      font-size: 13pt;
+      font-weight: 700;
+    }
+
+    /* ── 합계 줄 (quote_template 동일) ── */
+    .total-line {
+      display: flex;
+      justify-content: flex-end;
+      align-items: baseline;
+      gap: 12px;
+      padding: 14px 0 10px 0;
+      border-top: 2px solid #1a1a1a;
+      border-bottom: 1px solid #ccc;
+      margin: 16px 0 22px 0;
+    }
+    .total-line .label {
+      font-size: 11pt;
+      color: #444;
+      letter-spacing: 0.3em;
+    }
+    .total-line .grand {
+      font-family: 'NanumGothicCoding', 'NanumGothic', monospace;
+      font-size: 22pt;
+      font-weight: 700;
+      color: #1f7a4a;
+    }
+    .total-line .vat-mark {
+      font-size: 9pt;
+      color: #888;
+      margin-left: 8px;
+      font-weight: 400;
+    }
+
+    /* ── 견적서 종합 표 ── */
+    .summary-section {
+      margin: 20px 0;
+    }
+    .summary-title {
+      font-size: 11pt;
+      color: #1f7a4a;
+      font-weight: 600;
+      margin-bottom: 8px;
+      padding-bottom: 4px;
+      border-bottom: 1px solid #7baa3c;
+    }
+    .summary-table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+    .summary-table thead th {
+      padding: 8px 10px;
+      background: #f5f5f5;
+      font-size: 10pt;
+      font-weight: 600;
+      color: #333;
+      border-bottom: 2px solid #1f7a4a;
+      text-align: left;
+    }
+    .summary-table thead th.right { text-align: right; }
+    .summary-table tbody td {
+      padding: 7px 10px;
+      border-bottom: 1px solid #ececec;
+      font-size: 10pt;
+      color: #1a1a1a;
+    }
+    .summary-table .num { width: 24px; color: #999; }
+    .summary-table .doc {
+      font-family: 'NanumGothicCoding', 'NanumGothic', monospace;
+      font-size: 8.5pt;
+      color: #888;
+      margin-left: 6px;
+    }
+    .summary-table .right { text-align: right; }
+    .summary-table .amount {
+      font-family: 'NanumGothicCoding', 'NanumGothic', monospace;
+      font-weight: 500;
+    }
+    .summary-table tr.total-row {
+      background: #f0f9f4;
+      border-top: 2px solid #1f7a4a;
+    }
+    .summary-table tr.total-row td {
+      padding: 12px 10px;
+      font-size: 11pt;
+      font-weight: 700;
+      color: #1f7a4a;
+    }
+
+    /* ── 푸터 (quote_template 동일) ── */
+    .footer-divider {
+      border: 0;
+      border-top: 1px solid #ddd;
+      margin: 18px 0 12px 0;
+    }
+    .footer {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+      gap: 20px;
+    }
+    .footer .footer-info { flex: 1; min-width: 0; }
+    .footer .signature-line { flex-shrink: 0; }
+    .footer-info {
+      font-size: 9pt;
+      line-height: 1.75;
+      color: #555;
+    }
+    .footer-info .company-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .footer-info .footer-logo { display: inline-block; line-height: 0; }
+    .footer-info .footer-logo svg {
+      width: 26px;
+      height: 26px;
+      display: block;
+    }
+    .footer-info .footer-brand-text {
+      display: inline-block;
+      line-height: 1.2;
+    }
+    .footer-info .company-name {
+      display: block;
+      font-size: 13pt;
+      font-weight: 700;
+      color: #1a1a1a;
+      letter-spacing: 0.02em;
+    }
+    .footer-info .company-en {
+      display: block;
+      font-size: 5pt;
+      color: #888;
+      letter-spacing: -0.05em;
+      white-space: nowrap;
+      margin-top: 1px;
+    }
+    .footer-info .company-underline {
+      width: 60px;
+      height: 2px;
+      background: #7baa3c;
+      margin: 6px 0 10px 0;
+    }
+    .footer-info .cert {
+      color: #7baa3c;
+      font-weight: 600;
+      margin-top: 6px;
+      font-size: 9pt;
+    }
+    .signature-line {
+      display: flex;
+      align-items: center;
+      gap: 18px;
+      font-size: 10pt;
+      color: #1a1a1a;
+      margin-right: 60px;
+    }
+    .signature-line .titles {
+      display: flex;
+      flex-direction: column;
+      line-height: 1.4;
+      font-size: 10pt;
+      font-weight: 600;
+      color: #1a1a1a;
+    }
+    .signature-line .titles span { white-space: nowrap; }
+    .signature-line .titles .top { letter-spacing: 0.3em; }
+    .signature-line .name {
+      font-size: 12pt;
+      font-weight: 700;
+      letter-spacing: 0.3em;
+      white-space: nowrap;
+    }
+    .signature-line .seal-mark {
+      font-size: 10pt;
+      color: #555;
+    }
+    .note-footer {
+      margin-top: 14px;
+      padding-top: 10px;
+      border-top: 1px solid #eee;
+      font-size: 8.5pt;
+      color: #666;
+      line-height: 1.7;
+      display: flex;
+      gap: 4px;
+    }
+    .note-footer .marker { color: #1f7a4a; font-weight: 700; }
+  </style>
+</head>
+<body>
+
+  <div class="header">
+    <div class="brand">
+      <h1>견적서 갑지</h1>
+      <div class="brand-underline"></div>
+    </div>
+    <div class="header-meta">
+      <div>No. {{ parent_doc_number or "—" }}</div>
+      <div>{{ today }}</div>
+      {% if author_name %}<div>담당 {{ author_name }} {{ author_position }}</div>{% endif %}
+    </div>
+  </div>
+
+  <div class="meta-section">
+    {% if recipient_company %}
+    <div class="meta-row">
+      <div class="meta-label">수신처</div>
+      <div class="meta-value">{{ recipient_company }}</div>
+    </div>
+    {% endif %}
+    {% if parent_name %}
+    <div class="meta-row">
+      <div class="meta-label">용역명</div>
+      <div class="meta-value service-name">{{ parent_name }}</div>
+    </div>
+    {% endif %}
+  </div>
+
+  <div class="total-line">
+    <div class="label">TOTAL</div>
+    <div class="grand">₩ {{ "{:,}".format(total | int) }}<span class="vat-mark">VAT 별도</span></div>
+  </div>
+
+  <div class="summary-section">
+    <div class="summary-title">견적 종합 ({{ rows | length }}건)</div>
+    <table class="summary-table">
+      <thead>
+        <tr>
+          <th class="num">No.</th>
+          <th>업무내용</th>
+          <th class="right">금액 (원)</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in rows %}
+        <tr>
+          <td class="num">{{ loop.index }}</td>
+          <td>
+            {{ row.service }}
+            {% if row.doc_number %}<span class="doc">{{ row.doc_number }}</span>{% endif %}
+          </td>
+          <td class="right amount">{{ "{:,}".format(row.amount | int) }}</td>
+        </tr>
+        {% endfor %}
+        <tr class="total-row">
+          <td></td>
+          <td>합 계</td>
+          <td class="right">{{ "{:,}".format(total | int) }}</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="bottom-section">
+  <hr class="footer-divider">
+
+  <div class="footer">
+    <div class="footer-info">
+      <div class="company-row">
+        {% if logo_svg %}<span class="footer-logo">{{ logo_svg | safe }}</span>{% endif %}
+        <span class="footer-brand-text">
+          <span class="company-name">(주) 동양구조</span>
+          <span class="company-en">Donyang Consulting Engineers, Co., Ltd.</span>
+        </span>
+      </div>
+      <div class="company-underline"></div>
+      <div>서울시 송파구 법원로11길 11 현대지식산업센터 A동 707호</div>
+      <div>TEL 02-549-4566 (代) · FAX 02-547-1263</div>
+      <div>https://www.dyce.kr</div>
+      <div class="cert">국토교통부 지정 안전진단 전문기관 제15호</div>
+    </div>
+    <div class="signature-line">
+      <div class="titles">
+        <span class="top">대 표 이 사</span>
+        <span>건축구조기술사</span>
+      </div>
+      <span class="name">김 효 진</span>
+      <span class="seal-mark">(인)</span>
+    </div>
+  </div>
+
+  <div class="note-footer">
+    <span class="marker">※</span>
+    <span>본 갑지는 영업 내 모든 견적의 종합. 각 견적의 상세는 후속 페이지 참조. 의문사항은 담당자 연락 바랍니다.</span>
+  </div>
+  </div>
+
+</body>
+</html>

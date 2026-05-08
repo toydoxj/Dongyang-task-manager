@@ -133,25 +133,92 @@ def build_quote_pdf(
     return HTML(string=html).write_pdf()
 
 
+def build_bundle_cover_pdf(
+    sections: list[dict[str, Any]],
+    *,
+    parent_name: str = "",
+    parent_doc_number: str = "",
+    author_name: str = "",
+    author_position: str = "",
+) -> bytes:
+    """통합 PDF 첫 페이지 갑지(cover) — 견적 종합 표 + 총합.
+
+    각 section의 input.quote_type을 업무내용으로, result.final을 금액으로 표기.
+    수신처는 첫 견적의 recipient_company를 자동 채움.
+    """
+    template = _env.get_template("quote_bundle_cover_template.html")
+    rows: list[dict[str, Any]] = []
+    total = 0
+    recipient_company = ""
+    for s in sections:
+        form_data = s.get("form_data") or {}
+        inp = form_data.get("input") or {}
+        result = form_data.get("result") or {}
+        amount = int(result.get("final") or 0)
+        # 업무내용 — quote_type 우선. 기타이고 custom_title이 있으면 그걸 사용.
+        qtype = (inp.get("quote_type") or "").strip()
+        custom = (inp.get("custom_title") or "").strip()
+        service = custom if (qtype == "기타" and custom) else (qtype or "—")
+        rows.append(
+            {
+                "service": service,
+                "doc_number": s.get("doc_number", "") or "",
+                "amount": amount,
+            }
+        )
+        total += amount
+        if not recipient_company:
+            recipient_company = (inp.get("recipient_company") or "").strip()
+
+    html = template.render(
+        rows=rows,
+        total=total,
+        recipient_company=recipient_company,
+        parent_name=parent_name,
+        parent_doc_number=parent_doc_number,
+        today=date.today().strftime("%Y. %m. %d"),
+        logo_svg=_read_logo_svg(),
+        author_name=author_name,
+        author_position=author_position,
+    )
+    return HTML(string=html).write_pdf()
+
+
 def build_quote_bundle_pdf(
     sections: list[dict[str, Any]],
     *,
     author_name: str = "",
     author_position: str = "",
+    parent_name: str = "",
+    parent_doc_number: str = "",
 ) -> bytes:
-    """parent + 자식들의 견적을 1개 PDF로 묶어 반환 (PR-G1).
+    """영업 내 다중 견적을 1 PDF로 묶음. 첫 페이지는 갑지(cover, 견적 종합 표
+    + 총합), 후속 페이지는 자식 견적별 단일 PDF (build_quote_pdf 결과).
 
-    각 section은 {form_data, doc_number} dict. 자식별로 build_quote_pdf()를
-    호출해 단일 견적 PDF bytes를 만들고, pypdf로 concat. 단일 weasyprint render
-    대신 concat 방식을 채택한 이유는 quote_template.html 변경이 0줄이라 회귀
-    위험이 낮기 때문 (PR 진행 시 디자인 결정).
+    각 section은 {form_data, doc_number} dict. 자식별로 build_quote_pdf()로
+    PDF bytes 생성 후 pypdf로 concat. quote_template.html 변경 0줄로 회귀
+    위험을 낮춘 디자인 (PR-G1).
 
-    sections[0]은 parent의 견적, [1:]는 자식들. 빈 견적(form_data 없음)은 skip.
+    빈 견적 (form_data["input"]/["result"] 누락) section은 skip.
     """
     if not sections:
         raise ValueError("sections는 1건 이상 필요")
 
     writer = PdfWriter()
+
+    # 1) 갑지 (PR-갑지) — 첫 페이지. parent meta는 라우터에서 sale.name/doc_number 전달
+    cover_bytes = build_bundle_cover_pdf(
+        sections,
+        parent_name=parent_name,
+        parent_doc_number=parent_doc_number,
+        author_name=author_name,
+        author_position=author_position,
+    )
+    cover_reader = PdfReader(io.BytesIO(cover_bytes))
+    for page in cover_reader.pages:
+        writer.add_page(page)
+
+    # 2) 자식 견적별 PDF concat
     for section in sections:
         form_data = section.get("form_data") or {}
         if not form_data.get("input") or not form_data.get("result"):

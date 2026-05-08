@@ -551,6 +551,8 @@ def download_quote_bundle_pdf(
         sections,
         author_name=author_name,
         author_position=author_position,
+        parent_name=sale.name or "",
+        parent_doc_number=sale.quote_doc_number or "",
     )
     filename = quote_bundle_pdf_filename(
         sale.quote_doc_number or "no-doc",
@@ -758,6 +760,8 @@ async def save_quote_bundle_pdf_to_drive(
         sections,
         author_name=author_name,
         author_position=author_position,
+        parent_name=sale.name or "",
+        parent_doc_number=sale.quote_doc_number or "",
     )
     filename = quote_bundle_pdf_filename(
         sale.quote_doc_number or "no-doc",
