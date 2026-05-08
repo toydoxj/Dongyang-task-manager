@@ -572,7 +572,9 @@ export default function SalesEditModal({
                   <button
                     type="button"
                     onClick={() => {
-                      // 새 견적: input default reset (단가 등급/조정 등은 그대로)
+                      // 새 견적: input default reset (단가 등급/조정 등은 그대로).
+                      // 발주처(client) + 영업 정보의 규모 4종은 기존 견적과 무관하게
+                      // 영업 row에서 echo — 두 번째 이후 견적도 동일 영업의 발주처/규모 자동 채움.
                       setQuoteInput({
                         type_rate: 1.0,
                         structure_rate: 1.0,
@@ -585,6 +587,7 @@ export default function SalesEditModal({
                         building_count: form.building_count ?? null,
                         service_name: form.name ?? "",
                         quote_type: "구조설계",
+                        recipient_company: client,
                       });
                       setQuoteResult(null);
                       setEditingQuoteId(null);
