@@ -8,13 +8,7 @@
        WeasyPrint paged media spec — flex/absolute보다 안정적. */
     @page {
       size: A4;
-      /* top/right/left 18mm 통일, bottom은 footer area 사이즈로 유지 */
-      margin: 18mm 18mm 70mm 18mm;
-      @bottom-center {
-        content: element(page-footer);
-        width: 100%;
-        vertical-align: bottom;
-      }
+      margin: 18mm 18mm 18mm 18mm;  /* footer를 normal flow로 — bottom margin 18mm */
     }
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
@@ -24,22 +18,24 @@
       line-height: 1.5;
       display: flex;
       flex-direction: column;
-      min-height: 200mm;  /* page content area 209mm 대비 9mm 안전 여유 — extra-section 마지막 줄 잘림 방지 */
+      min-height: 261mm;  /* page content area = A4 297 - top 18 - bottom 18 */
     }
-    /* spacer-grow — detail-section 위·아래에 균등 (flex 1 1 0 — basis 0 동일 분배).
-       detail은 위·아래 동일 여백으로 vertical center. */
-    .spacer-grow {
+    /* middle-area — total-line과 extra-section 사이 가용 영역.
+       inner flex column + justify-content: center → detail vertical center. */
+    .middle-area {
       flex: 1 1 0;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
     }
-    /* extra-section은 자기 content height 보장 (flex-shrink 0 — 마지막 줄 잘림 방지).
-       마지막 자식이라 page 끝에 자연 정착 → footer 사이 여백 최소. */
+    /* extra-section은 normal flow 마지막에서 두 번째 자식. flex-shrink 0 — 잘림 방지. */
     .extra-section {
       flex-shrink: 0;
     }
-    /* 페이지 bottom margin 영역에 자동 배치 — 컨텐츠 길이와 무관 */
+
+    /* footer는 normal flow 마지막 자식. 1페이지 견적서 가정 — running element 폐기. */
     .bottom-section {
-      position: running(page-footer);
-      padding-bottom: 50px;  /* footer가 페이지 바닥에서 떨어진 호흡 확보 */
+      flex-shrink: 0;
     }
 
     /* ── 헤더 ── */
@@ -450,8 +446,7 @@
     {% endif %}
   </div>
 
-  <div class="spacer-grow"></div>
-
+  <div class="middle-area">
   <div class="detail-section">
     <div class="note-line">내역 상세</div>
     <table class="calc-table">
@@ -560,8 +555,7 @@
     </tbody>
   </table>
   </div>
-
-  <div class="spacer-grow"></div>
+  </div>
 
   <div class="extra-section">
     <div class="extra-title">특이사항</div>
