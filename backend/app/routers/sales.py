@@ -40,6 +40,13 @@ from app.services.quote_calculator import (
     calculate,
 )
 from app.services.quote_code import next_quote_doc_number
+from app.services.quote_forms import (
+    format_doc_full,
+    index_to_suffix,
+    next_form_id,
+    normalize_quote_forms,
+    pack_quote_forms,
+)
 from app.services.quote_pdf import (
     build_quote_bundle_pdf,
     build_quote_pdf,
@@ -191,6 +198,197 @@ def preview_quote(
 ) -> QuoteResult:
     """견적서 입력 → 산출 결과만 반환 (저장 X). 프론트의 실시간 산출 패널용."""
     return calculate(body)
+
+
+# ── 영업당 다중 견적서 CRUD (PR-M1) ──
+
+
+class QuoteFormResponse(BaseModel):
+    """영업 내 단일 견적서 form 응답 — quote_form_data["forms"] 항목 1건."""
+
+    id: str
+    doc_number: str   # 분류별 sequence ("26-04-001")
+    suffix: str       # 영업 내 견적 인덱스 영문 ("A", "B", "AA", ...)
+    full_doc: str     # doc_number + suffix ("26-04-001A")
+    input: dict
+    result: dict
+
+
+def _next_quote_suffix(forms: list[dict]) -> str:
+    """기존 견적 list의 max suffix 다음 값. 삭제 후 hole 발생해도 max+1 보장."""
+
+    def _suffix_to_index(s: str) -> int:
+        idx = 0
+        for c in s:
+            if not ("A" <= c <= "Z"):
+                return -1
+            idx = idx * 26 + (ord(c) - ord("A") + 1)
+        return idx - 1
+
+    max_idx = max(
+        (_suffix_to_index(f.get("suffix", "")) for f in forms),
+        default=-1,
+    )
+    return index_to_suffix(max_idx + 1)
+
+
+def _form_to_response(form: dict) -> QuoteFormResponse:
+    return QuoteFormResponse(
+        id=form.get("id", ""),
+        doc_number=form.get("doc_number", ""),
+        suffix=form.get("suffix", ""),
+        full_doc=format_doc_full(form.get("doc_number", ""), form.get("suffix", "")),
+        input=form.get("input") or {},
+        result=form.get("result") or {},
+    )
+
+
+@router.get("/{page_id}/quotes", response_model=list[QuoteFormResponse])
+def list_sale_quotes(
+    page_id: str,
+    _user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> list[QuoteFormResponse]:
+    """영업의 모든 견적 list. 옛 단일 schema는 자동 wrap (PR-M0 helper)."""
+    row = db.get(M.MirrorSales, page_id)
+    if row is None or row.archived:
+        raise HTTPException(status_code=404, detail="영업 건을 찾을 수 없습니다")
+    forms = normalize_quote_forms(
+        row.quote_form_data, legacy_doc_number=row.quote_doc_number or ""
+    )
+    return [_form_to_response(f) for f in forms]
+
+
+@router.post(
+    "/{page_id}/quotes",
+    response_model=QuoteFormResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def add_sale_quote(
+    page_id: str,
+    body: QuoteInput,
+    _user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> QuoteFormResponse:
+    """영업에 견적 1건 추가. 분류별 sequence는 advisory lock으로 자동 부여,
+    영업 내 suffix는 기존 견적의 max + 1.
+
+    영업 한 건에 두 번째 견적 추가 시 sequence는 003 같은 다음 값, suffix는 B.
+    삭제 후 hole 발생해도 새 견적은 max+1 (기존 doc_number 안정성 우선).
+    """
+    from sqlalchemy import update as sa_update
+
+    row = db.get(M.MirrorSales, page_id)
+    if row is None or row.archived:
+        raise HTTPException(status_code=404, detail="영업 건을 찾을 수 없습니다")
+
+    forms = normalize_quote_forms(
+        row.quote_form_data, legacy_doc_number=row.quote_doc_number or ""
+    )
+
+    # 분류별 sequence 발급 (advisory lock)
+    qtype_val = body.quote_type if body.quote_type else ""
+    new_doc = next_quote_doc_number(db, qtype_val)
+    new_suffix = _next_quote_suffix(forms)
+    result = calculate(body)
+
+    new_form = {
+        "id": next_form_id(),
+        "doc_number": new_doc,
+        "suffix": new_suffix,
+        "input": body.model_dump(),
+        "result": result.model_dump(),
+    }
+    forms.append(new_form)
+
+    # 첫 견적이면 mirror_sales.quote_doc_number도 set (legacy view용)
+    update_values: dict = {"quote_form_data": pack_quote_forms(forms)}
+    if not row.quote_doc_number:
+        update_values["quote_doc_number"] = format_doc_full(new_doc, new_suffix)
+
+    db.execute(
+        sa_update(M.MirrorSales)
+        .where(M.MirrorSales.page_id == page_id)
+        .values(**update_values)
+    )
+    db.commit()
+
+    return _form_to_response(new_form)
+
+
+@router.patch(
+    "/{page_id}/quotes/{quote_id}",
+    response_model=QuoteFormResponse,
+)
+def update_sale_quote(
+    page_id: str,
+    quote_id: str,
+    body: QuoteInput,
+    _user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> QuoteFormResponse:
+    """기존 견적의 input·result만 수정. doc_number/suffix는 보존
+    (외부 발송된 doc 변경되면 사장 운영 혼란)."""
+    from sqlalchemy import update as sa_update
+
+    row = db.get(M.MirrorSales, page_id)
+    if row is None or row.archived:
+        raise HTTPException(status_code=404, detail="영업 건을 찾을 수 없습니다")
+
+    forms = normalize_quote_forms(
+        row.quote_form_data, legacy_doc_number=row.quote_doc_number or ""
+    )
+    target_idx = next(
+        (i for i, f in enumerate(forms) if f.get("id") == quote_id), -1
+    )
+    if target_idx < 0:
+        raise HTTPException(status_code=404, detail="견적을 찾을 수 없습니다")
+
+    result = calculate(body)
+    forms[target_idx] = {
+        **forms[target_idx],
+        "input": body.model_dump(),
+        "result": result.model_dump(),
+    }
+
+    db.execute(
+        sa_update(M.MirrorSales)
+        .where(M.MirrorSales.page_id == page_id)
+        .values(quote_form_data=pack_quote_forms(forms))
+    )
+    db.commit()
+
+    return _form_to_response(forms[target_idx])
+
+
+@router.delete("/{page_id}/quotes/{quote_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_sale_quote(
+    page_id: str,
+    quote_id: str,
+    _user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> Response:
+    """견적 삭제. suffix는 재할당 안 함 (기존 doc_number 안정성)."""
+    from sqlalchemy import update as sa_update
+
+    row = db.get(M.MirrorSales, page_id)
+    if row is None or row.archived:
+        raise HTTPException(status_code=404, detail="영업 건을 찾을 수 없습니다")
+
+    forms = normalize_quote_forms(
+        row.quote_form_data, legacy_doc_number=row.quote_doc_number or ""
+    )
+    new_forms = [f for f in forms if f.get("id") != quote_id]
+    if len(new_forms) == len(forms):
+        raise HTTPException(status_code=404, detail="견적을 찾을 수 없습니다")
+
+    db.execute(
+        sa_update(M.MirrorSales)
+        .where(M.MirrorSales.page_id == page_id)
+        .values(quote_form_data=pack_quote_forms(new_forms))
+    )
+    db.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.get("/quote/types")
