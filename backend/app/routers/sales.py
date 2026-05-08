@@ -443,6 +443,63 @@ async def update_sale_quote(
     return _form_to_response(forms[target_idx])
 
 
+class QuoteDocNumberRequest(BaseModel):
+    """견적 문서번호 수동 변경 요청 — 사용자가 임의 doc_number로 override.
+    빈 문자열 허용 (외부 견적처럼 doc 비우기). suffix는 보존됨.
+    """
+
+    doc_number: str = ""
+
+
+@router.patch(
+    "/{page_id}/quotes/{quote_id}/doc-number",
+    response_model=QuoteFormResponse,
+)
+async def update_quote_doc_number(
+    page_id: str,
+    quote_id: str,
+    body: QuoteDocNumberRequest,
+    _user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> QuoteFormResponse:
+    """견적의 doc_number만 수동 수정 (advisory lock sequence와 무관).
+    suffix/input/result는 보존. mirror_sales.quote_doc_number(첫 견적 표시용)도
+    영업의 첫 견적이면 같이 갱신.
+    """
+    from sqlalchemy import update as sa_update
+
+    row = db.get(M.MirrorSales, page_id)
+    if row is None or row.archived:
+        raise HTTPException(status_code=404, detail="영업 건을 찾을 수 없습니다")
+
+    forms = normalize_quote_forms(
+        row.quote_form_data, legacy_doc_number=row.quote_doc_number or ""
+    )
+    target_idx = next(
+        (i for i, f in enumerate(forms) if f.get("id") == quote_id), -1
+    )
+    if target_idx < 0:
+        raise HTTPException(status_code=404, detail="견적을 찾을 수 없습니다")
+
+    new_doc = body.doc_number.strip()
+    forms[target_idx] = {**forms[target_idx], "doc_number": new_doc}
+
+    update_values: dict = {"quote_form_data": pack_quote_forms(forms)}
+    # 영업의 첫 견적이면 mirror_sales.quote_doc_number도 동기 (legacy view용)
+    if target_idx == 0:
+        update_values["quote_doc_number"] = format_doc_full(
+            new_doc, forms[target_idx].get("suffix", "")
+        )
+
+    db.execute(
+        sa_update(M.MirrorSales)
+        .where(M.MirrorSales.page_id == page_id)
+        .values(**update_values)
+    )
+    db.commit()
+    return _form_to_response(forms[target_idx])
+
+
 @router.delete("/{page_id}/quotes/{quote_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_sale_quote(
     page_id: str,

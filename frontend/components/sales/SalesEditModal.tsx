@@ -19,6 +19,7 @@ import {
   listSaleQuotes,
   saveQuoteBundlePdfToDrive,
   saveQuotePdfToDrive,
+  updateQuoteDocNumber,
   updateSale,
   updateSaleExternalQuote,
   updateSaleQuote,
@@ -758,8 +759,43 @@ export default function SalesEditModal({
                                 </>
                               ) : (
                                 <>
-                                  {q.full_doc || "—"} ·{" "}
-                                  {q.input.quote_type ?? "구조설계"}
+                                  <button
+                                    type="button"
+                                    onClick={async () => {
+                                      if (!sale) return;
+                                      const next = window.prompt(
+                                        "새 문서번호 (예: 26-01-003):",
+                                        q.doc_number || "",
+                                      );
+                                      if (next === null) return;
+                                      const trimmed = next.trim();
+                                      if (trimmed === (q.doc_number || "")) return;
+                                      setBusy(true);
+                                      setErr(null);
+                                      try {
+                                        await updateQuoteDocNumber(
+                                          sale.id,
+                                          q.id,
+                                          trimmed,
+                                        );
+                                        await refreshQuoteList();
+                                        refreshSales();
+                                      } catch (e) {
+                                        setErr(
+                                          e instanceof Error
+                                            ? e.message
+                                            : "문서번호 수정 실패",
+                                        );
+                                      } finally {
+                                        setBusy(false);
+                                      }
+                                    }}
+                                    title="클릭하여 문서번호 수정"
+                                    className="text-emerald-700 hover:underline dark:text-emerald-400"
+                                  >
+                                    {q.full_doc || "—"}
+                                  </button>{" "}
+                                  · {q.input.quote_type ?? "구조설계"}
                                 </>
                               )}
                             </div>

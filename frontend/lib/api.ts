@@ -1212,6 +1212,30 @@ export async function attachExternalQuotePdf(
   return (await res.json()) as QuoteFormResponse;
 }
 
+/** 견적 문서번호 수동 수정. suffix/input/result 보존. */
+export async function updateQuoteDocNumber(
+  saleId: string,
+  quoteId: string,
+  docNumber: string,
+): Promise<QuoteFormResponse> {
+  const res = await authFetch(
+    `/api/sales/${saleId}/quotes/${quoteId}/doc-number`,
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ doc_number: docNumber }),
+    },
+  );
+  if (!res.ok) {
+    const detail = await res.json().catch(() => null);
+    throw new Error(
+      (detail as { detail?: string } | null)?.detail ??
+        `${res.status} ${res.statusText}`,
+    );
+  }
+  return (await res.json()) as QuoteFormResponse;
+}
+
 /** 견적 삭제 (PR-M1). suffix 재할당 X — hole 보존. */
 export async function deleteSaleQuote(
   saleId: string,
