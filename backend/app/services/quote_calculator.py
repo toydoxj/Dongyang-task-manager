@@ -43,11 +43,24 @@ ENGINEERING_RATES_BY_GRADE: dict[str, int] = {
     "초급숙련기술자": 218_142,
 }
 
-# 사용자 명시 (2026-05-08): 구조감리는 기술사 단가, 나머지는 고급기술자 기준.
+# 종류별 default 등급 — 사용자가 quote_form에서 미선택(None)이면 적용.
+# 사용자 명시: 구조감리=기술사, 3자검토·BMA책임자=특급기술자, BMA점검자=초급기술자,
+# 그 외 = 고급기술자 (모두 건설분야).
 DAILY_RATE_SENIOR_ENGINEER = ENGINEERING_RATES_BY_GRADE["고급기술자"]      # 310,884
 DAILY_RATE_PROFESSIONAL_ENGINEER = ENGINEERING_RATES_BY_GRADE["기술사"]   # 467,217
-# BMA 점검자 단가 — 책임자/점검자 두 등급 분리 산출인 종류 전용
+DAILY_RATE_BMA_RESPONSIBLE = ENGINEERING_RATES_BY_GRADE["특급기술자"]    # 373,353
 DAILY_RATE_JUNIOR_ENGINEER = ENGINEERING_RATES_BY_GRADE["초급기술자"]    # 235,459
+
+
+def _resolve_rate(grade: str | None, default_grade: str) -> int:
+    """등급명 → 단가. 빈 값/미지원 등급은 default_grade로 fallback.
+
+    사용자가 등급을 명시 선택하면 그 단가 사용 — 매년 표 갱신 시 dict만
+    업데이트하면 모든 strategy에 자동 반영.
+    """
+    if grade and grade in ENGINEERING_RATES_BY_GRADE:
+        return ENGINEERING_RATES_BY_GRADE[grade]
+    return ENGINEERING_RATES_BY_GRADE[default_grade]
 
 
 class QuoteType(StrEnum):
@@ -114,9 +127,16 @@ class QuoteInput(BaseModel):
     # 값이 있으면 그 값을 사용 (자동 산출 무시). 정기/정밀점검은 시특법 4계수 곱한
     # 소수 인.일(15.24, 36.19 등) 입력이 필요해 float 허용.
     manhours_override: float | None = Field(default=None, ge=0)
+    # 직접인건비 단가 등급 — None이면 strategy별 default (구조감리=기술사,
+    # 3자검토=특급기술자, 그 외=고급기술자). 사용자가 ENGINEERING_RATES_BY_GRADE
+    # 키 중 하나로 override 가능.
+    engineer_grade: str | None = None
     # 점검류 (PR-Q4~Q7) — 책임자/점검자 인.일 분리 입력
     inspection_responsible_days: float | None = Field(default=None, ge=0)
     inspection_inspector_days: float | None = Field(default=None, ge=0)
+    # BMA 책임자/점검자 등급 — None이면 default (책임자=특급, 점검자=초급)
+    bma_responsible_grade: str | None = None
+    bma_inspector_grade: str | None = None
     # 내진성능평가 (PR-Q8) — ① 현장조사 외업/내업, ② 해석 인.일 (3 필드 분리)
     # None + has_structural_drawings 지정 시 PR-Q8b 보간 자동 채움.
     # 해석 인.일은 보간 base × 4계수(방법별·경년·구조형식·용도)인데 4계수가 매
@@ -243,8 +263,8 @@ def _calculate_struct_design(inp: QuoteInput) -> QuoteResult:
             )
         )
 
-    # 2. 산출
-    direct_labor = mh_total * DAILY_RATE_SENIOR_ENGINEER
+    # 2. 산출 — 단가는 사용자 선택 등급 우선, 없으면 default(고급기술자).
+    direct_labor = mh_total * _resolve_rate(inp.engineer_grade, "고급기술자")
     # 직접경비: 새 동적 항목 list 우선, 없으면 legacy 필드 fallback
     if inp.direct_expense_items:
         direct_expense = sum(item.amount for item in inp.direct_expense_items)
@@ -334,7 +354,8 @@ def _calculate_field_support(inp: QuoteInput) -> QuoteResult:
     )
 
     # 직접인건비 — 단가만 다름 (253,985원/인.일)
-    direct_labor = mh_total * DAILY_RATE_SENIOR_ENGINEER  # 고급기술자 (사용자 명시)
+    # 단가 — 사용자 선택 등급 우선, 없으면 default(고급기술자).
+    direct_labor = mh_total * _resolve_rate(inp.engineer_grade, "고급기술자")
 
     # 직접경비: 동적 list 우선, 없으면 legacy 합산
     if inp.direct_expense_items:
@@ -408,7 +429,8 @@ def _calculate_supervision(inp: QuoteInput) -> QuoteResult:
         int(inp.manhours_override) if inp.manhours_override is not None else 0
     )
 
-    direct_labor = mh_total * DAILY_RATE_PROFESSIONAL_ENGINEER
+    # 구조감리 default = 기술사. 사용자 선택 등급 우선.
+    direct_labor = mh_total * _resolve_rate(inp.engineer_grade, "기술사")
 
     if inp.direct_expense_items:
         direct_expense = sum(item.amount for item in inp.direct_expense_items)
@@ -481,11 +503,12 @@ def _calculate_inspection_bma(inp: QuoteInput) -> QuoteResult:
     responsible = inp.inspection_responsible_days or 0
     inspector = inp.inspection_inspector_days or 0
 
-    # 매 단계 INT() — xlsx 수식과 동일한 정수 누적 (truncation 보존)
-    # BMA 책임자 단가 456,237는 사장 양식 그대로 보존 (사용자 명시 부재).
-    # 점검자 단가 235,459는 건설분야 초급기술자와 일치.
+    # 매 단계 INT() — xlsx 수식과 동일한 정수 누적 (truncation 보존).
+    # default: 책임자=특급기술자, 점검자=초급기술자. 사용자 선택 등급 우선.
+    responsible_rate = _resolve_rate(inp.bma_responsible_grade, "특급기술자")
+    inspector_rate = _resolve_rate(inp.bma_inspector_grade, "초급기술자")
     direct_labor = (
-        int(responsible * 456_237) + int(inspector * DAILY_RATE_JUNIOR_ENGINEER)
+        int(responsible * responsible_rate) + int(inspector * inspector_rate)
     )
     direct_labor = int(direct_labor)  # F7 = INT(F8+F9)
 
@@ -584,7 +607,9 @@ def _calculate_inspection_legal(inp: QuoteInput) -> QuoteResult:
     mh = float(inp.manhours_override) if inp.manhours_override is not None else 0.0
 
     # 직접인건비 — ROUNDDOWN(인.일 × 단가, 0). 양수만 다루므로 floor와 동등.
-    direct_labor = int(math.floor(mh * DAILY_RATE_SENIOR_ENGINEER))
+    # default = 고급기술자. 사용자 선택 등급 우선.
+    rate = _resolve_rate(inp.engineer_grade, "고급기술자")
+    direct_labor = int(math.floor(mh * rate))
 
     if inp.direct_expense_items:
         direct_expense = sum(item.amount for item in inp.direct_expense_items)
@@ -717,7 +742,8 @@ def _calculate_reinforcement_design(inp: QuoteInput) -> QuoteResult:
     mh_total = (
         int(inp.manhours_override) if inp.manhours_override is not None else 0
     )
-    direct_labor = mh_total * DAILY_RATE_SENIOR_ENGINEER  # 고급기술자 (사용자 명시)
+    # default = 고급기술자. 사용자 선택 등급 우선.
+    direct_labor = mh_total * _resolve_rate(inp.engineer_grade, "고급기술자")
 
     if inp.direct_expense_items:
         direct_expense = sum(item.amount for item in inp.direct_expense_items)
@@ -768,17 +794,14 @@ def _calculate_reinforcement_design(inp: QuoteInput) -> QuoteResult:
 def _calculate_third_party_review(inp: QuoteInput) -> QuoteResult:
     """내진보강설계 검증(3자검토) strategy.
 
-    내진보강설계와 동일 흐름 — 단가만 292,249원/일로 상이. xlsx L85~L88 검증:
-        mh=6, rate=292,249
-        direct = 6 × 292,249 = 1,753,494   # L85
-        oh     = 1,753,494 × 1.1 = 1,928,843.4  # L86
-        tech   = (1,753,494+1,928,843.4) × 0.2 = 736,467.48  # L87
-        subtotal = 4,418,804.88              # L88
+    내진보강설계와 동일 흐름이나 단가는 특급기술자(건설) 373,353원/일 (사용자 명시).
+    xlsx 옛 사례(L85~L88, 단가 292,249)와 결과 다를 수 있음.
     """
     mh_total = (
         int(inp.manhours_override) if inp.manhours_override is not None else 0
     )
-    direct_labor = mh_total * DAILY_RATE_SENIOR_ENGINEER  # 고급기술자 (사용자 명시)
+    # 3자검토 default = 특급기술자. 사용자 선택 등급 우선.
+    direct_labor = mh_total * _resolve_rate(inp.engineer_grade, "특급기술자")
 
     if inp.direct_expense_items:
         direct_expense = sum(item.amount for item in inp.direct_expense_items)
@@ -899,7 +922,8 @@ def _calculate_seismic_eval(inp: QuoteInput) -> QuoteResult:
     field_outdoor = field_outdoor or 0
     field_indoor = field_indoor or 0
     analysis = analysis or 0
-    rate = DAILY_RATE_SENIOR_ENGINEER  # 310,884 — 고급기술자 (사용자 명시)
+    # default = 고급기술자. 사용자 선택 등급 우선.
+    rate = _resolve_rate(inp.engineer_grade, "고급기술자")
 
     # ① 현장조사
     field_direct = (field_outdoor + field_indoor) * rate

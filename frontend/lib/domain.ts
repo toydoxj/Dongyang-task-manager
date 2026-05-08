@@ -535,6 +535,20 @@ export interface DirectExpenseItem {
 }
 
 /** 견적서 종류 — 백엔드 QuoteType enum과 일치 (값=한글 라벨, 노션 select name). */
+/** 한국엔지니어링협회 통계법 기반 기술자 등급 (건설분야 단가 적용).
+ * 매년 1월 단가 표 갱신 시 backend ENGINEERING_RATES_BY_GRADE도 동기 업데이트. */
+export const ENGINEER_GRADES = [
+  "기술사",
+  "특급기술자",
+  "고급기술자",
+  "중급기술자",
+  "초급기술자",
+  "고급숙련기술자",
+  "중급숙련기술자",
+  "초급숙련기술자",
+] as const;
+export type EngineerGrade = (typeof ENGINEER_GRADES)[number];
+
 export const QUOTE_TYPES = [
   "구조설계",
   "구조검토",
@@ -580,6 +594,12 @@ export interface QuoteInput {
   /** null/undefined: 자동 산출. 값이 있으면 그 값 사용. 정기/정밀점검은 시특법 4계수
    * 곱한 소수 인.일(15.24, 36.19 등) 입력이 필요해 float 허용. */
   manhours_override?: number | null;
+  /** 직접인건비 단가 등급. null이면 종류별 default (구조감리=기술사, 3자검토=특급,
+   * 그 외=고급기술자). EngineerGrade 8종 중 선택. */
+  engineer_grade?: EngineerGrade | null;
+  /** BMA 책임자/점검자 등급. null이면 default(책임자=특급, 점검자=초급). */
+  bma_responsible_grade?: EngineerGrade | null;
+  bma_inspector_grade?: EngineerGrade | null;
   /** 건축물관리법점검 (PR-Q4) — 책임자/점검자 인.일 분리 입력. */
   inspection_responsible_days?: number | null;
   inspection_inspector_days?: number | null;

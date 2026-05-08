@@ -4,9 +4,19 @@ import { useEffect, useMemo, useState } from "react";
 
 import QuoteResultPanel from "@/components/sales/QuoteResultPanel";
 import { previewQuote } from "@/lib/api";
-import type { QuoteInput, QuoteResult } from "@/lib/domain";
+import { ENGINEER_GRADES, type EngineerGrade, type QuoteInput, type QuoteResult } from "@/lib/domain";
 import { useClients } from "@/lib/hooks";
 import { cn } from "@/lib/utils";
+
+// 견적서 종류별 default 단가 등급 — backend _resolve_rate의 default_grade와 일치.
+// 사용자가 등급 select에서 미선택(null) 시 표시 안내값.
+const DEFAULT_ENGINEER_GRADE: Record<string, EngineerGrade> = {
+  구조감리: "기술사",
+  "3자검토": "특급기술자",
+  // 그 외 모든 종류는 고급기술자
+};
+const defaultGradeFor = (qt: string): EngineerGrade =>
+  DEFAULT_ENGINEER_GRADE[qt] ?? "고급기술자";
 
 // 견적서 양식의 N/O열 옵션 — xlsx 실제 옵션과 일치
 const STRUCTURE_FORMS = [
@@ -61,6 +71,10 @@ export default function QuoteForm({
         // 점검류 (PR-Q4) — 책임자/점검자 인.일 분리
         ir: value.inspection_responsible_days,
         ii: value.inspection_inspector_days,
+        // 단가 등급
+        eg: value.engineer_grade,
+        bmar: value.bma_responsible_grade,
+        bmai: value.bma_inspector_grade,
         // 내진성능평가 (PR-Q8) — 외업/내업/해석
         fo: value.field_outdoor_days,
         fi: value.field_indoor_days,
@@ -127,6 +141,8 @@ export default function QuoteForm({
   const isStructReview = qt === "구조검토";
   const isStructDesignLike =
     qt === "구조설계" || qt === "성능기반내진설계" || qt === "기타";
+  // 단가 등급 — BMA는 책임자/점검자 두 select 별도, 그 외는 단일 select.
+  const isBma = qt === "건축물관리법점검";
   const isInspectionLegal =
     qt === "정기안전점검" || qt === "정밀점검" || qt === "정밀안전진단";
   const isInspectionBma = qt === "건축물관리법점검";
@@ -291,6 +307,76 @@ export default function QuoteForm({
               ))}
             </select>
           </Field>
+        </Section>
+
+        <Section title="단가 등급">
+          {isBma ? (
+            <div className="grid grid-cols-2 gap-2">
+              <Field label="책임자 등급 — 미선택 시 특급기술자">
+                <select
+                  className={inputCls}
+                  value={value.bma_responsible_grade ?? ""}
+                  onChange={(e) =>
+                    set(
+                      "bma_responsible_grade",
+                      (e.target.value || null) as EngineerGrade | null,
+                    )
+                  }
+                >
+                  <option value="">— 기본값 (특급기술자) —</option>
+                  {ENGINEER_GRADES.map((g) => (
+                    <option key={g} value={g}>
+                      {g}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+              <Field label="점검자 등급 — 미선택 시 초급기술자">
+                <select
+                  className={inputCls}
+                  value={value.bma_inspector_grade ?? ""}
+                  onChange={(e) =>
+                    set(
+                      "bma_inspector_grade",
+                      (e.target.value || null) as EngineerGrade | null,
+                    )
+                  }
+                >
+                  <option value="">— 기본값 (초급기술자) —</option>
+                  {ENGINEER_GRADES.map((g) => (
+                    <option key={g} value={g}>
+                      {g}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+            </div>
+          ) : (
+            <Field
+              label={`기술자 등급 — 미선택 시 기본값 (${defaultGradeFor(qt)})`}
+            >
+              <select
+                className={inputCls}
+                value={value.engineer_grade ?? ""}
+                onChange={(e) =>
+                  set(
+                    "engineer_grade",
+                    (e.target.value || null) as EngineerGrade | null,
+                  )
+                }
+              >
+                <option value="">— 기본값 ({defaultGradeFor(qt)}) —</option>
+                {ENGINEER_GRADES.map((g) => (
+                  <option key={g} value={g}>
+                    {g}
+                  </option>
+                ))}
+              </select>
+            </Field>
+          )}
+          <p className="text-[11px] text-stone-500">
+            한국엔지니어링협회 통계법 단가 (건설분야, 매년 1월 갱신).
+          </p>
         </Section>
 
         {isStructDesignLike && (
