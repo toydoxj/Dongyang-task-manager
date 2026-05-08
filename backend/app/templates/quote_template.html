@@ -17,6 +17,7 @@
       }
     }
     * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { height: 100%; }
     body {
       font-family: 'NanumGothic', 'Nanum Gothic', sans-serif;
       color: #1a1a1a;
@@ -24,16 +25,15 @@
       line-height: 1.5;
       display: flex;
       flex-direction: column;
-      min-height: 209mm;  /* A4 297mm - top 18mm - bottom 70mm */
     }
-    /* middle-area — total-line과 footer 사이 영역. 내부에서 detail-section을
-       inner flex로 vertical center (위·아래 여백 동일). */
+    /* middle-area — total-line과 footer 사이 가용 영역. inner flex로
+       detail-section을 vertical center. 디버그용 옅은 lime 배경 (영역 시각화). */
     .middle-area {
       flex: 1 1 auto;
       display: flex;
       flex-direction: column;
       justify-content: center;
-      min-height: 80px;
+      background: rgba(123, 170, 60, 0.08);  /* TODO: 영역 확인 후 제거 */
     }
     /* 페이지 bottom margin 영역에 자동 배치 — 컨텐츠 길이와 무관 */
     .bottom-section {
