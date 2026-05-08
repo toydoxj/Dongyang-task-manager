@@ -4,6 +4,12 @@
 공식을 그대로 파이썬으로 재현. 셀 dump로 검증된 식 (5192m²·요율 1·1.2·0.5
 입력 → 25,000,000원 출력)을 fixture로 단위 테스트.
 
+단가 정책 (사용자 명시 2026-05-08): 구조감리는 기술사, 나머지는 고급기술자
+기준 — 모두 건설분야. ENGINEERING_RATES_BY_GRADE dict가 단가의 단일 소스.
+strategy docstring 검증값은 xlsx 사본의 옛 단가(예: 내진평가 300,980, 보강
+설계 242,055) 기반이라 신 단가 적용 후 결과 다를 수 있음. xlsx 옛 사례 vs
+현재 산출이 다른 것은 정상.
+
 산출 흐름:
 1. baseline_manhours(area_m2): 연면적 구간별 IF식 4단계 (1k/2k/5k/15k/50k/100k 분기)
 2. manhours_total = ROUND(ROUND(baseline, 0) × type_rate × structure_rate × coefficient, 0)
@@ -22,15 +28,26 @@ from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict, Field
 
-# 직접인건비 단가 — 정부 기술자 등급별 노임단가 (2026 기준). 매년 갱신.
-# 종류별 strategy가 적합한 등급을 import해 사용.
-DAILY_RATE_SENIOR_ENGINEER = 310_884       # 고급기술자 — 구조설계·점검류
-DAILY_RATE_FIELD_SUPPORT = 253_985         # 현장기술지원 단가 (xlsx 실 사례)
-DAILY_RATE_PROFESSIONAL_ENGINEER = 446_055  # 기술사 — 구조감리
-DAILY_RATE_ENGINEER = 300_980              # 기술자 — 내진성능평가
-# 내진평가 패키지 부속 모듈 — xlsx 운영 양식 단가 (사장 사용 견적서 사본 추출)
-DAILY_RATE_REINFORCEMENT = 242_055         # 내진보강설계·기술감리
-DAILY_RATE_THIRD_PARTY = 292_249           # 3자검토
+# 직접인건비 단가 — 한국엔지니어링협회 통계법 제27조 기반 기술자 노임단가
+# (1인 1일 기준, 원). 매년 1월 갱신 — 운영 시점에 ENGINEERING_RATES_BY_GRADE
+# dict 한 곳만 수정하면 모든 strategy에 반영. 사장 운영 분야는 건설.
+ENGINEERING_RATES_BY_GRADE: dict[str, int] = {
+    # 등급(한글) → 건설분야 단가 (2026 기준 표)
+    "기술사": 467_217,
+    "특급기술자": 373_353,
+    "고급기술자": 310_884,
+    "중급기술자": 295_138,
+    "초급기술자": 235_459,
+    "고급숙련기술자": 281_075,
+    "중급숙련기술자": 250_087,
+    "초급숙련기술자": 218_142,
+}
+
+# 사용자 명시 (2026-05-08): 구조감리는 기술사 단가, 나머지는 고급기술자 기준.
+DAILY_RATE_SENIOR_ENGINEER = ENGINEERING_RATES_BY_GRADE["고급기술자"]      # 310,884
+DAILY_RATE_PROFESSIONAL_ENGINEER = ENGINEERING_RATES_BY_GRADE["기술사"]   # 467,217
+# BMA 점검자 단가 — 책임자/점검자 두 등급 분리 산출인 종류 전용
+DAILY_RATE_JUNIOR_ENGINEER = ENGINEERING_RATES_BY_GRADE["초급기술자"]    # 235,459
 
 
 class QuoteType(StrEnum):
@@ -317,7 +334,7 @@ def _calculate_field_support(inp: QuoteInput) -> QuoteResult:
     )
 
     # 직접인건비 — 단가만 다름 (253,985원/인.일)
-    direct_labor = mh_total * DAILY_RATE_FIELD_SUPPORT
+    direct_labor = mh_total * DAILY_RATE_SENIOR_ENGINEER  # 고급기술자 (사용자 명시)
 
     # 직접경비: 동적 list 우선, 없으면 legacy 합산
     if inp.direct_expense_items:
@@ -465,8 +482,10 @@ def _calculate_inspection_bma(inp: QuoteInput) -> QuoteResult:
     inspector = inp.inspection_inspector_days or 0
 
     # 매 단계 INT() — xlsx 수식과 동일한 정수 누적 (truncation 보존)
+    # BMA 책임자 단가 456,237는 사장 양식 그대로 보존 (사용자 명시 부재).
+    # 점검자 단가 235,459는 건설분야 초급기술자와 일치.
     direct_labor = (
-        int(responsible * 456_237) + int(inspector * 235_459)
+        int(responsible * 456_237) + int(inspector * DAILY_RATE_JUNIOR_ENGINEER)
     )
     direct_labor = int(direct_labor)  # F7 = INT(F8+F9)
 
@@ -698,7 +717,7 @@ def _calculate_reinforcement_design(inp: QuoteInput) -> QuoteResult:
     mh_total = (
         int(inp.manhours_override) if inp.manhours_override is not None else 0
     )
-    direct_labor = mh_total * DAILY_RATE_REINFORCEMENT
+    direct_labor = mh_total * DAILY_RATE_SENIOR_ENGINEER  # 고급기술자 (사용자 명시)
 
     if inp.direct_expense_items:
         direct_expense = sum(item.amount for item in inp.direct_expense_items)
@@ -759,7 +778,7 @@ def _calculate_third_party_review(inp: QuoteInput) -> QuoteResult:
     mh_total = (
         int(inp.manhours_override) if inp.manhours_override is not None else 0
     )
-    direct_labor = mh_total * DAILY_RATE_THIRD_PARTY
+    direct_labor = mh_total * DAILY_RATE_SENIOR_ENGINEER  # 고급기술자 (사용자 명시)
 
     if inp.direct_expense_items:
         direct_expense = sum(item.amount for item in inp.direct_expense_items)
@@ -880,7 +899,7 @@ def _calculate_seismic_eval(inp: QuoteInput) -> QuoteResult:
     field_outdoor = field_outdoor or 0
     field_indoor = field_indoor or 0
     analysis = analysis or 0
-    rate = DAILY_RATE_ENGINEER  # 300,980 — 기술자
+    rate = DAILY_RATE_SENIOR_ENGINEER  # 310,884 — 고급기술자 (사용자 명시)
 
     # ① 현장조사
     field_direct = (field_outdoor + field_indoor) * rate
