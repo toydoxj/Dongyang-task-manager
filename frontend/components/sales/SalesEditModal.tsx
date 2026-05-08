@@ -6,6 +6,7 @@ import { useSWRConfig } from "swr";
 import { useAuth } from "@/components/AuthGuard";
 import QuoteForm from "@/components/sales/QuoteForm";
 import {
+  addSaleExternalQuote,
   addSaleQuote,
   archiveSale,
   convertSale,
@@ -18,6 +19,7 @@ import {
   saveQuoteBundlePdfToDrive,
   saveQuotePdfToDrive,
   updateSale,
+  updateSaleExternalQuote,
   updateSaleQuote,
 } from "@/lib/api";
 import {
@@ -118,6 +120,10 @@ export default function SalesEditModal({
   const [quoteList, setQuoteList] = useState<QuoteFormResponse[]>([]);
   const [quoteMode, setQuoteMode] = useState<"list" | "new" | "edit">("list");
   const [editingQuoteId, setEditingQuoteId] = useState<string | null>(null);
+  // 외부 견적 inline form (PR-EXT) — 산출 X, service + amount만.
+  const [externalFormOpen, setExternalFormOpen] = useState(false);
+  const [externalDraft, setExternalDraft] = useState({ service: "", amount: 0 });
+  const [editingExternalId, setEditingExternalId] = useState<string | null>(null);
 
   // 종류별 default 자동 적용 — useRef로 prev type 추적해 모달 첫 prefill 시에는
   // skip (기존 견적의 사용자 정의 값을 보존), 사용자가 select 변경할 때만 reset.
@@ -563,12 +569,27 @@ export default function SalesEditModal({
 
           {activeTab === "quote" ? (
             quoteMode === "list" ? (
-              // PR-M3 List view — 영업당 견적 N개 표시
+              // PR-M3 List view — 영업당 견적 N개 표시 + PR-EXT 외부 견적
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
                   <h3 className="text-sm font-medium">
                     견적서 ({quoteList.length}건)
                   </h3>
+                  <div className="flex gap-1">
+                  <button
+                    type="button"
+                    disabled={!sale}
+                    onClick={() => {
+                      if (!sale) return;
+                      setExternalDraft({ service: "", amount: 0 });
+                      setEditingExternalId(null);
+                      setExternalFormOpen(true);
+                    }}
+                    className="rounded-md border border-amber-600/40 bg-amber-500/10 px-3 py-1.5 text-xs font-medium text-amber-700 hover:bg-amber-500/20 disabled:opacity-50 dark:text-amber-400"
+                    title={sale ? "외주사 견적 (산출 X, 갑지 row만)" : "영업 저장 후 사용 가능"}
+                  >
+                    + 외부 견적
+                  </button>
                   <button
                     type="button"
                     onClick={() => {
@@ -597,7 +618,86 @@ export default function SalesEditModal({
                   >
                     + 신규 견적
                   </button>
+                  </div>
                 </div>
+
+                {externalFormOpen && (
+                  <div className="space-y-2 rounded-md border border-amber-300 bg-amber-50/40 p-3 dark:border-amber-600/40 dark:bg-amber-900/10">
+                    <div className="text-xs font-medium text-amber-700 dark:text-amber-400">
+                      외부 견적 {editingExternalId ? "수정" : "추가"}
+                    </div>
+                    <input
+                      type="text"
+                      placeholder="업무내용 (예: 구조진단 외주 (B사))"
+                      value={externalDraft.service}
+                      onChange={(e) =>
+                        setExternalDraft({
+                          ...externalDraft,
+                          service: e.target.value,
+                        })
+                      }
+                      className={inputCls}
+                    />
+                    <input
+                      type="number"
+                      min={0}
+                      placeholder="금액 (원)"
+                      value={externalDraft.amount || ""}
+                      onChange={(e) =>
+                        setExternalDraft({
+                          ...externalDraft,
+                          amount: e.target.value ? Number(e.target.value) : 0,
+                        })
+                      }
+                      className={inputCls}
+                    />
+                    <div className="flex justify-end gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setExternalFormOpen(false);
+                          setEditingExternalId(null);
+                          setExternalDraft({ service: "", amount: 0 });
+                        }}
+                        className="rounded border border-zinc-300 px-2 py-1 text-[11px] hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800"
+                      >
+                        취소
+                      </button>
+                      <button
+                        type="button"
+                        disabled={busy || !externalDraft.service.trim()}
+                        onClick={async () => {
+                          if (!sale) return;
+                          setBusy(true);
+                          setErr(null);
+                          try {
+                            if (editingExternalId) {
+                              await updateSaleExternalQuote(
+                                sale.id,
+                                editingExternalId,
+                                externalDraft,
+                              );
+                            } else {
+                              await addSaleExternalQuote(sale.id, externalDraft);
+                            }
+                            await refreshQuoteList();
+                            setExternalFormOpen(false);
+                            setEditingExternalId(null);
+                            setExternalDraft({ service: "", amount: 0 });
+                          } catch (e) {
+                            setErr(e instanceof Error ? e.message : "외부 견적 저장 실패");
+                          } finally {
+                            setBusy(false);
+                          }
+                        }}
+                        className="rounded border border-amber-600/40 bg-amber-500/20 px-2 py-1 text-[11px] font-medium text-amber-700 hover:bg-amber-500/30 disabled:opacity-50 dark:text-amber-400"
+                      >
+                        {editingExternalId ? "수정" : "추가"}
+                      </button>
+                    </div>
+                  </div>
+                )}
+
                 {quoteList.length === 0 ? (
                   <p className="rounded-md border border-dashed border-zinc-300 px-3 py-4 text-center text-xs text-zinc-500 dark:border-zinc-700">
                     아직 견적 없음. "+ 신규 견적"으로 작성하세요.
@@ -607,96 +707,137 @@ export default function SalesEditModal({
                     {quoteList.map((q) => (
                       <li
                         key={q.id}
-                        className="rounded border border-zinc-200 px-3 py-2 dark:border-zinc-800"
+                        className={cn(
+                          "rounded border px-3 py-2",
+                          q.is_external
+                            ? "border-amber-300 bg-amber-50/40 dark:border-amber-600/40 dark:bg-amber-900/10"
+                            : "border-zinc-200 dark:border-zinc-800",
+                        )}
                       >
                         <div className="flex items-center justify-between gap-2">
                           <div className="flex-1 min-w-0">
                             <div className="text-sm font-medium">
-                              {q.full_doc || "—"} · {q.input.quote_type ?? "구조설계"}
+                              {q.is_external ? (
+                                <>
+                                  <span className="mr-1 inline-block rounded bg-amber-500 px-1.5 py-0.5 text-[9px] font-semibold text-white">
+                                    외부
+                                  </span>
+                                  {q.service || "외부 견적"}
+                                </>
+                              ) : (
+                                <>
+                                  {q.full_doc || "—"} ·{" "}
+                                  {q.input.quote_type ?? "구조설계"}
+                                </>
+                              )}
                             </div>
                             <div className="truncate text-xs text-zinc-500">
-                              {q.input.service_name ?? "—"} ·{" "}
-                              ₩{(q.result.final ?? 0).toLocaleString()}
+                              {q.is_external
+                                ? `₩${(q.amount ?? 0).toLocaleString()}`
+                                : `${q.input.service_name ?? "—"} · ₩${(q.result.final ?? 0).toLocaleString()}`}
                             </div>
-                            {(() => {
-                              const items = (q.input.direct_expense_items ?? []).filter(
-                                (it) => (it.amount ?? 0) > 0,
-                              );
-                              if (items.length === 0) return null;
-                              return (
-                                <ul className="mt-1 space-y-0.5 pl-2 text-[10px] text-zinc-500 dark:text-zinc-400">
-                                  {items.map((it, i) => (
-                                    <li key={i}>
-                                      └ {it.name || "항목명 없음"} ·{" "}
-                                      ₩{(it.amount ?? 0).toLocaleString()}
-                                    </li>
-                                  ))}
-                                </ul>
-                              );
-                            })()}
+                            {!q.is_external &&
+                              (() => {
+                                const items = (
+                                  q.input.direct_expense_items ?? []
+                                ).filter((it) => (it.amount ?? 0) > 0);
+                                if (items.length === 0) return null;
+                                return (
+                                  <ul className="mt-1 space-y-0.5 pl-2 text-[10px] text-zinc-500 dark:text-zinc-400">
+                                    {items.map((it, i) => (
+                                      <li key={i}>
+                                        └ {it.name || "항목명 없음"} ·{" "}
+                                        ₩{(it.amount ?? 0).toLocaleString()}
+                                      </li>
+                                    ))}
+                                  </ul>
+                                );
+                              })()}
                           </div>
                           <div className="flex shrink-0 gap-1">
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setQuoteInput(q.input);
-                                setQuoteResult(q.result);
-                                setEditingQuoteId(q.id);
-                                setQuoteMode("edit");
-                              }}
-                              className="rounded border border-zinc-300 px-2 py-1 text-[11px] hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800"
-                            >
-                              편집
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                if (!sale) return;
-                                void downloadQuotePdf(sale.id, q.id).catch(
-                                  (e) =>
-                                    setErr(
-                                      e instanceof Error
-                                        ? e.message
-                                        : "PDF 다운로드 실패",
-                                    ),
-                                );
-                              }}
-                              className="rounded border border-emerald-700/40 px-2 py-1 text-[11px] text-emerald-700 hover:bg-emerald-600/10 dark:text-emerald-400"
-                            >
-                              PDF
-                            </button>
+                            {q.is_external ? (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setExternalDraft({
+                                    service: q.service ?? "",
+                                    amount: q.amount ?? 0,
+                                  });
+                                  setEditingExternalId(q.id);
+                                  setExternalFormOpen(true);
+                                }}
+                                className="rounded border border-zinc-300 px-2 py-1 text-[11px] hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800"
+                              >
+                                편집
+                              </button>
+                            ) : (
+                              <>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setQuoteInput(q.input);
+                                    setQuoteResult(q.result);
+                                    setEditingQuoteId(q.id);
+                                    setQuoteMode("edit");
+                                  }}
+                                  className="rounded border border-zinc-300 px-2 py-1 text-[11px] hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800"
+                                >
+                                  편집
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    if (!sale) return;
+                                    void downloadQuotePdf(sale.id, q.id).catch(
+                                      (e) =>
+                                        setErr(
+                                          e instanceof Error
+                                            ? e.message
+                                            : "PDF 다운로드 실패",
+                                        ),
+                                    );
+                                  }}
+                                  className="rounded border border-emerald-700/40 px-2 py-1 text-[11px] text-emerald-700 hover:bg-emerald-600/10 dark:text-emerald-400"
+                                >
+                                  PDF
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={async () => {
+                                    if (!sale) return;
+                                    setBusy(true);
+                                    setErr(null);
+                                    try {
+                                      await saveQuotePdfToDrive(sale.id, q.id);
+                                      refreshSales();
+                                      alert("Drive 저장 완료");
+                                    } catch (e) {
+                                      setErr(
+                                        e instanceof Error
+                                          ? e.message
+                                          : "PDF 저장 실패",
+                                      );
+                                    } finally {
+                                      setBusy(false);
+                                    }
+                                  }}
+                                  disabled={busy}
+                                  className="rounded border border-blue-500/40 px-2 py-1 text-[11px] text-blue-700 hover:bg-blue-500/10 disabled:opacity-50 dark:text-blue-400"
+                                >
+                                  저장
+                                </button>
+                              </>
+                            )}
                             <button
                               type="button"
                               onClick={async () => {
                                 if (!sale) return;
-                                setBusy(true);
-                                setErr(null);
-                                try {
-                                  await saveQuotePdfToDrive(sale.id, q.id);
-                                  refreshSales();
-                                  alert("Drive 저장 완료");
-                                } catch (e) {
-                                  setErr(
-                                    e instanceof Error
-                                      ? e.message
-                                      : "PDF 저장 실패",
-                                  );
-                                } finally {
-                                  setBusy(false);
-                                }
-                              }}
-                              disabled={busy}
-                              className="rounded border border-blue-500/40 px-2 py-1 text-[11px] text-blue-700 hover:bg-blue-500/10 disabled:opacity-50 dark:text-blue-400"
-                            >
-                              저장
-                            </button>
-                            <button
-                              type="button"
-                              onClick={async () => {
-                                if (!sale) return;
+                                const label = q.is_external
+                                  ? `외부 견적 [${q.service}]`
+                                  : `견적 [${q.full_doc}]`;
                                 if (
                                   !confirm(
-                                    `견적 [${q.full_doc}]을 삭제하시겠습니까?\n(파일은 보존, 노션 row만 갱신)`,
+                                    `${label}을 삭제하시겠습니까?\n(파일은 보존, 노션 row만 갱신)`,
                                   )
                                 )
                                   return;

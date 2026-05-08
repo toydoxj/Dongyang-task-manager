@@ -1145,6 +1145,50 @@ export async function updateSaleQuote(
   return (await res.json()) as QuoteFormResponse;
 }
 
+/** 외부 견적 추가 (PR-EXT) — 산출 X, 금액만. 갑지 row만 표시. */
+export async function addSaleExternalQuote(
+  saleId: string,
+  body: { service: string; amount: number },
+): Promise<QuoteFormResponse> {
+  const res = await authFetch(`/api/sales/${saleId}/quotes/external`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const detail = await res.json().catch(() => null);
+    throw new Error(
+      (detail as { detail?: string } | null)?.detail ??
+        `${res.status} ${res.statusText}`,
+    );
+  }
+  return (await res.json()) as QuoteFormResponse;
+}
+
+/** 외부 견적 service/amount 수정 (PR-EXT). 첨부 PDF 보존. */
+export async function updateSaleExternalQuote(
+  saleId: string,
+  quoteId: string,
+  body: { service: string; amount: number },
+): Promise<QuoteFormResponse> {
+  const res = await authFetch(
+    `/api/sales/${saleId}/quotes/external/${quoteId}`,
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    },
+  );
+  if (!res.ok) {
+    const detail = await res.json().catch(() => null);
+    throw new Error(
+      (detail as { detail?: string } | null)?.detail ??
+        `${res.status} ${res.statusText}`,
+    );
+  }
+  return (await res.json()) as QuoteFormResponse;
+}
+
 /** 견적 삭제 (PR-M1). suffix 재할당 X — hole 보존. */
 export async function deleteSaleQuote(
   saleId: string,

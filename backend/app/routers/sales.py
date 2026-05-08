@@ -11,7 +11,7 @@ from datetime import date, datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import Response
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 from urllib.parse import quote as url_quote
@@ -207,11 +207,25 @@ class QuoteFormResponse(BaseModel):
     """영업 내 단일 견적서 form 응답 — quote_form_data["forms"] 항목 1건."""
 
     id: str
-    doc_number: str   # 분류별 sequence ("26-04-001")
+    doc_number: str   # 분류별 sequence ("26-04-001"). 외부 견적은 빈 값.
     suffix: str       # 영업 내 견적 인덱스 영문 ("A", "B", "AA", ...)
     full_doc: str     # doc_number + suffix ("26-04-001A")
     input: dict
     result: dict
+    # 외부 견적 (PR-EXT) — 외주사 견적을 영업 묶음에 포함. 산출 X, 금액만.
+    is_external: bool = False
+    service: str = ""               # 외부 업무내용 (외부면 PDF 표·갑지 표시용)
+    amount: float = 0               # 외부 금액 (result.final로도 보관, 갑지 합산)
+    attached_pdf_url: str = ""      # 첨부 PDF web url (PR-EXT-2 Drive upload)
+    attached_pdf_name: str = ""     # 첨부 파일명 (표시용)
+    attached_pdf_file_id: str = ""  # WORKS Drive file_id (backend download용)
+
+
+class ExternalQuoteRequest(BaseModel):
+    """외부 견적 추가/수정 요청 — 산출 없이 업무내용 + 금액만."""
+
+    service: str
+    amount: float = Field(default=0, ge=0)
 
 
 def _next_quote_suffix(forms: list[dict]) -> str:
@@ -254,6 +268,12 @@ def _form_to_response(form: dict) -> QuoteFormResponse:
         full_doc=format_doc_full(form.get("doc_number", ""), form.get("suffix", "")),
         input=form.get("input") or {},
         result=form.get("result") or {},
+        is_external=bool(form.get("is_external")),
+        service=form.get("service") or "",
+        amount=float(form.get("amount") or 0),
+        attached_pdf_url=form.get("attached_pdf_url") or "",
+        attached_pdf_name=form.get("attached_pdf_name") or "",
+        attached_pdf_file_id=form.get("attached_pdf_file_id") or "",
     )
 
 
@@ -405,6 +425,100 @@ def delete_sale_quote(
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
+# ── 외부 견적 (PR-EXT) — 외주사 견적을 영업 묶음에 포함. 산출 X, 금액만. ──
+
+
+@router.post(
+    "/{page_id}/quotes/external",
+    response_model=QuoteFormResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def add_external_quote(
+    page_id: str,
+    body: ExternalQuoteRequest,
+    _user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> QuoteFormResponse:
+    """외부 견적 추가 — 산출 X, 갑지에만 row로 표시.
+
+    is_external=True flag로 일반 견적과 구별. doc_number는 빈값 (외부 회사가
+    발급한 외부 문서이므로 사장 sequence 적용 X). suffix만 영업 내 인덱스 부여.
+    PDF 첨부는 PR-EXT-2 (별 라우터)에서 추가.
+    """
+    from sqlalchemy import update as sa_update
+
+    row = db.get(M.MirrorSales, page_id)
+    if row is None or row.archived:
+        raise HTTPException(status_code=404, detail="영업 건을 찾을 수 없습니다")
+
+    forms = normalize_quote_forms(
+        row.quote_form_data, legacy_doc_number=row.quote_doc_number or ""
+    )
+    new_suffix = _next_quote_suffix(forms)
+    new_form = {
+        "id": next_form_id(),
+        "doc_number": "",
+        "suffix": new_suffix,
+        "is_external": True,
+        "service": body.service,
+        "amount": body.amount,
+        # 갑지 합산은 result.final 사용 — 일관성 위해 final에도 amount 보관
+        "input": {},
+        "result": {"final": body.amount},
+    }
+    forms.append(new_form)
+
+    db.execute(
+        sa_update(M.MirrorSales)
+        .where(M.MirrorSales.page_id == page_id)
+        .values(quote_form_data=pack_quote_forms(forms))
+    )
+    db.commit()
+    return _form_to_response(new_form)
+
+
+@router.patch(
+    "/{page_id}/quotes/external/{quote_id}",
+    response_model=QuoteFormResponse,
+)
+def update_external_quote(
+    page_id: str,
+    quote_id: str,
+    body: ExternalQuoteRequest,
+    _user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> QuoteFormResponse:
+    """외부 견적 service/amount 수정. 첨부 PDF는 보존."""
+    from sqlalchemy import update as sa_update
+
+    row = db.get(M.MirrorSales, page_id)
+    if row is None or row.archived:
+        raise HTTPException(status_code=404, detail="영업 건을 찾을 수 없습니다")
+
+    forms = normalize_quote_forms(
+        row.quote_form_data, legacy_doc_number=row.quote_doc_number or ""
+    )
+    target_idx = next(
+        (i for i, f in enumerate(forms) if f.get("id") == quote_id), -1
+    )
+    if target_idx < 0 or not forms[target_idx].get("is_external"):
+        raise HTTPException(status_code=404, detail="외부 견적을 찾을 수 없습니다")
+
+    forms[target_idx] = {
+        **forms[target_idx],
+        "service": body.service,
+        "amount": body.amount,
+        "result": {"final": body.amount},
+    }
+    db.execute(
+        sa_update(M.MirrorSales)
+        .where(M.MirrorSales.page_id == page_id)
+        .values(quote_form_data=pack_quote_forms(forms))
+    )
+    db.commit()
+    return _form_to_response(forms[target_idx])
+
+
 @router.get("/quote/types")
 def list_quote_types(
     _user: User = Depends(get_current_user),
@@ -493,8 +607,9 @@ def _collect_bundle_sections(
 ) -> list[dict[str, object]]:
     """묶음 PDF용 sections 수집 — 영업 1건 안 견적 list 평탄화 (PR-M4a).
 
-    parent_lead_id 자식 영업 query는 M4a에서 제거. 영업당 다중 견적 모델로
-    완전 전환되어 묶음 PDF는 영업 N건이 아닌 영업 1건의 견적 N개를 묶음.
+    영업당 다중 견적 모델 (PR-M0~M4) — 일반 견적 + 외부 견적 (PR-EXT).
+    외부 견적은 input/result 비어 있어도 sections에 포함 (갑지 row 표시용).
+    PDF concat에서 is_external은 build_quote_bundle_pdf가 skip.
     """
     sale = db.get(M.MirrorSales, sale_id)
     if sale is None or sale.archived:
@@ -506,7 +621,9 @@ def _collect_bundle_sections(
         legacy_doc_number=sale.quote_doc_number or "",
     )
     for form in forms:
-        if not form.get("input") or not form.get("result"):
+        is_external = bool(form.get("is_external"))
+        # 일반 견적: input/result 모두 필요. 외부 견적: 빈 input/result 허용.
+        if not is_external and (not form.get("input") or not form.get("result")):
             continue
         sections.append(
             {
@@ -514,6 +631,11 @@ def _collect_bundle_sections(
                 "doc_number": format_doc_full(
                     form.get("doc_number", ""), form.get("suffix", "")
                 ),
+                "is_external": is_external,
+                "service": form.get("service") or "",
+                "amount": float(form.get("amount") or 0),
+                "attached_pdf_url": form.get("attached_pdf_url") or "",
+                "attached_pdf_file_id": form.get("attached_pdf_file_id") or "",
             }
         )
     return sections

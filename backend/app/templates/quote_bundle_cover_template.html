@@ -160,6 +160,17 @@
       font-weight: 700;
       color: #1f7a4a;
     }
+    .summary-table tr.external td { background: #fff8e1; }
+    .summary-table tr.external .ext-tag {
+      display: inline-block;
+      background: #f0a500;
+      color: #fff;
+      font-size: 7.5pt;
+      padding: 1px 5px;
+      border-radius: 2px;
+      margin-right: 4px;
+      vertical-align: middle;
+    }
 
     /* ── 푸터 (quote_template 동일) ── */
     .footer-divider {
@@ -342,9 +353,10 @@
       </thead>
       <tbody>
         {% for row in rows %}
-        <tr>
+        <tr{% if row.is_external %} class="external"{% endif %}>
           <td class="num">{{ loop.index }}</td>
           <td>
+            {% if row.is_external %}<span class="ext-tag">외부</span>{% endif %}
             {{ row.service }}
             {% if row.doc_number %}<span class="doc">{{ row.doc_number }}</span>{% endif %}
           </td>

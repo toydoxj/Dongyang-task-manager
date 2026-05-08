@@ -160,15 +160,21 @@ def build_bundle_cover_pdf(
         inp = form_data.get("input") or {}
         result = form_data.get("result") or {}
         amount = int(result.get("final") or 0)
-        # 업무내용 — quote_type 우선. 기타이고 custom_title이 있으면 그걸 사용.
-        qtype = (inp.get("quote_type") or "").strip()
-        custom = (inp.get("custom_title") or "").strip()
-        service = custom if (qtype == "기타" and custom) else (qtype or "—")
+        is_external = bool(s.get("is_external"))
+        if is_external:
+            # 외부 견적 — 사용자가 직접 입력한 service/amount 사용
+            service = (s.get("service") or "외부 견적").strip()
+        else:
+            # 업무내용 — quote_type 우선. 기타이고 custom_title이 있으면 그걸 사용.
+            qtype = (inp.get("quote_type") or "").strip()
+            custom = (inp.get("custom_title") or "").strip()
+            service = custom if (qtype == "기타" and custom) else (qtype or "—")
         rows.append(
             {
                 "service": service,
                 "doc_number": s.get("doc_number", "") or "",
                 "amount": amount,
+                "is_external": is_external,
             }
         )
         total += amount
@@ -226,8 +232,11 @@ def build_quote_bundle_pdf(
     for page in cover_reader.pages:
         writer.add_page(page)
 
-    # 2) 자식 견적별 PDF concat
+    # 2) 자식 견적별 PDF concat — 외부 견적(is_external)은 산출 데이터 없이
+    # 갑지 row만 표시. PDF 첨부가 있으면 PR-EXT-2에서 concat.
     for section in sections:
+        if section.get("is_external"):
+            continue
         form_data = section.get("form_data") or {}
         if not form_data.get("input") or not form_data.get("result"):
             continue

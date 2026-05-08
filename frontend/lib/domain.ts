@@ -627,7 +627,8 @@ export interface QuoteInput {
 }
 
 /** 영업 1건 안 단일 견적 form (PR-M0~M2). 영업당 N개 가능 — 각자 doc_number와
- * suffix(영업 내 인덱스 영문, A/B/C/...). full_doc은 표시 형식 "26-04-001A". */
+ * suffix(영업 내 인덱스 영문, A/B/C/...). full_doc은 표시 형식 "26-04-001A".
+ * is_external이면 외부 견적 (PR-EXT) — 산출 X, 갑지 row만 (선택 PDF 첨부 PR-EXT-2). */
 export interface QuoteFormResponse {
   id: string;
   doc_number: string;
@@ -635,6 +636,12 @@ export interface QuoteFormResponse {
   full_doc: string;
   input: QuoteInput;
   result: QuoteResult;
+  is_external?: boolean;
+  service?: string;
+  amount?: number;
+  attached_pdf_url?: string;
+  attached_pdf_name?: string;
+  attached_pdf_file_id?: string;
 }
 
 /** 견적서 산출 결과 — 백엔드 QuoteResult. */
