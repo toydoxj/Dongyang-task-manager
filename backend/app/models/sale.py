@@ -37,6 +37,7 @@ class Sale(BaseModel):
     performance_design_amount: float | None = None
     wind_tunnel_amount: float | None = None
     converted_project_id: str = ""  # 전환된 프로젝트 relation 첫번째
+    location: str = ""  # 영업 위치 (영업 row 단위 — 견적서 탭에서 echo)
     assignees: list[str] = []
     # 견적서 작성 툴 (PR5)
     quote_doc_number: str = ""  # {YY}-{MM}-{NNN}
@@ -84,6 +85,7 @@ class Sale(BaseModel):
             performance_design_amount=P.number(props, "성능설계"),
             wind_tunnel_amount=P.number(props, "풍동실험"),
             converted_project_id=_first_relation_id(props, "전환된 프로젝트"),
+            location=P.rich_text(props, "위치"),
             assignees=P.multi_select_names(props, "담당자"),
             quote_doc_number=P.rich_text(props, "문서번호"),
             quote_type=P.select_name(props, "견적서종류"),
@@ -134,6 +136,7 @@ class SaleCreateRequest(BaseModel):
     vat_inclusive: str = ""
     performance_design_amount: float | None = None
     wind_tunnel_amount: float | None = None
+    location: str = ""  # 영업 위치 (영업 row 단위)
     assignees: list[str] = []
 
 
@@ -158,6 +161,7 @@ class SaleUpdateRequest(BaseModel):
     vat_inclusive: str | None = None
     performance_design_amount: float | None = None
     wind_tunnel_amount: float | None = None
+    location: str | None = None  # 영업 위치
     assignees: list[str] | None = None
     quote_type: str | None = None  # PR-Q1
     # 견적서 데이터 — None이면 변경 안 함, dict면 mirror_sales JSONB 갱신 (노션 X)
@@ -246,6 +250,8 @@ def sale_create_to_props(req: SaleCreateRequest) -> dict[str, Any]:
         props["제출일"] = d
     if req.vat_inclusive:
         props["VAT포함"] = {"select": {"name": req.vat_inclusive}}
+    if req.location:
+        props["위치"] = _rich_text(req.location)
     if req.assignees:
         props["담당자"] = _multi_select(req.assignees)
     if req.quote_type:
@@ -303,6 +309,8 @@ def sale_update_to_props(req: SaleUpdateRequest) -> dict[str, Any]:
             if req.vat_inclusive == ""
             else {"select": {"name": req.vat_inclusive}}
         )
+    if req.location is not None:
+        props["위치"] = _rich_text(req.location)
     if req.assignees is not None:
         props["담당자"] = _multi_select(req.assignees)
     if req.quote_type is not None:

@@ -483,6 +483,8 @@ export interface Sale {
   performance_design_amount: number | null;
   wind_tunnel_amount: number | null;
   converted_project_id: string;
+  /** 영업 위치 — 영업 row 단위. 견적서 탭에서 echo. */
+  location: string;
   assignees: string[];
   created_time: string | null;
   last_edited_time: string | null;
@@ -519,6 +521,8 @@ export interface SaleCreateRequest {
   vat_inclusive?: string;
   performance_design_amount?: number;
   wind_tunnel_amount?: number;
+  /** 영업 위치. */
+  location?: string;
   assignees?: string[];
 }
 

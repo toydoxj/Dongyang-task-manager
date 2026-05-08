@@ -172,6 +172,7 @@ class MirrorSales(Base):
     performance_design_amount: Mapped[float | None] = mapped_column(Float, nullable=True)
     wind_tunnel_amount: Mapped[float | None] = mapped_column(Float, nullable=True)
     converted_project_id: Mapped[str] = mapped_column(String, default="", index=True)
+    location: Mapped[str] = mapped_column(String, default="")  # 영업 위치 (영업 row 단위)
     assignees: Mapped[list[str]] = mapped_column(ARRAY(String), default=list)
     # 견적서 작성 툴 (PR5) — 문서번호 {YY}-{MM}-{NNN} 형식, 입력값+산출결과 dump
     quote_doc_number: Mapped[str] = mapped_column(String, default="", index=True)

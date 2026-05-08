@@ -170,6 +170,8 @@ SALES_DB_REQUIRED: dict[str, dict[str, Any]] = {
     "영업코드": {"rich_text": {}},
     # 견적서 문서번호 — 견적서 작성 툴(PR5) 자동 부여 ({YY}-{CC}-{NNN}).
     "문서번호": {"rich_text": {}},
+    # 영업 위치 — 영업 row 단위. 견적서 탭에서 echo로 자동 채움.
+    "위치": {"rich_text": {}},
     # 견적서 첨부 — WORKS Drive에 저장된 PDF의 web url 보관
     "견적서첨부": {"files": {}},
     # 통합 견적서 첨부 (PR-G2) — parent_lead_id로 묶인 자식 견적까지 1 PDF로

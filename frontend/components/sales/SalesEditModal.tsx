@@ -178,6 +178,7 @@ export default function SalesEditModal({
         vat_inclusive: sale.vat_inclusive || undefined,
         performance_design_amount: sale.performance_design_amount ?? undefined,
         wind_tunnel_amount: sale.wind_tunnel_amount ?? undefined,
+        location: sale.location || undefined,
         assignees: sale.assignees,
         quote_type: sale.quote_type || undefined,
       });
@@ -273,6 +274,7 @@ export default function SalesEditModal({
       floors_above: form.floors_above ?? prev.floors_above,
       floors_below: form.floors_below ?? prev.floors_below,
       building_count: form.building_count ?? prev.building_count,
+      location: form.location ?? prev.location,
     }));
   }, [
     form.name,
@@ -280,6 +282,7 @@ export default function SalesEditModal({
     form.floors_above,
     form.floors_below,
     form.building_count,
+    form.location,
   ]);
 
   // 모달 닫힘 시 prev type 추적 ref 초기화 — 다음 모달 열림 시 첫 prefill을 skip
@@ -1042,10 +1045,8 @@ export default function SalesEditModal({
           <Field label="위치">
             <input
               className={inputCls}
-              value={quoteInput.location ?? ""}
-              onChange={(e) =>
-                setQuoteInput((q) => ({ ...q, location: e.target.value }))
-              }
+              value={form.location ?? ""}
+              onChange={(e) => setForm({ ...form, location: e.target.value })}
               placeholder="예: 경기 고양시 일산서구"
             />
           </Field>
