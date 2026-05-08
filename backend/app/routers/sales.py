@@ -277,6 +277,48 @@ def _form_to_response(form: dict) -> QuoteFormResponse:
     )
 
 
+async def _sync_sale_estimated_amount(
+    db: Session,
+    page_id: str,
+    notion: NotionService,
+) -> None:
+    """영업 row의 estimated_amount를 모든 견적(일반+외부)의 final 합계로 갱신.
+    mirror_sales + 노션 "견적금액" 둘 다 update. 견적 add/edit/delete 후 호출.
+    """
+    from sqlalchemy import update as sa_update
+
+    row = db.get(M.MirrorSales, page_id)
+    if row is None:
+        return
+    forms = normalize_quote_forms(
+        row.quote_form_data, legacy_doc_number=row.quote_doc_number or ""
+    )
+    total = 0
+    for f in forms:
+        if f.get("is_external"):
+            total += int(f.get("amount") or 0)
+        else:
+            result = f.get("result") or {}
+            total += int(result.get("final") or 0)
+
+    db.execute(
+        sa_update(M.MirrorSales)
+        .where(M.MirrorSales.page_id == page_id)
+        .values(estimated_amount=float(total))
+    )
+    db.commit()
+
+    try:
+        updated = await notion.update_page(
+            page_id, {"견적금액": {"number": total}}
+        )
+        get_sync().upsert_page("sales", updated)
+    except Exception:  # noqa: BLE001
+        logger.exception(
+            "견적금액 노션 sync 실패 — 운영 수동 보정 필요 (page_id=%s)", page_id
+        )
+
+
 @router.get("/{page_id}/quotes", response_model=list[QuoteFormResponse])
 def list_sale_quotes(
     page_id: str,
@@ -298,17 +340,19 @@ def list_sale_quotes(
     response_model=QuoteFormResponse,
     status_code=status.HTTP_201_CREATED,
 )
-def add_sale_quote(
+async def add_sale_quote(
     page_id: str,
     body: QuoteInput,
     _user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
+    notion: NotionService = Depends(get_notion),
 ) -> QuoteFormResponse:
     """영업에 견적 1건 추가. 분류별 sequence는 advisory lock으로 자동 부여,
     영업 내 suffix는 기존 견적의 max + 1.
 
     영업 한 건에 두 번째 견적 추가 시 sequence는 003 같은 다음 값, suffix는 B.
     삭제 후 hole 발생해도 새 견적은 max+1 (기존 doc_number 안정성 우선).
+    추가 후 영업 row의 견적금액(estimated_amount)을 합계로 자동 sync (mirror+노션).
     """
     from sqlalchemy import update as sa_update
 
@@ -347,6 +391,7 @@ def add_sale_quote(
     )
     db.commit()
 
+    await _sync_sale_estimated_amount(db, page_id, notion)
     return _form_to_response(new_form)
 
 
@@ -354,15 +399,17 @@ def add_sale_quote(
     "/{page_id}/quotes/{quote_id}",
     response_model=QuoteFormResponse,
 )
-def update_sale_quote(
+async def update_sale_quote(
     page_id: str,
     quote_id: str,
     body: QuoteInput,
     _user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
+    notion: NotionService = Depends(get_notion),
 ) -> QuoteFormResponse:
     """기존 견적의 input·result만 수정. doc_number/suffix는 보존
-    (외부 발송된 doc 변경되면 사장 운영 혼란)."""
+    (외부 발송된 doc 변경되면 사장 운영 혼란).
+    수정 후 영업 row의 견적금액 자동 sync."""
     from sqlalchemy import update as sa_update
 
     row = db.get(M.MirrorSales, page_id)
@@ -392,17 +439,20 @@ def update_sale_quote(
     )
     db.commit()
 
+    await _sync_sale_estimated_amount(db, page_id, notion)
     return _form_to_response(forms[target_idx])
 
 
 @router.delete("/{page_id}/quotes/{quote_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_sale_quote(
+async def delete_sale_quote(
     page_id: str,
     quote_id: str,
     _user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
+    notion: NotionService = Depends(get_notion),
 ) -> Response:
-    """견적 삭제. suffix는 재할당 안 함 (기존 doc_number 안정성)."""
+    """견적 삭제. suffix는 재할당 안 함 (기존 doc_number 안정성).
+    삭제 후 영업 row의 견적금액 자동 sync."""
     from sqlalchemy import update as sa_update
 
     row = db.get(M.MirrorSales, page_id)
@@ -422,6 +472,7 @@ def delete_sale_quote(
         .values(quote_form_data=pack_quote_forms(new_forms))
     )
     db.commit()
+    await _sync_sale_estimated_amount(db, page_id, notion)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
@@ -433,17 +484,18 @@ def delete_sale_quote(
     response_model=QuoteFormResponse,
     status_code=status.HTTP_201_CREATED,
 )
-def add_external_quote(
+async def add_external_quote(
     page_id: str,
     body: ExternalQuoteRequest,
     _user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
+    notion: NotionService = Depends(get_notion),
 ) -> QuoteFormResponse:
     """외부 견적 추가 — 산출 X, 갑지에만 row로 표시.
 
     is_external=True flag로 일반 견적과 구별. doc_number는 빈값 (외부 회사가
     발급한 외부 문서이므로 사장 sequence 적용 X). suffix만 영업 내 인덱스 부여.
-    PDF 첨부는 PR-EXT-2 (별 라우터)에서 추가.
+    PDF 첨부는 PR-EXT-2 (별 라우터)에서 추가. 추가 후 영업 견적금액 자동 sync.
     """
     from sqlalchemy import update as sa_update
 
@@ -474,6 +526,7 @@ def add_external_quote(
         .values(quote_form_data=pack_quote_forms(forms))
     )
     db.commit()
+    await _sync_sale_estimated_amount(db, page_id, notion)
     return _form_to_response(new_form)
 
 
@@ -596,14 +649,15 @@ async def attach_external_pdf(
     "/{page_id}/quotes/external/{quote_id}",
     response_model=QuoteFormResponse,
 )
-def update_external_quote(
+async def update_external_quote(
     page_id: str,
     quote_id: str,
     body: ExternalQuoteRequest,
     _user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
+    notion: NotionService = Depends(get_notion),
 ) -> QuoteFormResponse:
-    """외부 견적 service/amount 수정. 첨부 PDF는 보존."""
+    """외부 견적 service/amount 수정. 첨부 PDF는 보존. 영업 견적금액 자동 sync."""
     from sqlalchemy import update as sa_update
 
     row = db.get(M.MirrorSales, page_id)
@@ -631,6 +685,7 @@ def update_external_quote(
         .values(quote_form_data=pack_quote_forms(forms))
     )
     db.commit()
+    await _sync_sale_estimated_amount(db, page_id, notion)
     return _form_to_response(forms[target_idx])
 
 

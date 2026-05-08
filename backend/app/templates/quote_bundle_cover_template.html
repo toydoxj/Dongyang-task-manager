@@ -269,11 +269,11 @@
       color: #555;
     }
     .signature-line .seal-img {
-      width: 48px;
-      height: 48px;
-      margin-left: -10px;
+      width: 56px;
+      height: 56px;
+      margin-left: -8px;
       vertical-align: middle;
-      opacity: 0.92;
+      opacity: 0.95;
     }
     .note-footer {
       margin-top: 14px;
@@ -413,9 +413,8 @@
       <span class="name">김 효 진</span>
       {% if seal_data_uri %}
         <img class="seal-img" src="{{ seal_data_uri }}" alt="(인)">
-      {% else %}
-        <span class="seal-mark">(인)</span>
       {% endif %}
+      <span class="seal-mark">(인)</span>
     </div>
   </div>
 
