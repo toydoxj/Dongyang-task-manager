@@ -39,8 +39,10 @@ def index_to_suffix(idx: int) -> str:
 
 
 def format_doc_full(doc_number: str, suffix: str) -> str:
-    """문서번호 base + suffix → 표시 형식 ('26-04-001' + 'A' → '26-04-001A')."""
-    return f"{doc_number}{suffix}" if doc_number else suffix
+    """문서번호 표시 형식. 사용자 명시: 묶음·단일 모두 suffix 생략하고
+    doc_number만 표기 (예: '26-04-001'). suffix는 DB에 보존되어 영업 내
+    인덱스 식별에는 그대로 활용."""
+    return doc_number or suffix
 
 
 def normalize_quote_forms(

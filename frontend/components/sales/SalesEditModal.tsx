@@ -597,12 +597,16 @@ export default function SalesEditModal({
                       // 새 견적: input default reset (단가 등급/조정 등은 그대로).
                       // 발주처(client) + 영업 정보의 규모 4종은 기존 견적과 무관하게
                       // 영업 row에서 echo — 두 번째 이후 견적도 동일 영업의 발주처/규모 자동 채움.
+                      // 구조설계 default 직접경비: 인쇄비 50만원 + 지불방법 "쌍방의 협의에 의함."
                       setQuoteInput({
                         type_rate: 1.0,
                         structure_rate: 1.0,
                         coefficient: 1.0,
                         adjustment_pct: 87,
                         printing_fee: 500_000,
+                        direct_expense_items: [
+                          { name: "인쇄비", amount: 500_000 },
+                        ],
                         gross_floor_area: form.gross_floor_area ?? undefined,
                         floors_above: form.floors_above ?? null,
                         floors_below: form.floors_below ?? null,
@@ -610,6 +614,7 @@ export default function SalesEditModal({
                         service_name: form.name ?? "",
                         quote_type: "구조설계",
                         recipient_company: client,
+                        payment_terms: "쌍방의 협의에 의함.",
                       });
                       setQuoteResult(null);
                       setEditingQuoteId(null);
@@ -1230,42 +1235,6 @@ export default function SalesEditModal({
           <div className="flex gap-2">
             {isEdit && sale && sale.quote_doc_number && (
               <>
-                <button
-                  type="button"
-                  onClick={() => {
-                    void downloadQuotePdf(sale.id).catch((e) =>
-                      setErr(e instanceof Error ? e.message : "PDF 다운로드 실패"),
-                    );
-                  }}
-                  disabled={busy}
-                  className="rounded-md border border-emerald-700/40 bg-emerald-600/10 px-3 py-1.5 text-xs font-medium text-emerald-700 hover:bg-emerald-600/20 disabled:opacity-50 dark:text-emerald-400"
-                >
-                  PDF 다운로드
-                </button>
-                <button
-                  type="button"
-                  onClick={async () => {
-                    setBusy(true);
-                    setErr(null);
-                    try {
-                      await saveQuotePdfToDrive(sale.id);
-                      refreshSales();
-                      alert(
-                        "WORKS Drive [견적서]/" +
-                          new Date().getFullYear() +
-                          "년 폴더에 저장되었습니다.",
-                      );
-                    } catch (e) {
-                      setErr(e instanceof Error ? e.message : "PDF 저장 실패");
-                    } finally {
-                      setBusy(false);
-                    }
-                  }}
-                  disabled={busy}
-                  className="rounded-md border border-blue-500/40 px-3 py-1.5 text-xs text-blue-700 hover:bg-blue-500/10 disabled:opacity-50 dark:text-blue-400"
-                >
-                  PDF 저장
-                </button>
                 {hasMultipleQuotes && (
                   <>
                     <button

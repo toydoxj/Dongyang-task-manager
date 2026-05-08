@@ -619,7 +619,10 @@ export interface QuoteInput {
   final_override?: number | null;
   vat_included?: boolean;
   payment_terms?: string;
+  /** 용역범위 — PDF에 [포함]/[제외] 태그로 라인별 표시. */
   special_notes?: string;
+  /** 견적 비고 — 자유 입력. */
+  quote_note?: string;
   // ── legacy (기존 영업 호환, 신규는 direct_expense_items 사용) ──
   printing_fee?: number;
   survey_fee?: number;

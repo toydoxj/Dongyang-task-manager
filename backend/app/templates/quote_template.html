@@ -496,7 +496,7 @@
     {% endif %}
     {% if input.special_notes %}
     <div class="extra-row">
-      <div class="key">업무범위</div>
+      <div class="key">용역범위</div>
       <div class="val">
         {% for raw in input.special_notes.split('\n') if raw.strip() %}
           {% set line = raw.strip() %}
@@ -507,6 +507,16 @@
           {% else %}
             <div class="item">{{ line }}</div>
           {% endif %}
+        {% endfor %}
+      </div>
+    </div>
+    {% endif %}
+    {% if input.quote_note %}
+    <div class="extra-row">
+      <div class="key">비고</div>
+      <div class="val">
+        {% for raw in input.quote_note.split('\n') if raw.strip() %}
+          <div class="item">{{ raw.strip() }}</div>
         {% endfor %}
       </div>
     </div>

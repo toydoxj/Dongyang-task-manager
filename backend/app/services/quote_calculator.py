@@ -164,8 +164,9 @@ class QuoteInput(BaseModel):
     # 3줄을 추가 표시.
     vat_included: bool = False
     # 자유 텍스트
-    payment_terms: str = ""  # 지불방법
-    special_notes: str = ""  # 특이사항
+    payment_terms: str = ""    # 지불방법
+    special_notes: str = ""    # 용역범위 (PDF에 [포함]/[제외] 태그 표시)
+    quote_note: str = ""       # 견적 비고 — 사용자 자유 입력 (모달·PDF 표시)
     # ── legacy (기존 영업 호환) ──
     # 기존 quote_form_data가 이 필드들을 갖고 있을 수 있음. direct_expense_items가
     # 비었을 때만 합산해서 사용.

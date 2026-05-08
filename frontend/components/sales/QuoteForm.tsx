@@ -793,6 +793,7 @@ export default function QuoteForm({
                 <option value={1_000_000}>백만 미만</option>
                 <option value={100_000}>십만 미만</option>
                 <option value={10_000}>만 미만</option>
+                <option value={1_000}>천 미만</option>
                 <option value={0}>절삭 없음</option>
               </select>
             </Field>
@@ -824,7 +825,7 @@ export default function QuoteForm({
           </label>
         </Section>
 
-        <Section title="기타">
+        <Section title="특이사항">
           <Field label="지불방법">
             <input
               className={inputCls}
@@ -833,11 +834,18 @@ export default function QuoteForm({
               onChange={(e) => set("payment_terms", e.target.value)}
             />
           </Field>
-          <Field label="특이사항">
+          <Field label="용역범위 (라인별 입력 — '~포함' / '~제외' 끝맺음 시 PDF에 [포함]/[제외] 태그)">
             <textarea
               className={cn(inputCls, "min-h-[60px]")}
               value={value.special_notes ?? ""}
               onChange={(e) => set("special_notes", e.target.value)}
+            />
+          </Field>
+          <Field label="비고">
+            <textarea
+              className={cn(inputCls, "min-h-[40px]")}
+              value={value.quote_note ?? ""}
+              onChange={(e) => set("quote_note", e.target.value)}
             />
           </Field>
         </Section>
@@ -859,7 +867,7 @@ export default function QuoteForm({
 }
 
 const inputCls =
-  "w-full rounded-md border border-zinc-300 bg-white px-2 py-1.5 text-sm focus:border-zinc-500 focus:outline-none dark:border-zinc-700 dark:bg-zinc-900";
+  "w-full rounded-md border border-zinc-300 bg-white px-2 py-1.5 text-sm focus:border-zinc-500 focus:outline-none disabled:bg-zinc-100 disabled:text-zinc-500 disabled:border-zinc-200 disabled:cursor-not-allowed dark:border-zinc-700 dark:bg-zinc-900 dark:disabled:bg-zinc-800/50 dark:disabled:text-zinc-500";
 
 function Section({
   title,
