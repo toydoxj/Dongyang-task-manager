@@ -24,19 +24,15 @@
       line-height: 1.5;
       display: flex;
       flex-direction: column;
-      min-height: 195mm;  /* page content area 209mm에서 안전 여유 14mm */
+      min-height: 209mm;  /* A4 297mm - top 18mm - bottom 70mm = page content area */
     }
-    /* middle-area — total-line과 extra-section(특이사항) 사이 가용 영역.
-       basis 0 + flex 1: 다른 형제(extra-section 포함)가 자기 height 차지한 후
-       남은 공간만 차지. extra-section 잘림 방지.
-       inner flex로 detail-section을 vertical center. */
-    .middle-area {
+    /* spacer-grow — detail-section 위·아래에 균등 (flex 1 1 0 — basis 0 동일 분배).
+       detail은 위·아래 동일 여백으로 vertical center. */
+    .spacer-grow {
       flex: 1 1 0;
-      display: flex;
-      flex-direction: column;
-      justify-content: center;
     }
-    /* extra-section은 자기 content height 보장 (잘림 방지) */
+    /* extra-section은 자기 content height 보장 (flex-shrink 0 — 마지막 줄 잘림 방지).
+       마지막 자식이라 page 끝에 자연 정착 → footer 사이 여백 최소. */
     .extra-section {
       flex-shrink: 0;
     }
@@ -454,7 +450,8 @@
     {% endif %}
   </div>
 
-  <div class="middle-area">
+  <div class="spacer-grow"></div>
+
   <div class="detail-section">
     <div class="note-line">내역 상세</div>
     <table class="calc-table">
@@ -563,7 +560,8 @@
     </tbody>
   </table>
   </div>
-  </div>
+
+  <div class="spacer-grow"></div>
 
   <div class="extra-section">
     <div class="extra-title">특이사항</div>
