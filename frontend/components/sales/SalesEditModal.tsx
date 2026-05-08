@@ -85,7 +85,7 @@ const QUOTE_TYPE_DEFAULTS: Record<
 };
 
 export default function SalesEditModal({
-  sale,
+  sale: propSale,
   openNew,
   onClose,
   onChanged,
@@ -94,6 +94,14 @@ export default function SalesEditModal({
   const { user } = useAuth();
   const isAdmin = user?.role === "admin";
   const { mutate } = useSWRConfig();
+
+  // internal sale state — createSale 후 신규 sale을 모달 안에 mirror하여
+  // 창이 닫히지 않고 즉시 견적 추가 가능. props.sale이 외부에서 변경되면
+  // useEffect로 sync (모달 다시 열림 시 또는 다른 영업 선택 시).
+  const [sale, setSale] = useState<Sale | null>(propSale);
+  useEffect(() => {
+    setSale(propSale);
+  }, [propSale]);
 
   const [form, setForm] = useState<SaleCreateRequest>({ name: "" });
   const [busy, setBusy] = useState(false);
@@ -130,7 +138,9 @@ export default function SalesEditModal({
   // skip (기존 견적의 사용자 정의 값을 보존), 사용자가 select 변경할 때만 reset.
   const prevQuoteTypeRef = useRef<QuoteType | undefined>(undefined);
 
-  const open = sale != null || openNew;
+  // open은 외부(propSale)/openNew 기준. internal sale은 createSale 후 갱신되지만
+  // 외부에서 모달 close 시 propSale=null + openNew=false면 open=false로 unmount.
+  const open = propSale != null || openNew;
   const isEdit = sale != null;
 
   // 발주처 자동완성 데이터 — 모달 열릴 때만 fetch.
@@ -382,8 +392,10 @@ export default function SalesEditModal({
       setErr(null);
       try {
         if (!isEdit) {
-          // 신규 영업 + 첫 견적 동시 저장 (legacy 흐름 유지). 단일 schema는
-          // backend normalize_quote_forms가 list[0]으로 자동 wrap.
+          // 신규 영업 + 첫 견적 동시 저장. 단일 schema는 backend
+          // normalize_quote_forms가 list[0]으로 자동 wrap.
+          // 창은 유지 — internal sale state 갱신 후 list view로 전환,
+          // 사용자가 추가 견적 작성하거나 닫기(X) 누르도록.
           const body: SaleCreateRequest = {
             name: quoteInput.service_name,
             kind: "수주영업",
@@ -394,9 +406,13 @@ export default function SalesEditModal({
             ...scaleFields,
             quote_form_data: { input: quoteInput, result: quoteResult },
           };
-          await createSale(body);
+          const created = await createSale(body);
+          setSale(created);
+          setQuoteMode("list");
           refreshSales();
-          onClose();
+          alert(
+            "영업이 생성되었습니다. 추가 견적을 작성하거나 닫기 버튼을 누르세요.",
+          );
         } else if (sale && quoteMode === "new") {
           // 영업 수정 모드 + 신규 견적 추가
           await addSaleQuote(sale.id, quoteInput);
@@ -430,12 +446,15 @@ export default function SalesEditModal({
     setErr(null);
     try {
       if (isEdit && sale) {
-        await updateSale(sale.id, form);
+        const updated = await updateSale(sale.id, form);
+        setSale(updated);
       } else {
-        await createSale(form);
+        const created = await createSale(form);
+        setSale(created);
       }
       refreshSales();
-      onClose();
+      // 창은 유지 — 사용자가 닫기(X) 또는 footer "닫기" 버튼으로 명시 close.
+      // (4번 사양: 영업 저장 후 창 유지)
     } catch (e) {
       setErr(e instanceof Error ? e.message : "저장 실패");
     } finally {
@@ -1323,7 +1342,7 @@ export default function SalesEditModal({
               disabled={busy}
               className="rounded-md border border-zinc-300 px-3 py-1.5 text-xs hover:bg-zinc-50 dark:border-zinc-700 dark:hover:bg-zinc-800 disabled:opacity-50"
             >
-              취소
+              닫기
             </button>
             <button
               type="button"
