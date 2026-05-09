@@ -1309,6 +1309,7 @@ export interface WeeklyHeadcount {
 }
 
 export interface WeeklySalesItem {
+  page_id: string;
   code: string;
   category: string[];
   name: string;
@@ -1322,16 +1323,18 @@ export interface WeeklySalesItem {
 }
 
 export interface WeeklyCompletedItem {
+  page_id: string;
   code: string;
   name: string;
   teams: string[];
   assignees: string[];
   client: string;
-  status_label: string;     // 완료 | 타절 | 종결
+  status_label: string;
   completed_at: string | null;
 }
 
 export interface WeeklyNewProject {
+  page_id: string;
   code: string;
   name: string;
   teams: string[];
@@ -1341,7 +1344,7 @@ export interface WeeklyNewProject {
   scale: string;
   contract_amount: number | null;
   stage: string;
-  started_at: string | null;  // 수주일
+  started_at: string | null;
 }
 
 export interface WeeklyTeamProjectRow {
@@ -1361,6 +1364,7 @@ export interface WeeklyEmployeeWorkRow {
   employee_name: string;
   position: string;
   kind: "project" | "sale";  // 프로젝트=파랑, 영업=초록
+  source_id: string;         // mirror_projects/sales의 page_id (상세 link용)
   project_code: string;
   project_name: string;
   client: string;
@@ -1392,20 +1396,22 @@ export interface WeeklySuggestionLog {
 }
 
 export interface WeeklyStageProject {
+  page_id: string;
   code: string;
   name: string;
   client: string;
   teams: string[];
-  is_long_stalled: boolean;   // 3개월 이상 대기 (대기 프로젝트만 의미)
+  is_long_stalled: boolean;
 }
 
 export interface WeeklySealLogItem {
+  project_id: string;            // 프로젝트 page_id (상세 link용)
   code: string;
   name: string;
-  submission_target: string;     // 제출처 (real_source 우선, 없으면 발주처)
-  seal_type: string;             // 구조계산서+with_safety_cert면 "계산서(w/안전)"
-  requester: string;             // 담당자(요청자)
-  approved_at: string | null;    // 최종 승인일
+  submission_target: string;
+  seal_type: string;
+  requester: string;
+  approved_at: string | null;
 }
 
 export interface WeeklyPersonalScheduleEntry {

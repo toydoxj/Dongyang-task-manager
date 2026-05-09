@@ -411,9 +411,8 @@
             <th style="width: 22%;">PROJECT</th>
             <th style="width: 13%;">발주처</th>
             <th style="width: 9%;">진행단계</th>
-            <th style="width: 19%;">지난주 업무</th>
-            <th style="width: 19%;">이번주 업무</th>
-            <th style="width: 6%;">비고</th>
+            <th style="width: 22%;">지난주 업무</th>
+            <th style="width: 23%;">이번주 업무</th>
           </tr>
         </thead>
         <tbody>
@@ -431,7 +430,6 @@
               <td class="center">{{ item.row.phase or item.row.stage }}</td>
               <td>{{ item.row.last_week_summary or '—' }}</td>
               <td>{{ item.row.this_week_plan or '—' }}</td>
-              <td>{{ item.row.note }}</td>
             </tr>
           {% endfor %}
         </tbody>

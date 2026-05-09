@@ -161,6 +161,7 @@ async def _build_seal_log(
             seal_type = "계산서(w/안전)"
         items.append(
             SealLogItem(
+                project_id=s.project_ids[0] if s.project_ids else "",
                 code=code,
                 name=name,
                 submission_target=submission_target,

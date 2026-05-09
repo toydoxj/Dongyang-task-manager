@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useMemo, useState } from "react";
 import useSWR from "swr";
 
@@ -70,6 +71,32 @@ const WEEKDAYS = ["월", "화", "수", "목", "금"] as const;
 
 /** 개인일정 cell 색상 — task source 기준 (사용자 결정 2026-05-09):
  * project=파랑, sale=초록, other=회색 (개인 휴가/연차 등). */
+/** 프로젝트 상세 link (page_id 비어있으면 plain text). */
+function ProjectLink({ id, children }: { id: string; children: React.ReactNode }) {
+  if (!id) return <>{children}</>;
+  return (
+    <Link
+      href={`/project?id=${encodeURIComponent(id)}`}
+      className="text-blue-700 underline-offset-2 hover:underline dark:text-blue-400"
+    >
+      {children}
+    </Link>
+  );
+}
+
+/** 영업 상세 link (sales 페이지에 ?sale=...로 모달 open). */
+function SaleLink({ id, children }: { id: string; children: React.ReactNode }) {
+  if (!id) return <>{children}</>;
+  return (
+    <Link
+      href={`/sales?sale=${encodeURIComponent(id)}`}
+      className="text-emerald-700 underline-offset-2 hover:underline dark:text-emerald-400"
+    >
+      {children}
+    </Link>
+  );
+}
+
 const SCHEDULE_KIND_STYLE: Record<string, string> = {
   project: "bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300",
   sale: "bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300",
@@ -352,10 +379,9 @@ function ReportPreview({
           <SimpleTable
             cols={["승인일", "CODE", "용역명", "제출처", "유형", "담당자"]}
             rows={data.seal_log.map((s) => [
-              // 승인일 MM/DD 형식 (사용자 결정 — 연도 생략)
               (s.approved_at ?? "").slice(5, 10).replace("-", "/"),
               s.code,
-              s.name,
+              <ProjectLink key="n" id={s.project_id}>{s.name}</ProjectLink>,
               s.submission_target,
               s.seal_type,
               s.requester,
@@ -369,7 +395,7 @@ function ReportPreview({
             rows={data.completed.map((c) => [
               c.status_label,
               c.code,
-              c.name,
+              <ProjectLink key="n" id={c.page_id}>{c.name}</ProjectLink>,
               c.client,
               c.assignees.join(", "),
             ])}
@@ -394,7 +420,10 @@ function ReportPreview({
           rows={data.sales.map((s) => [
             s.code,
             s.category.join("/"),
-            s.is_bid ? `${s.name}  [입찰]` : s.name,
+            <SaleLink key="n" id={s.page_id}>
+              {s.name}
+              {s.is_bid && <span className="ml-1 text-[10px]">[입찰]</span>}
+            </SaleLink>,
             s.client,
             s.scale,
             s.estimated_amount
@@ -414,7 +443,7 @@ function ReportPreview({
           rows={data.new_projects.map((n) => [
             n.work_types.join("/"),
             n.code,
-            n.name,
+            <ProjectLink key="n" id={n.page_id}>{n.name}</ProjectLink>,
             n.client,
             n.scale,
             n.contract_amount ? `₩${n.contract_amount.toLocaleString()}` : "",
@@ -477,15 +506,43 @@ function ReportPreview({
         )}
       </Section>
 
-      {/* [대기][보류] 2-col grid — CODE/용역명/발주처/담당팀 */}
-      <div className="grid gap-3 md:grid-cols-2">
-        <Section title="■ 대기 프로젝트">
-          <StageProjectsTable rows={data.waiting_projects} highlightStalled />
-        </Section>
-        <Section title="■ 보류 프로젝트">
-          <StageProjectsTable rows={data.on_hold_projects} />
-        </Section>
+      {/* 대기 프로젝트 — 자체 2-열 분할 (대기가 길어 보류와 같이 두면 비대칭) */}
+      <Section title="■ 대기 프로젝트">
+        <SplitStageGrid rows={data.waiting_projects} highlightStalled />
+      </Section>
+
+      {/* 보류 프로젝트 — 자체 2-열 분할 */}
+      <Section title="■ 보류 프로젝트">
+        <SplitStageGrid rows={data.on_hold_projects} />
+      </Section>
+    </div>
+  );
+}
+
+/** 대기/보류 프로젝트를 절반씩 자체 2-col grid로 분할. */
+function SplitStageGrid({
+  rows,
+  highlightStalled,
+}: {
+  rows: WeeklyStageProject[];
+  highlightStalled?: boolean;
+}) {
+  if (rows.length === 0) {
+    return (
+      <div className="rounded border border-dashed border-zinc-300 px-3 py-2 text-center text-xs italic text-zinc-400 dark:border-zinc-700">
+        (없음)
       </div>
+    );
+  }
+  const half = Math.ceil(rows.length / 2);
+  const left = rows.slice(0, half);
+  const right = rows.slice(half);
+  return (
+    <div className="grid gap-3 md:grid-cols-2">
+      <StageProjectsTable rows={left} highlightStalled={highlightStalled} />
+      {right.length > 0 && (
+        <StageProjectsTable rows={right} highlightStalled={highlightStalled} />
+      )}
     </div>
   );
 }
@@ -540,7 +597,7 @@ function StageProjectsTable({
                     : undefined
                 }
               >
-                {r.name}
+                <ProjectLink id={r.page_id}>{r.name}</ProjectLink>
               </td>
               <td className="px-2 py-1 align-top">{r.client}</td>
               <td className="px-2 py-1 align-top">{r.teams.join(", ")}</td>
@@ -604,11 +661,8 @@ function TeamWorkTable({
               <th className="border-b border-r border-zinc-200 px-2 py-1.5 text-left font-medium dark:border-zinc-800">
                 지난주 업무
               </th>
-              <th className="border-b border-r border-zinc-200 px-2 py-1.5 text-left font-medium dark:border-zinc-800">
-                이번주 업무
-              </th>
               <th className="border-b border-zinc-200 px-2 py-1.5 text-left font-medium dark:border-zinc-800">
-                비고
+                이번주 업무
               </th>
             </tr>
           </thead>
@@ -642,7 +696,11 @@ function TeamWorkTable({
                     {row.project_code}
                   </td>
                   <td className="border-r border-zinc-200 px-2 py-1 align-top dark:border-zinc-800">
-                    {row.project_name}
+                    {row.kind === "sale" ? (
+                      <SaleLink id={row.source_id}>{row.project_name}</SaleLink>
+                    ) : (
+                      <ProjectLink id={row.source_id}>{row.project_name}</ProjectLink>
+                    )}
                   </td>
                   <td className="border-r border-zinc-200 px-2 py-1 align-top dark:border-zinc-800">
                     {row.client}
@@ -653,11 +711,8 @@ function TeamWorkTable({
                   <td className="border-r border-zinc-200 px-2 py-1 align-top text-zinc-600 dark:border-zinc-800 dark:text-zinc-400">
                     {row.last_week_summary || "—"}
                   </td>
-                  <td className="border-r border-zinc-200 px-2 py-1 align-top dark:border-zinc-800">
+                  <td className="px-2 py-1 align-top">
                     {row.this_week_plan || "—"}
-                  </td>
-                  <td className="px-2 py-1 align-top text-zinc-500">
-                    {row.note}
                   </td>
                 </tr>
               );
@@ -846,13 +901,15 @@ function BulletList({ items }: { items: string[] }) {
   );
 }
 
+type CellValue = string | number | React.ReactNode;
+
 function SimpleTable({
   cols,
   rows,
   empty,
 }: {
   cols: string[];
-  rows: (string | number)[][];
+  rows: CellValue[][];
   empty?: string;
 }) {
   if (rows.length === 0 && empty) {
@@ -885,7 +942,7 @@ function SimpleTable({
             >
               {row.map((cell, j) => (
                 <td key={j} className="px-2 py-1 align-top">
-                  {cell}
+                  {cell as React.ReactNode}
                 </td>
               ))}
             </tr>

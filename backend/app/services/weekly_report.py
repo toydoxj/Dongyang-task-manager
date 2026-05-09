@@ -80,6 +80,7 @@ class SealLogItem(BaseModel):
     seal_type: 구조계산서 + with_safety_cert인 경우 "계산서(w/안전)"으로 변환.
     """
 
+    project_id: str = ""             # 프로젝트 page_id (상세 link용)
     code: str = ""                   # 프로젝트 CODE
     name: str = ""                   # 용역명
     submission_target: str = ""      # real_source_id 우선, 없으면 발주처
@@ -89,6 +90,7 @@ class SealLogItem(BaseModel):
 
 
 class CompletedProjectItem(BaseModel):
+    page_id: str = ""  # 프로젝트 상세 link용
     code: str
     name: str
     teams: list[str] = Field(default_factory=list)
@@ -99,6 +101,7 @@ class CompletedProjectItem(BaseModel):
 
 
 class NewProjectItem(BaseModel):
+    page_id: str = ""
     code: str
     name: str
     teams: list[str] = Field(default_factory=list)
@@ -112,6 +115,7 @@ class NewProjectItem(BaseModel):
 
 
 class SalesItem(BaseModel):
+    page_id: str = ""  # 영업 상세 link용
     code: str
     category: list[str] = Field(default_factory=list)
     name: str
@@ -175,6 +179,7 @@ class SuggestionLogItem(BaseModel):
 class StageProjectItem(BaseModel):
     """대기/보류 프로젝트 list 한 행. 컬럼: CODE/용역명/발주처/담당팀."""
 
+    page_id: str = ""
     code: str
     name: str
     client: str = ""
@@ -528,6 +533,7 @@ def aggregate_stage_projects(
         )
         items.append(
             StageProjectItem(
+                page_id=r.page_id,
                 code=r.code,
                 name=r.name,
                 client=_resolve_client_label(proj, client_name_by_id),
@@ -671,6 +677,7 @@ def aggregate_completed(
         label = r.stage if r.stage in _TERMINATED_STAGES else "완료"
         items.append(
             CompletedProjectItem(
+                page_id=r.page_id,
                 code=r.code,
                 name=r.name,
                 teams=list(r.teams or []),
@@ -726,6 +733,7 @@ def aggregate_new_projects(
         scale = _scale_text(sale) if sale else ""
         items.append(
             NewProjectItem(
+                page_id=r.page_id,
                 code=r.code,
                 name=r.name,
                 teams=list(r.teams or []),
@@ -767,6 +775,7 @@ def aggregate_sales(
         client_name = client_name_by_id.get(s.client_id, "") if s.client_id else ""
         items.append(
             SalesItem(
+                page_id=s.page_id,
                 code=s.code,
                 category=list(s.category or []),
                 name=s.name,
