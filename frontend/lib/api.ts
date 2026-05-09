@@ -1318,6 +1318,7 @@ export interface WeeklySalesItem {
   is_bid: boolean;
   stage: string;
   submission_date: string | null;
+  sales_start_date: string | null;     // 영업시작일 (PR-W)
 }
 
 export interface WeeklyCompletedItem {
@@ -1336,6 +1337,9 @@ export interface WeeklyNewProject {
   teams: string[];
   assignees: string[];
   client: string;
+  work_types: string[];
+  scale: string;
+  contract_amount: number | null;
   stage: string;
   started_at: string | null;  // 수주일
 }

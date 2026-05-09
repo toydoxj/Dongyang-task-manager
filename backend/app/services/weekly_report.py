@@ -100,6 +100,9 @@ class NewProjectItem(BaseModel):
     teams: list[str] = Field(default_factory=list)
     assignees: list[str] = Field(default_factory=list)
     client: str = ""
+    work_types: list[str] = Field(default_factory=list)  # 업무내용 multi_select
+    scale: str = ""  # "44,594.71㎡ / 지하6층, 지상12층" — 영업 lookup
+    contract_amount: float | None = None  # 용역비(VAT제외)
     stage: str = ""
     started_at: str | None = None  # 수주일 (start_date)
 
@@ -114,6 +117,7 @@ class SalesItem(BaseModel):
     is_bid: bool = False
     stage: str = ""
     submission_date: str | None = None
+    sales_start_date: str | None = None  # 영업시작일 (PR-W)
 
 
 class PersonalScheduleEntry(BaseModel):
@@ -618,6 +622,16 @@ def aggregate_new_projects(
     client_name_by_id = _client_name_lookup(db)
     range_start_iso = last_week_start.isoformat()
     range_end_iso = last_week_end.isoformat()
+
+    # 영업 → 프로젝트 변환된 경우 sales의 규모(연면적/층수) lookup
+    sales_by_converted_pid: dict[str, M.MirrorSales] = {
+        s.converted_project_id: s
+        for s in db.query(M.MirrorSales)
+        .filter(M.MirrorSales.archived.is_(False))
+        .filter(M.MirrorSales.converted_project_id != "")
+        .all()
+    }
+
     items: list[NewProjectItem] = []
     for r in rows:
         proj = project_from_mirror(r)
@@ -625,6 +639,8 @@ def aggregate_new_projects(
         # 시작일이 저번주 범위 안에 있어야 신규 — 문자열 비교(ISO 형식이라 안전)
         if not sd or not (range_start_iso <= sd <= range_end_iso):
             continue
+        sale = sales_by_converted_pid.get(r.page_id)
+        scale = _scale_text(sale) if sale else ""
         items.append(
             NewProjectItem(
                 code=r.code,
@@ -632,6 +648,9 @@ def aggregate_new_projects(
                 teams=list(r.teams or []),
                 assignees=list(r.assignees or []),
                 client=_resolve_client_label(proj, client_name_by_id),
+                work_types=list(proj.work_types or []),
+                scale=scale,
+                contract_amount=proj.contract_amount,
                 stage=r.stage,
                 started_at=proj.start_date,
             )
@@ -639,27 +658,29 @@ def aggregate_new_projects(
     return items
 
 
-def aggregate_sales(db: Session, week_start: date, week_end: date) -> list[SalesItem]:
-    """이번 주 활성 영업 — 진행 단계가 살아있고 last_edited_time 또는 submission_date in week."""
-    start_utc, end_utc = _kst_range(week_start, week_end)
+def aggregate_sales(
+    db: Session,
+    last_week_start: date,
+    last_week_end: date,
+) -> list[SalesItem]:
+    """저번주 범위 내 시작된 영업 — 영업시작일(sales_start_date) 기준.
+
+    종결 단계(수주확정/실주/취소/전환완료)는 제외. sales_start_date 비어있으면
+    무시 (운영자가 노션에서 입력 안 한 영업).
+    """
     rows = (
         db.query(M.MirrorSales)
         .filter(M.MirrorSales.archived.is_(False))
-        # 종결 단계 제외
         .filter(~M.MirrorSales.stage.in_(["수주확정", "실주", "취소", "전환완료"]))
-        .filter(
-            or_(
-                M.MirrorSales.last_edited_time >= start_utc,
-                M.MirrorSales.submission_date.between(week_start, week_end),
-            )
-        )
+        .filter(M.MirrorSales.sales_start_date.isnot(None))
+        .filter(M.MirrorSales.sales_start_date >= last_week_start)
+        .filter(M.MirrorSales.sales_start_date <= last_week_end)
         .order_by(M.MirrorSales.code)
         .all()
     )
     client_name_by_id = _client_name_lookup(db)
     items: list[SalesItem] = []
     for s in rows:
-        # mirror_clients lookup (N+1 제거)
         client_name = client_name_by_id.get(s.client_id, "") if s.client_id else ""
         items.append(
             SalesItem(
@@ -672,6 +693,7 @@ def aggregate_sales(db: Session, week_start: date, week_end: date) -> list[Sales
                 is_bid=s.is_bid,
                 stage=s.stage,
                 submission_date=s.submission_date.isoformat() if s.submission_date else None,
+                sales_start_date=s.sales_start_date.isoformat() if s.sales_start_date else None,
             )
         )
     return items
@@ -680,11 +702,20 @@ def aggregate_sales(db: Session, week_start: date, week_end: date) -> list[Sales
 def aggregate_personal_schedule(
     db: Session, week_start: date, week_end: date
 ) -> list[PersonalScheduleEntry]:
-    """직원×요일 매트릭스 — mirror_tasks 중 일정성 category가 주차와 겹치는 row."""
+    """직원×요일 매트릭스.
+
+    포함 조건: task.category가 일정성 카테고리 OR task.activity가 외근/출장.
+    (프로젝트 task가 분류='프로젝트'여도 활동이 외근/출장이면 일정에 표시)
+    """
     rows = (
         db.query(M.MirrorTask)
         .filter(M.MirrorTask.archived.is_(False))
-        .filter(M.MirrorTask.category.in_(_SCHEDULE_CATEGORIES))
+        .filter(
+            or_(
+                M.MirrorTask.category.in_(_SCHEDULE_CATEGORIES),
+                M.MirrorTask.activity.in_({"외근", "출장"}),
+            )
+        )
         # 일정 구간 [start_date, end_date]가 [week_start, week_end]와 교집합
         .filter(or_(M.MirrorTask.start_date.is_(None), M.MirrorTask.start_date <= week_end))
         .filter(or_(M.MirrorTask.end_date.is_(None), M.MirrorTask.end_date >= week_start))
@@ -1054,11 +1085,10 @@ def build_weekly_report(
         )
     if last_week_start is None:
         last_week_start = week_start - timedelta(days=7)
-    # 지난주 업무 범위 끝 = 이번주 시작(월요일) 직전 금요일. week_start - 3일.
-    # 사용자 사례(2026-05-09): last_week_start=4/27, week_start=5/11이면 last_week_end=5/8.
-    # 즉 지난주 업무 = 4/27 ~ 5/8 (지난 2주 평일 cover, 마지막 토일 제외).
-    # 완료/신규 cutoff_start = last_week_end + 1 = week_start - 2 (직전 토요일).
-    last_week_end = week_start - timedelta(days=3)
+    # 지난주 범위 끝 = 이번주 시작(월요일) 직전 일요일. week_start - 1일.
+    # 사용자 결정(2026-05-09): 토/일 시작 데이터 누락 방지 — week_start - 3 → -1.
+    # 사례: last_week_start=4/27, week_start=5/11이면 last_week_end=5/10 (월~일 14일 cover).
+    last_week_end = week_start - timedelta(days=1)
 
     notices, education = aggregate_notices(db, week_start, week_end)
     return WeeklyReport(
@@ -1070,7 +1100,7 @@ def build_weekly_report(
         seal_log=[],  # 라우터에서 노션 직접 조회로 채움
         completed=aggregate_completed(db, last_week_start, last_week_end),
         new_projects=aggregate_new_projects(db, last_week_start, last_week_end),
-        sales=aggregate_sales(db, week_start, week_end),
+        sales=aggregate_sales(db, last_week_start, last_week_end),
         personal_schedule=aggregate_personal_schedule(db, week_start, week_end),
         teams=aggregate_team_projects(db, week_start, week_end),
         team_work=aggregate_team_work(

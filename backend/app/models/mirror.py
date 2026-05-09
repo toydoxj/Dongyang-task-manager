@@ -175,6 +175,9 @@ class MirrorSales(Base):
     building_count: Mapped[float | None] = mapped_column(Float, nullable=True)  # 동수
     note: Mapped[str] = mapped_column(Text, default="")
     submission_date: Mapped[date | None] = mapped_column(Date, nullable=True, index=True)
+    # 영업 시작일 (PR-W) — 영업 활동 시작 시점. 노션 "영업시작일" date 컬럼.
+    # 주간 보고서의 "영업" 섹션 cutoff 기준.
+    sales_start_date: Mapped[date | None] = mapped_column(Date, nullable=True, index=True)
     vat_inclusive: Mapped[str] = mapped_column(String, default="")  # 별도|포함
     performance_design_amount: Mapped[float | None] = mapped_column(Float, nullable=True)
     wind_tunnel_amount: Mapped[float | None] = mapped_column(Float, nullable=True)

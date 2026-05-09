@@ -220,6 +220,8 @@ SALES_DB_REQUIRED: dict[str, dict[str, Any]] = {
     # /me 페이지의 assignee 매칭 로직을 그대로 재사용한다. 옵션은 노션이 사용자
     # 입력 시 자동 등록 (task DB와 동일).
     "담당자": {"multi_select": {}},
+    # 영업시작일 (PR-W) — 영업 cycle 시작 시점. 주간 보고서 영업 cutoff 기준.
+    "영업시작일": {"date": {}},
 }
 
 

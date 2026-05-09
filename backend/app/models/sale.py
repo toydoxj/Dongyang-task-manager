@@ -33,6 +33,7 @@ class Sale(BaseModel):
     building_count: float | None = None
     note: str = ""
     submission_date: str | None = None
+    sales_start_date: str | None = None  # 영업시작일 (PR-W) — 영업 cycle 시작 시점
     vat_inclusive: str = ""   # 별도|포함
     performance_design_amount: float | None = None
     wind_tunnel_amount: float | None = None
@@ -64,6 +65,7 @@ class Sale(BaseModel):
     def from_notion_page(cls, page: dict[str, Any]) -> "Sale":
         props = page.get("properties", {})
         sub_start, _ = P.date_range(props, "제출일")
+        ssd_start, _ = P.date_range(props, "영업시작일")
         return cls(
             id=page.get("id", ""),
             code=P.rich_text(props, "영업코드"),
@@ -81,6 +83,7 @@ class Sale(BaseModel):
             building_count=P.number(props, "동수"),
             note=P.rich_text(props, "비고"),
             submission_date=sub_start,
+            sales_start_date=ssd_start,
             vat_inclusive=P.select_name(props, "VAT포함"),
             performance_design_amount=P.number(props, "성능설계"),
             wind_tunnel_amount=P.number(props, "풍동실험"),

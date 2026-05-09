@@ -358,7 +358,7 @@ function ReportPreview({
             "규모",
             "견적가",
             "단계",
-            "제출일",
+            "영업시작일",
           ]}
           rows={data.sales.map((s) => [
             s.code,
@@ -370,9 +370,9 @@ function ReportPreview({
               ? `₩${s.estimated_amount.toLocaleString()}`
               : "",
             s.stage,
-            s.submission_date ?? "",
+            s.sales_start_date ?? "",
           ])}
-          empty="(이번 주 영업건 없음)"
+          empty="(저번주 시작 영업건 없음 — 노션 '영업시작일' 입력 필요)"
         />
       </Section>
 
@@ -393,13 +393,16 @@ function ReportPreview({
         </Section>
         <Section title="■ 신규 프로젝트">
           <SimpleTable
-            cols={["CODE", "프로젝트명", "발주처", "수주일", "담당자"]}
+            cols={["업무내용", "CODE", "용역명", "발주처", "규모", "용역비"]}
             rows={data.new_projects.map((n) => [
+              n.work_types.join("/"),
               n.code,
               n.name,
               n.client,
-              n.started_at ?? "",
-              n.assignees.join(", "),
+              n.scale,
+              n.contract_amount
+                ? `₩${n.contract_amount.toLocaleString()}`
+                : "",
             ])}
             empty="(신규 없음)"
           />
