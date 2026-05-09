@@ -26,6 +26,7 @@ from app.security import get_current_user
 from app.services.notion import NotionService, get_notion
 from app.services.weekly_report import (
     SealLogItem,
+    SuggestionLogItem,
     WeeklyReport,
     build_weekly_report,
 )
@@ -47,6 +48,38 @@ def _validate_week_start(week_start: date) -> date:
         )
         return adjusted
     return week_start
+
+
+async def _build_suggestions(
+    user: User,
+    notion: NotionService,
+    last_week_start: date,
+    last_week_end: date,
+) -> list[SuggestionLogItem]:
+    """저번주 cycle 등록된 건의사항 (created_time 기준)."""
+    from app.routers.suggestions import list_suggestions
+
+    try:
+        res = await list_suggestions(_user=user, notion=notion)
+    except HTTPException as e:
+        logger.warning("suggestions 조회 실패: %s", e.detail)
+        return []
+    range_start_iso = last_week_start.isoformat()
+    range_end_iso = last_week_end.isoformat()
+    items: list[SuggestionLogItem] = []
+    for s in res.items:
+        ct = (s.created_time or "")[:10]
+        if not ct or not (range_start_iso <= ct <= range_end_iso):
+            continue
+        items.append(
+            SuggestionLogItem(
+                title=s.title,
+                author=s.author,
+                status=s.status,
+                created_at=s.created_time,
+            )
+        )
+    return items
 
 
 async def _build_seal_log(
@@ -163,6 +196,7 @@ async def get_weekly_report(
     lws = last_week_start or (ws - timedelta(days=7))
     lwe = ws - timedelta(days=1)
     report.seal_log = await _build_seal_log(user, notion, db, lws, lwe)
+    report.suggestions = await _build_suggestions(user, notion, lws, lwe)
     return report
 
 
@@ -187,6 +221,7 @@ async def get_weekly_report_pdf(
     lws = last_week_start or (ws - timedelta(days=7))
     lwe = ws - timedelta(days=1)
     report.seal_log = await _build_seal_log(user, notion, db, lws, lwe)
+    report.suggestions = await _build_suggestions(user, notion, lws, lwe)
     pdf_bytes = build_weekly_report_pdf(report)
     fname = f"{ws.strftime('%Y_%m_%d')}_업무일지.pdf"
     return Response(

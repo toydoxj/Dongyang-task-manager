@@ -125,11 +125,16 @@ class SalesItem(BaseModel):
 
 
 class PersonalScheduleEntry(BaseModel):
-    """직원의 한 활동 — 표시는 (요일별) cell로 펼침."""
+    """직원의 한 활동 — 표시는 (요일별) cell로 펼침.
+
+    kind: task의 source — 'project'(파랑) | 'sale'(초록) | 'other'(회색).
+    개인일정 매트릭스에서 셀 색상은 kind 기준, 텍스트는 category 그대로.
+    """
 
     employee_name: str
     team: str = ""
     category: str  # 외근/출장/연차/반차/파견/교육
+    kind: str = "other"  # project | sale | other
     start_date: str
     end_date: str
     note: str = ""  # 반차의 오전/오후 등
@@ -156,6 +161,25 @@ class TeamMember(BaseModel):
     position: str = ""
     team: str = ""
     sort_order: int = 0
+
+
+class SuggestionLogItem(BaseModel):
+    """건의사항 — 저번주 cycle 등록된 항목 (created_time 기준)."""
+
+    title: str
+    author: str = ""
+    status: str = "접수"
+    created_at: str | None = None
+
+
+class StageProjectItem(BaseModel):
+    """대기/보류 프로젝트 list 한 행."""
+
+    code: str
+    name: str
+    client: str = ""
+    assignees: list[str] = Field(default_factory=list)
+    end_date: str | None = None  # 마감일(완료일) — 표시용
 
 
 class HolidayItem(BaseModel):
@@ -212,6 +236,13 @@ class WeeklyReport(BaseModel):
 
     # 주차 내 공휴일/사내휴일 — frontend에서 요일 헤더 색상 + 라벨 표시
     holidays: list[HolidayItem] = Field(default_factory=list)
+
+    # 건의사항 — 저번주 cycle 동안 등록된 글 (라우터에서 노션 직접 조회 후 주입)
+    suggestions: list[SuggestionLogItem] = Field(default_factory=list)
+
+    # 대기 / 보류 프로젝트 (stage 기준, cutoff 없음 — 현 시점 active list)
+    waiting_projects: list[StageProjectItem] = Field(default_factory=list)
+    on_hold_projects: list[StageProjectItem] = Field(default_factory=list)
 
 
 # ── helper ──
@@ -456,6 +487,39 @@ def aggregate_headcount(db: Session, week_start: date, week_end: date) -> Headco
         new_this_week=new_count,
         resigned_this_week=[r[0] for r in resigned_rows],
     )
+
+
+def aggregate_stage_projects(
+    db: Session, stage: str
+) -> list[StageProjectItem]:
+    """단일 stage(예: '대기' 또는 '보류') active 프로젝트 list — cutoff 없음.
+
+    팀 미지정/이름 비어있는 row는 제외 (의미 없는 노이즈).
+    """
+    rows = (
+        db.query(M.MirrorProject)
+        .filter(M.MirrorProject.archived.is_(False))
+        .filter(M.MirrorProject.completed.is_(False))
+        .filter(M.MirrorProject.stage == stage)
+        .order_by(M.MirrorProject.code)
+        .all()
+    )
+    client_name_by_id = _client_name_lookup(db)
+    items: list[StageProjectItem] = []
+    for r in rows:
+        if not r.name and not r.code:
+            continue
+        proj = project_from_mirror(r)
+        items.append(
+            StageProjectItem(
+                code=r.code,
+                name=r.name,
+                client=_resolve_client_label(proj, client_name_by_id),
+                assignees=list(r.assignees or []),
+                end_date=proj.end_date or proj.contract_end,
+            )
+        )
+    return items
 
 
 def aggregate_team_members(
@@ -732,12 +796,20 @@ def aggregate_personal_schedule(
         label = _normalize_schedule_category(t)
         if not label:
             continue
+        # task source 판정 — sales_ids 있으면 영업, project_ids 있으면 프로젝트, 그 외 기타
+        if t.sales_ids:
+            kind = "sale"
+        elif t.project_ids:
+            kind = "project"
+        else:
+            kind = "other"
         for assignee in t.assignees or []:
             entries.append(
                 PersonalScheduleEntry(
                     employee_name=assignee,
                     team=team_by_name.get(assignee, ""),
                     category=label,
+                    kind=kind,
                     start_date=(t.start_date or week_start).isoformat(),
                     end_date=(t.end_date or t.start_date or week_end).isoformat(),
                     note="",
@@ -1111,4 +1183,7 @@ def build_weekly_report(
         ),
         team_members=aggregate_team_members(db, week_end),
         holidays=aggregate_holidays(db, week_start, week_end),
+        waiting_projects=aggregate_stage_projects(db, "대기"),
+        on_hold_projects=aggregate_stage_projects(db, "보류"),
+        # suggestions는 라우터에서 노션 직접 조회 후 주입
     )

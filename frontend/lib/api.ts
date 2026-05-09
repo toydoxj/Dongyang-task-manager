@@ -1384,6 +1384,21 @@ export interface WeeklyHoliday {
   source: "legal" | "company";
 }
 
+export interface WeeklySuggestionLog {
+  title: string;
+  author: string;
+  status: string;
+  created_at: string | null;
+}
+
+export interface WeeklyStageProject {
+  code: string;
+  name: string;
+  client: string;
+  assignees: string[];
+  end_date: string | null;
+}
+
 export interface WeeklySealLogItem {
   project_name: string;          // "{코드} {용역명}"
   submission_target: string;     // 제출처 (real_source 우선, 없으면 발주처)
@@ -1396,6 +1411,7 @@ export interface WeeklyPersonalScheduleEntry {
   employee_name: string;
   team: string;
   category: string;
+  kind: "project" | "sale" | "other";   // 색상 분류
   start_date: string;
   end_date: string;
   note: string;
@@ -1417,6 +1433,9 @@ export interface WeeklyReport {
   team_work: Record<string, WeeklyEmployeeWorkRow[]>;
   team_members: Record<string, WeeklyTeamMember[]>;
   holidays: WeeklyHoliday[];
+  suggestions: WeeklySuggestionLog[];
+  waiting_projects: WeeklyStageProject[];
+  on_hold_projects: WeeklyStageProject[];
 }
 
 export interface WeeklyReportRange {

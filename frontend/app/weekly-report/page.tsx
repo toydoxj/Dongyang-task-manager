@@ -67,16 +67,12 @@ const SCHEDULE_EXTRA_TEAM = "본부";
 
 const WEEKDAYS = ["월", "화", "수", "목", "금"] as const;
 
-/** 카테고리 라벨 → tailwind classes (PDF 색상 라벨과 동일 맥락). */
-const CATEGORY_STYLE: Record<string, string> = {
-  외근: "bg-orange-100 text-orange-800 dark:bg-orange-900/40 dark:text-orange-300",
-  동행: "bg-orange-100 text-orange-800 dark:bg-orange-900/40 dark:text-orange-300",
-  출장: "bg-purple-100 text-purple-800 dark:bg-purple-900/40 dark:text-purple-300",
-  연차: "bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300",
-  휴가: "bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300",
-  반차: "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/40 dark:text-yellow-300",
-  파견: "bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300",
-  교육: "bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300",
+/** 개인일정 cell 색상 — task source 기준 (사용자 결정 2026-05-09):
+ * project=파랑, sale=초록, other=회색 (개인 휴가/연차 등). */
+const SCHEDULE_KIND_STYLE: Record<string, string> = {
+  project: "bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300",
+  sale: "bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300",
+  other: "bg-zinc-200 text-zinc-700 dark:bg-zinc-700 dark:text-zinc-200",
 };
 
 /** 직원 단위 일정 lookup: {employee_name: [day0..day4 entries]}. team 무관 — team_members로 분류. */
@@ -315,36 +311,69 @@ function ReportPreview({
         </div>
       </Section>
 
-      {/* 공지 / 교육 (있을 때만) */}
-      {(data.notices.length > 0 || data.education.length > 0) && (
-        <div className="grid gap-3 md:grid-cols-2">
-          {data.notices.length > 0 && (
-            <Section title="■ 주요 공지사항">
-              <BulletList items={data.notices} />
-            </Section>
+      {/* [공지][교육][건의] 3-col grid (모두 있어야 보임 — 빈 칸은 "(없음)" 표시) */}
+      <div className="grid gap-3 md:grid-cols-3">
+        <Section title="■ 주요 공지사항">
+          {data.notices.length > 0 ? (
+            <BulletList items={data.notices} />
+          ) : (
+            <p className="text-xs text-zinc-500">(없음)</p>
           )}
-          {data.education.length > 0 && (
-            <Section title="■ 교육 일정">
-              <BulletList items={data.education} />
-            </Section>
+        </Section>
+        <Section title="■ 교육 일정">
+          {data.education.length > 0 ? (
+            <BulletList items={data.education} />
+          ) : (
+            <p className="text-xs text-zinc-500">(없음)</p>
           )}
-        </div>
-      )}
+        </Section>
+        <Section title="■ 건의사항">
+          {data.suggestions.length > 0 ? (
+            <ul className="list-inside list-disc space-y-0.5 text-sm">
+              {data.suggestions.map((s, i) => (
+                <li key={i}>
+                  {s.title}
+                  <span className="ml-1 text-[10px] text-zinc-500">
+                    · {s.author} · {s.status}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="text-xs text-zinc-500">(없음)</p>
+          )}
+        </Section>
+      </div>
 
-      {/* 날인대장 */}
-      <Section title="■ 날인대장">
-        <SimpleTable
-          cols={["프로젝트", "제출처", "유형", "담당자", "승인일"]}
-          rows={data.seal_log.map((s) => [
-            s.project_name,
-            s.submission_target,
-            s.seal_type,
-            s.requester,
-            (s.approved_at ?? "").slice(0, 10),
-          ])}
-          empty="(저번주 승인된 날인 없음)"
-        />
-      </Section>
+      {/* [날인대장][완료프로젝트] 2-col */}
+      <div className="grid gap-3 md:grid-cols-2">
+        <Section title="■ 날인대장">
+          <SimpleTable
+            cols={["프로젝트", "제출처", "유형", "담당자", "승인일"]}
+            rows={data.seal_log.map((s) => [
+              s.project_name,
+              s.submission_target,
+              s.seal_type,
+              s.requester,
+              (s.approved_at ?? "").slice(0, 10),
+            ])}
+            empty="(저번주 승인된 날인 없음)"
+          />
+        </Section>
+        <Section title="■ 완료 프로젝트">
+          <SimpleTable
+            cols={["상태", "CODE", "프로젝트명", "발주처", "담당자"]}
+            rows={data.completed.map((c) => [
+              c.status_label,
+              c.code,
+              c.name,
+              c.client,
+              c.assignees.join(", "),
+            ])}
+            empty="(완료 없음)"
+          />
+        </Section>
+      </div>
 
       {/* 영업 */}
       <Section title="■ 영업">
@@ -375,38 +404,21 @@ function ReportPreview({
         />
       </Section>
 
-      {/* 완료 / 신규 — 지난주 일지 이후 cutoff */}
-      <div className="grid gap-3 md:grid-cols-2">
-        <Section title="■ 완료 프로젝트">
-          <SimpleTable
-            cols={["상태", "CODE", "프로젝트명", "발주처", "담당자"]}
-            rows={data.completed.map((c) => [
-              c.status_label,
-              c.code,
-              c.name,
-              c.client,
-              c.assignees.join(", "),
-            ])}
-            empty="(완료 없음)"
-          />
-        </Section>
-        <Section title="■ 신규 프로젝트">
-          <SimpleTable
-            cols={["업무내용", "CODE", "용역명", "발주처", "규모", "용역비"]}
-            rows={data.new_projects.map((n) => [
-              n.work_types.join("/"),
-              n.code,
-              n.name,
-              n.client,
-              n.scale,
-              n.contract_amount
-                ? `₩${n.contract_amount.toLocaleString()}`
-                : "",
-            ])}
-            empty="(신규 없음)"
-          />
-        </Section>
-      </div>
+      {/* 신규 프로젝트 (완료는 위 2-col에 배치됨) */}
+      <Section title="■ 신규 프로젝트">
+        <SimpleTable
+          cols={["업무내용", "CODE", "용역명", "발주처", "규모", "용역비"]}
+          rows={data.new_projects.map((n) => [
+            n.work_types.join("/"),
+            n.code,
+            n.name,
+            n.client,
+            n.scale,
+            n.contract_amount ? `₩${n.contract_amount.toLocaleString()}` : "",
+          ])}
+          empty="(신규 없음)"
+        />
+      </Section>
 
       {/* 개인 주간 일정 — 5팀 horizontal grid (본부는 진단팀 column 끝에 stack) */}
       <Section title="■ 개인 주간 일정">
@@ -460,6 +472,36 @@ function ReportPreview({
             ))}
           </div>
         )}
+      </Section>
+
+      {/* 대기 프로젝트 */}
+      <Section title="■ 대기 프로젝트">
+        <SimpleTable
+          cols={["CODE", "프로젝트명", "발주처", "담당자", "마감"]}
+          rows={data.waiting_projects.map((p) => [
+            p.code,
+            p.name,
+            p.client,
+            p.assignees.join(", "),
+            p.end_date ?? "",
+          ])}
+          empty="(대기 없음)"
+        />
+      </Section>
+
+      {/* 보류 프로젝트 */}
+      <Section title="■ 보류 프로젝트">
+        <SimpleTable
+          cols={["CODE", "프로젝트명", "발주처", "담당자", "마감"]}
+          rows={data.on_hold_projects.map((p) => [
+            p.code,
+            p.name,
+            p.client,
+            p.assignees.join(", "),
+            p.end_date ?? "",
+          ])}
+          empty="(보류 없음)"
+        />
       </Section>
     </div>
   );
@@ -561,16 +603,7 @@ function TeamWorkTable({
                     {row.client}
                   </td>
                   <td className="border-r border-zinc-200 px-2 py-1 align-top dark:border-zinc-800">
-                    <span
-                      className={cn(
-                        "inline-block rounded px-1.5 py-0.5 text-[10px] font-medium",
-                        row.kind === "sale"
-                          ? "bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300"
-                          : "bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300",
-                      )}
-                    >
-                      {row.phase || row.stage || (row.kind === "sale" ? "영업" : "프로젝트")}
-                    </span>
+                    {row.phase || row.stage}
                   </td>
                   <td className="border-r border-zinc-200 px-2 py-1 align-top text-zinc-600 dark:border-zinc-800 dark:text-zinc-400">
                     {row.last_week_summary || "—"}
@@ -660,7 +693,14 @@ function ScheduleMiniTable({
     );
   }
   return (
-    <table className="w-full border-collapse">
+    // table-fixed로 컬럼 폭 강제 — 담당자 컴팩트, 월~금이 충분히 넓음
+    <table className="w-full table-fixed border-collapse">
+      <colgroup>
+        <col style={{ width: "30%" }} />
+        {weekDays.map((d) => (
+          <col key={d.iso} style={{ width: `${70 / weekDays.length}%` }} />
+        ))}
+      </colgroup>
       <thead className="bg-zinc-50 dark:bg-zinc-900/60">
         <tr>
           <th className="border-b border-zinc-200 px-1.5 py-0.5 text-left font-medium dark:border-zinc-800">
@@ -673,7 +713,7 @@ function ScheduleMiniTable({
                 key={d.iso}
                 title={h?.map((x) => x.name).join(", ")}
                 className={cn(
-                  "w-7 border-b border-l border-zinc-200 px-0 py-0.5 text-center font-medium dark:border-zinc-800",
+                  "border-b border-l border-zinc-200 px-0 py-0.5 text-center font-medium dark:border-zinc-800",
                   h && "bg-red-50 text-red-700 dark:bg-red-950/40 dark:text-red-300",
                 )}
               >
@@ -714,11 +754,10 @@ function ScheduleMiniTable({
                     {cells.map((c, j) => (
                       <span
                         key={j}
-                        title={c.project_code || c.category}
+                        title={`${c.category}${c.project_code ? ` · ${c.project_code}` : ""}`}
                         className={cn(
                           "mx-0.5 inline-block rounded px-1 py-0.5 text-[9px] font-medium leading-tight",
-                          CATEGORY_STYLE[c.category] ??
-                            "bg-zinc-200 text-zinc-700 dark:bg-zinc-700 dark:text-zinc-200",
+                          SCHEDULE_KIND_STYLE[c.kind] ?? SCHEDULE_KIND_STYLE.other,
                         )}
                       >
                         {c.category}
