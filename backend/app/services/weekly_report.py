@@ -22,6 +22,7 @@ from sqlalchemy.orm import Session
 from app.models import mirror as M
 from app.models.employee import Employee
 from app.models.notice import Notice
+from app.models.project import Project
 from app.services.mirror_dto import project_from_mirror
 
 _KST = timezone(timedelta(hours=9))
@@ -218,6 +219,30 @@ def _scale_text(sale: M.MirrorSales) -> str:
     if floors:
         parts.append(", ".join(floors))
     return " / ".join(parts)
+
+
+def _client_name_lookup(db: Session) -> dict[str, str]:
+    """mirror_clients의 (page_id → name) 딕셔너리 — 발주처 relation 이름 해결.
+
+    노션 프로젝트의 "발주처" relation은 거래처 DB의 page_id를 가리킨다. mirror_dto의
+    Project.client_text는 "발주처(임시)" rich_text fallback 컬럼이라 비어있는 경우가
+    많고, 정식 발주처는 client_relation_ids → mirror_clients 조회가 필요.
+    """
+    return {
+        c.page_id: c.name or ""
+        for c in db.query(M.MirrorClient.page_id, M.MirrorClient.name).all()
+    }
+
+
+def _resolve_client_label(
+    proj: "Project", client_name_by_id: dict[str, str]
+) -> str:
+    """발주처 relation 이름 우선 → 임시 텍스트 fallback."""
+    for cid in proj.client_relation_ids:
+        name = client_name_by_id.get(cid, "").strip()
+        if name:
+            return name
+    return proj.client_text or ""
 
 
 def _avg_task_progress(db: Session, project_id: str) -> float:
@@ -581,6 +606,7 @@ def aggregate_team_projects(
         .order_by(M.MirrorProject.code)
         .all()
     )
+    client_name_by_id = _client_name_lookup(db)
     by_team: dict[str, list[TeamProjectRow]] = defaultdict(list)
     for r in rows:
         # active stage 필터 (보류·대기 포함, 완료/타절은 제외)
@@ -598,7 +624,7 @@ def aggregate_team_projects(
         row = TeamProjectRow(
             code=r.code,
             name=r.name,
-            client=proj.client_text or (proj.client_names[0] if proj.client_names else ""),
+            client=_resolve_client_label(proj, client_name_by_id),
             pm=assignees[0] if assignees else "",
             stage=r.stage,
             progress=progress,
@@ -626,16 +652,28 @@ def aggregate_team_work(
     각 active mirror_project의 assignees를 펼쳐 (employee, project) 쌍을 만들고,
     지난주 완료/이번주 활성 task를 employee+project 단위로 집계.
 
-    팀 정렬: aggregate_team_projects와 동일 (template/router 책임).
+    그룹 기준: **직원의 employees.team** (프로젝트.teams 아님). 정지훈 사장처럼
+    팀 소속이 아닌 직원의 row는 어느 팀 섹션에도 표시하지 않음.
+
+    필터: 지난주 업무 + 이번주 업무가 둘 다 비어있는 row는 표시하지 않음
+    (의미 없는 빈 행 노이즈 제거).
+
     팀 내 정렬: 직원 sort_order → 이름 → 프로젝트 stage → 프로젝트 code.
     """
     last_week_start = week_start - timedelta(days=7)
     last_week_end = week_end - timedelta(days=7)
 
-    # 직원 정보 lookup (이름 → position, sort_order)
-    emp_meta: dict[str, tuple[str, int]] = {}
-    for emp in db.query(Employee.name, Employee.position, Employee.sort_order).all():
-        emp_meta[emp.name] = (emp.position or "", emp.sort_order or 0)
+    # 직원 정보 lookup (이름 → position, team, sort_order). 재직자만 lookup
+    # 대상으로 하되 team 정보는 사용자가 자유 입력하므로 employees.team 그대로 사용.
+    emp_meta: dict[str, tuple[str, str, int]] = {}
+    for emp in db.query(
+        Employee.name, Employee.position, Employee.team, Employee.sort_order
+    ).all():
+        emp_meta[emp.name] = (
+            emp.position or "",
+            emp.team or "",
+            emp.sort_order or 0,
+        )
 
     project_rows = (
         db.query(M.MirrorProject)
@@ -643,21 +681,31 @@ def aggregate_team_work(
         .filter(M.MirrorProject.completed.is_(False))
         .all()
     )
+    client_name_by_id = _client_name_lookup(db)
 
     by_team: dict[str, list[EmployeeWorkRow]] = defaultdict(list)
     for r in project_rows:
         if r.stage and r.stage not in _ACTIVE_STAGES:
             continue
-        teams = [t for t in (r.teams or []) if t]
-        if not teams:
-            continue
         proj = project_from_mirror(r)
-        client = proj.client_text or (proj.client_names[0] if proj.client_names else "")
+        client = _resolve_client_label(proj, client_name_by_id)
         assignees = [a for a in (r.assignees or []) if a]
         if not assignees:
             continue
         for assignee in assignees:
-            position, _ = emp_meta.get(assignee, ("", 0))
+            position, emp_team, _ = emp_meta.get(assignee, ("", "", 0))
+            # 팀 소속 없는 직원(사장 등)은 일지 팀 섹션에 표시하지 않음
+            if not emp_team:
+                continue
+            last_week = _employee_last_week_done(
+                db, r.page_id, assignee, last_week_start, last_week_end
+            )
+            this_week = _employee_this_week_plan(
+                db, r.page_id, assignee, week_start, week_end
+            )
+            # 둘 다 비어있으면 의미 없는 행 — 표시 제외
+            if not last_week and not this_week:
+                continue
             row = EmployeeWorkRow(
                 employee_name=assignee,
                 position=position,
@@ -665,22 +713,17 @@ def aggregate_team_work(
                 project_name=r.name,
                 client=client,
                 stage=r.stage,
-                last_week_summary=_employee_last_week_done(
-                    db, r.page_id, assignee, last_week_start, last_week_end
-                ),
-                this_week_plan=_employee_this_week_plan(
-                    db, r.page_id, assignee, week_start, week_end
-                ),
+                last_week_summary=last_week,
+                this_week_plan=this_week,
                 note="",
             )
-            for team in teams:
-                by_team[team].append(row)
+            by_team[emp_team].append(row)
 
     # 팀 내 정렬: (직원 sort_order, 이름, 프로젝트 stage 우선순위, 프로젝트 code)
     for team_rows in by_team.values():
         team_rows.sort(
             key=lambda x: (
-                emp_meta.get(x.employee_name, ("", 9999))[1],
+                emp_meta.get(x.employee_name, ("", "", 9999))[2],
                 x.employee_name,
                 _STAGE_SORT_PRIORITY.get(x.stage, 99),
                 x.project_code,
