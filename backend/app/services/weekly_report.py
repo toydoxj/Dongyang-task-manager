@@ -36,6 +36,19 @@ _OCCUPATION_RULES = (
 # 진행 중으로 간주할 stage (완료/타절/종결/이관 제외)
 _ACTIVE_STAGES = frozenset({"진행중", "대기", "보류", "기본설계", "실시설계", "계획설계", "계획검토", "사업승인"})
 
+# 팀별 표 내 정렬 우선순위 (사용자 결정 2026-05-09): 진행중 → 대기 → 보류 → 그 외.
+# "기본설계/실시설계" 등 작업단계는 진행중 그룹으로 묶어 가장 위에 표시.
+_STAGE_SORT_PRIORITY: dict[str, int] = {
+    "진행중": 1,
+    "기본설계": 1,
+    "실시설계": 1,
+    "계획설계": 1,
+    "계획검토": 1,
+    "사업승인": 1,
+    "대기": 2,
+    "보류": 3,
+}
+
 # 신규 프로젝트로 간주할 stage 휴리스틱
 _NEW_STAGES = frozenset({"사업승인", "계획설계", "계획검토", "기본설계"})
 
@@ -461,7 +474,10 @@ def aggregate_team_projects(
         proj = project_from_mirror(r)
         progress = _avg_task_progress(db, r.page_id)
         weekly_plan = _project_weekly_plans(db, r.page_id, week_start, week_end)
-        teams = list(r.teams or []) or ["미지정"]
+        # 팀 미지정 프로젝트는 보고서에서 제외 (사용자 결정 2026-05-09).
+        teams = [t for t in (r.teams or []) if t]
+        if not teams:
+            continue
         assignees = list(r.assignees or [])
         row = TeamProjectRow(
             code=r.code,
@@ -477,6 +493,12 @@ def aggregate_team_projects(
         )
         for team in teams:
             by_team[team].append(row)
+
+    # 팀 내 정렬: 진행중 → 대기 → 보류 → 그 외 (secondary: code)
+    for team_rows in by_team.values():
+        team_rows.sort(
+            key=lambda x: (_STAGE_SORT_PRIORITY.get(x.stage, 99), x.code)
+        )
     return dict(by_team)
 
 
