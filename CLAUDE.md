@@ -74,8 +74,11 @@
 **명령어**
 - `cd backend && uv add 'pkg>=v'` — pip은 PEP 668 차단, uv 필수
 - `cd backend && source .venv/bin/activate && python -c "..."` — 로컬 검증
+- `cd backend && source .venv/bin/activate && pytest tests/ -x` — 단위 테스트 (실패 즉시 중단)
+- `cd backend && source .venv/bin/activate && uvicorn app.main:app --reload` — dev 서버 (port 8000)
 - `cd backend && alembic heads` / `alembic upgrade head` — DB schema
 - `cd frontend && npx tsc --noEmit` — type check
+- `cd frontend && npm run dev` / `npm run build` / `npm run lint`
 - `pdftoppm -r 100 -png in.pdf out` — PDF→PNG 시각 디버깅 (poppler 설치됨)
 
 **핵심 패턴**
@@ -83,7 +86,14 @@
 - alembic version naming: 직전 revision + 새 영문 prefix `{x}{prev}{date}_desc.py`.
 - 노션 schema: `backend/app/services/notion_schema.py SALES_DB_REQUIRED` dict 부팅 시 자동 등록. drop은 노션 UI 수동.
 - 단가: `backend/app/services/quote_calculator.py ENGINEERING_RATES_BY_GRADE` (매년 1월 갱신).
-- 견적서 13종 + `_CODE_MAP` 분류 코드 (구조설계 01 ~ 기타 99). 영업당 다중 견적 모델 (PR-M) — `parent_lead_id` 폐기됨.
+- 견적서 11종 + `_CODE_MAP` 분류 코드 (구조설계 01 ~ 기타 99). 영업당 다중 견적 모델 (PR-M) — `parent_lead_id` 폐기됨.
+- 시특법 자동 산정 helper: `backend/app/services/inspection_legal_table.py` (별표 22~26 + 보간). PR-Q5b.
+- 건축물관리법 자동 산정 helper: `backend/app/services/bma_table.py` (별표 1·3 + 제37조 군집). PR-Q4b.
+- 영업코드 형식: `영{YY}-{NNN}` (옛 `{YY}-영업-{NNN}`도 sequence pool 포함 — `services/sales_code.py`).
+- 견적별 영업정보 동기화: `QuoteInput.sync_with_sale: bool` (default True) — 한 영업에 대상 건축물이 다른 견적 케이스 대응. SalesEditModal echo useEffect는 false면 차단.
+- 견적별 준공년도 자동 경과년수: `completion_year` 입력 시 KST 기준 `now.year - completion_year` 자동.
+- 영업↔프로젝트 reverse lookup: `GET /api/sales/by-project/{project_id}` (converted_project_id indexed).
+- 묶음 PDF 갑지 총액 토글: `?show_total=true|false` (기본 ON).
 - xlsx 검증: `docs/quote_formulas/*.md` dump → backend strategy transcribe → ±0원 일치.
 
 **Quirks**

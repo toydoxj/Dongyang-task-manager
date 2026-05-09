@@ -61,6 +61,7 @@ desktop.ini
 .env.production
 *.pem
 *.key
+*.bak
 # 직원/개인정보 — 절대 커밋 금지
 docs/*.xlsx
 docs/*.xls
@@ -76,6 +77,11 @@ backend/private/
 *.db
 backend/data/
 backend/app/data/
+
+# ==========================================
+# 임시 / MCP 도구 디렉터리
+# ==========================================
+.playwright-mcp/
 
 # ==========================================
 # 참조 저장소 (별도 저장소이므로 제외)
