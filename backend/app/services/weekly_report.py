@@ -75,13 +75,17 @@ class HeadcountSummary(BaseModel):
 
 
 class SealLogItem(BaseModel):
+    """날인대장 한 행 — 최종 승인된 항목만 (PR-W 사용자 결정 2026-05-09).
+
+    project_name: "{코드} {용역명}" 형식
+    submission_target: 제출처 — real_source_id가 있으면 그 거래처명, 없으면 발주처
+    """
+
     project_name: str
-    client: str = ""
-    seal_type: str = ""  # 구조계산서/구조검토서/...
-    status: str = ""  # 1차검토 중/2차검토 중/...
-    handler: str = ""  # 현재 단계 처리자
-    due_date: str | None = None
-    requested_at: str | None = None
+    submission_target: str = ""
+    seal_type: str = ""           # 구조계산서/구조검토서/...
+    requester: str = ""           # 담당자(요청자)
+    approved_at: str | None = None  # 최종 승인일 (admin_handled_at)
 
 
 class CompletedProjectItem(BaseModel):
@@ -171,6 +175,7 @@ class EmployeeWorkRow(BaseModel):
 
     employee_name: str
     position: str = ""  # 직책 (employees.position)
+    kind: str = "project"  # 'project' | 'sale' — frontend 색상 구분 (프로젝트=파랑, 영업=초록)
     project_code: str
     project_name: str
     client: str = ""
@@ -1011,6 +1016,7 @@ def aggregate_team_work(
             row = EmployeeWorkRow(
                 employee_name=assignee,
                 position=position,
+                kind="project",
                 project_code=p.code,
                 project_name=p.name,
                 client=client,
@@ -1030,6 +1036,7 @@ def aggregate_team_work(
             row = EmployeeWorkRow(
                 employee_name=assignee,
                 position=position,
+                kind="sale",
                 project_code=s.code,
                 project_name=s.name,
                 client=sale_client,

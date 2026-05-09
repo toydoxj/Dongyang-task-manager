@@ -334,16 +334,15 @@ function ReportPreview({
       {/* 날인대장 */}
       <Section title="■ 날인대장">
         <SimpleTable
-          cols={["프로젝트명", "발주처", "유형", "상태", "처리자", "제출예정일"]}
+          cols={["프로젝트", "제출처", "유형", "담당자", "승인일"]}
           rows={data.seal_log.map((s) => [
             s.project_name,
-            s.client,
+            s.submission_target,
             s.seal_type,
-            s.status,
-            s.handler,
-            s.due_date ?? "",
+            s.requester,
+            (s.approved_at ?? "").slice(0, 10),
           ])}
-          empty="(날인 진행건 없음)"
+          empty="(저번주 승인된 날인 없음)"
         />
       </Section>
 
@@ -562,7 +561,16 @@ function TeamWorkTable({
                     {row.client}
                   </td>
                   <td className="border-r border-zinc-200 px-2 py-1 align-top dark:border-zinc-800">
-                    {row.phase || row.stage}
+                    <span
+                      className={cn(
+                        "inline-block rounded px-1.5 py-0.5 text-[10px] font-medium",
+                        row.kind === "sale"
+                          ? "bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300"
+                          : "bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300",
+                      )}
+                    >
+                      {row.phase || row.stage || (row.kind === "sale" ? "영업" : "프로젝트")}
+                    </span>
                   </td>
                   <td className="border-r border-zinc-200 px-2 py-1 align-top text-zinc-600 dark:border-zinc-800 dark:text-zinc-400">
                     {row.last_week_summary || "—"}
@@ -708,12 +716,12 @@ function ScheduleMiniTable({
                         key={j}
                         title={c.project_code || c.category}
                         className={cn(
-                          "inline-block rounded px-0.5 text-[9px] font-medium leading-tight",
+                          "mx-0.5 inline-block rounded px-1 py-0.5 text-[9px] font-medium leading-tight",
                           CATEGORY_STYLE[c.category] ??
                             "bg-zinc-200 text-zinc-700 dark:bg-zinc-700 dark:text-zinc-200",
                         )}
                       >
-                        {c.category.slice(0, 2)}
+                        {c.category}
                       </span>
                     ))}
                   </td>

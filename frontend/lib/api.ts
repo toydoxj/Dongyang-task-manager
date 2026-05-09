@@ -1360,6 +1360,7 @@ export interface WeeklyTeamProjectRow {
 export interface WeeklyEmployeeWorkRow {
   employee_name: string;
   position: string;
+  kind: "project" | "sale";  // 프로젝트=파랑, 영업=초록
   project_code: string;
   project_name: string;
   client: string;
@@ -1384,13 +1385,11 @@ export interface WeeklyHoliday {
 }
 
 export interface WeeklySealLogItem {
-  project_name: string;
-  client: string;
+  project_name: string;          // "{코드} {용역명}"
+  submission_target: string;     // 제출처 (real_source 우선, 없으면 발주처)
   seal_type: string;
-  status: string;
-  handler: string;
-  due_date: string | null;
-  requested_at: string | null;
+  requester: string;             // 담당자(요청자)
+  approved_at: string | null;    // 최종 승인일
 }
 
 export interface WeeklyPersonalScheduleEntry {
