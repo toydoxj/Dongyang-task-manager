@@ -17,7 +17,7 @@ from typing import Any
 
 import holidays
 from pydantic import BaseModel, Field
-from sqlalchemy import or_
+from sqlalchemy import and_, or_
 from sqlalchemy.orm import Session
 
 from app.models import mirror as M
@@ -606,14 +606,11 @@ def aggregate_sales(db: Session, week_start: date, week_end: date) -> list[Sales
         .order_by(M.MirrorSales.code)
         .all()
     )
+    client_name_by_id = _client_name_lookup(db)
     items: list[SalesItem] = []
     for s in rows:
-        # client_id 매핑 — mirror_clients에서 이름 조회
-        client_name = ""
-        if s.client_id:
-            cli = db.get(M.MirrorClient, s.client_id)
-            if cli:
-                client_name = cli.name
+        # mirror_clients lookup (N+1 제거)
+        client_name = client_name_by_id.get(s.client_id, "") if s.client_id else ""
         items.append(
             SalesItem(
                 code=s.code,
@@ -709,7 +706,11 @@ def _normalize_schedule_category(task: M.MirrorTask) -> str:
 def aggregate_team_projects(
     db: Session, week_start: date, week_end: date
 ) -> dict[str, list[TeamProjectRow]]:
-    """팀별 진행 중 프로젝트 — completed=False, stage가 active."""
+    """팀별 진행 중 프로젝트 — completed=False, stage가 active.
+
+    Bulk pre-fetch: mirror_tasks를 한 번에 가져와 진행률 평균/금주예정사항을
+    메모리에서 계산 (N+1 제거).
+    """
     rows = (
         db.query(M.MirrorProject)
         .filter(M.MirrorProject.archived.is_(False))
@@ -717,20 +718,53 @@ def aggregate_team_projects(
         .order_by(M.MirrorProject.code)
         .all()
     )
+    # 한 번에 모든 active project의 task fetch — project_id 별로 메모리 그룹.
+    task_rows = (
+        db.query(
+            M.MirrorTask.project_ids,
+            M.MirrorTask.progress,
+            M.MirrorTask.weekly_plan_text,
+            M.MirrorTask.start_date,
+            M.MirrorTask.end_date,
+        )
+        .filter(M.MirrorTask.archived.is_(False))
+        .all()
+    )
+    progress_by_pid: dict[str, list[float]] = defaultdict(list)
+    plans_by_pid: dict[str, list[str]] = defaultdict(list)
+    for pids, prog, plan, sd, ed in task_rows:
+        if not pids:
+            continue
+        # 이번주와 교집합 task만 weekly_plan 후보
+        in_this_week = (sd is None or sd <= week_end) and (
+            ed is None or ed >= week_start
+        )
+        plan_norm = (plan or "").strip()
+        for pid in pids:
+            if prog is not None:
+                progress_by_pid[pid].append(prog)
+            if in_this_week and plan_norm:
+                plans_by_pid[pid].append(plan_norm)
+
     client_name_by_id = _client_name_lookup(db)
     by_team: dict[str, list[TeamProjectRow]] = defaultdict(list)
     for r in rows:
-        # active stage 필터 (보류·대기 포함, 완료/타절은 제외)
         if r.stage and r.stage not in _ACTIVE_STAGES:
-            # 빈 stage는 그냥 표시
             continue
-        proj = project_from_mirror(r)
-        progress = _avg_task_progress(db, r.page_id)
-        weekly_plan = _project_weekly_plans(db, r.page_id, week_start, week_end)
-        # 팀 미지정 프로젝트는 보고서에서 제외 (사용자 결정 2026-05-09).
         teams = [t for t in (r.teams or []) if t]
         if not teams:
             continue
+        proj = project_from_mirror(r)
+        plans = plans_by_pid.get(r.page_id, [])
+        # 중복 제거 (순서 유지)
+        seen: set[str] = set()
+        plans_uniq: list[str] = []
+        for p in plans:
+            if p not in seen:
+                seen.add(p)
+                plans_uniq.append(p)
+        progs = progress_by_pid.get(r.page_id, [])
+        progress = sum(progs) / len(progs) if progs else 0.0
         assignees = list(r.assignees or [])
         row = TeamProjectRow(
             code=r.code,
@@ -739,7 +773,7 @@ def aggregate_team_projects(
             pm=assignees[0] if assignees else "",
             stage=r.stage,
             progress=progress,
-            weekly_plan=weekly_plan,
+            weekly_plan=" · ".join(plans_uniq),
             note="",
             assignees=assignees,
             end_date=proj.end_date or proj.contract_end,
@@ -762,117 +796,164 @@ def aggregate_team_work(
     last_week_start: date,
     last_week_end: date,
 ) -> dict[str, list[EmployeeWorkRow]]:
-    """팀별 (직원 × 프로젝트) 행 단위 업무 현황 — PDF 일지 본래 양식.
+    """팀별 (직원 × 프로젝트/영업) 행 단위 업무 현황 — PDF 일지 본래 양식.
 
-    각 active mirror_project의 assignees를 펼쳐 (employee, project) 쌍을 만들고,
-    지난주 완료/이번주 활성 task를 employee+project 단위로 집계.
+    Bulk pre-fetch 방식 (성능 최적화):
+    - mirror_tasks를 한 번에 fetch 후 메모리에서 (relation_id, kind, employee)로 bucket
+    - mirror_projects/sales/clients/employees도 각 1회 fetch
+    - row 후보는 bucket 키 — last_week 또는 this_week가 있는 (relation, employee) 쌍만
+      펼쳐서 빈 row 자동 제거
 
-    그룹 기준: **직원의 employees.team** (프로젝트.teams 아님). 정지훈 사장처럼
-    팀 소속이 아닌 직원의 row는 어느 팀 섹션에도 표시하지 않음.
-
-    필터: 지난주 업무 + 이번주 업무가 둘 다 비어있는 row는 표시하지 않음
-    (의미 없는 빈 행 노이즈 제거).
-
-    팀 내 정렬: 직원 sort_order → 이름 → 프로젝트 stage → 프로젝트 code.
+    그룹 기준: 직원의 employees.team. 팀 소속 없는 직원(사장 등) 행 제외.
+    팀 내 정렬: 직원 sort_order → 이름 → 단계 우선순위 → relation code.
     """
 
-    # 직원 정보 lookup (이름 → position, team, sort_order). 재직자만 lookup
-    # 대상으로 하되 team 정보는 사용자가 자유 입력하므로 employees.team 그대로 사용.
+    # ── 1. 직원 lookup ──
     emp_meta: dict[str, tuple[str, str, int]] = {}
     for emp in db.query(
         Employee.name, Employee.position, Employee.team, Employee.sort_order
     ).all():
-        emp_meta[emp.name] = (
-            emp.position or "",
-            emp.team or "",
-            emp.sort_order or 0,
-        )
+        emp_meta[emp.name] = (emp.position or "", emp.team or "", emp.sort_order or 0)
 
+    # ── 2. mirror_projects / mirror_sales meta dict ──
     project_rows = (
         db.query(M.MirrorProject)
         .filter(M.MirrorProject.archived.is_(False))
         .filter(M.MirrorProject.completed.is_(False))
         .all()
     )
-    client_name_by_id = _client_name_lookup(db)
-
-    by_team: dict[str, list[EmployeeWorkRow]] = defaultdict(list)
+    project_meta: dict[str, M.MirrorProject] = {}
     for r in project_rows:
         if r.stage and r.stage not in _ACTIVE_STAGES:
             continue
-        proj = project_from_mirror(r)
-        client = _resolve_client_label(proj, client_name_by_id)
-        assignees = [a for a in (r.assignees or []) if a]
-        if not assignees:
-            continue
-        for assignee in assignees:
-            position, emp_team, _ = emp_meta.get(assignee, ("", "", 0))
-            # 팀 소속 없는 직원(사장 등)은 일지 팀 섹션에 표시하지 않음
-            if not emp_team:
-                continue
-            last_week = _employee_last_week_done(
-                db, r.page_id, assignee, last_week_start, last_week_end
-            )
-            this_week = _employee_this_week_plan(
-                db, r.page_id, assignee, week_start, week_end
-            )
-            # 둘 다 비어있으면 의미 없는 행 — 표시 제외
-            if not last_week and not this_week:
-                continue
-            row = EmployeeWorkRow(
-                employee_name=assignee,
-                position=position,
-                project_code=r.code,
-                project_name=r.name,
-                client=client,
-                stage=r.stage,
-                last_week_summary=last_week,
-                this_week_plan=this_week,
-                note="",
-            )
-            by_team[emp_team].append(row)
+        project_meta[r.page_id] = r
 
-    # 영업(sales)도 source에 포함 — 진행 중 영업 row의 assignees도 펼침.
-    # 종결/실주/취소 단계 제외. EmployeeWorkRow의 project_code/name은 영업코드/영업명.
     sales_rows = (
         db.query(M.MirrorSales)
         .filter(M.MirrorSales.archived.is_(False))
         .filter(~M.MirrorSales.stage.in_(["수주확정", "실주", "취소", "전환완료", "종결"]))
         .all()
     )
-    for s in sales_rows:
-        sales_assignees = [a for a in (s.assignees or []) if a]
-        if not sales_assignees:
+    sales_meta: dict[str, M.MirrorSales] = {s.page_id: s for s in sales_rows}
+
+    client_name_by_id = _client_name_lookup(db)
+
+    # ── 3. 관련 task 한 번에 fetch (지난주 완료 또는 이번주 활성) ──
+    tasks = (
+        db.query(M.MirrorTask)
+        .filter(M.MirrorTask.archived.is_(False))
+        .filter(
+            or_(
+                # 지난주에 완료
+                and_(
+                    M.MirrorTask.actual_end_date.isnot(None),
+                    M.MirrorTask.actual_end_date >= last_week_start,
+                    M.MirrorTask.actual_end_date <= last_week_end,
+                ),
+                # 이번주 활성 — 기간이 [week_start, week_end]와 교집합
+                and_(
+                    or_(M.MirrorTask.start_date.is_(None), M.MirrorTask.start_date <= week_end),
+                    or_(M.MirrorTask.end_date.is_(None), M.MirrorTask.end_date >= week_start),
+                ),
+            )
+        )
+        .all()
+    )
+
+    # ── 4. (relation_id, kind, employee) bucket ──
+    # value: (last_week_titles, this_week_plans, this_week_titles) — 모두 list (중복은 후처리)
+    Bucket = dict[tuple[str, str, str], dict[str, list[str]]]
+    buckets: Bucket = defaultdict(
+        lambda: {"last": [], "this_plans": [], "this_titles": []}
+    )
+    for t in tasks:
+        title = (t.title or "").strip()
+        plan = (t.weekly_plan_text or "").strip()
+        is_last_week = (
+            t.actual_end_date is not None
+            and last_week_start <= t.actual_end_date <= last_week_end
+        )
+        is_this_week = (t.start_date is None or t.start_date <= week_end) and (
+            t.end_date is None or t.end_date >= week_start
+        )
+        relations: list[tuple[str, str]] = []
+        for pid in t.project_ids or []:
+            relations.append((pid, "project"))
+        for sid in t.sales_ids or []:
+            relations.append((sid, "sale"))
+        if not relations:
             continue
-        sale_client = ""
-        if s.client_id:
-            sale_client = (client_name_by_id.get(s.client_id) or "").strip()
-        for assignee in sales_assignees:
-            position, emp_team, _ = emp_meta.get(assignee, ("", "", 0))
-            if not emp_team:
+        for assignee in t.assignees or []:
+            for rid, kind in relations:
+                key = (rid, kind, assignee)
+                if is_last_week and title:
+                    buckets[key]["last"].append(title)
+                if is_this_week:
+                    if plan:
+                        buckets[key]["this_plans"].append(plan)
+                    if title:
+                        buckets[key]["this_titles"].append(title)
+
+    # ── 5. row 생성 (빈 row 자동 제거 — bucket에 있는 키만) ──
+    def _join_unique(items: list[str]) -> str:
+        seen: set[str] = set()
+        out: list[str] = []
+        for s in items:
+            if s and s not in seen:
+                seen.add(s)
+                out.append(s)
+        return " · ".join(out)
+
+    by_team: dict[str, list[EmployeeWorkRow]] = defaultdict(list)
+    for (rid, kind, assignee), data in buckets.items():
+        position, emp_team, _ = emp_meta.get(assignee, ("", "", 0))
+        if not emp_team:
+            continue
+        last = _join_unique(data["last"])
+        this_plans = _join_unique(data["this_plans"])
+        this_titles = _join_unique(data["this_titles"])
+        # weekly_plan_text 우선, 없으면 활성 task title
+        this = this_plans or this_titles
+        if not last and not this:
+            continue
+        if kind == "project":
+            p = project_meta.get(rid)
+            if p is None:
                 continue
-            last_week = _employee_last_week_done(
-                db, s.page_id, assignee, last_week_start, last_week_end, kind="sale"
-            )
-            this_week = _employee_this_week_plan(
-                db, s.page_id, assignee, week_start, week_end, kind="sale"
-            )
-            if not last_week and not this_week:
-                continue
+            proj = project_from_mirror(p)
+            client = _resolve_client_label(proj, client_name_by_id)
             row = EmployeeWorkRow(
                 employee_name=assignee,
                 position=position,
-                project_code=s.code,  # 영업코드 영{YY}-{NNN}
+                project_code=p.code,
+                project_name=p.name,
+                client=client,
+                stage=p.stage,
+                last_week_summary=last,
+                this_week_plan=this,
+                note="",
+            )
+        else:  # kind == "sale"
+            s = sales_meta.get(rid)
+            if s is None:
+                continue
+            sale_client = ""
+            if s.client_id:
+                sale_client = (client_name_by_id.get(s.client_id) or "").strip()
+            row = EmployeeWorkRow(
+                employee_name=assignee,
+                position=position,
+                project_code=s.code,
                 project_name=s.name,
                 client=sale_client,
                 stage=f"영업·{s.stage}" if s.stage else "영업",
-                last_week_summary=last_week,
-                this_week_plan=this_week,
+                last_week_summary=last,
+                this_week_plan=this,
                 note="",
             )
-            by_team[emp_team].append(row)
+        by_team[emp_team].append(row)
 
-    # 팀 내 정렬: (직원 sort_order, 이름, 프로젝트 stage 우선순위, 프로젝트 code)
+    # 팀 내 정렬
     for team_rows in by_team.values():
         team_rows.sort(
             key=lambda x: (
