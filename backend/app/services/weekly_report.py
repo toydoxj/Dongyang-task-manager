@@ -21,6 +21,7 @@ from sqlalchemy.orm import Session
 
 from app.models import mirror as M
 from app.models.employee import Employee
+from app.models.notice import Notice
 from app.services.mirror_dto import project_from_mirror
 
 _KST = timezone(timedelta(hours=9))
@@ -283,6 +284,30 @@ def aggregate_headcount(db: Session, week_start: date, week_end: date) -> Headco
     )
 
 
+def aggregate_notices(
+    db: Session, week_start: date, week_end: date
+) -> tuple[list[str], list[str]]:
+    """게시기간이 주차와 겹치는 공지/교육의 title list 반환 — (notices, education).
+
+    end_date NULL = 무기한 게시. start_date <= week_end and (end_date IS NULL or end_date >= week_start).
+    """
+    rows = (
+        db.query(Notice)
+        .filter(Notice.start_date <= week_end)
+        .filter(or_(Notice.end_date.is_(None), Notice.end_date >= week_start))
+        .order_by(Notice.start_date.desc(), Notice.id.desc())
+        .all()
+    )
+    notices: list[str] = []
+    education: list[str] = []
+    for r in rows:
+        if r.kind == "교육":
+            education.append(r.title)
+        else:
+            notices.append(r.title)
+    return notices, education
+
+
 def aggregate_completed(db: Session, week_start: date, week_end: date) -> list[CompletedProjectItem]:
     """이번 주 완료 (completed=True + last_edited_time in week)."""
     start_utc, end_utc = _kst_range(week_start)
@@ -511,12 +536,13 @@ def build_weekly_report(db: Session, week_start: date) -> WeeklyReport:
         raise ValueError(f"week_start must be Monday, got {week_start.isoformat()}")
     week_end = week_start + timedelta(days=4)
 
+    notices, education = aggregate_notices(db, week_start, week_end)
     return WeeklyReport(
         period_start=week_start,
         period_end=week_end,
         headcount=aggregate_headcount(db, week_start, week_end),
-        notices=[],  # PR-W Phase 2.4
-        education=[],  # PR-W Phase 2.4
+        notices=notices,
+        education=education,
         seal_log=[],  # 라우터에서 노션 직접 조회로 채움
         completed=aggregate_completed(db, week_start, week_end),
         new_projects=aggregate_new_projects(db, week_start, week_end),

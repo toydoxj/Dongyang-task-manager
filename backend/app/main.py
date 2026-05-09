@@ -27,6 +27,7 @@ from app.routers import master_projects as master_projects_router
 from app.routers import projects as projects_router
 from app.routers import sales as sales_router
 from app.routers import seal_requests as seal_requests_router
+from app.routers import notices as notices_router
 from app.routers import suggestions as suggestions_router
 from app.routers import tasks as tasks_router
 from app.routers import weekly_report as weekly_report_router
@@ -138,6 +139,7 @@ app.include_router(admin_drive_router.router, prefix="/api")
 app.include_router(admin_calendar_router.router, prefix="/api")
 app.include_router(admin_bot_router.router, prefix="/api")
 app.include_router(weekly_report_router.router, prefix="/api")
+app.include_router(notices_router.router, prefix="/api")
 
 
 @app.get("/health")

@@ -33,6 +33,7 @@ const NAV: NavItem[] = [
   { href: "/seal-requests", label: "날인요청" },
   { href: "/weekly-report", label: "주간업무일지" },
   { href: "/utilities", label: "유틸 런처" },
+  { href: "/admin/notices", label: "공지/교육 관리", roles: ["admin"] },
   { href: "/admin/incomes", label: "수금 관리", roles: ["admin"] },
   { href: "/admin/employees", label: "직원 관리", roles: ["admin"] },
   { href: "/admin/users", label: "사용자 관리", roles: ["admin"] },
