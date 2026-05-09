@@ -324,18 +324,21 @@ function Form({
             </select>
           </Field>
           <Field label="작업단계">
-            <select
+            {/* 기본 7개 옵션 자동완성 + 신규 자유 입력 (datalist).
+             * 노션 select option은 새 값 보내면 자동 추가됨 (notion API). */}
+            <input
+              type="text"
               value={phase}
               onChange={(e) => setPhase(e.target.value)}
+              list="project-phase-options"
+              placeholder="선택 또는 직접 입력 (예: 시공, 점검 등)"
               className={inputCls}
-            >
-              <option value="">— 미지정</option>
+            />
+            <datalist id="project-phase-options">
               {PROJECT_PHASES.map((p) => (
-                <option key={p} value={p}>
-                  {p}
-                </option>
+                <option key={p} value={p} />
               ))}
-            </select>
+            </datalist>
           </Field>
         </div>
         <MultiSelectChips

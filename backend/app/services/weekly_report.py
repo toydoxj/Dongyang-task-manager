@@ -553,16 +553,13 @@ def aggregate_completed(
     last_week_start: date,
     last_week_end: date,
 ) -> list[CompletedProjectItem]:
-    """완료 프로젝트 — 저번주 범위(last_week_start ~ last_week_end) 내 변경.
+    """완료 프로젝트 — Project.end_date(노션 "완료일")가 저번주 범위 안.
 
-    기준: last_edited_time이 [last_week_start, last_week_end] 안에 있고
-    completed=True 또는 stage in {종결, 타절} (사용자 결정 2026-05-09).
+    기준 (사용자 결정 2026-05-09):
+    - 완료일(end_date)이 [last_week_start, last_week_end] 안
+    - completed=True 또는 stage in {종결, 타절} (운영자가 명시적으로 표시한 것)
+    - 완료일 비어있는 row는 제외 (운영자가 노션 "완료일" 입력 안 한 경우 표시 X)
     """
-    start_local = datetime.combine(last_week_start, time.min, tzinfo=_KST)
-    end_local = datetime.combine(last_week_end, time.max, tzinfo=_KST)
-    start_utc = start_local.astimezone(timezone.utc)
-    end_utc = end_local.astimezone(timezone.utc)
-
     rows = (
         db.query(M.MirrorProject)
         .filter(M.MirrorProject.archived.is_(False))
@@ -572,20 +569,19 @@ def aggregate_completed(
                 M.MirrorProject.stage.in_(_TERMINATED_STAGES),
             )
         )
-        .filter(M.MirrorProject.last_edited_time >= start_utc)
-        .filter(M.MirrorProject.last_edited_time <= end_utc)
         .order_by(M.MirrorProject.code)
         .all()
     )
     client_name_by_id = _client_name_lookup(db)
+    range_start_iso = last_week_start.isoformat()
+    range_end_iso = last_week_end.isoformat()
     items: list[CompletedProjectItem] = []
     for r in rows:
-        # status_label: stage가 종결/타절이면 그대로 표기, 아니면 "완료" (completed=True)
-        if r.stage in _TERMINATED_STAGES:
-            label = r.stage
-        else:
-            label = "완료"
         proj = project_from_mirror(r)
+        ed = (proj.end_date or "")[:10]
+        if not ed or not (range_start_iso <= ed <= range_end_iso):
+            continue
+        label = r.stage if r.stage in _TERMINATED_STAGES else "완료"
         items.append(
             CompletedProjectItem(
                 code=r.code,
@@ -594,7 +590,7 @@ def aggregate_completed(
                 assignees=list(r.assignees or []),
                 client=_resolve_client_label(proj, client_name_by_id),
                 status_label=label,
-                completed_at=r.last_edited_time.isoformat() if r.last_edited_time else None,
+                completed_at=proj.end_date,
             )
         )
     return items
