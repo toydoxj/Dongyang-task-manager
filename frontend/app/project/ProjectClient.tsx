@@ -18,7 +18,12 @@ import LoadingState from "@/components/ui/LoadingState";
 import { cn } from "@/lib/utils";
 import useSWR from "swr";
 
-import { deleteSealRequest, getProjectLog, listSealRequests } from "@/lib/api";
+import {
+  deleteSealRequest,
+  findSaleByProject,
+  getProjectLog,
+  listSealRequests,
+} from "@/lib/api";
 import { keys, useCashflow, useProject, useTasks } from "@/lib/hooks";
 
 const SEAL_STATUS_COLOR: Record<string, string> = {
@@ -70,6 +75,10 @@ export default function ProjectClient({ id }: { id: string }) {
     listSealRequests({ projectId: id }),
   );
   const seals = sealsData?.items ?? [];
+  // 영업 reverse lookup — converted_project_id == id 인 영업 1건
+  const { data: linkedSale } = useSWR(["sale-by-project", id], () =>
+    findSaleByProject(id),
+  );
   const { data: logData } = useSWR(["project-log", id], () =>
     getProjectLog(id),
   );
@@ -146,7 +155,18 @@ export default function ProjectClient({ id }: { id: string }) {
       >
         편집
       </button>
-      {sealActive ? (
+      {linkedSale && (
+        <button
+          type="button"
+          onClick={() => router.push(`/sales?sale=${linkedSale.id}`)}
+          className="rounded-md border border-emerald-400 px-2.5 py-1 text-xs text-emerald-700 hover:bg-emerald-50 dark:border-emerald-700 dark:text-emerald-400 dark:hover:bg-emerald-950"
+          title={`영업 ${linkedSale.code || ""} ${linkedSale.name} 상세 보기`}
+        >
+          📋 영업 상세
+        </button>
+      )}
+      {/* 진행 중인 날인 요청 상태 표시 */}
+      {sealActive && (
         <>
           <span
             className={cn(
@@ -165,7 +185,8 @@ export default function ProjectClient({ id }: { id: string }) {
             날인취소
           </button>
         </>
-      ) : sealRejected ? (
+      )}
+      {sealRejected && (
         <>
           <span
             className={cn(
@@ -191,15 +212,16 @@ export default function ProjectClient({ id }: { id: string }) {
             날인취소
           </button>
         </>
-      ) : (
-        <button
-          type="button"
-          onClick={() => setSealOpen(true)}
-          className="rounded-md border border-zinc-300 px-2.5 py-1 text-xs hover:bg-zinc-50 dark:border-zinc-700 dark:hover:bg-zinc-800"
-        >
-          🔖 날인요청
-        </button>
       )}
+      {/* 날인요청 — 항상 노출 (동일 프로젝트에 N개 가능). 진행 중인 요청이 있어도
+          별도 검토 자료(예: 보고서 + 구조계산서)를 추가할 수 있도록 허용. */}
+      <button
+        type="button"
+        onClick={() => setSealOpen(true)}
+        className="rounded-md border border-zinc-300 px-2.5 py-1 text-xs hover:bg-zinc-50 dark:border-zinc-700 dark:hover:bg-zinc-800"
+      >
+        {sealActive || sealRejected ? "+ 날인요청 추가" : "🔖 날인요청"}
+      </button>
     </>
   );
 

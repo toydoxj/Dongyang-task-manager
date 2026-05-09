@@ -1404,6 +1404,31 @@ async def convert_to_project(
     return Project.from_notion_page(new_page)
 
 
+# ── 프로젝트 → 연결된 영업 reverse lookup ──
+
+
+@router.get("/by-project/{project_id}", response_model=Sale | None)
+def find_sale_by_project(
+    project_id: str,
+    _user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> Sale | None:
+    """프로젝트 id로 연결된 영업(Sale) 1건 reverse lookup.
+
+    프로젝트 상세 페이지에서 "영업 상세" 버튼 노출용. converted_project_id
+    indexed 컬럼으로 빠른 조회. 미archived 영업만. 없으면 null.
+    """
+    row = (
+        db.query(M.MirrorSales)
+        .filter(
+            M.MirrorSales.converted_project_id == project_id,
+            M.MirrorSales.archived.is_(False),
+        )
+        .first()
+    )
+    return sale_from_mirror(row) if row else None
+
+
 # ── 기존 진행 프로젝트에 수동 연결 ──
 
 

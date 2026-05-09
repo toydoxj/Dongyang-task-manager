@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useSearchParams } from "next/navigation";
+import { useEffect, useState } from "react";
 
 import SalesEditModal from "@/components/sales/SalesEditModal";
 import SalesTable from "@/components/sales/SalesTable";
@@ -15,6 +16,7 @@ const KIND_FILTERS = [
 ] as const;
 
 export default function SalesPage() {
+  const searchParams = useSearchParams();
   const [kindFilter, setKindFilter] = useState<string>("");
   const [stageFilter, setStageFilter] = useState<string>("");
   const [editing, setEditing] = useState<Sale | null>(null);
@@ -25,6 +27,16 @@ export default function SalesPage() {
     ...(stageFilter ? { stage: stageFilter } : {}),
   };
   const { data, error } = useSales(filters);
+
+  // ?sale={page_id} query string으로 진입 시 자동 modal open.
+  // 프로젝트 상세 페이지의 "영업 상세" 버튼 → 해당 영업 modal 진입 (PR-LK).
+  const queriedSaleId = searchParams.get("sale");
+  useEffect(() => {
+    if (!queriedSaleId || !data?.items) return;
+    if (editing && editing.id === queriedSaleId) return;
+    const target = data.items.find((s) => s.id === queriedSaleId);
+    if (target) setEditing(target);
+  }, [queriedSaleId, data, editing]);
 
   return (
     <div className="space-y-4">

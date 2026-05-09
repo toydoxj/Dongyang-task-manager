@@ -1025,6 +1025,19 @@ export async function linkSaleToProject(
   return jsonOrThrow<Sale>(res);
 }
 
+/** 프로젝트 id로 연결된 영업(Sale) reverse lookup. 없으면 null. */
+export async function findSaleByProject(projectId: string): Promise<Sale | null> {
+  const res = await authFetch(`/api/sales/by-project/${projectId}`);
+  if (!res.ok) {
+    if (res.status === 404) return null;
+    throw new Error(`${res.status} ${res.statusText}`);
+  }
+  // backend가 null을 그대로 직렬화하면 응답이 "null" 문자열
+  const body = await res.text();
+  if (!body || body === "null") return null;
+  return JSON.parse(body) as Sale;
+}
+
 /** 견적서 산출 미리보기 (저장 X) — 입력 변경 시 디바운스 호출. */
 export async function previewQuote(input: QuoteInput): Promise<QuoteResult> {
   const res = await authFetch(`/api/sales/quote/preview`, {
