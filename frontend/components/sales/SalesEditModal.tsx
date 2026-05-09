@@ -107,6 +107,8 @@ export default function SalesEditModal({
   const [form, setForm] = useState<SaleCreateRequest>({ name: "" });
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  // 묶음 PDF 갑지 총액 표시 토글 (default ON)
+  const [bundleShowTotal, setBundleShowTotal] = useState(true);
   const [linkPickerOpen, setLinkPickerOpen] = useState(false);
   // 발주처(의뢰처) 자동완성 입력 — ProjectCreateModal과 동일 패턴.
   // form.client_id에는 매칭 성공 시 client.id, 미매칭/빈값이면 ""로 동기화.
@@ -1301,10 +1303,21 @@ export default function SalesEditModal({
               <>
                 {hasMultipleQuotes && (
                   <>
+                    <label
+                      className="flex items-center gap-1 text-[11px] text-amber-700 dark:text-amber-400 cursor-pointer"
+                      title="갑지(첫 페이지)에 견적가·합계 표시 여부"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={bundleShowTotal}
+                        onChange={(e) => setBundleShowTotal(e.target.checked)}
+                      />
+                      총액 표시
+                    </label>
                     <button
                       type="button"
                       onClick={() => {
-                        void downloadQuoteBundlePdf(sale.id).catch((e) =>
+                        void downloadQuoteBundlePdf(sale.id, bundleShowTotal).catch((e) =>
                           setErr(
                             e instanceof Error
                               ? e.message
@@ -1324,7 +1337,7 @@ export default function SalesEditModal({
                         setBusy(true);
                         setErr(null);
                         try {
-                          await saveQuoteBundlePdfToDrive(sale.id);
+                          await saveQuoteBundlePdfToDrive(sale.id, bundleShowTotal);
                           refreshSales();
                           alert(
                             "WORKS Drive [견적서]/" +

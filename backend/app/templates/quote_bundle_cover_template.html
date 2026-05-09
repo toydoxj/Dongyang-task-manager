@@ -369,10 +369,12 @@
     {% endif %}
   </div>
 
+  {% if show_total %}
   <div class="total-line">
     <div class="label">견적가</div>
     <div class="grand">₩ {{ "{:,}".format(total | int) }}<span class="vat-mark">VAT 별도</span></div>
   </div>
+  {% endif %}
 
   <div class="summary-section">
     <div class="summary-title">견적 종합 ({{ rows | length }}건)</div>
@@ -397,11 +399,13 @@
           <td class="right amount">{{ "{:,}".format(row.amount | int) }}</td>
         </tr>
         {% endfor %}
+        {% if show_total %}
         <tr class="total-row">
           <td></td>
           <td>합 계</td>
           <td class="right">{{ "{:,}".format(total | int) }}</td>
         </tr>
+        {% endif %}
       </tbody>
     </table>
   </div>

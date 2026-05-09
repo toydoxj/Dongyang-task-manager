@@ -1253,19 +1253,26 @@ export async function deleteSaleQuote(
   }
 }
 
-/** 통합 견적서 PDF 다운로드 — parent_lead_id로 묶인 자식들과 함께 1 PDF (PR-G1). */
-export async function downloadQuoteBundlePdf(parentSaleId: string): Promise<void> {
+/** 통합 견적서 PDF 다운로드 — parent_lead_id로 묶인 자식들과 함께 1 PDF (PR-G1).
+ * showTotal=false면 갑지에 견적가 + 합계 row 숨김. */
+export async function downloadQuoteBundlePdf(
+  parentSaleId: string,
+  showTotal: boolean = true,
+): Promise<void> {
   await downloadPdfBlob(
-    `/api/sales/${parentSaleId}/quote-bundle.pdf`,
+    `/api/sales/${parentSaleId}/quote-bundle.pdf?show_total=${showTotal ? "true" : "false"}`,
     "quote-bundle.pdf",
   );
 }
 
 /** 통합 견적서 PDF를 WORKS Drive에 자동 저장 (PR-G2). parent의 `통합견적서첨부`
  * 컬럼에 web url 저장. 단일 PDF (`견적서첨부`)는 그대로 보존. */
-export async function saveQuoteBundlePdfToDrive(parentSaleId: string): Promise<Sale> {
+export async function saveQuoteBundlePdfToDrive(
+  parentSaleId: string,
+  showTotal: boolean = true,
+): Promise<Sale> {
   const res = await authFetch(
-    `/api/sales/${parentSaleId}/quote-bundle/save-pdf-to-drive`,
+    `/api/sales/${parentSaleId}/quote-bundle/save-pdf-to-drive?show_total=${showTotal ? "true" : "false"}`,
     { method: "POST" },
   );
   if (!res.ok) {

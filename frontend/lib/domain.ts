@@ -644,7 +644,9 @@ export interface QuoteInput {
   // structure_form은 위 메타 필드를 그대로 사용 (별표 23(1) 키).
   /** 별표 23(2) 용도: 업무용/상업용/주거용/특수용/경기장 등 */
   building_usage?: string;
-  /** 경과년수 (제62조 2호) */
+  /** 준공년도 — 입력 시 backend가 산정 시점 - completion_year로 경과년수 자동 계산 */
+  completion_year?: number | null;
+  /** 경과년수 (제62조 2호) — completion_year 미입력 시 fallback */
   aging_years?: number | null;
   /** 구조복잡도 (제62조 1호): 단순/보통/복잡 */
   complexity?: string;

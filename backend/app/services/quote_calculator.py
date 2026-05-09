@@ -169,23 +169,26 @@ class QuoteInput(BaseModel):
     # structure_form은 line 120의 메타 필드를 그대로 사용 — STRUCTURE_FACTORS 키
     # ("철근콘크리트"/"철골조" 등) 중 하나면 자동 산정 트리거.
     building_usage: str = ""               # 별표 23(2): 업무용/상업용/주거용/특수용/경기장 등
+    # 준공년도 — 입력하면 backend가 (산정 시점 - completion_year)로 경과년수 자동 계산.
+    # aging_years는 직접 입력 호환 유지 (legacy + 수동 override). 우선순위: completion_year > aging_years.
+    completion_year: int | None = Field(default=None, ge=1900, le=2100)
     aging_years: int | None = Field(default=None, ge=0)
     complexity: str = ""                   # 단순/보통/복잡
     prev_report: str = ""                  # 미제공/CAD/보고서+CAD
     facility_type: str = ""                # 기본/인접/군집(소)/군집(대)/혼합
     sub_facility_areas: list[float] = []   # 인접·군집 부속 면적
     # 직접경비 단가 (사용자 입력) — 시특법 점검 자동 산정용
-    # 시특법 자동 산정 단가 — 모두 default 0. 사용자가 명시 입력해야 산정에 포함.
-    # 입력값이 0이면 그 항목은 산정 X (예: travel_unit_cost=0이면 여비=0).
-    travel_unit_cost: float = Field(default=0, ge=0)         # 여비 1회 왕복 (1인)
-    helper_daily_wage: float = Field(default=0, ge=0)        # 시중 특별인부 일당
-    vehicle_daily_cost: float = Field(default=0, ge=0)       # 차량 일일 손료
-    fuel_unit_price: float = Field(default=0, ge=0)          # 휘발유 ℓ당
-    print_unit_cost: float = Field(default=0, ge=0)          # 인쇄비 책당
-    print_copies: int = Field(default=0, ge=0)               # 인쇄 부수
-    risk_pct: float = Field(default=0, ge=0, le=100)         # 위험수당 % (10~20)
+    # 시특법 자동 산정 단가 — 별표 25 권장값 default. 사용자가 입력 X면 default 적용.
+    travel_unit_cost: float = Field(default=50_000, ge=0)    # 여비 1회 왕복 (1인)
+    helper_daily_wage: float = Field(default=180_000, ge=0)  # 시중 특별인부 일당
+    vehicle_daily_cost: float = Field(default=30_000, ge=0)  # 차량 일일 손료
+    fuel_unit_price: float = Field(default=1_800, ge=0)      # 휘발유 ℓ당
+    print_unit_cost: float = Field(default=5_000, ge=0)      # 인쇄비 책당
+    print_copies: int = Field(default=3, ge=0)               # 인쇄 부수
+    risk_pct: float = Field(default=10, ge=0, le=100)        # 위험수당 % (10~20)
     machine_pct: float = Field(default=0, ge=0, le=100)      # 기계기구 손료 %
-    # (참고: 별표 25 비고 — 정밀안전진단·제1종 10%, 정밀점검·제2종 5%, 정기점검 0%)
+    # 기계기구 default는 frontend에서 quote_type 분기 (정기 0 / 정밀 5 / 진단 10).
+    # backend는 입력값 그대로 사용 — 사용자 override 가능.
     # 별표 26 선택과업 (PR-Q5b — 시특법 점검 자동 산정 시) ─────
     # A. 실측도면 작성 (별표 26-1) — 본 견적 adjusted × pct
     opt_field_drawings: bool = False
@@ -767,7 +770,14 @@ def _calculate_inspection_legal(inp: QuoteInput) -> QuoteResult:
             # ── Step 3: 별표 23 + 제62조 보정 곱 ──────────────
             sf_factor = STRUCTURE_FACTORS[inp.structure_form]
             uf_factor = USAGE_FACTORS[inp.building_usage]
-            ag_factor = aging_factor(inp.aging_years or 0)
+            # 경과년수 — completion_year 우선 (산정 시점 KST 기준), 없으면 aging_years
+            if inp.completion_year:
+                from datetime import datetime, timedelta, timezone
+                _kst = timezone(timedelta(hours=9))
+                effective_aging = max(0, datetime.now(_kst).year - inp.completion_year)
+            else:
+                effective_aging = inp.aging_years or 0
+            ag_factor = aging_factor(effective_aging)
             cx_factor = complexity_factor(inp.complexity or "보통")
             pr_factor = prev_report_factor(inp.prev_report or "미제공")
             correction = sf_factor * uf_factor * ag_factor * cx_factor * pr_factor
@@ -791,7 +801,11 @@ def _calculate_inspection_legal(inp: QuoteInput) -> QuoteResult:
             ))
             manhours_formula.append(ManhourFormulaStep(
                 label="경과년수 보정 (제62조-2)",
-                operator="×", value=ag_factor, note=f"{inp.aging_years or 0}년",
+                operator="×", value=ag_factor,
+                note=(
+                    f"준공 {inp.completion_year}년 → {effective_aging}년 경과"
+                    if inp.completion_year else f"{effective_aging}년"
+                ),
             ))
             manhours_formula.append(ManhourFormulaStep(
                 label="구조복잡도 보정 (제62조-1)",

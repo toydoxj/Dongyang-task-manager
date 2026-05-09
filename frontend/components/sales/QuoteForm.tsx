@@ -99,6 +99,7 @@ export default function QuoteForm({
         sf: value.structure_form,
         bu: value.building_usage,
         ay: value.aging_years,
+        cy: value.completion_year,
         cx: value.complexity,
         pr: value.prev_report,
         ft: value.facility_type,
@@ -201,17 +202,26 @@ export default function QuoteForm({
       <div className="space-y-3">
         {echoReadOnly && (
           <div className="rounded-md border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-[11px] text-amber-700 dark:text-amber-400 space-y-1">
-            <label className="flex items-center gap-2 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={syncOn}
-                onChange={(e) => set("sync_with_sale", e.target.checked)}
-              />
-              <span className="font-medium">영업 정보와 동기화 (용역명·위치·규모)</span>
-            </label>
+            <div className="flex items-center justify-between gap-2">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={syncOn}
+                  onChange={(e) => set("sync_with_sale", e.target.checked)}
+                />
+                <span className="font-medium">영업 정보와 동기화 (수신처·용역명·위치·연면적·층수·동수)</span>
+              </label>
+              <button
+                type="button"
+                onClick={() => set("sync_with_sale", !syncOn)}
+                className="rounded border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 text-[10.5px] hover:bg-amber-500/20"
+              >
+                {syncOn ? "🔓 견적별 입력" : "🔒 영업정보 동기화"}
+              </button>
+            </div>
             <p className="pl-5 text-[10.5px]">
               {syncOn
-                ? "영업 정보 탭에서 입력 → 여기로 echo (입력 비활성)."
+                ? "영업 정보 탭에서 입력 → 여기로 echo (입력 비활성). 연면적·층수 변경하려면 위 버튼 클릭."
                 : "이 견적에서만 별도 입력 (영업정보 변경에 영향 X)."}
             </p>
           </div>

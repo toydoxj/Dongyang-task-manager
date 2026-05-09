@@ -900,6 +900,7 @@ def _collect_bundle_sections(
 @router.get("/{page_id}/quote-bundle.pdf")
 def download_quote_bundle_pdf(
     page_id: str,
+    show_total: bool = True,
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> Response:
@@ -907,6 +908,8 @@ def download_quote_bundle_pdf(
 
     영업 안에서 견적을 N개 작성한 경우 (PR-M0~M3 모델) 모두 합산해 page_break
     분리된 단일 PDF 생성. 견적이 1개여도 동작.
+
+    show_total: 갑지(첫 페이지)의 견적가 + 합계 row 표시 여부 (default True).
     """
     sale = db.get(M.MirrorSales, page_id)
     if sale is None or sale.archived:
@@ -942,6 +945,7 @@ def download_quote_bundle_pdf(
             "floors_below": sale.floors_below,
             "building_count": sale.building_count,
         },
+        show_total=show_total,
     )
     filename = quote_bundle_pdf_filename(
         sale.quote_doc_number or "no-doc",
@@ -1103,6 +1107,7 @@ async def save_quote_pdf_to_drive(
 @router.post("/{page_id}/quote-bundle/save-pdf-to-drive", response_model=Sale)
 async def save_quote_bundle_pdf_to_drive(
     page_id: str,
+    show_total: bool = True,
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
     notion: NotionService = Depends(get_notion),
@@ -1162,6 +1167,7 @@ async def save_quote_bundle_pdf_to_drive(
             "floors_below": sale.floors_below,
             "building_count": sale.building_count,
         },
+        show_total=show_total,
     )
     filename = quote_bundle_pdf_filename(
         sale.quote_doc_number or "no-doc",

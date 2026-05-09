@@ -154,6 +154,7 @@ def build_bundle_cover_pdf(
     author_name: str = "",
     author_position: str = "",
     parent_meta: dict[str, Any] | None = None,
+    show_total: bool = True,
 ) -> bytes:
     """통합 PDF 첫 페이지 갑지(cover) — 영업 정보 + 견적 종합 표 + 총합.
 
@@ -208,6 +209,7 @@ def build_bundle_cover_pdf(
         seal_data_uri=_read_seal_data_uri(),
         author_name=author_name,
         author_position=author_position,
+        show_total=show_total,
     )
     return HTML(string=html).write_pdf()
 
@@ -220,6 +222,7 @@ def build_quote_bundle_pdf(
     parent_name: str = "",
     parent_doc_number: str = "",
     parent_meta: dict[str, Any] | None = None,
+    show_total: bool = True,
 ) -> bytes:
     """영업 내 다중 견적을 1 PDF로 묶음. 첫 페이지는 갑지(cover, 견적 종합 표
     + 총합), 후속 페이지는 자식 견적별 단일 PDF (build_quote_pdf 결과).
@@ -243,6 +246,7 @@ def build_quote_bundle_pdf(
         author_name=author_name,
         author_position=author_position,
         parent_meta=parent_meta,
+        show_total=show_total,
     )
     cover_reader = PdfReader(io.BytesIO(cover_bytes))
     for page in cover_reader.pages:
