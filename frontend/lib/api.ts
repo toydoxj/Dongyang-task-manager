@@ -1348,17 +1348,37 @@ export interface WeeklyTeamProjectRow {
   end_date: string | null;
 }
 
+export interface WeeklySealLogItem {
+  project_name: string;
+  client: string;
+  seal_type: string;
+  status: string;
+  handler: string;
+  due_date: string | null;
+  requested_at: string | null;
+}
+
+export interface WeeklyPersonalScheduleEntry {
+  employee_name: string;
+  team: string;
+  category: string;
+  start_date: string;
+  end_date: string;
+  note: string;
+  project_code: string;
+}
+
 export interface WeeklyReport {
   period_start: string;
   period_end: string;
   headcount: WeeklyHeadcount;
   notices: string[];
   education: string[];
-  seal_log: unknown[];
+  seal_log: WeeklySealLogItem[];
   completed: WeeklyCompletedItem[];
   new_projects: WeeklyNewProject[];
   sales: WeeklySalesItem[];
-  personal_schedule: unknown[];
+  personal_schedule: WeeklyPersonalScheduleEntry[];
   teams: Record<string, WeeklyTeamProjectRow[]>;
 }
 
