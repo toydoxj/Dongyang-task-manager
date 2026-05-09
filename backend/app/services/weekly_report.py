@@ -77,15 +77,15 @@ class HeadcountSummary(BaseModel):
 class SealLogItem(BaseModel):
     """날인대장 한 행 — 최종 승인된 항목만 (PR-W 사용자 결정 2026-05-09).
 
-    project_name: "{코드} {용역명}" 형식
-    submission_target: 제출처 — real_source_id가 있으면 그 거래처명, 없으면 발주처
+    seal_type: 구조계산서 + with_safety_cert인 경우 "계산서(w/안전)"으로 변환.
     """
 
-    project_name: str
-    submission_target: str = ""
-    seal_type: str = ""           # 구조계산서/구조검토서/...
-    requester: str = ""           # 담당자(요청자)
-    approved_at: str | None = None  # 최종 승인일 (admin_handled_at)
+    code: str = ""                   # 프로젝트 CODE
+    name: str = ""                   # 용역명
+    submission_target: str = ""      # real_source_id 우선, 없으면 발주처
+    seal_type: str = ""
+    requester: str = ""              # 담당자(요청자)
+    approved_at: str | None = None   # 최종 승인일 (admin_handled_at)
 
 
 class CompletedProjectItem(BaseModel):
@@ -173,13 +173,13 @@ class SuggestionLogItem(BaseModel):
 
 
 class StageProjectItem(BaseModel):
-    """대기/보류 프로젝트 list 한 행."""
+    """대기/보류 프로젝트 list 한 행. 컬럼: CODE/용역명/발주처/담당팀."""
 
     code: str
     name: str
     client: str = ""
-    assignees: list[str] = Field(default_factory=list)
-    end_date: str | None = None  # 마감일(완료일) — 표시용
+    teams: list[str] = Field(default_factory=list)  # 담당팀
+    is_long_stalled: bool = False  # 3개월 이상 대기 (대기 프로젝트만 의미)
 
 
 class HolidayItem(BaseModel):
@@ -200,6 +200,7 @@ class EmployeeWorkRow(BaseModel):
     employee_name: str
     position: str = ""  # 직책 (employees.position)
     kind: str = "project"  # 'project' | 'sale' — frontend 색상 구분 (프로젝트=파랑, 영업=초록)
+    source_id: str = ""  # mirror_projects/sales의 page_id — 대기 프로젝트 exclude 등 backend 용
     project_code: str
     project_name: str
     client: str = ""
@@ -490,23 +491,31 @@ def aggregate_headcount(db: Session, week_start: date, week_end: date) -> Headco
 
 
 def aggregate_stage_projects(
-    db: Session, stage: str
+    db: Session,
+    stages: list[str],
+    *,
+    exclude_ids: set[str] | None = None,
 ) -> list[StageProjectItem]:
-    """단일 stage(예: '대기' 또는 '보류') active 프로젝트 list — cutoff 없음.
+    """주어진 stage들에 속한 active 프로젝트 list — cutoff 없음.
 
-    팀 미지정/이름 비어있는 row는 제외 (의미 없는 노이즈).
+    exclude_ids에 들어있는 page_id는 결과에서 제외 (예: 팀별 업무 현황에 이미
+    표시된 프로젝트는 "대기" 섹션에서 제외).
+    팀 미지정/이름 비어있는 row는 제외.
     """
+    excl = exclude_ids or set()
     rows = (
         db.query(M.MirrorProject)
         .filter(M.MirrorProject.archived.is_(False))
         .filter(M.MirrorProject.completed.is_(False))
-        .filter(M.MirrorProject.stage == stage)
+        .filter(M.MirrorProject.stage.in_(stages))
         .order_by(M.MirrorProject.code)
         .all()
     )
     client_name_by_id = _client_name_lookup(db)
     items: list[StageProjectItem] = []
     for r in rows:
+        if r.page_id in excl:
+            continue
         if not r.name and not r.code:
             continue
         proj = project_from_mirror(r)
@@ -842,17 +851,26 @@ def _vacation_label(task: M.MirrorTask) -> str:
     return "연차" if hours >= 4.0 else "반차"
 
 
+_SCHEDULE_TEXT_CATEGORIES = frozenset(
+    {"외근", "출장", "교육", "연차", "반차", "파견", "동행"}
+)
+
+
 def _normalize_schedule_category(task: M.MirrorTask) -> str:
     """schedule 매트릭스 표시용 category 라벨 정규화.
 
-    - "휴가" / "휴가(연차)" → duration 기반 "연차" 또는 "반차"
-    - 그 외 (외근/출장/교육) → 원본 그대로
-    - task.category가 비어있으면 task.activity fallback
+    사용자 결정(2026-05-10): 텍스트는 일정성 카테고리만 표시.
+    "프로젝트"/"영업(서비스)" 같은 업무 분류는 적지 않고 activity(외근/출장) 사용.
+
+    - "휴가" / "휴가(연차)" → duration 기반 "연차"(≥4h) 또는 "반차"(<4h)
+    - 일정성 카테고리(_SCHEDULE_TEXT_CATEGORIES) → 그대로
+    - 그 외(프로젝트/영업/개인업무/사내잡무 등) → task.activity (외근/출장)
+    - 둘 다 없으면 빈 문자열 (호출자가 skip)
     """
     cat = task.category or ""
     if cat in ("휴가", "휴가(연차)"):
         return _vacation_label(task)
-    if cat:
+    if cat in _SCHEDULE_TEXT_CATEGORIES:
         return cat
     return task.activity or ""
 
@@ -1089,6 +1107,7 @@ def aggregate_team_work(
                 employee_name=assignee,
                 position=position,
                 kind="project",
+                source_id=p.page_id,
                 project_code=p.code,
                 project_name=p.name,
                 client=client,
@@ -1109,6 +1128,7 @@ def aggregate_team_work(
                 employee_name=assignee,
                 position=position,
                 kind="sale",
+                source_id=s.page_id,
                 project_code=s.code,
                 project_name=s.name,
                 client=sale_client,
@@ -1166,6 +1186,17 @@ def build_weekly_report(
     last_week_end = week_start - timedelta(days=1)
 
     notices, education = aggregate_notices(db, week_start, week_end)
+    team_work = aggregate_team_work(
+        db, week_start, week_end, last_week_start, last_week_end
+    )
+    # 팀별 업무 현황에 이미 표시된 프로젝트 page_id set (kind='project'만).
+    # 사용자 결정(2026-05-09): "대기 프로젝트"는 팀별 업무에 안 올라온 것만.
+    team_work_project_ids: set[str] = {
+        r.source_id
+        for rows in team_work.values()
+        for r in rows
+        if r.kind == "project" and r.source_id
+    }
     return WeeklyReport(
         period_start=week_start,
         period_end=week_end,
@@ -1178,12 +1209,13 @@ def build_weekly_report(
         sales=aggregate_sales(db, last_week_start, last_week_end),
         personal_schedule=aggregate_personal_schedule(db, week_start, week_end),
         teams=aggregate_team_projects(db, week_start, week_end),
-        team_work=aggregate_team_work(
-            db, week_start, week_end, last_week_start, last_week_end
-        ),
+        team_work=team_work,
         team_members=aggregate_team_members(db, week_end),
         holidays=aggregate_holidays(db, week_start, week_end),
-        waiting_projects=aggregate_stage_projects(db, "대기"),
-        on_hold_projects=aggregate_stage_projects(db, "보류"),
+        # 대기 프로젝트: 팀별 업무에 없는 [진행중, 대기] 프로젝트
+        waiting_projects=aggregate_stage_projects(
+            db, ["진행중", "대기"], exclude_ids=team_work_project_ids
+        ),
+        on_hold_projects=aggregate_stage_projects(db, ["보류"]),
         # suggestions는 라우터에서 노션 직접 조회 후 주입
     )

@@ -1395,14 +1395,15 @@ export interface WeeklyStageProject {
   code: string;
   name: string;
   client: string;
-  assignees: string[];
-  end_date: string | null;
+  teams: string[];
+  is_long_stalled: boolean;   // 3개월 이상 대기 (대기 프로젝트만 의미)
 }
 
 export interface WeeklySealLogItem {
-  project_name: string;          // "{코드} {용역명}"
+  code: string;
+  name: string;
   submission_target: string;     // 제출처 (real_source 우선, 없으면 발주처)
-  seal_type: string;
+  seal_type: string;             // 구조계산서+with_safety_cert면 "계산서(w/안전)"
   requester: string;             // 담당자(요청자)
   approved_at: string | null;    // 최종 승인일
 }

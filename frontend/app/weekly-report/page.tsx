@@ -349,13 +349,14 @@ function ReportPreview({
       <div className="grid gap-3 md:grid-cols-2">
         <Section title="■ 날인대장">
           <SimpleTable
-            cols={["프로젝트", "제출처", "유형", "담당자", "승인일"]}
+            cols={["승인일", "CODE", "용역명", "제출처", "유형", "담당자"]}
             rows={data.seal_log.map((s) => [
-              s.project_name,
+              (s.approved_at ?? "").slice(0, 10),
+              s.code,
+              s.name,
               s.submission_target,
               s.seal_type,
               s.requester,
-              (s.approved_at ?? "").slice(0, 10),
             ])}
             empty="(저번주 승인된 날인 없음)"
           />
@@ -474,35 +475,77 @@ function ReportPreview({
         )}
       </Section>
 
-      {/* 대기 프로젝트 */}
-      <Section title="■ 대기 프로젝트">
-        <SimpleTable
-          cols={["CODE", "프로젝트명", "발주처", "담당자", "마감"]}
-          rows={data.waiting_projects.map((p) => [
-            p.code,
-            p.name,
-            p.client,
-            p.assignees.join(", "),
-            p.end_date ?? "",
-          ])}
-          empty="(대기 없음)"
-        />
-      </Section>
+      {/* [대기][보류] 2-col grid — CODE/용역명/발주처/담당팀 */}
+      <div className="grid gap-3 md:grid-cols-2">
+        <Section title="■ 대기 프로젝트">
+          <StageProjectsTable rows={data.waiting_projects} highlightStalled />
+        </Section>
+        <Section title="■ 보류 프로젝트">
+          <StageProjectsTable rows={data.on_hold_projects} />
+        </Section>
+      </div>
+    </div>
+  );
+}
 
-      {/* 보류 프로젝트 */}
-      <Section title="■ 보류 프로젝트">
-        <SimpleTable
-          cols={["CODE", "프로젝트명", "발주처", "담당자", "마감"]}
-          rows={data.on_hold_projects.map((p) => [
-            p.code,
-            p.name,
-            p.client,
-            p.assignees.join(", "),
-            p.end_date ?? "",
-          ])}
-          empty="(보류 없음)"
-        />
-      </Section>
+/** 대기/보류 프로젝트 표 — 4컬럼 단순화 + 3개월 이상 대기는 용역명 짙은 빨강. */
+function StageProjectsTable({
+  rows,
+  highlightStalled,
+}: {
+  rows: WeeklyStageProject[];
+  highlightStalled?: boolean;
+}) {
+  if (rows.length === 0) {
+    return (
+      <div className="rounded border border-dashed border-zinc-300 px-3 py-2 text-center text-xs italic text-zinc-400 dark:border-zinc-700">
+        (없음)
+      </div>
+    );
+  }
+  return (
+    <div className="overflow-x-auto rounded border border-zinc-200 dark:border-zinc-800">
+      <table className="w-full border-collapse text-xs">
+        <thead className="bg-zinc-100 dark:bg-zinc-900">
+          <tr>
+            {["CODE", "용역명", "발주처", "담당팀"].map((c) => (
+              <th
+                key={c}
+                className="border-b border-zinc-200 px-2 py-1.5 text-left font-medium dark:border-zinc-800"
+              >
+                {c}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r, i) => (
+            <tr
+              key={i}
+              className="border-b border-zinc-100 last:border-0 dark:border-zinc-800"
+            >
+              <td className="px-2 py-1 align-top">{r.code}</td>
+              <td
+                className={cn(
+                  "px-2 py-1 align-top",
+                  highlightStalled &&
+                    r.is_long_stalled &&
+                    "font-semibold text-red-700 dark:text-red-400",
+                )}
+                title={
+                  highlightStalled && r.is_long_stalled
+                    ? "3개월 이상 대기 — 활동 점검 필요"
+                    : undefined
+                }
+              >
+                {r.name}
+              </td>
+              <td className="px-2 py-1 align-top">{r.client}</td>
+              <td className="px-2 py-1 align-top">{r.teams.join(", ")}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }

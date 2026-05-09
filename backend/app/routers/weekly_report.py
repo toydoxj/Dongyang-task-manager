@@ -122,8 +122,8 @@ async def _build_seal_log(
         c.page_id: c.name or ""
         for c in db.query(M.MirrorClient.page_id, M.MirrorClient.name).all()
     }
-    # mirror_projects → (라벨, 발주처명)
-    proj_label_by_id: dict[str, tuple[str, str]] = {}
+    # mirror_projects → (code, name, 발주처명)
+    proj_meta_by_id: dict[str, tuple[str, str, str]] = {}
     proj_meta = db.query(
         M.MirrorProject.page_id,
         M.MirrorProject.code,
@@ -135,8 +135,7 @@ async def _build_seal_log(
         rel = (props or {}).get("발주처", {}).get("relation") or []
         if rel:
             client_name = client_name_by_id.get(rel[0].get("id", ""), "")
-        label = f"{code} {name}".strip() if code else name
-        proj_label_by_id[pid] = (label, client_name)
+        proj_meta_by_id[pid] = (code or "", name or "", client_name)
 
     items: list[SealLogItem] = []
     for s in res.items:
@@ -145,20 +144,27 @@ async def _build_seal_log(
         approved = s.admin_handled_at
         if not approved or not (range_start_iso <= approved[:10] <= range_end_iso):
             continue
-        proj_label, project_client = "", ""
+        code, name, project_client = "", "", ""
         if s.project_ids:
-            proj_label, project_client = proj_label_by_id.get(s.project_ids[0], ("", ""))
+            code, name, project_client = proj_meta_by_id.get(
+                s.project_ids[0], ("", "", "")
+            )
         # 제출처: real_source_id 우선 → mirror_clients lookup, fallback 발주처
         submission_target = ""
         if s.real_source_id:
             submission_target = client_name_by_id.get(s.real_source_id, "")
         if not submission_target:
             submission_target = project_client
+        # 유형: 구조계산서 + 구조안전확인서 포함 → "계산서(w/안전)"
+        seal_type = s.seal_type
+        if seal_type == "구조계산서" and s.with_safety_cert:
+            seal_type = "계산서(w/안전)"
         items.append(
             SealLogItem(
-                project_name=proj_label,
+                code=code,
+                name=name,
                 submission_target=submission_target,
-                seal_type=s.seal_type,
+                seal_type=seal_type,
                 requester=s.requester,
                 approved_at=approved,
             )
