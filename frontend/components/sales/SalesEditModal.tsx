@@ -817,6 +817,14 @@ export default function SalesEditModal({
                             )}
                             {!q.is_external &&
                               (() => {
+                                // 시특법 자동 산정 종류는 별표 25/26으로 자동 처리 →
+                                // legacy direct_expense_items sub-line 숨김 (PR-Q5b).
+                                const qt = q.input.quote_type ?? "";
+                                const isInspectionLegal =
+                                  qt === "정기안전점검" ||
+                                  qt === "정밀점검" ||
+                                  qt === "정밀안전진단";
+                                if (isInspectionLegal) return null;
                                 const items = (
                                   q.input.direct_expense_items ?? []
                                 ).filter((it) => (it.amount ?? 0) > 0);
@@ -1298,8 +1306,8 @@ export default function SalesEditModal({
         </div>
 
         <footer className="flex items-center justify-between gap-2 border-t border-zinc-200 px-4 py-3 dark:border-zinc-800">
-          <div className="flex gap-2">
-            {isEdit && sale && sale.quote_doc_number && (
+          <div className="flex flex-wrap items-center gap-2">
+            {isEdit && sale && (
               <>
                 {hasMultipleQuotes && (
                   <>

@@ -938,7 +938,12 @@ def _calculate_inspection_legal(inp: QuoteInput) -> QuoteResult:
         # ── 기존 manhours_override 흐름 (backward 호환) ──
         mh = float(inp.manhours_override) if inp.manhours_override is not None else 0.0
         direct_labor = int(math.floor(mh * rate))
-        if inp.direct_expense_items:
+        # 시특법 종류는 legacy direct_expense_items / printing_fee 등을 무시.
+        # 별표 25/26 자동 산정만 사용 (auto_mode 미달 케이스도 직접경비 0 → 사용자가
+        # 시특법 입력값을 보강해 자동 산정 활성화하도록 유도).
+        if itype is not None:
+            direct_expense = 0.0
+        elif inp.direct_expense_items:
             direct_expense = sum(item.amount for item in inp.direct_expense_items)
         else:
             direct_expense = (

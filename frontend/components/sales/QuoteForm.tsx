@@ -183,6 +183,19 @@ export default function QuoteForm({
   const isInspectionLegal =
     qt === "정기안전점검" || qt === "정밀점검" || qt === "정밀안전진단";
   const isInspectionBma = qt === "건축물관리법점검";
+
+  // 시특법 자동 산정 종류 진입 시 legacy direct_expense_items를 비움.
+  // 별표 25/26 자동 산정만 사용하므로 legacy 항목이 list row·산정에 영향 X.
+  useEffect(() => {
+    if (
+      isInspectionLegal &&
+      value.direct_expense_items &&
+      value.direct_expense_items.length > 0
+    ) {
+      onChange({ ...value, direct_expense_items: [] });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isInspectionLegal]);
   const isSeismicEval = qt === "내진성능평가";
   // 내진평가 패키지 부속 (내진보강설계/3자검토)도 단일 인.일 입력 모델
   const isSimpleManhours =
