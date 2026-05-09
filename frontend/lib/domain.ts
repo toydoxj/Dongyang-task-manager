@@ -10,7 +10,8 @@ export interface Project {
   client_text: string;
   client_relation_ids: string[];
   client_names: string[];
-  stage: string; // 진행중|대기|보류|완료|타절|종결|이관
+  stage: string; // 진행중|대기|보류|완료|타절|종결|이관 (운영 상태)
+  phase: string; // 작업단계: 사업승인|계획설계|계획검토|기본설계|실시설계|시공감리|사용승인 (PR-W)
   contract_signed: boolean;
   completed: boolean;
   start_date: string | null;
@@ -60,6 +61,7 @@ export interface ProjectUpdateRequest {
   client_text?: string;
   client_relation_ids?: string[];
   stage?: string;
+  phase?: string;          // 작업단계 (PR-W) — "" 빈 문자열은 clear
   teams?: string[];
   assignees?: string[];
   work_types?: string[];
@@ -70,6 +72,17 @@ export interface ProjectUpdateRequest {
   contract_amount?: number;
   vat?: number;
 }
+
+/** 작업단계 select 옵션 — backend notion_schema와 동기화. 운영자가 노션에서 자유 추가 가능. */
+export const PROJECT_PHASES = [
+  "사업승인",
+  "계획설계",
+  "계획검토",
+  "기본설계",
+  "실시설계",
+  "시공감리",
+  "사용승인",
+] as const;
 
 export type DriveFileType =
   | "FOLDER"

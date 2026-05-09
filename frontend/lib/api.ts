@@ -1324,6 +1324,9 @@ export interface WeeklyCompletedItem {
   code: string;
   name: string;
   teams: string[];
+  assignees: string[];
+  client: string;
+  status_label: string;     // 완료 | 타절 | 종결
   completed_at: string | null;
 }
 
@@ -1331,8 +1334,10 @@ export interface WeeklyNewProject {
   code: string;
   name: string;
   teams: string[];
+  assignees: string[];
+  client: string;
   stage: string;
-  started_at: string | null;
+  started_at: string | null;  // 수주일
 }
 
 export interface WeeklyTeamProjectRow {
@@ -1354,7 +1359,8 @@ export interface WeeklyEmployeeWorkRow {
   project_code: string;
   project_name: string;
   client: string;
-  stage: string;
+  stage: string;            // 운영 stage (정렬용 — UI는 phase 표시)
+  phase: string;            // 작업단계 — 업무일지 "진행단계" 컬럼
   last_week_summary: string;
   this_week_plan: string;
   note: string;

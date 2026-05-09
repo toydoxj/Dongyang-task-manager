@@ -25,7 +25,8 @@ class Project(BaseModel):
     client_names: list[str] = []  # 발주처 relation 이름 해결 결과 (선택, 빈 배열이면 미해결)
 
     # 상태
-    stage: str = ""             # 진행단계 (진행중/대기/보류/완료/타절/종결/이관)
+    stage: str = ""             # 진행단계 (진행중/대기/보류/완료/타절/종결/이관) — 운영 상태
+    phase: str = ""             # 작업단계 (사업승인/계획설계/계획검토/기본설계/실시설계/시공감리/사용승인) — PR-W
     contract_signed: bool = False  # 계약 checkbox
     completed: bool = False        # 완료 checkbox
 
@@ -74,6 +75,7 @@ class Project(BaseModel):
             client_text=P.rich_text(props, "발주처(임시)"),
             client_relation_ids=P.relation_ids(props, "발주처"),
             stage=P.select_name(props, "진행단계"),
+            phase=P.select_name(props, "작업단계"),
             contract_signed=P.checkbox(props, "계약"),
             completed=P.checkbox(props, "완료"),
             start_date=P.date_range(props, "시작일")[0],
@@ -133,6 +135,7 @@ class ProjectUpdateRequest(BaseModel):
     client_text: str | None = None
     client_relation_ids: list[str] | None = None
     stage: str | None = None
+    phase: str | None = None  # 작업단계 — PR-W
     teams: list[str] | None = None
     assignees: list[str] | None = None
     work_types: list[str] | None = None
@@ -157,6 +160,10 @@ def project_update_to_props(req: ProjectUpdateRequest) -> dict[str, Any]:
         props["발주처"] = {"relation": [{"id": rid} for rid in req.client_relation_ids]}
     if req.stage is not None and req.stage != "":
         props["진행단계"] = {"select": {"name": req.stage}}
+    if req.phase is not None:
+        props["작업단계"] = (
+            {"select": None} if req.phase == "" else {"select": {"name": req.phase}}
+        )
     if req.teams is not None:
         props["담당팀"] = {"multi_select": [{"name": t} for t in req.teams]}
     if req.assignees is not None:

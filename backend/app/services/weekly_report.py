@@ -88,6 +88,9 @@ class CompletedProjectItem(BaseModel):
     code: str
     name: str
     teams: list[str] = Field(default_factory=list)
+    assignees: list[str] = Field(default_factory=list)  # 담당자 (PR-W follow-up)
+    client: str = ""  # 발주처
+    status_label: str = "완료"  # 완료 | 타절 | 종결 — UI 구분 표시용
     completed_at: str | None = None  # last_edited_time iso
 
 
@@ -95,8 +98,10 @@ class NewProjectItem(BaseModel):
     code: str
     name: str
     teams: list[str] = Field(default_factory=list)
+    assignees: list[str] = Field(default_factory=list)
+    client: str = ""
     stage: str = ""
-    started_at: str | None = None
+    started_at: str | None = None  # 수주일 (start_date)
 
 
 class SalesItem(BaseModel):
@@ -165,7 +170,8 @@ class EmployeeWorkRow(BaseModel):
     project_code: str
     project_name: str
     client: str = ""
-    stage: str = ""
+    stage: str = ""  # 운영 stage (진행중/대기/보류 등) — 정렬용. UI는 phase 표시.
+    phase: str = ""  # 작업단계 (계획설계/실시설계 등) — 업무일지의 "진행단계" 컬럼
     last_week_summary: str = ""  # 지난주 actual_end_date 기준 task title 합치기
     this_week_plan: str = ""  # weekly_plan_text 우선, 없으면 활성 task title
     note: str = ""
@@ -567,15 +573,27 @@ def aggregate_completed(
         .order_by(M.MirrorProject.code)
         .all()
     )
-    return [
-        CompletedProjectItem(
-            code=r.code,
-            name=r.name,
-            teams=list(r.teams or []),
-            completed_at=r.last_edited_time.isoformat() if r.last_edited_time else None,
+    client_name_by_id = _client_name_lookup(db)
+    items: list[CompletedProjectItem] = []
+    for r in rows:
+        # status_label: stage가 종결/타절이면 그대로 표기, 아니면 "완료" (completed=True)
+        if r.stage in _TERMINATED_STAGES:
+            label = r.stage
+        else:
+            label = "완료"
+        proj = project_from_mirror(r)
+        items.append(
+            CompletedProjectItem(
+                code=r.code,
+                name=r.name,
+                teams=list(r.teams or []),
+                assignees=list(r.assignees or []),
+                client=_resolve_client_label(proj, client_name_by_id),
+                status_label=label,
+                completed_at=r.last_edited_time.isoformat() if r.last_edited_time else None,
+            )
         )
-        for r in rows
-    ]
+    return items
 
 
 def aggregate_new_projects(
@@ -583,33 +601,37 @@ def aggregate_new_projects(
     last_week_start: date,
     last_week_end: date,
 ) -> list[NewProjectItem]:
-    """신규 프로젝트 — 저번주 범위(last_week_start ~ last_week_end) 내 등장.
+    """신규 프로젝트 — 저번주 범위 내 수주된 프로젝트.
 
-    기준: last_edited_time이 [last_week_start, last_week_end] + 초기 stage 휴리스틱.
-    mirror_projects.created_time 부재로 정확도는 last_edited_time에 의존.
+    기준: 노션 "시작일"(수주확정일) = Project.start_date가 [last_week_start, last_week_end]
+    범위 안. completed=False (이미 완료된 건 제외 — 완료 표에 별도 표시).
+    이전 stage 휴리스틱(_NEW_STAGES) 폐기 — mirror_projects.stage가 운영상태(진행중/대기/보류)라
+    작업단계 가정이 맞지 않았음 (사용자 피드백 2026-05-09).
     """
-    start_local = datetime.combine(last_week_start, time.min, tzinfo=_KST)
-    end_local = datetime.combine(last_week_end, time.max, tzinfo=_KST)
-    start_utc = start_local.astimezone(timezone.utc)
-    end_utc = end_local.astimezone(timezone.utc)
     rows = (
         db.query(M.MirrorProject)
         .filter(M.MirrorProject.archived.is_(False))
         .filter(M.MirrorProject.completed.is_(False))
-        .filter(M.MirrorProject.last_edited_time >= start_utc)
-        .filter(M.MirrorProject.last_edited_time <= end_utc)
-        .filter(M.MirrorProject.stage.in_(_NEW_STAGES))
         .order_by(M.MirrorProject.code)
         .all()
     )
+    client_name_by_id = _client_name_lookup(db)
+    range_start_iso = last_week_start.isoformat()
+    range_end_iso = last_week_end.isoformat()
     items: list[NewProjectItem] = []
     for r in rows:
         proj = project_from_mirror(r)
+        sd = (proj.start_date or "")[:10]  # YYYY-MM-DD prefix만
+        # 시작일이 저번주 범위 안에 있어야 신규 — 문자열 비교(ISO 형식이라 안전)
+        if not sd or not (range_start_iso <= sd <= range_end_iso):
+            continue
         items.append(
             NewProjectItem(
                 code=r.code,
                 name=r.name,
                 teams=list(r.teams or []),
+                assignees=list(r.assignees or []),
+                client=_resolve_client_label(proj, client_name_by_id),
                 stage=r.stage,
                 started_at=proj.start_date,
             )
@@ -866,19 +888,24 @@ def aggregate_team_work(
 
     client_name_by_id = _client_name_lookup(db)
 
-    # ── 3. 관련 task 한 번에 fetch (지난주 완료 또는 이번주 활성) ──
+    # ── 3. 관련 task 한 번에 fetch (지난주 활성/완료 또는 이번주 활성) ──
     tasks = (
         db.query(M.MirrorTask)
         .filter(M.MirrorTask.archived.is_(False))
         .filter(
             or_(
-                # 지난주에 완료
+                # 지난주에 완료된 task (actual_end_date 기준)
                 and_(
                     M.MirrorTask.actual_end_date.isnot(None),
                     M.MirrorTask.actual_end_date >= last_week_start,
                     M.MirrorTask.actual_end_date <= last_week_end,
                 ),
-                # 이번주 활성 — 기간이 [week_start, week_end]와 교집합
+                # 지난주에 활성이었던 task — 기간이 last_week와 교집합 (진행 중 포함)
+                and_(
+                    or_(M.MirrorTask.start_date.is_(None), M.MirrorTask.start_date <= last_week_end),
+                    or_(M.MirrorTask.end_date.is_(None), M.MirrorTask.end_date >= last_week_start),
+                ),
+                # 이번주 활성 task — 기간이 [week_start, week_end]와 교집합
                 and_(
                     or_(M.MirrorTask.start_date.is_(None), M.MirrorTask.start_date <= week_end),
                     or_(M.MirrorTask.end_date.is_(None), M.MirrorTask.end_date >= week_start),
@@ -897,9 +924,13 @@ def aggregate_team_work(
     for t in tasks:
         title = (t.title or "").strip()
         plan = (t.weekly_plan_text or "").strip()
+        # 지난주 활성: actual_end가 last_week 안 (완료) OR task 기간이 last_week와 교집합 (진행 중 포함)
         is_last_week = (
             t.actual_end_date is not None
             and last_week_start <= t.actual_end_date <= last_week_end
+        ) or (
+            (t.start_date is None or t.start_date <= last_week_end)
+            and (t.end_date is None or t.end_date >= last_week_start)
         )
         is_this_week = (t.start_date is None or t.start_date <= week_end) and (
             t.end_date is None or t.end_date >= week_start
@@ -956,7 +987,8 @@ def aggregate_team_work(
                 project_code=p.code,
                 project_name=p.name,
                 client=client,
-                stage=p.stage,
+                stage=p.stage,  # 운영 — 정렬용
+                phase=proj.phase,  # 작업단계 — UI 표시
                 last_week_summary=last,
                 this_week_plan=this,
                 note="",
@@ -975,6 +1007,7 @@ def aggregate_team_work(
                 project_name=s.name,
                 client=sale_client,
                 stage=f"영업·{s.stage}" if s.stage else "영업",
+                phase="영업",  # 영업은 작업단계 대신 라벨 고정
                 last_week_summary=last,
                 this_week_plan=this,
                 note="",

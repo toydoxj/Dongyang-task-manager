@@ -17,7 +17,7 @@ import {
   updateProject,
 } from "@/lib/api";
 import type { ClientListResponse, Project } from "@/lib/domain";
-import { PROJECT_STAGES } from "@/lib/domain";
+import { PROJECT_PHASES, PROJECT_STAGES } from "@/lib/domain";
 import {
   keys,
   useClients,
@@ -52,6 +52,7 @@ function Form({
     project.client_names[0] ?? project.client_text ?? "",
   );
   const [stage, setStage] = useState(project.stage);
+  const [phase, setPhase] = useState(project.phase ?? "");
   const [assignees, setAssignees] = useState<string[]>(project.assignees);
   const [workTypes, setWorkTypes] = useState<string[]>(project.work_types);
   const [startDate, setStartDate] = useState(project.start_date ?? "");
@@ -166,6 +167,7 @@ function Form({
             : { client_text: trimmedClient, client_relation_ids: [] }
           : {}),
         stage: stage === project.stage ? undefined : stage,
+        phase: phase === (project.phase ?? "") ? undefined : phase,
         assignees:
           arraysEqual(assignees, project.assignees) ? undefined : assignees,
         work_types:
@@ -307,19 +309,35 @@ function Form({
           </Field>
         </div>
 
-        <Field label="진행단계">
-          <select
-            value={stage}
-            onChange={(e) => setStage(e.target.value)}
-            className={inputCls}
-          >
-            {PROJECT_STAGES.map((s) => (
-              <option key={s} value={s}>
-                {s}
-              </option>
-            ))}
-          </select>
-        </Field>
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="진행단계 (운영)">
+            <select
+              value={stage}
+              onChange={(e) => setStage(e.target.value)}
+              className={inputCls}
+            >
+              {PROJECT_STAGES.map((s) => (
+                <option key={s} value={s}>
+                  {s}
+                </option>
+              ))}
+            </select>
+          </Field>
+          <Field label="작업단계">
+            <select
+              value={phase}
+              onChange={(e) => setPhase(e.target.value)}
+              className={inputCls}
+            >
+              <option value="">— 미지정</option>
+              {PROJECT_PHASES.map((p) => (
+                <option key={p} value={p}>
+                  {p}
+                </option>
+              ))}
+            </select>
+          </Field>
+        </div>
         <MultiSelectChips
           label="담당자"
           value={assignees}

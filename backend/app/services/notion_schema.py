@@ -70,6 +70,20 @@ TASK_DB_REQUIRED: dict[str, dict[str, Any]] = {
 # 메인 프로젝트 DB — WORKS Drive 폴더 URL (Phase 2)
 PROJECT_DB_REQUIRED: dict[str, dict[str, Any]] = {
     "WORKS Drive URL": {"url": {}},
+    # 작업단계 (PR-W) — 업무일지 표의 "진행단계" 컬럼 source.
+    # mirror_projects.stage(진행중/대기/보류 운영상태)와 별개의 설계 phase.
+    # 운영자가 노션 UI에서 옵션 자유 추가/수정 가능 (union 보강).
+    "작업단계": _select(
+        [
+            ("사업승인", "yellow"),
+            ("계획설계", "orange"),
+            ("계획검토", "red"),
+            ("기본설계", "blue"),
+            ("실시설계", "purple"),
+            ("시공감리", "green"),
+            ("사용승인", "gray"),
+        ]
+    ),
 }
 MASTER_DB_REQUIRED: dict[str, dict[str, Any]] = {}
 CLIENT_DB_REQUIRED: dict[str, dict[str, Any]] = {}

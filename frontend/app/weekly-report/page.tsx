@@ -380,23 +380,26 @@ function ReportPreview({
       <div className="grid gap-3 md:grid-cols-2">
         <Section title="■ 완료 프로젝트">
           <SimpleTable
-            cols={["CODE", "프로젝트명", "팀"]}
+            cols={["상태", "CODE", "프로젝트명", "발주처", "담당자"]}
             rows={data.completed.map((c) => [
+              c.status_label,
               c.code,
               c.name,
-              c.teams.join(", "),
+              c.client,
+              c.assignees.join(", "),
             ])}
             empty="(완료 없음)"
           />
         </Section>
         <Section title="■ 신규 프로젝트">
           <SimpleTable
-            cols={["CODE", "프로젝트명", "단계", "팀"]}
+            cols={["CODE", "프로젝트명", "발주처", "수주일", "담당자"]}
             rows={data.new_projects.map((n) => [
               n.code,
               n.name,
-              n.stage,
-              n.teams.join(", "),
+              n.client,
+              n.started_at ?? "",
+              n.assignees.join(", "),
             ])}
             empty="(신규 없음)"
           />
@@ -556,7 +559,7 @@ function TeamWorkTable({
                     {row.client}
                   </td>
                   <td className="border-r border-zinc-200 px-2 py-1 align-top dark:border-zinc-800">
-                    {row.stage}
+                    {row.phase || row.stage}
                   </td>
                   <td className="border-r border-zinc-200 px-2 py-1 align-top text-zinc-600 dark:border-zinc-800 dark:text-zinc-400">
                     {row.last_week_summary || "—"}
