@@ -96,6 +96,25 @@
 - 묶음 PDF 갑지 총액 토글: `?show_total=true|false` (기본 ON).
 - xlsx 검증: `docs/quote_formulas/*.md` dump → backend strategy transcribe → ±0원 일치.
 
+**PR-W 주간업무일지 패턴**
+- `build_weekly_report(week_start, *, week_end=None, last_week_start=None)` — 3개 날짜 input. default: `week_end = week_start + 4`, `last_week_start = -7`, `last_week_end = week_start - 1day` (자동, 토일 cover).
+- bulk pre-fetch: `aggregate_team_work` / `aggregate_team_projects`는 mirror_tasks 한 번에 fetch → 메모리 dict로 N+1 회피 (32s → 0.8s).
+- 완료 cutoff = `Project.end_date(완료일)` 기준 (last_edited_time 아님). 종결/타절 stage도 포함.
+- 신규 cutoff = `Project.start_date(수주일)` 기준. stage 휴리스틱 폐기.
+- 영업 cutoff = `mirror_sales.sales_start_date` (별도 노션 컬럼 — 운영자 수동 입력).
+- 대기 정의: 팀별업무에 안 올라온 [진행중+대기] 프로젝트. `aggregate_stage_projects(stages, exclude_ids)`. 3개월 이상 대기는 `is_long_stalled=True`.
+- task source 식별: `mirror_tasks.sales_ids` (영업) vs `project_ids` (프로젝트). EmployeeWorkRow.kind / PersonalScheduleEntry.kind에 노출.
+- 작업단계(phase) — `Project.phase` 노션 "작업단계" select 자동 보강. 운영 stage(진행중/대기/보류)와 별개. UI는 phase 표시.
+- 휴가 라벨: 노션 task.category="휴가(연차)" + 기간 시:분 → `_vacation_label` 4시간 분기 (≥4h 연차 / <4h 반차).
+- 날인대장: status='승인' + admin_handled_at이 저번주 범위 안. 제출처 = real_source_id 우선 → 발주처 fallback.
+- 견적서 첫 추가 시 노션 task 자동 생성 (`_create_quote_task_for_sale`, idempotent).
+
+**운영자 1회 수동 단계 (노션)**
+- 메인 프로젝트 DB: "작업단계" select 컬럼 (자동 보강 — 부팅 시 옵션 union)
+- 영업 DB: "영업시작일" date 컬럼 (자동 보강), "전환된 프로젝트" relation (수동)
+- task DB: "영업" relation 컬럼 (relation은 자동 생성 미지원 — 운영자가 직접 추가). 부재 시 부팅 로그 warn.
+- notices 테이블 kind enum: 공지|교육|휴일
+
 **Quirks**
 - frontend: Next.js 16 / React 19 (학습 데이터와 차이) — `node_modules/next/dist/docs/` 참조
 - backend: KST `_KST = timezone(timedelta(hours=9))`
@@ -108,6 +127,13 @@
 - `backend/app/routers/sales.py` — 영업/견적 CRUD, PDF 라우터
 - `backend/app/services/quote_*.py` — 산출 strategy / PDF / forms helper
 - `backend/app/templates/quote_template.html` — PDF Jinja2 템플릿
+- `backend/app/services/weekly_report.py` — PR-W 집계 (10+ aggregate 함수)
+- `backend/app/routers/weekly_report.py` — async 라우터 (날인/건의 노션 직접 조회)
+- `backend/app/templates/weekly_report.html` + `_schedule_mini.html` — PR-W PDF
+- `backend/app/services/weekly_snapshot.py` — 일요일 23:59 KST cron (Δ 인프라)
+- `backend/app/models/{notice,snapshot}.py` — PR-W 신규 도메인
+- `frontend/app/weekly-report/page.tsx` — 주간 일지 페이지 (PDF 동등 양식)
+- `frontend/app/admin/notices/page.tsx` — 공지/교육/휴일 관리 (admin)
 - `frontend/components/sales/SalesEditModal.tsx` — 영업 모달 (견적 list view + form view)
 - `frontend/components/sales/QuoteForm.tsx` — 견적 입력 form
 - `docs/quote_formulas/*.md` — xlsx 산출식 dump (PR-Q0 산출물)
