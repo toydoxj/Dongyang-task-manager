@@ -540,18 +540,16 @@ _TERMINATED_STAGES = frozenset({"종결", "타절"})
 
 def aggregate_completed(
     db: Session,
-    week_start: date,
-    week_end: date,
+    last_week_start: date,
     last_week_end: date,
 ) -> list[CompletedProjectItem]:
-    """완료 프로젝트 — 지난주 일지 작성 이후의 데이터.
+    """완료 프로젝트 — 저번주 범위(last_week_start ~ last_week_end) 내 변경.
 
-    기준: last_edited_time이 (last_week_end+1) ~ week_end. completed=True
-    뿐 아니라 stage in {종결, 타절}도 완료에 포함 (사용자 결정 2026-05-09).
+    기준: last_edited_time이 [last_week_start, last_week_end] 안에 있고
+    completed=True 또는 stage in {종결, 타절} (사용자 결정 2026-05-09).
     """
-    cutoff_start = last_week_end + timedelta(days=1)
-    start_local = datetime.combine(cutoff_start, time.min, tzinfo=_KST)
-    end_local = datetime.combine(week_end, time.max, tzinfo=_KST)
+    start_local = datetime.combine(last_week_start, time.min, tzinfo=_KST)
+    end_local = datetime.combine(last_week_end, time.max, tzinfo=_KST)
     start_utc = start_local.astimezone(timezone.utc)
     end_utc = end_local.astimezone(timezone.utc)
 
@@ -582,18 +580,16 @@ def aggregate_completed(
 
 def aggregate_new_projects(
     db: Session,
-    week_start: date,
-    week_end: date,
+    last_week_start: date,
     last_week_end: date,
 ) -> list[NewProjectItem]:
-    """신규 프로젝트 — 지난주 일지 이후 만들어진 프로젝트.
+    """신규 프로젝트 — 저번주 범위(last_week_start ~ last_week_end) 내 등장.
 
-    기준: last_edited_time이 (last_week_end+1) ~ week_end + 초기 stage 휴리스틱.
+    기준: last_edited_time이 [last_week_start, last_week_end] + 초기 stage 휴리스틱.
     mirror_projects.created_time 부재로 정확도는 last_edited_time에 의존.
     """
-    cutoff_start = last_week_end + timedelta(days=1)
-    start_local = datetime.combine(cutoff_start, time.min, tzinfo=_KST)
-    end_local = datetime.combine(week_end, time.max, tzinfo=_KST)
+    start_local = datetime.combine(last_week_start, time.min, tzinfo=_KST)
+    end_local = datetime.combine(last_week_end, time.max, tzinfo=_KST)
     start_utc = start_local.astimezone(timezone.utc)
     end_utc = end_local.astimezone(timezone.utc)
     rows = (
@@ -1025,10 +1021,11 @@ def build_weekly_report(
         )
     if last_week_start is None:
         last_week_start = week_start - timedelta(days=7)
-    # 지난주 업무 범위 = [last_week_start, week_start - 1day]. 즉 이번주 시작 직전까지.
-    # 사용자 의미(2026-05-09): 3개 input은 지난주 업무 / 이번주 업무 두 범위를 셋팅.
-    # 갭 없는 연속 — 지난주 일지 이후 데이터는 이번주 일지에 모두 흡수.
-    last_week_end = week_start - timedelta(days=1)
+    # 지난주 업무 범위 끝 = 이번주 시작(월요일) 직전 금요일. week_start - 3일.
+    # 사용자 사례(2026-05-09): last_week_start=4/27, week_start=5/11이면 last_week_end=5/8.
+    # 즉 지난주 업무 = 4/27 ~ 5/8 (지난 2주 평일 cover, 마지막 토일 제외).
+    # 완료/신규 cutoff_start = last_week_end + 1 = week_start - 2 (직전 토요일).
+    last_week_end = week_start - timedelta(days=3)
 
     notices, education = aggregate_notices(db, week_start, week_end)
     return WeeklyReport(
@@ -1038,8 +1035,8 @@ def build_weekly_report(
         notices=notices,
         education=education,
         seal_log=[],  # 라우터에서 노션 직접 조회로 채움
-        completed=aggregate_completed(db, week_start, week_end, last_week_end),
-        new_projects=aggregate_new_projects(db, week_start, week_end, last_week_end),
+        completed=aggregate_completed(db, last_week_start, last_week_end),
+        new_projects=aggregate_new_projects(db, last_week_start, last_week_end),
         sales=aggregate_sales(db, week_start, week_end),
         personal_schedule=aggregate_personal_schedule(db, week_start, week_end),
         teams=aggregate_team_projects(db, week_start, week_end),
