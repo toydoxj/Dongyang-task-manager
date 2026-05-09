@@ -29,6 +29,7 @@ class Task(BaseModel):
     assignees: list[str] = []
     teams: list[str] = []
     note: str = ""
+    weekly_plan_text: str = ""  # PR-W Phase 2.2 — 금주예정사항 rich_text
     created_time: str | None = None
     last_edited_time: str | None = None
     url: str | None = None
@@ -54,6 +55,7 @@ class Task(BaseModel):
             assignees=P.multi_select_names(props, "담당자"),
             teams=P.multi_select_names(props, "담당팀"),
             note=P.rich_text(props, "비고"),
+            weekly_plan_text=P.rich_text(props, "금주예정사항"),
             created_time=page.get("created_time"),
             last_edited_time=page.get("last_edited_time"),
             url=page.get("url"),
@@ -91,6 +93,7 @@ class TaskUpdateRequest(BaseModel):
     assignees: list[str] | None = None
     teams: list[str] | None = None
     note: str | None = None
+    weekly_plan_text: str | None = None  # PR-W Phase 2.2 — 금주예정사항
     # 프로젝트 relation 변경 — 빈 list면 비우기, None이면 변경 안 함
     project_ids: list[str] | None = None
 
@@ -263,6 +266,8 @@ def task_update_to_props(req: TaskUpdateRequest) -> dict[str, Any]:
         props["담당팀"] = _multi_select(req.teams)
     if req.note is not None:
         props["비고"] = _rich_text(req.note)
+    if req.weekly_plan_text is not None:
+        props["금주예정사항"] = _rich_text(req.weekly_plan_text)
     if req.project_ids is not None:
         props["프로젝트"] = _relation(req.project_ids)
     return props

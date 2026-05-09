@@ -49,6 +49,10 @@ TASK_DB_REQUIRED: dict[str, dict[str, Any]] = {
             ("외근", "orange"),
             ("출장", "red"),
             ("휴가", "pink"),
+            # PR-W Phase 2.3 — 별도 카테고리 폐기 결정 (사용자 결정 2026-05-09):
+            # 휴가는 시간 단위로 자동 분류 — duration ≥ 4h면 연차, < 4h면 반차.
+            # frontend는 단일 "휴가(연차)" 옵션 유지. backend weekly_report가 라벨 변환.
+            # 파견은 PR-W 범위에서 제외.
         ]
     ),
     # 활동 유형 — 분류와 독립. 프로젝트 task가 외근/출장일 수 있음.
@@ -59,6 +63,8 @@ TASK_DB_REQUIRED: dict[str, dict[str, Any]] = {
             ("출장", "red"),
         ]
     ),
+    # PR-W Phase 2.2 — 금주예정사항. mirror_tasks.weekly_plan_text로 동기화.
+    "금주예정사항": {"rich_text": {}},
 }
 
 # 메인 프로젝트 DB — WORKS Drive 폴더 URL (Phase 2)

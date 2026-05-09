@@ -276,6 +276,7 @@ export interface Task {
   assignees: string[];
   teams: string[];
   note: string;
+  weekly_plan_text: string;  // PR-W Phase 2.2 — 금주예정사항
   created_time: string | null;
   last_edited_time: string | null;
   url: string | null;
@@ -317,6 +318,7 @@ export interface TaskUpdateRequest {
   assignees?: string[];
   teams?: string[];
   note?: string;
+  weekly_plan_text?: string;  // PR-W Phase 2.2 — 금주예정사항
   project_ids?: string[];
 }
 

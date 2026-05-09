@@ -62,6 +62,7 @@ function Form({
   const [activity, setActivity] = useState(task.activity ?? "");
   const [assignees, setAssignees] = useState(task.assignees.join(", "));
   const [note, setNote] = useState(task.note ?? "");
+  const [weeklyPlan, setWeeklyPlan] = useState(task.weekly_plan_text ?? "");
   const [projectId, setProjectId] = useState(task.project_ids[0] ?? "");
   // 사용자가 검색→클릭한 프로젝트의 정보를 별도 cache —
   // 검색 input 비운 후 SWR allData가 사라져도 칩이 즉시 표시되도록.
@@ -236,6 +237,8 @@ function Form({
           .map((s) => s.trim())
           .filter(Boolean),
         note,
+        weekly_plan_text:
+          weeklyPlan === (task.weekly_plan_text ?? "") ? undefined : weeklyPlan,
         project_ids: projectIdsParam,
       });
       onSaved();
@@ -503,6 +506,16 @@ function Form({
             value={note}
             onChange={(e) => setNote(e.target.value)}
             rows={3}
+            className={`${inputCls} resize-y`}
+          />
+        </Field>
+
+        <Field label="금주예정사항 (주간업무일지)">
+          <textarea
+            value={weeklyPlan}
+            onChange={(e) => setWeeklyPlan(e.target.value)}
+            rows={2}
+            placeholder="이번 주 진행 예정 작업 — 주간업무일지 표 우측 컬럼에 표시됩니다."
             className={`${inputCls} resize-y`}
           />
         </Field>

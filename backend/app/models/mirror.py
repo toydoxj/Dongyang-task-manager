@@ -59,6 +59,9 @@ class MirrorTask(Base):
     actual_end_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     assignees: Mapped[list[str]] = mapped_column(ARRAY(String), default=list)
     teams: Mapped[list[str]] = mapped_column(ARRAY(String), default=list)
+    # 금주예정사항 (PR-W Phase 2.2) — 노션 task DB의 rich_text 컬럼 미러.
+    # 주간 보고서 표 우측 컬럼 출력용. 기존 `note`(영구 비고)와 분리.
+    weekly_plan_text: Mapped[str] = mapped_column(Text, default="")
     properties: Mapped[dict] = mapped_column(JSONB, default=dict)
     url: Mapped[str] = mapped_column(String, default="")
     created_time: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
