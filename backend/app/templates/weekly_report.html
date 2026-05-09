@@ -1,0 +1,420 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <title>주간 업무일지</title>
+  <style>
+    @page {
+      size: A4 landscape;
+      margin: 10mm 12mm 12mm 12mm;
+      @bottom-right {
+        content: "p. " counter(page) " / " counter(pages);
+        font-family: 'NanumGothic', 'Nanum Gothic', sans-serif;
+        font-size: 8pt;
+        color: #888;
+      }
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'NanumGothic', 'Nanum Gothic', sans-serif;
+      color: #1a1a1a;
+      font-size: 9pt;
+      line-height: 1.4;
+    }
+
+    /* ── 공용 ── */
+    .page { page-break-after: always; }
+    .page:last-child { page-break-after: auto; }
+
+    h1 { font-size: 16pt; font-weight: 700; letter-spacing: 0.05em; }
+    h2 {
+      font-size: 11pt;
+      font-weight: 700;
+      margin: 8px 0 4px 0;
+      padding: 3px 6px;
+      background: #f0f4e8;
+      border-left: 3px solid #7baa3c;
+    }
+    h3 { font-size: 10pt; font-weight: 700; margin-top: 6px; }
+
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+      border-bottom: 2px solid #7baa3c;
+      padding-bottom: 6px;
+      margin-bottom: 10px;
+    }
+    .header .meta {
+      text-align: right;
+      font-size: 8pt;
+      color: #666;
+    }
+
+    /* ── table ── */
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 8.5pt;
+      table-layout: fixed;
+    }
+    th, td {
+      border: 0.5px solid #999;
+      padding: 2px 4px;
+      vertical-align: middle;
+      word-break: keep-all;
+      overflow: hidden;
+    }
+    th {
+      background: #ebeef0;
+      font-weight: 700;
+      text-align: center;
+      font-size: 8pt;
+    }
+    td.num { text-align: right; font-variant-numeric: tabular-nums; }
+    td.center { text-align: center; }
+    .empty-row td {
+      text-align: center;
+      color: #aaa;
+      font-style: italic;
+      padding: 8px;
+    }
+
+    /* ── 1페이지 layout ── */
+    .grid-2col {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+    .grid-3col {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 8px;
+    }
+
+    .summary-line {
+      font-size: 9.5pt;
+      padding: 4px 6px;
+      background: #f7f7f5;
+      border: 0.5px solid #ccc;
+      margin-bottom: 6px;
+    }
+    .summary-line strong { color: #2a572a; }
+    .badge {
+      display: inline-block;
+      padding: 1px 5px;
+      font-size: 7.5pt;
+      border-radius: 2px;
+      background: #eee;
+      color: #444;
+      margin-left: 4px;
+    }
+    .badge-warn { background: #fdd; color: #a33; }
+    .badge-bid { background: #ddf; color: #339; }
+
+    /* ── 개인일정 매트릭스 ── */
+    .schedule-table th.day-col { width: 40px; }
+    .schedule-table td.day-cell {
+      text-align: center;
+      font-size: 7.5pt;
+      padding: 1px;
+    }
+    .cat-외근, .cat-동행 { background: #ffe6cc; color: #8a4a00; }
+    .cat-출장 { background: #e6ccff; color: #4a008a; }
+    .cat-연차, .cat-휴가 { background: #ffd6d6; color: #8a0000; }
+    .cat-반차 { background: #fff4cc; color: #8a6500; }
+    .cat-파견 { background: #cce6ff; color: #00468a; }
+    .cat-교육 { background: #d6f5d6; color: #006600; }
+
+    /* ── 팀별 페이지 ── */
+    .team-page table { font-size: 8pt; }
+    .team-page td { padding: 1.5px 3px; }
+    .progress-bar {
+      width: 50px;
+      height: 8px;
+      background: #eee;
+      display: inline-block;
+      vertical-align: middle;
+      margin-right: 4px;
+    }
+    .progress-fill {
+      height: 100%;
+      background: #7baa3c;
+    }
+
+    .footer-note {
+      margin-top: 12px;
+      font-size: 7.5pt;
+      color: #999;
+      text-align: right;
+    }
+  </style>
+</head>
+<body>
+
+{# ────────── 1페이지 — Executive Summary ────────── #}
+<section class="page">
+  <div class="header">
+    <div>
+      <h1>주간 업무일지</h1>
+      <div style="font-size: 9pt; color: #555; margin-top: 2px;">{{ period_label }}</div>
+    </div>
+    <div class="meta">
+      <div>동양구조엔지니어링</div>
+      <div>생성: {{ generated_at }}</div>
+    </div>
+  </div>
+
+  {# ① 인원현황 #}
+  <h2>■ 인원현황</h2>
+  <div class="summary-line">
+    총원 <strong>{{ report.headcount.total }}인</strong>
+    {% for occ, n in report.headcount.by_occupation.items() %}
+      &nbsp;│&nbsp; {{ occ }} {{ n }}
+    {% endfor %}
+    {% if report.headcount.new_this_week or report.headcount.resigned_this_week %}
+      &nbsp;│&nbsp; <span class="badge">변동</span>
+      신규 {{ report.headcount.new_this_week }}
+      {% if report.headcount.resigned_this_week %}
+        / 퇴사 {{ report.headcount.resigned_this_week|length }} ({{ report.headcount.resigned_this_week|join(', ') }})
+      {% endif %}
+    {% endif %}
+  </div>
+
+  <div class="grid-2col">
+    {# ② 공지사항 (1차 빈 값 — Phase 2.4) #}
+    <div>
+      <h2>■ 주요 공지사항</h2>
+      {% if report.notices %}
+        <ul style="list-style: disc inside; font-size: 8.5pt;">
+          {% for n in report.notices %}<li>{{ n }}</li>{% endfor %}
+        </ul>
+      {% else %}
+        <div style="color: #aaa; font-size: 8pt; padding: 4px;">(공지 없음 — Phase 2.4에서 도메인 추가)</div>
+      {% endif %}
+    </div>
+
+    {# ⑫ 교육일정 #}
+    <div>
+      <h2>■ 교육 일정</h2>
+      {% if report.education %}
+        <ul style="list-style: disc inside; font-size: 8.5pt;">
+          {% for e in report.education %}<li>{{ e }}</li>{% endfor %}
+        </ul>
+      {% else %}
+        <div style="color: #aaa; font-size: 8pt; padding: 4px;">(교육 없음)</div>
+      {% endif %}
+    </div>
+  </div>
+
+  {# ③ 날인대장 #}
+  <h2>■ 날인대장</h2>
+  <table>
+    <thead>
+      <tr>
+        <th style="width: 30%;">프로젝트명</th>
+        <th style="width: 15%;">발주처</th>
+        <th style="width: 15%;">유형</th>
+        <th style="width: 12%;">상태</th>
+        <th style="width: 13%;">처리자</th>
+        <th style="width: 15%;">제출예정일</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% if report.seal_log %}
+        {% for s in report.seal_log %}
+          <tr>
+            <td>{{ s.project_name }}</td>
+            <td>{{ s.client }}</td>
+            <td class="center">{{ s.seal_type }}</td>
+            <td class="center">{{ s.status }}</td>
+            <td class="center">{{ s.handler }}</td>
+            <td class="center">{{ s.due_date or '' }}</td>
+          </tr>
+        {% endfor %}
+      {% else %}
+        <tr class="empty-row"><td colspan="6">(날인 진행건 없음)</td></tr>
+      {% endif %}
+    </tbody>
+  </table>
+
+  {# ④ 영업 #}
+  <h2>■ 영업</h2>
+  <table>
+    <thead>
+      <tr>
+        <th style="width: 8%;">영업번호</th>
+        <th style="width: 12%;">업무내용</th>
+        <th style="width: 25%;">PROJECT</th>
+        <th style="width: 13%;">발주처</th>
+        <th style="width: 15%;">규모</th>
+        <th style="width: 12%;">견적가</th>
+        <th style="width: 8%;">단계</th>
+        <th style="width: 7%;">제출일</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% if report.sales %}
+        {% for s in report.sales %}
+          <tr>
+            <td class="center">{{ s.code }}</td>
+            <td>{{ s.category|join('/') }}</td>
+            <td>{{ s.name }}{% if s.is_bid %}<span class="badge badge-bid">입찰</span>{% endif %}</td>
+            <td>{{ s.client }}</td>
+            <td>{{ s.scale }}</td>
+            <td class="num">{{ s.estimated_amount|krw }}</td>
+            <td class="center">{{ s.stage }}</td>
+            <td class="center">{{ s.submission_date or '' }}</td>
+          </tr>
+        {% endfor %}
+      {% else %}
+        <tr class="empty-row"><td colspan="8">(이번 주 영업건 없음)</td></tr>
+      {% endif %}
+    </tbody>
+  </table>
+
+  <div class="grid-2col">
+    {# ⑤ 완료 #}
+    <div>
+      <h2>■ 이번 주 완료</h2>
+      <table>
+        <thead><tr><th style="width: 18%;">CODE</th><th>프로젝트명</th><th style="width: 18%;">팀</th></tr></thead>
+        <tbody>
+          {% if report.completed %}
+            {% for c in report.completed %}
+              <tr>
+                <td class="center">{{ c.code }}</td>
+                <td>{{ c.name }}</td>
+                <td class="center">{{ c.teams|join(', ') }}</td>
+              </tr>
+            {% endfor %}
+          {% else %}
+            <tr class="empty-row"><td colspan="3">(완료 없음)</td></tr>
+          {% endif %}
+        </tbody>
+      </table>
+    </div>
+
+    {# ⑥ 신규 #}
+    <div>
+      <h2>■ 이번 주 신규</h2>
+      <table>
+        <thead><tr><th style="width: 18%;">CODE</th><th>프로젝트명</th><th style="width: 15%;">단계</th><th style="width: 18%;">팀</th></tr></thead>
+        <tbody>
+          {% if report.new_projects %}
+            {% for n in report.new_projects %}
+              <tr>
+                <td class="center">{{ n.code }}</td>
+                <td>{{ n.name }}</td>
+                <td class="center">{{ n.stage }}</td>
+                <td class="center">{{ n.teams|join(', ') }}</td>
+              </tr>
+            {% endfor %}
+          {% else %}
+            <tr class="empty-row"><td colspan="4">(신규 없음 — 휴리스틱 기반)</td></tr>
+          {% endif %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  {# ⑦ 개인 일정 매트릭스 #}
+  <h2>■ 개인 주간 일정</h2>
+  {% if schedule_matrix %}
+    {% for team_name, employees in schedule_matrix.items() %}
+      <h3>{{ team_name }}</h3>
+      <table class="schedule-table">
+        <thead>
+          <tr>
+            <th style="width: 16%;">담당자</th>
+            {% for d in weekday_labels %}<th class="day-col">{{ d }}</th>{% endfor %}
+            <th>비고</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for emp_name, days in employees.items() %}
+            <tr>
+              <td>{{ emp_name }}</td>
+              {% for cells in days %}
+                <td class="day-cell">
+                  {% for c in cells %}
+                    <span class="cat-{{ c.category }}">{{ c.category[:2] }}</span>
+                  {% endfor %}
+                </td>
+              {% endfor %}
+              <td>
+                {% set notes = [] %}
+                {% for cells in days %}{% for c in cells %}{% if c.project_code %}{% set _ = notes.append(c.project_code) %}{% endif %}{% endfor %}{% endfor %}
+                {{ notes|unique|list|join(', ') }}
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% endfor %}
+  {% else %}
+    <div style="color: #aaa; font-size: 8pt; padding: 4px;">(이번 주 등록된 외근/연차/파견 일정 없음)</div>
+  {% endif %}
+</section>
+
+{# ────────── 2~N페이지 — 팀별 진행 ────────── #}
+{% for team_name, rows in sorted_teams %}
+<section class="page team-page">
+  <div class="header">
+    <div>
+      <h1>{{ team_name }} — 진행 프로젝트</h1>
+      <div style="font-size: 8.5pt; color: #555; margin-top: 2px;">
+        {{ period_label }} · 총 {{ rows|length }}건
+      </div>
+    </div>
+    <div class="meta">
+      <div>동양구조엔지니어링</div>
+    </div>
+  </div>
+
+  <table>
+    <thead>
+      <tr>
+        <th style="width: 8%;">CODE</th>
+        <th style="width: 22%;">프로젝트명</th>
+        <th style="width: 12%;">발주처</th>
+        <th style="width: 8%;">PM</th>
+        <th style="width: 8%;">단계</th>
+        <th style="width: 12%;">진행률</th>
+        <th style="width: 9%;">마감</th>
+        <th style="width: 21%;">담당자 / 금주예정</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for r in rows %}
+        <tr>
+          <td class="center">{{ r.code }}</td>
+          <td>{{ r.name }}</td>
+          <td>{{ r.client }}</td>
+          <td class="center">{{ r.pm }}</td>
+          <td class="center">{{ r.stage }}</td>
+          <td>
+            <span class="progress-bar"><span class="progress-fill" style="width: {{ (r.progress * 100)|int }}%;"></span></span>
+            {{ r.progress|pct }}
+          </td>
+          <td class="center">{{ r.end_date or '' }}</td>
+          <td>
+            {{ r.assignees|join(', ') }}
+            {% if r.weekly_plan %}<br><span style="color: #555;">{{ r.weekly_plan }}</span>{% endif %}
+          </td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  {% if loop.last %}
+    <div class="footer-note">
+      ※ 진행률은 task progress 평균 — 노션 프로젝트 단일 컬럼 부재 (PR-W 후속 보완).
+      금주예정사항은 PR-W Phase 2.2에서 mirror_tasks 컬럼 추가 후 표시.
+    </div>
+  {% endif %}
+</section>
+{% endfor %}
+
+</body>
+</html>

@@ -29,6 +29,7 @@ from app.routers import sales as sales_router
 from app.routers import seal_requests as seal_requests_router
 from app.routers import suggestions as suggestions_router
 from app.routers import tasks as tasks_router
+from app.routers import weekly_report as weekly_report_router
 from app.services.notion import get_notion
 from app.services.notion_schema import ensure_all_schemas
 from app.services.scheduler import shutdown_scheduler, start_scheduler
@@ -136,6 +137,7 @@ app.include_router(seal_requests_router.router, prefix="/api")
 app.include_router(admin_drive_router.router, prefix="/api")
 app.include_router(admin_calendar_router.router, prefix="/api")
 app.include_router(admin_bot_router.router, prefix="/api")
+app.include_router(weekly_report_router.router, prefix="/api")
 
 
 @app.get("/health")

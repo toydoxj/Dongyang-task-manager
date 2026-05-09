@@ -73,7 +73,7 @@ def get_db() -> Generator[Session, None, None]:
 def init_db() -> None:
     """테이블 생성 (개발/테스트용 — 운영에서는 Alembic 사용).
 
-    SQLite에서는 mirror_*의 ARRAY/JSONB가 컴파일되지 않으므로 비-mirror 테이블만 생성.
+    SQLite에서는 ARRAY/JSONB 사용 테이블이 컴파일되지 않으므로 제외.
     운영(Postgres)에서는 모든 테이블 생성.
     """
     # 모든 모델을 import해 Base.metadata에 등록되도록 한다
@@ -83,13 +83,16 @@ def init_db() -> None:
         drive_creds,
         employee,
         mirror,
+        snapshot,
     )
 
     if _is_sqlite:
+        # ARRAY/JSONB 사용 테이블은 SQLite 호환 안 됨
+        skip_tables = {"project_snapshots"}
         tables = [
             t
             for t in Base.metadata.tables.values()
-            if not t.name.startswith("mirror_")
+            if not t.name.startswith("mirror_") and t.name not in skip_tables
         ]
         Base.metadata.create_all(bind=engine, tables=tables)
     else:

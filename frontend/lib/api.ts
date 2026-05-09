@@ -1297,3 +1297,86 @@ export async function saveQuoteBundlePdfToDrive(
   }
   return (await res.json()) as Sale;
 }
+
+// ── 주간 업무일지 (PR-W) ──
+
+export interface WeeklyHeadcount {
+  total: number;
+  by_occupation: Record<string, number>;
+  by_team: Record<string, number>;
+  new_this_week: number;
+  resigned_this_week: string[];
+}
+
+export interface WeeklySalesItem {
+  code: string;
+  category: string[];
+  name: string;
+  client: string;
+  scale: string;
+  estimated_amount: number | null;
+  is_bid: boolean;
+  stage: string;
+  submission_date: string | null;
+}
+
+export interface WeeklyCompletedItem {
+  code: string;
+  name: string;
+  teams: string[];
+  completed_at: string | null;
+}
+
+export interface WeeklyNewProject {
+  code: string;
+  name: string;
+  teams: string[];
+  stage: string;
+  started_at: string | null;
+}
+
+export interface WeeklyTeamProjectRow {
+  code: string;
+  name: string;
+  client: string;
+  pm: string;
+  stage: string;
+  progress: number;
+  weekly_plan: string;
+  note: string;
+  assignees: string[];
+  end_date: string | null;
+}
+
+export interface WeeklyReport {
+  period_start: string;
+  period_end: string;
+  headcount: WeeklyHeadcount;
+  notices: string[];
+  education: string[];
+  seal_log: unknown[];
+  completed: WeeklyCompletedItem[];
+  new_projects: WeeklyNewProject[];
+  sales: WeeklySalesItem[];
+  personal_schedule: unknown[];
+  teams: Record<string, WeeklyTeamProjectRow[]>;
+}
+
+export async function fetchWeeklyReport(weekStart: string): Promise<WeeklyReport> {
+  const res = await authFetch(`/api/weekly-report?week_start=${weekStart}`);
+  if (!res.ok) {
+    const detail = await res.json().catch(() => null);
+    throw new Error(
+      (detail as { detail?: string } | null)?.detail ??
+        `${res.status} ${res.statusText}`,
+    );
+  }
+  return (await res.json()) as WeeklyReport;
+}
+
+export async function downloadWeeklyReportPdf(weekStart: string): Promise<void> {
+  await downloadPdfBlob(
+    `/api/weekly-report.pdf?week_start=${weekStart}`,
+    `${weekStart}_업무일지.pdf`,
+  );
+}

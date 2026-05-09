@@ -8,6 +8,7 @@ from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 
 from app.services.sync import ALL_KINDS, get_sync
+from app.services.weekly_snapshot import weekly_snapshot_job
 from app.settings import get_settings
 
 logger = logging.getLogger("notion.scheduler")
@@ -59,9 +60,17 @@ def start_scheduler() -> None:
         max_instances=1,
         coalesce=True,
     )
+    # 주간 스냅샷 — 매주 일요일 23:59 KST. 다음 월요일을 week_start로 박제.
+    _scheduler.add_job(
+        weekly_snapshot_job,
+        trigger=CronTrigger(day_of_week="sun", hour=23, minute=59),
+        id="weekly-snapshot",
+        max_instances=1,
+        coalesce=True,
+    )
     _scheduler.start()
     logger.info(
-        "스케줄러 시작: incremental=%d분, full reconcile=daily 03:00",
+        "스케줄러 시작: incremental=%d분, full reconcile=daily 03:00, weekly snapshot=sun 23:59",
         settings.sync_interval_minutes,
     )
 
