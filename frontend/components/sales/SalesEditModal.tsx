@@ -269,17 +269,21 @@ export default function SalesEditModal({
   }, [client]);
 
   // 영업정보 탭의 핵심 필드 → 견적서 quoteInput 자동 echo.
-  // 견적서 탭은 read-only로 표시 (영업정보에서만 입력).
+  // sync_with_sale=false인 견적은 echo 차단 (견적별 자체 입력 모드).
+  // 한 영업에 종류·대상 건축물이 다른 견적이 섞이는 케이스 대응 (PR-Q5c).
   useEffect(() => {
-    setQuoteInput((prev) => ({
-      ...prev,
-      service_name: form.name ?? prev.service_name,
-      gross_floor_area: form.gross_floor_area ?? prev.gross_floor_area,
-      floors_above: form.floors_above ?? prev.floors_above,
-      floors_below: form.floors_below ?? prev.floors_below,
-      building_count: form.building_count ?? prev.building_count,
-      location: form.location ?? prev.location,
-    }));
+    setQuoteInput((prev) => {
+      if (prev.sync_with_sale === false) return prev;
+      return {
+        ...prev,
+        service_name: form.name ?? prev.service_name,
+        gross_floor_area: form.gross_floor_area ?? prev.gross_floor_area,
+        floors_above: form.floors_above ?? prev.floors_above,
+        floors_below: form.floors_below ?? prev.floors_below,
+        building_count: form.building_count ?? prev.building_count,
+        location: form.location ?? prev.location,
+      };
+    });
   }, [
     form.name,
     form.gross_floor_area,

@@ -118,6 +118,11 @@ class QuoteInput(BaseModel):
     service_name: str = ""  # 용역명
     location: str = ""  # 위치
     structure_form: str = ""  # 구조형식
+    # 영업 정보와 동기화 — True(default): 영업정보 탭의 규모·층수·위치·용역명을
+    # 견적 form에 echo (input disabled). False: 견적별 자체 입력 (영업정보 변경에
+    # 영향 X). 영업 1건에 견적 종류·대상 건축물이 다른 케이스 대응
+    # (예: 신축 구조설계 5,000㎡ + 기존건물 정밀안전진단 2,000㎡).
+    sync_with_sale: bool = True
     # 규모 — 영업 정보(Sale 모델)와 동일 필드. 견적서 입력이 영업 row의
     # gross_floor_area/floors_above/floors_below/building_count를 채움.
     floors_above: int | None = Field(default=None, ge=0)  # 지상층수
@@ -170,13 +175,17 @@ class QuoteInput(BaseModel):
     facility_type: str = ""                # 기본/인접/군집(소)/군집(대)/혼합
     sub_facility_areas: list[float] = []   # 인접·군집 부속 면적
     # 직접경비 단가 (사용자 입력) — 시특법 점검 자동 산정용
-    travel_unit_cost: float = Field(default=50_000, ge=0)         # 여비 1회 왕복 (1인)
-    helper_daily_wage: float = Field(default=180_000, ge=0)       # 시중 특별인부 일당
-    vehicle_daily_cost: float = Field(default=30_000, ge=0)        # 차량 일일 손료
-    fuel_unit_price: float = Field(default=1_800, ge=0)            # 휘발유 ℓ당
-    print_unit_cost: float = Field(default=5_000, ge=0)            # 인쇄비 책당
-    print_copies: int = Field(default=3, ge=1)                     # 인쇄 부수 (사장 운영 3부)
-    risk_pct: float = Field(default=10, ge=0, le=100)              # 위험수당 % (10~20)
+    # 시특법 자동 산정 단가 — 모두 default 0. 사용자가 명시 입력해야 산정에 포함.
+    # 입력값이 0이면 그 항목은 산정 X (예: travel_unit_cost=0이면 여비=0).
+    travel_unit_cost: float = Field(default=0, ge=0)         # 여비 1회 왕복 (1인)
+    helper_daily_wage: float = Field(default=0, ge=0)        # 시중 특별인부 일당
+    vehicle_daily_cost: float = Field(default=0, ge=0)       # 차량 일일 손료
+    fuel_unit_price: float = Field(default=0, ge=0)          # 휘발유 ℓ당
+    print_unit_cost: float = Field(default=0, ge=0)          # 인쇄비 책당
+    print_copies: int = Field(default=0, ge=0)               # 인쇄 부수
+    risk_pct: float = Field(default=0, ge=0, le=100)         # 위험수당 % (10~20)
+    machine_pct: float = Field(default=0, ge=0, le=100)      # 기계기구 손료 %
+    # (참고: 별표 25 비고 — 정밀안전진단·제1종 10%, 정밀점검·제2종 5%, 정기점검 0%)
     # 별표 26 선택과업 (PR-Q5b — 시특법 점검 자동 산정 시) ─────
     # A. 실측도면 작성 (별표 26-1) — 본 견적 adjusted × pct
     opt_field_drawings: bool = False
@@ -767,7 +776,7 @@ def _calculate_inspection_legal(inp: QuoteInput) -> QuoteResult:
 
             # 산식 단계별 — PDF 2페이지 "기본과업 인.일 산식" 표시용
             manhours_formula.append(ManhourFormulaStep(
-                label="별표 22 base",
+                label="별표 22 기준인원수",
                 value=base_total_adj,
                 note=f"{int(inp.gross_floor_area):,}㎡ {itype}"
                 + (f" · 시설물 형태: {inp.facility_type}" if inp.facility_type and inp.facility_type != "기본" else ""),
@@ -863,13 +872,12 @@ def _calculate_inspection_legal(inp: QuoteInput) -> QuoteResult:
             fuel_with_misc = inp.fuel_unit_price * 10 * 1.1
             vehicle = vehicle_days * (inp.vehicle_daily_cost + fuel_with_misc)
 
+            # 보조인부·위험수당·기계기구는 사용자 입력값 그대로 사용 (default 0).
+            # 사용자가 단가/% 명시 입력해야 산정에 반영. 별표 25 권장 비율은
+            # frontend 안내문 + 별표 25 비고 참조 (정기 0% / 정밀점검 5% / 진단 10%).
             helper = mh_outdoor * 0.40 * inp.helper_daily_wage
-
             risk = direct_labor * (inp.risk_pct / 100)
-
-            # 기계기구 손료 — 정밀안전진단 10%, 정기/정밀점검 5%
-            machine_pct = 0.10 if itype == "정밀안전진단" else 0.05
-            machine = direct_labor * machine_pct
+            machine = direct_labor * (inp.machine_pct / 100)
 
             print_cost = inp.print_unit_cost * inp.print_copies
 
@@ -903,7 +911,7 @@ def _calculate_inspection_legal(inp: QuoteInput) -> QuoteResult:
                 OptionalTaskBreakdown(
                     label="기계·기구 손료",
                     amount=machine,
-                    note=f"직접인건비 {direct_labor:,}원 × {int(machine_pct*100)}%",
+                    note=f"직접인건비 {direct_labor:,}원 × {inp.machine_pct:g}%",
                 ),
                 OptionalTaskBreakdown(
                     label="보고서 인쇄비",

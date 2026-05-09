@@ -584,6 +584,10 @@ export interface QuoteInput {
   service_name?: string;
   location?: string;
   structure_form?: string;
+  /** 영업 정보와 동기화 (default true) — true면 영업정보 탭에서 echo (견적 form
+   * input disabled). false면 견적별 자체 입력 (영업정보 변경 영향 X). 한 영업에
+   * 종류·대상 건축물이 다른 견적이 섞여 있는 케이스 대응. */
+  sync_with_sale?: boolean;
   /** 지상층수 — 영업 정보 Sale.floors_above와 동일 필드 */
   floors_above?: number | null;
   /** 지하층수 — 영업 정보 Sale.floors_below와 동일 필드 */
@@ -658,6 +662,7 @@ export interface QuoteInput {
   print_unit_cost?: number;
   print_copies?: number;
   risk_pct?: number;
+  machine_pct?: number;
   // ── 별표 26 선택과업 ──
   /** A. 실측도면 작성 */
   opt_field_drawings?: boolean;

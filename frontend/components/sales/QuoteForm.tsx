@@ -110,6 +110,7 @@ export default function QuoteForm({
         puc: value.print_unit_cost,
         pc: value.print_copies,
         rp: value.risk_pct,
+        mp: value.machine_pct,
         ofd: value.opt_field_drawings,
         ofs: value.opt_field_drawings_scope,
         osa: value.opt_structural_analysis,
@@ -118,6 +119,8 @@ export default function QuoteForm({
         ose: value.opt_seismic_eval,
         osm: value.opt_seismic_multiplier,
         ooi: value.opt_other_items,
+        // 영업정보 동기화 토글
+        sws: value.sync_with_sale,
         // legacy
         p: value.printing_fee,
         v: value.survey_fee,
@@ -187,14 +190,31 @@ export default function QuoteForm({
     qt === "내진보강설계" ||
     qt === "3자검토";
 
+  // 영업정보와 동기화 (PR-Q5c) — 한 영업에 대상 건축물이 다른 견적이 섞이는 케이스
+  // 대응. ON(default): 영업정보 탭 echo, input disabled. OFF: 견적별 자체 입력.
+  const syncOn = value.sync_with_sale !== false;
+  const effectiveEcho = echoReadOnly && syncOn;
+
   return (
     <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
       {/* 입력 컬럼 */}
       <div className="space-y-3">
         {echoReadOnly && (
-          <p className="rounded-md border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-[11px] text-amber-700 dark:text-amber-400">
-            용역명·위치·규모는 영업 정보 탭에서 수정합니다 (여기서는 echo).
-          </p>
+          <div className="rounded-md border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-[11px] text-amber-700 dark:text-amber-400 space-y-1">
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={syncOn}
+                onChange={(e) => set("sync_with_sale", e.target.checked)}
+              />
+              <span className="font-medium">영업 정보와 동기화 (용역명·위치·규모)</span>
+            </label>
+            <p className="pl-5 text-[10.5px]">
+              {syncOn
+                ? "영업 정보 탭에서 입력 → 여기로 echo (입력 비활성)."
+                : "이 견적에서만 별도 입력 (영업정보 변경에 영향 X)."}
+            </p>
+          </div>
         )}
         <Section title="견적서 종류">
           <Field label="종류 — 견적별 자유 선택 (분류별 sequence + suffix 자동 부여)">
@@ -229,7 +249,7 @@ export default function QuoteForm({
                 list="dy-clients-quote"
                 value={value.recipient_company ?? ""}
                 onChange={(e) => set("recipient_company", e.target.value)}
-                disabled={echoReadOnly}
+                disabled={effectiveEcho}
                 placeholder={
                   clientsData
                     ? `목록 ${clientsData.count}개 자동완성, 발주처 변경 시 자동 갱신`
@@ -274,7 +294,7 @@ export default function QuoteForm({
               className={inputCls}
               value={value.service_name ?? ""}
               onChange={(e) => set("service_name", e.target.value)}
-              disabled={echoReadOnly}
+              disabled={effectiveEcho}
             />
           </Field>
           <Field label="위치">
@@ -282,7 +302,7 @@ export default function QuoteForm({
               className={inputCls}
               value={value.location ?? ""}
               onChange={(e) => set("location", e.target.value)}
-              disabled={echoReadOnly}
+              disabled={effectiveEcho}
             />
           </Field>
           <div className="grid grid-cols-4 gap-2">
@@ -299,7 +319,7 @@ export default function QuoteForm({
                     e.target.value ? Number(e.target.value) : 0,
                   )
                 }
-                disabled={echoReadOnly}
+                disabled={effectiveEcho}
               />
             </Field>
             <Field label="지상층수">
@@ -315,7 +335,7 @@ export default function QuoteForm({
                     e.target.value ? Number(e.target.value) : null,
                   )
                 }
-                disabled={echoReadOnly}
+                disabled={effectiveEcho}
               />
             </Field>
             <Field label="지하층수">
@@ -331,7 +351,7 @@ export default function QuoteForm({
                     e.target.value ? Number(e.target.value) : null,
                   )
                 }
-                disabled={echoReadOnly}
+                disabled={effectiveEcho}
               />
             </Field>
             <Field label="동수">
@@ -347,7 +367,7 @@ export default function QuoteForm({
                     e.target.value ? Number(e.target.value) : null,
                   )
                 }
-                disabled={echoReadOnly}
+                disabled={effectiveEcho}
               />
             </Field>
           </div>
@@ -691,61 +711,65 @@ export default function QuoteForm({
           </Section>
         )}
 
-        <Section title="직접경비">
-          {(value.direct_expense_items ?? []).map((item, idx) => (
-            <div key={idx} className="flex items-center gap-2">
-              <input
-                className={cn(inputCls, "flex-1")}
-                placeholder="항목명 (예: 보고서 인쇄비)"
-                value={item.name}
-                onChange={(e) => {
-                  const next = [...(value.direct_expense_items ?? [])];
-                  next[idx] = { ...item, name: e.target.value };
-                  set("direct_expense_items", next);
-                }}
-              />
-              <input
-                type="number"
-                min={0}
-                className={cn(inputCls, "w-32")}
-                placeholder="금액"
-                value={item.amount || ""}
-                onChange={(e) => {
-                  const next = [...(value.direct_expense_items ?? [])];
-                  next[idx] = {
-                    ...item,
-                    amount: e.target.value ? Number(e.target.value) : 0,
-                  };
-                  set("direct_expense_items", next);
-                }}
-              />
-              <button
-                type="button"
-                onClick={() => {
-                  const next = [...(value.direct_expense_items ?? [])];
-                  next.splice(idx, 1);
-                  set("direct_expense_items", next);
-                }}
-                className="rounded border border-zinc-300 px-2 py-1 text-xs hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800"
-                aria-label="삭제"
-              >
-                ✕
-              </button>
-            </div>
-          ))}
-          <button
-            type="button"
-            onClick={() =>
-              set("direct_expense_items", [
-                ...(value.direct_expense_items ?? []),
-                { name: "", amount: 0 },
-              ])
-            }
-            className="rounded-md border border-dashed border-zinc-400 px-3 py-1.5 text-xs text-zinc-600 hover:bg-zinc-50 dark:border-zinc-600 dark:text-zinc-400 dark:hover:bg-zinc-800"
-          >
-            + 항목 추가
-          </button>
-        </Section>
+        {/* 시특법 자동 산정은 별표 25(직접경비)·별표 26(추가과업)에서 자동 합산 →
+            일반 직접경비 입력 UI 숨김. 그 외 종류는 사용자 직접 항목 입력 */}
+        {!isInspectionLegal && (
+          <Section title="직접경비">
+            {(value.direct_expense_items ?? []).map((item, idx) => (
+              <div key={idx} className="flex items-center gap-2">
+                <input
+                  className={cn(inputCls, "flex-1")}
+                  placeholder="항목명 (예: 보고서 인쇄비)"
+                  value={item.name}
+                  onChange={(e) => {
+                    const next = [...(value.direct_expense_items ?? [])];
+                    next[idx] = { ...item, name: e.target.value };
+                    set("direct_expense_items", next);
+                  }}
+                />
+                <input
+                  type="number"
+                  min={0}
+                  className={cn(inputCls, "w-32")}
+                  placeholder="금액"
+                  value={item.amount || ""}
+                  onChange={(e) => {
+                    const next = [...(value.direct_expense_items ?? [])];
+                    next[idx] = {
+                      ...item,
+                      amount: e.target.value ? Number(e.target.value) : 0,
+                    };
+                    set("direct_expense_items", next);
+                  }}
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    const next = [...(value.direct_expense_items ?? [])];
+                    next.splice(idx, 1);
+                    set("direct_expense_items", next);
+                  }}
+                  className="rounded border border-zinc-300 px-2 py-1 text-xs hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800"
+                  aria-label="삭제"
+                >
+                  ✕
+                </button>
+              </div>
+            ))}
+            <button
+              type="button"
+              onClick={() =>
+                set("direct_expense_items", [
+                  ...(value.direct_expense_items ?? []),
+                  { name: "", amount: 0 },
+                ])
+              }
+              className="rounded-md border border-dashed border-zinc-400 px-3 py-1.5 text-xs text-zinc-600 hover:bg-zinc-50 dark:border-zinc-600 dark:text-zinc-400 dark:hover:bg-zinc-800"
+            >
+              + 항목 추가
+            </button>
+          </Section>
+        )}
 
         <Section title="제경비 · 기술료 · 조정">
           <div className="grid grid-cols-3 gap-2">

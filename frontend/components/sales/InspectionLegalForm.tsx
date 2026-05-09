@@ -239,6 +239,9 @@ export default function InspectionLegalForm({ value, onChange }: Props) {
         <h4 className="text-xs font-semibold text-stone-700 dark:text-stone-300">
           별표 25 — 직접경비 단가
         </h4>
+        <p className="text-[10px] text-stone-600 dark:text-stone-400">
+          모든 항목 default 빈칸 — 사용자가 명시 입력해야 산정에 반영.
+        </p>
         <div className="grid grid-cols-2 gap-2">
           <label className="space-y-1">
             <div className={labelCls}>여비 1회 왕복 (1인)</div>
@@ -246,9 +249,10 @@ export default function InspectionLegalForm({ value, onChange }: Props) {
               type="number"
               min={0}
               className={inputCls}
-              value={value.travel_unit_cost ?? 50000}
+              placeholder="예: 50,000"
+              value={value.travel_unit_cost || ""}
               onChange={(e) =>
-                set("travel_unit_cost", Number(e.target.value))
+                set("travel_unit_cost", e.target.value ? Number(e.target.value) : 0)
               }
             />
           </label>
@@ -258,9 +262,10 @@ export default function InspectionLegalForm({ value, onChange }: Props) {
               type="number"
               min={0}
               className={inputCls}
-              value={value.helper_daily_wage ?? 180000}
+              placeholder="예: 180,000"
+              value={value.helper_daily_wage || ""}
               onChange={(e) =>
-                set("helper_daily_wage", Number(e.target.value))
+                set("helper_daily_wage", e.target.value ? Number(e.target.value) : 0)
               }
             />
           </label>
@@ -270,9 +275,10 @@ export default function InspectionLegalForm({ value, onChange }: Props) {
               type="number"
               min={0}
               className={inputCls}
-              value={value.vehicle_daily_cost ?? 30000}
+              placeholder="예: 30,000"
+              value={value.vehicle_daily_cost || ""}
               onChange={(e) =>
-                set("vehicle_daily_cost", Number(e.target.value))
+                set("vehicle_daily_cost", e.target.value ? Number(e.target.value) : 0)
               }
             />
           </label>
@@ -282,8 +288,9 @@ export default function InspectionLegalForm({ value, onChange }: Props) {
               type="number"
               min={0}
               className={inputCls}
-              value={value.fuel_unit_price ?? 1800}
-              onChange={(e) => set("fuel_unit_price", Number(e.target.value))}
+              placeholder="예: 1,800"
+              value={value.fuel_unit_price || ""}
+              onChange={(e) => set("fuel_unit_price", e.target.value ? Number(e.target.value) : 0)}
             />
           </label>
           <label className="space-y-1">
@@ -292,21 +299,23 @@ export default function InspectionLegalForm({ value, onChange }: Props) {
               type="number"
               min={0}
               className={inputCls}
-              value={value.print_unit_cost ?? 5000}
-              onChange={(e) => set("print_unit_cost", Number(e.target.value))}
+              placeholder="예: 5,000"
+              value={value.print_unit_cost || ""}
+              onChange={(e) => set("print_unit_cost", e.target.value ? Number(e.target.value) : 0)}
             />
           </label>
           <label className="space-y-1">
             <div className={labelCls}>인쇄 부수</div>
             <input
               type="number"
-              min={1}
+              min={0}
               className={inputCls}
-              value={value.print_copies ?? 3}
-              onChange={(e) => set("print_copies", Number(e.target.value))}
+              placeholder="예: 3"
+              value={value.print_copies || ""}
+              onChange={(e) => set("print_copies", e.target.value ? Number(e.target.value) : 0)}
             />
           </label>
-          <label className="space-y-1 col-span-2">
+          <label className="space-y-1">
             <div className={labelCls}>위험수당 % (10~20)</div>
             <input
               type="number"
@@ -314,8 +323,22 @@ export default function InspectionLegalForm({ value, onChange }: Props) {
               max={20}
               step={1}
               className={inputCls}
-              value={value.risk_pct ?? 10}
-              onChange={(e) => set("risk_pct", Number(e.target.value))}
+              placeholder="예: 10"
+              value={value.risk_pct || ""}
+              onChange={(e) => set("risk_pct", e.target.value ? Number(e.target.value) : 0)}
+            />
+          </label>
+          <label className="space-y-1">
+            <div className={labelCls}>기계기구 손료 % (정기 0 / 정밀 5 / 진단 10)</div>
+            <input
+              type="number"
+              min={0}
+              max={100}
+              step={1}
+              className={inputCls}
+              placeholder="예: 10"
+              value={value.machine_pct || ""}
+              onChange={(e) => set("machine_pct", e.target.value ? Number(e.target.value) : 0)}
             />
           </label>
         </div>
