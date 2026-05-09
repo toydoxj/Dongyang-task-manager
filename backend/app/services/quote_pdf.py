@@ -175,6 +175,7 @@ def build_bundle_cover_pdf(
         result = form_data.get("result") or {}
         amount = int(result.get("final") or 0)
         is_external = bool(s.get("is_external"))
+        sub_service = ""
         if is_external:
             # 외부 견적 — 사용자가 직접 입력한 service/amount 사용
             service = (s.get("service") or "외부 견적").strip()
@@ -183,9 +184,16 @@ def build_bundle_cover_pdf(
             qtype = (inp.get("quote_type") or "").strip()
             custom = (inp.get("custom_title") or "").strip()
             service = custom if (qtype == "기타" and custom) else (qtype or "—")
+            # 견적별 자체 용역명 — sync_with_sale=false로 영업명과 다른 견적인 경우
+            # 또는 service_name이 parent_name과 다른 경우 sub-line으로 표시.
+            sn = (inp.get("service_name") or "").strip()
+            sync = inp.get("sync_with_sale")
+            if sn and (sync is False or sn != parent_name.strip()):
+                sub_service = sn
         rows.append(
             {
                 "service": service,
+                "sub_service": sub_service,
                 "doc_number": s.get("doc_number", "") or "",
                 "amount": amount,
                 "is_external": is_external,

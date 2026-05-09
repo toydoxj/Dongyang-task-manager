@@ -140,6 +140,11 @@
       color: #1a1a1a;
     }
     .summary-table .num { width: 24px; color: #999; }
+    .summary-table .sub-service {
+      font-size: 9pt;
+      color: #555;
+      font-weight: 400;
+    }
     .summary-table .doc {
       font-family: 'NanumGothicCoding', 'NanumGothic', monospace;
       font-size: 8.5pt;
@@ -393,6 +398,7 @@
           <td>
             {% if row.is_external %}<span class="ext-tag">외부</span>{% endif %}
             {{ row.service }}
+            {% if row.sub_service %}<span class="sub-service"> · {{ row.sub_service }}</span>{% endif %}
             {% if row.doc_number %}<span class="doc">{{ row.doc_number }}</span>{% endif %}
             {% if row.attached_pdf_url %}<a class="attach-link" href="{{ row.attached_pdf_url }}">첨부 →</a>{% endif %}
           </td>
