@@ -301,9 +301,35 @@ async def _ensure_db(
         return 0
 
 
+async def _check_relation_present(
+    notion: NotionService, db_id: str, relation_name: str, *, db_label: str
+) -> None:
+    """relation 컬럼은 자동 생성 미지원 — 부재 시 운영자 안내 로그."""
+    if not db_id:
+        return
+    try:
+        ds = await notion.get_data_source(db_id)
+    except NotionApiError:
+        return  # 메인 ensure에서 이미 warn — 중복 생략
+    props = ds.get("properties") or {}
+    if relation_name in props:
+        return
+    logger.warning(
+        "노션 %s DB에 '%s' relation 컬럼이 없습니다. "
+        "노션 UI에서 relation 컬럼을 직접 추가하세요 (자동 생성 미지원). "
+        "기능 일부가 비활성화됩니다.",
+        db_label,
+        relation_name,
+    )
+
+
 async def ensure_all_schemas(notion: NotionService, settings: Settings) -> None:
     """모든 DB schema 보강. 부팅 시 1회 호출."""
     await _ensure_db(notion, settings.notion_db_tasks, TASK_DB_REQUIRED, label="tasks")
+    # task DB의 "영업" relation은 자동 생성 불가 — 부재 시 안내 로그만.
+    await _check_relation_present(
+        notion, settings.notion_db_tasks, "영업", db_label="tasks"
+    )
     await _ensure_db(
         notion, settings.notion_db_projects, PROJECT_DB_REQUIRED, label="projects"
     )

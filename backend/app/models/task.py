@@ -17,6 +17,7 @@ class Task(BaseModel):
     title: str = ""
     code: str = ""
     project_ids: list[str] = []  # 프로젝트 relation
+    sales_ids: list[str] = []    # 영업 relation (분류='영업(서비스)'인 경우)
     status: str = ""             # status (시작 전/진행 중/완료/보류)
     progress: float | None = None  # 0.0 ~ 1.0
     start_date: str | None = None
@@ -43,6 +44,7 @@ class Task(BaseModel):
             title=P.title(props, "내용"),
             code=P.rich_text(props, "CODE"),
             project_ids=P.relation_ids(props, "프로젝트"),
+            sales_ids=P.relation_ids(props, "영업"),
             status=P.status_name(props, "상태"),
             progress=P.number(props, "진행률"),
             start_date=s,
@@ -65,7 +67,8 @@ class Task(BaseModel):
 class TaskCreateRequest(BaseModel):
     title: str
     project_id: str = ""  # 분류='프로젝트'일 때만 필수
-    category: str = ""    # 프로젝트|개인업무|사내잡무|교육|서비스|외근|출장|휴가
+    sale_id: str = ""     # 분류='영업(서비스)'일 때만 필수
+    category: str = ""    # 프로젝트|영업(서비스)|개인업무|사내잡무|교육|휴가(연차)
     activity: str = ""    # 사무실|외근|출장 (선택)
     status: str | None = None
     progress: float | None = None
@@ -96,6 +99,8 @@ class TaskUpdateRequest(BaseModel):
     weekly_plan_text: str | None = None  # PR-W Phase 2.2 — 금주예정사항
     # 프로젝트 relation 변경 — 빈 list면 비우기, None이면 변경 안 함
     project_ids: list[str] | None = None
+    # 영업 relation 변경 — 동일 규칙
+    sales_ids: list[str] | None = None
 
 
 class TaskListResponse(BaseModel):
@@ -176,6 +181,8 @@ def task_create_to_props(req: TaskCreateRequest) -> dict[str, Any]:
     }
     if req.project_id:
         props["프로젝트"] = _relation([req.project_id])
+    if req.sale_id:
+        props["영업"] = _relation([req.sale_id])
     if req.category:
         props["분류"] = {"select": {"name": req.category}}
     if req.activity:
@@ -270,4 +277,6 @@ def task_update_to_props(req: TaskUpdateRequest) -> dict[str, Any]:
         props["금주예정사항"] = _rich_text(req.weekly_plan_text)
     if req.project_ids is not None:
         props["프로젝트"] = _relation(req.project_ids)
+    if req.sales_ids is not None:
+        props["영업"] = _relation(req.sales_ids)
     return props

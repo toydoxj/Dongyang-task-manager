@@ -2,10 +2,12 @@
 
 import { useState } from "react";
 
+import { useMemo } from "react";
+
 import Modal from "@/components/ui/Modal";
 import { useAuth } from "@/components/AuthGuard";
 import { createTask } from "@/lib/api";
-import type { Project } from "@/lib/domain";
+import type { Project, Sale } from "@/lib/domain";
 import {
   ACTIVITY_TYPES,
   isTimeBasedTask,
@@ -14,6 +16,8 @@ import {
   TASK_PRIORITIES,
   TASK_STATUSES,
 } from "@/lib/domain";
+import { useSales } from "@/lib/hooks";
+import { cn } from "@/lib/utils";
 
 interface Props {
   open: boolean;
@@ -102,6 +106,9 @@ function Form({
   const [activity, setActivity] = useState("");
   // 분류=프로젝트 + projectId 미지정인 경우(=/me에서 새 업무) 사용자가 dropdown으로 선택
   const [pickedProjectId, setPickedProjectId] = useState(projectId);
+  // 영업(서비스) picker
+  const [pickedSaleId, setPickedSaleId] = useState("");
+  const [saleQuery, setSaleQuery] = useState("");
   // 담당자 default: defaultAssignee(직원 업무 모드의 직원 이름) > 본인
   const [assignees, setAssignees] = useState(defaultAssignee ?? user?.name ?? "");
   const [note, setNote] = useState("");
@@ -109,7 +116,25 @@ function Form({
   const [error, setError] = useState<string | null>(null);
 
   const showProjectPicker = category === "프로젝트" && !projectId;
+  const showSalePicker = category === "영업(서비스)";
   const isTimeBased = isTimeBasedTask(category, activity);
+
+  const { data: salesData } = useSales(undefined, showSalePicker);
+  const trimmedSaleQ = saleQuery.trim().toLowerCase();
+  const saleCandidates = useMemo<Sale[]>(() => {
+    if (!salesData) return [];
+    const items = salesData.items;
+    if (!trimmedSaleQ) return items.slice(0, 50);
+    return items
+      .filter((s) =>
+        `${s.code} ${s.name}`.toLowerCase().includes(trimmedSaleQ),
+      )
+      .slice(0, 50);
+  }, [salesData, trimmedSaleQ]);
+  const selectedSale = useMemo<Sale | null>(
+    () => salesData?.items.find((s) => s.id === pickedSaleId) ?? null,
+    [salesData, pickedSaleId],
+  );
 
   /** 시간 기반 ↔ date 형식 전환 시 input value 변환. */
   const syncDateTimeFormat = (wasTime: boolean, nowTime: boolean): void => {
@@ -133,12 +158,17 @@ function Form({
       setError("분류가 '프로젝트'면 프로젝트를 선택하세요");
       return;
     }
+    if (category === "영업(서비스)" && !pickedSaleId) {
+      setError("분류가 '영업(서비스)'면 영업을 선택하세요");
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
       await createTask({
         title: title.trim(),
         project_id: category === "프로젝트" ? finalProjectId : "",
+        sale_id: category === "영업(서비스)" ? pickedSaleId : "",
         category: category || undefined,
         activity: activity || undefined,
         status,
@@ -279,6 +309,77 @@ function Form({
                 </option>
               ))}
             </select>
+          </Field>
+        )}
+
+        {showSalePicker && (
+          <Field label="영업" required>
+            <div className="space-y-2">
+              {pickedSaleId && (
+                <div className="flex items-center justify-between rounded-md border border-zinc-200 bg-zinc-50 px-2.5 py-1.5 text-xs dark:border-zinc-700 dark:bg-zinc-800">
+                  <span className="truncate">
+                    ✓{" "}
+                    {selectedSale
+                      ? `${selectedSale.code ? `[${selectedSale.code}] ` : ""}${selectedSale.name || "(이름 없음)"}`
+                      : "(현재 선택)"}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setPickedSaleId("")}
+                    className="text-zinc-500 hover:text-red-500"
+                    title="선택 해제"
+                  >
+                    ✕
+                  </button>
+                </div>
+              )}
+              <input
+                type="search"
+                placeholder="영업 코드 또는 이름 검색"
+                value={saleQuery}
+                onChange={(e) => setSaleQuery(e.target.value)}
+                className={inputCls}
+              />
+              <div className="max-h-44 divide-y divide-zinc-200 overflow-y-auto rounded-md border border-zinc-200 dark:divide-zinc-800 dark:border-zinc-700">
+                {!salesData && (
+                  <p className="p-3 text-center text-[11px] text-zinc-500">
+                    영업 목록 불러오는 중…
+                  </p>
+                )}
+                {salesData && saleCandidates.length === 0 && (
+                  <p className="p-3 text-center text-[11px] text-zinc-500">
+                    {trimmedSaleQ ? "검색 결과 없음" : "등록된 영업 없음"}
+                  </p>
+                )}
+                {saleCandidates.map((s) => {
+                  const isSelected = s.id === pickedSaleId;
+                  return (
+                    <button
+                      key={s.id}
+                      type="button"
+                      onClick={() => {
+                        setPickedSaleId(s.id);
+                        setSaleQuery("");
+                      }}
+                      className={cn(
+                        "flex w-full items-center justify-between gap-2 px-2.5 py-1.5 text-left text-xs transition-colors",
+                        isSelected
+                          ? "bg-blue-50 dark:bg-blue-900/20"
+                          : "hover:bg-zinc-50 dark:hover:bg-zinc-800/50",
+                      )}
+                    >
+                      <span className="min-w-0 flex-1 truncate">
+                        {s.code ? `[${s.code}] ` : ""}
+                        {s.name || "(이름 없음)"}
+                        <span className="ml-1 text-[10px] text-zinc-500">
+                          · {s.stage || "—"}
+                        </span>
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
           </Field>
         )}
 

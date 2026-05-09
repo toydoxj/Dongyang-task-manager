@@ -48,6 +48,10 @@ class MirrorTask(Base):
     title: Mapped[str] = mapped_column(String, default="")
     code: Mapped[str] = mapped_column(String, default="")
     project_ids: Mapped[list[str]] = mapped_column(ARRAY(String), default=list)
+    # 영업(sales) relation — task의 분류='영업(서비스)'인 경우 mirror_sales의 page_id 연결.
+    # 노션 task DB에 운영자가 직접 추가한 "영업" relation 컬럼이 source. project_ids와
+    # 동일 패턴 다대다.
+    sales_ids: Mapped[list[str]] = mapped_column(ARRAY(String), default=list)
     status: Mapped[str] = mapped_column(String, default="", index=True)
     priority: Mapped[str] = mapped_column(String, default="")
     difficulty: Mapped[str] = mapped_column(String, default="")

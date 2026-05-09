@@ -14,7 +14,8 @@ import {
   TASK_PRIORITIES,
   TASK_STATUSES,
 } from "@/lib/domain";
-import { useProjects } from "@/lib/hooks";
+import { useProjects, useSales } from "@/lib/hooks";
+import type { Sale } from "@/lib/domain";
 import { cn } from "@/lib/utils";
 
 interface Props {
@@ -63,6 +64,9 @@ function Form({
   const [assignees, setAssignees] = useState(task.assignees.join(", "));
   const [note, setNote] = useState(task.note ?? "");
   const [weeklyPlan, setWeeklyPlan] = useState(task.weekly_plan_text ?? "");
+  // 영업(서비스) picker — 분류='영업(서비스)'일 때만 활성. 단일 선택.
+  const [saleId, setSaleId] = useState(task.sales_ids[0] ?? "");
+  const [saleQuery, setSaleQuery] = useState("");
   const [projectId, setProjectId] = useState(task.project_ids[0] ?? "");
   // 사용자가 검색→클릭한 프로젝트의 정보를 별도 cache —
   // 검색 input 비운 후 SWR allData가 사라져도 칩이 즉시 표시되도록.
@@ -124,6 +128,25 @@ function Form({
     const fromAll = allData?.items.find((p) => p.id === projectId);
     return fromAll ?? null;
   }, [projectId, pickedProjectCache, mineData, allData]);
+
+  // 영업(서비스) picker — category='영업(서비스)'일 때만 fetch. 영업 row 수가
+  // 적으므로(보통 수십~수백) 전체 list + 클라이언트 필터.
+  const { data: salesData } = useSales(undefined, category === "영업(서비스)");
+  const trimmedSaleQ = saleQuery.trim().toLowerCase();
+  const saleCandidates = useMemo<Sale[]>(() => {
+    if (!salesData) return [];
+    const items = salesData.items;
+    if (!trimmedSaleQ) return items.slice(0, 50);
+    return items
+      .filter((s) =>
+        `${s.code} ${s.name}`.toLowerCase().includes(trimmedSaleQ),
+      )
+      .slice(0, 50);
+  }, [salesData, trimmedSaleQ]);
+  const selectedSale = useMemo<Sale | null>(
+    () => salesData?.items.find((s) => s.id === saleId) ?? null,
+    [salesData, saleId],
+  );
 
   const handlePickProject = async (p: Project): Promise<void> => {
     if (busy) return;
@@ -207,6 +230,7 @@ function Form({
       const wasCategory = task.category ?? "";
       const wasActivity = task.activity ?? "";
       const wasProjectId = task.project_ids[0] ?? "";
+      const wasSaleId = task.sales_ids[0] ?? "";
       // 분류=프로젝트면 project_ids 동기화. 분류가 프로젝트가 아니면 비우기.
       let projectIdsParam: string[] | undefined;
       if (category === "프로젝트") {
@@ -216,6 +240,15 @@ function Form({
       } else if (wasProjectId) {
         // 분류가 프로젝트에서 다른 것으로 바뀌었으면 relation 비우기
         projectIdsParam = [];
+      }
+      // 분류=영업(서비스)면 sales_ids 동기화. 그 외는 비우기.
+      let salesIdsParam: string[] | undefined;
+      if (category === "영업(서비스)") {
+        if (saleId !== wasSaleId) {
+          salesIdsParam = saleId ? [saleId] : [];
+        }
+      } else if (wasSaleId) {
+        salesIdsParam = [];
       }
       // 휴가는 예상 완료일과 실제 완료일이 동일 — datetime-local의 시간 부분
       // 잘라낸 date-only 값을 actual_end_date로 자동 set (입력란은 숨김).
@@ -240,6 +273,7 @@ function Form({
         weekly_plan_text:
           weeklyPlan === (task.weekly_plan_text ?? "") ? undefined : weeklyPlan,
         project_ids: projectIdsParam,
+        sales_ids: salesIdsParam,
       });
       onSaved();
       onClose();
@@ -441,6 +475,77 @@ function Form({
                 자동으로 담당 추가 — task 상태가 시작 전이면 진행단계 "대기",
                 진행 중이면 "진행중"으로 자동 설정.
               </p>
+            </div>
+          </Field>
+        )}
+
+        {category === "영업(서비스)" && (
+          <Field label="영업">
+            <div className="space-y-2">
+              {saleId && (
+                <div className="flex items-center justify-between rounded-md border border-zinc-200 bg-zinc-50 px-2.5 py-1.5 text-xs dark:border-zinc-700 dark:bg-zinc-800">
+                  <span className="truncate">
+                    ✓{" "}
+                    {selectedSale
+                      ? `${selectedSale.code ? `[${selectedSale.code}] ` : ""}${selectedSale.name || "(이름 없음)"}`
+                      : "(현재 선택)"}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setSaleId("")}
+                    className="text-zinc-500 hover:text-red-500"
+                    title="선택 해제"
+                  >
+                    ✕
+                  </button>
+                </div>
+              )}
+              <input
+                type="search"
+                placeholder="영업 코드 또는 이름 검색 (영26-...)"
+                value={saleQuery}
+                onChange={(e) => setSaleQuery(e.target.value)}
+                className={inputCls}
+              />
+              <div className="max-h-44 divide-y divide-zinc-200 overflow-y-auto rounded-md border border-zinc-200 dark:divide-zinc-800 dark:border-zinc-700">
+                {!salesData && (
+                  <p className="p-3 text-center text-[11px] text-zinc-500">
+                    영업 목록 불러오는 중…
+                  </p>
+                )}
+                {salesData && saleCandidates.length === 0 && (
+                  <p className="p-3 text-center text-[11px] text-zinc-500">
+                    {trimmedSaleQ ? "검색 결과 없음" : "등록된 영업 없음"}
+                  </p>
+                )}
+                {saleCandidates.map((s) => {
+                  const isSelected = s.id === saleId;
+                  return (
+                    <button
+                      key={s.id}
+                      type="button"
+                      onClick={() => {
+                        setSaleId(s.id);
+                        setSaleQuery("");
+                      }}
+                      className={cn(
+                        "flex w-full items-center justify-between gap-2 px-2.5 py-1.5 text-left text-xs transition-colors",
+                        isSelected
+                          ? "bg-blue-50 dark:bg-blue-900/20"
+                          : "hover:bg-zinc-50 dark:hover:bg-zinc-800/50",
+                      )}
+                    >
+                      <span className="min-w-0 flex-1 truncate">
+                        {s.code ? `[${s.code}] ` : ""}
+                        {s.name || "(이름 없음)"}
+                        <span className="ml-1 text-[10px] text-zinc-500">
+                          · {s.stage || "—"}
+                        </span>
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
             </div>
           </Field>
         )}

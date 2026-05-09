@@ -264,6 +264,7 @@ export interface Task {
   title: string;
   code: string;
   project_ids: string[];
+  sales_ids: string[];        // 분류='영업(서비스)'일 때 영업 row page_id
   status: string; // 시작 전|진행 중|완료|보류
   progress: number | null; // 0~1
   start_date: string | null;
@@ -290,6 +291,7 @@ export interface TaskListResponse {
 export interface TaskCreateRequest {
   title: string;
   project_id?: string;  // 분류='프로젝트'일 때만 필수
+  sale_id?: string;     // 분류='영업(서비스)'일 때만 필수
   category?: string;    // 분류
   activity?: string;    // 활동 (사무실/외근/출장)
   status?: string;
@@ -320,6 +322,7 @@ export interface TaskUpdateRequest {
   note?: string;
   weekly_plan_text?: string;  // PR-W Phase 2.2 — 금주예정사항
   project_ids?: string[];
+  sales_ids?: string[];
 }
 
 export interface ContractItem {
