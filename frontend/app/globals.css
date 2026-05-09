@@ -44,3 +44,12 @@ input[type="time"]::-webkit-calendar-picker-indicator {
     opacity: 0.85;
   }
 }
+
+/* 주간 업무일지 표 — 자간 좁힘 + 한 줄 강제 + 초과 시 ... 생략 */
+.weekly-report-tables table td,
+.weekly-report-tables table th {
+  letter-spacing: -0.04em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}

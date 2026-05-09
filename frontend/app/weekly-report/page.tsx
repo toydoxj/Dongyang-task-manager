@@ -306,7 +306,7 @@ function ReportPreview({
 }: PreviewProps) {
   const period = `${data.period_start} ~ ${data.period_end}`;
   return (
-    <div className="space-y-4">
+    <div className="weekly-report-tables space-y-4">
       {/* 인원 */}
       <Section title="■ 인원현황">
         <div className="rounded border border-zinc-200 bg-zinc-50 p-2 text-sm dark:border-zinc-800 dark:bg-zinc-900">
