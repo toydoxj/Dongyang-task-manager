@@ -190,12 +190,16 @@ def build_bundle_cover_pdf(
             sync = inp.get("sync_with_sale")
             if sn and (sync is False or sn != parent_name.strip()):
                 sub_service = sn
+        # VAT 포함/별도 — 외부 견적은 사용자 입력 amount를 그대로 신뢰 (VAT 별도 가정).
+        # 자체 산정은 input.vat_included 플래그로 표시 (default false=VAT 별도).
+        vat_included = bool(inp.get("vat_included")) if not is_external else False
         rows.append(
             {
                 "service": service,
                 "sub_service": sub_service,
                 "doc_number": s.get("doc_number", "") or "",
                 "amount": amount,
+                "vat_included": vat_included,
                 "is_external": is_external,
                 "attached_pdf_url": s.get("attached_pdf_url") or "",
                 "attached_pdf_name": s.get("attached_pdf_name") or "",

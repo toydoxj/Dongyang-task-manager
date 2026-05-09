@@ -156,6 +156,13 @@
       font-family: 'NanumGothicCoding', 'NanumGothic', monospace;
       font-weight: 500;
     }
+    .summary-table .vat-tag {
+      margin-left: 6px;
+      font-family: 'NanumGothic', sans-serif;
+      font-size: 8.5pt;
+      font-weight: 400;
+      color: #888;
+    }
     .summary-table tr.total-row {
       background: #f0f9f4;
       border-top: 2px solid #1f7a4a;
@@ -402,7 +409,10 @@
             {% if row.doc_number %}<span class="doc">{{ row.doc_number }}</span>{% endif %}
             {% if row.attached_pdf_url %}<a class="attach-link" href="{{ row.attached_pdf_url }}">첨부 →</a>{% endif %}
           </td>
-          <td class="right amount">{{ "{:,}".format(row.amount | int) }}</td>
+          <td class="right amount">
+            {{ "{:,}".format(row.amount | int) }}
+            <span class="vat-tag">{{ "VAT 포함" if row.vat_included else "VAT 별도" }}</span>
+          </td>
         </tr>
         {% endfor %}
         {% if show_total %}
