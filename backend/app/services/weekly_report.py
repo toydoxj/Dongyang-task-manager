@@ -260,21 +260,32 @@ def _avg_task_progress(db: Session, project_id: str) -> float:
     return sum(vals) / len(vals) if vals else 0.0
 
 
+def _relation_column(kind: str):  # noqa: ANN201 — return SQLAlchemy column
+    """kind='project' → MirrorTask.project_ids, 'sale' → sales_ids."""
+    if kind == "sale":
+        return M.MirrorTask.sales_ids
+    return M.MirrorTask.project_ids
+
+
 def _employee_last_week_done(
     db: Session,
-    project_id: str,
+    relation_id: str,
     employee: str,
     last_week_start: date,
     last_week_end: date,
+    *,
+    kind: str = "project",
 ) -> str:
-    """지난주에 해당 직원이 (project, employee) 조합으로 완료한 task title 합치기.
+    """지난주에 해당 직원이 (relation, employee) 조합으로 완료한 task title 합치기.
 
-    actual_end_date가 [last_week_start, last_week_end] 범위에 있는 task — 실제 완료일 기준.
+    relation은 mirror_projects 또는 mirror_sales의 page_id (kind에 따름).
+    actual_end_date가 [last_week_start, last_week_end] 범위에 있는 task 기준.
     """
+    col = _relation_column(kind)
     rows = (
         db.query(M.MirrorTask.title)
         .filter(M.MirrorTask.archived.is_(False))
-        .filter(M.MirrorTask.project_ids.any(project_id))
+        .filter(col.any(relation_id))
         .filter(M.MirrorTask.assignees.any(employee))
         .filter(M.MirrorTask.actual_end_date.isnot(None))
         .filter(M.MirrorTask.actual_end_date >= last_week_start)
@@ -293,19 +304,22 @@ def _employee_last_week_done(
 
 def _employee_this_week_plan(
     db: Session,
-    project_id: str,
+    relation_id: str,
     employee: str,
     week_start: date,
     week_end: date,
+    *,
+    kind: str = "project",
 ) -> str:
-    """이번 주 (project, employee) 조합 — weekly_plan_text 우선, 없으면 활성 task title.
+    """이번 주 (relation, employee) 조합 — weekly_plan_text 우선, 없으면 활성 task title.
 
-    활성 = 기간이 [week_start, week_end]와 교집합 + 완료 안 됨(actual_end_date 부재 또는 이번주 범위 안).
+    활성 = 기간이 [week_start, week_end]와 교집합. relation은 project 또는 sale.
     """
+    col = _relation_column(kind)
     rows = (
         db.query(M.MirrorTask.title, M.MirrorTask.weekly_plan_text)
         .filter(M.MirrorTask.archived.is_(False))
-        .filter(M.MirrorTask.project_ids.any(project_id))
+        .filter(col.any(relation_id))
         .filter(M.MirrorTask.assignees.any(employee))
         .filter(or_(M.MirrorTask.start_date.is_(None), M.MirrorTask.start_date <= week_end))
         .filter(or_(M.MirrorTask.end_date.is_(None), M.MirrorTask.end_date >= week_start))
@@ -713,6 +727,46 @@ def aggregate_team_work(
                 project_name=r.name,
                 client=client,
                 stage=r.stage,
+                last_week_summary=last_week,
+                this_week_plan=this_week,
+                note="",
+            )
+            by_team[emp_team].append(row)
+
+    # 영업(sales)도 source에 포함 — 진행 중 영업 row의 assignees도 펼침.
+    # 종결/실주/취소 단계 제외. EmployeeWorkRow의 project_code/name은 영업코드/영업명.
+    sales_rows = (
+        db.query(M.MirrorSales)
+        .filter(M.MirrorSales.archived.is_(False))
+        .filter(~M.MirrorSales.stage.in_(["수주확정", "실주", "취소", "전환완료", "종결"]))
+        .all()
+    )
+    for s in sales_rows:
+        sales_assignees = [a for a in (s.assignees or []) if a]
+        if not sales_assignees:
+            continue
+        sale_client = ""
+        if s.client_id:
+            sale_client = (client_name_by_id.get(s.client_id) or "").strip()
+        for assignee in sales_assignees:
+            position, emp_team, _ = emp_meta.get(assignee, ("", "", 0))
+            if not emp_team:
+                continue
+            last_week = _employee_last_week_done(
+                db, s.page_id, assignee, last_week_start, last_week_end, kind="sale"
+            )
+            this_week = _employee_this_week_plan(
+                db, s.page_id, assignee, week_start, week_end, kind="sale"
+            )
+            if not last_week and not this_week:
+                continue
+            row = EmployeeWorkRow(
+                employee_name=assignee,
+                position=position,
+                project_code=s.code,  # 영업코드 영{YY}-{NNN}
+                project_name=s.name,
+                client=sale_client,
+                stage=f"영업·{s.stage}" if s.stage else "영업",
                 last_week_summary=last_week,
                 this_week_plan=this_week,
                 note="",
