@@ -119,6 +119,11 @@
       font-size: 7.5pt;
       padding: 1px;
     }
+    /* 한 팀 매트릭스(제목 + 표)가 페이지 경계에서 잘리지 않도록 */
+    .schedule-block {
+      page-break-inside: avoid;
+      margin-bottom: 4px;
+    }
     .cat-외근, .cat-동행 { background: #ffe6cc; color: #8a4a00; }
     .cat-출장 { background: #e6ccff; color: #4a008a; }
     .cat-연차, .cat-휴가 { background: #ffd6d6; color: #8a0000; }
@@ -127,8 +132,23 @@
     .cat-교육 { background: #d6f5d6; color: #006600; }
 
     /* ── 팀별 페이지 ── */
-    .team-page table { font-size: 8pt; }
-    .team-page td { padding: 1.5px 3px; }
+    .team-page { page-break-before: always; }
+    .team-page table.team-table { font-size: 8pt; }
+    .team-page table.team-table td { padding: 1.5px 3px; }
+    .team-title {
+      margin-top: 10px;
+      page-break-after: avoid;
+    }
+    .team-count {
+      font-size: 8.5pt;
+      color: #666;
+      font-weight: 400;
+    }
+    /* 한 팀 블록(제목 + 표)이 페이지 경계에서 잘리지 않도록 */
+    .team-page table.team-table {
+      page-break-inside: avoid;
+      margin-bottom: 6px;
+    }
     .progress-bar {
       width: 50px;
       height: 8px;
@@ -181,31 +201,27 @@
     {% endif %}
   </div>
 
+  {# ② 공지사항 + ⑫ 교육일정 — 둘 다 비어있으면 섹션 숨김 #}
+  {% if report.notices or report.education %}
   <div class="grid-2col">
-    {# ② 공지사항 (1차 빈 값 — Phase 2.4) #}
+    {% if report.notices %}
     <div>
       <h2>■ 주요 공지사항</h2>
-      {% if report.notices %}
-        <ul style="list-style: disc inside; font-size: 8.5pt;">
-          {% for n in report.notices %}<li>{{ n }}</li>{% endfor %}
-        </ul>
-      {% else %}
-        <div style="color: #aaa; font-size: 8pt; padding: 4px;">(공지 없음 — Phase 2.4에서 도메인 추가)</div>
-      {% endif %}
+      <ul style="list-style: disc inside; font-size: 8.5pt;">
+        {% for n in report.notices %}<li>{{ n }}</li>{% endfor %}
+      </ul>
     </div>
-
-    {# ⑫ 교육일정 #}
+    {% endif %}
+    {% if report.education %}
     <div>
       <h2>■ 교육 일정</h2>
-      {% if report.education %}
-        <ul style="list-style: disc inside; font-size: 8.5pt;">
-          {% for e in report.education %}<li>{{ e }}</li>{% endfor %}
-        </ul>
-      {% else %}
-        <div style="color: #aaa; font-size: 8pt; padding: 4px;">(교육 없음)</div>
-      {% endif %}
+      <ul style="list-style: disc inside; font-size: 8.5pt;">
+        {% for e in report.education %}<li>{{ e }}</li>{% endfor %}
+      </ul>
     </div>
+    {% endif %}
   </div>
+  {% endif %}
 
   {# ③ 날인대장 #}
   <h2>■ 날인대장</h2>
@@ -322,6 +338,7 @@
   <h2>■ 개인 주간 일정</h2>
   {% if schedule_matrix %}
     {% for team_name, employees in schedule_matrix.items() %}
+      <div class="schedule-block">
       <h3>{{ team_name }}</h3>
       <table class="schedule-table">
         <thead>
@@ -351,69 +368,65 @@
           {% endfor %}
         </tbody>
       </table>
+      </div>
     {% endfor %}
   {% else %}
     <div style="color: #aaa; font-size: 8pt; padding: 4px;">(이번 주 등록된 외근/연차/파견 일정 없음)</div>
   {% endif %}
 </section>
 
-{# ────────── 2~N페이지 — 팀별 진행 ────────── #}
-{% for team_name, rows in sorted_teams %}
-<section class="page team-page">
+{# ────────── 2~N페이지 — 팀별 진행 (통합 섹션, 자연 분할) ────────── #}
+{% if sorted_teams %}
+<section class="team-page">
   <div class="header">
     <div>
-      <h1>{{ team_name }} — 진행 프로젝트</h1>
-      <div style="font-size: 8.5pt; color: #555; margin-top: 2px;">
-        {{ period_label }} · 총 {{ rows|length }}건
-      </div>
+      <h1>팀별 진행 프로젝트</h1>
+      <div style="font-size: 8.5pt; color: #555; margin-top: 2px;">{{ period_label }}</div>
     </div>
     <div class="meta">
       <div>동양구조엔지니어링</div>
     </div>
   </div>
 
-  <table>
-    <thead>
-      <tr>
-        <th style="width: 8%;">CODE</th>
-        <th style="width: 22%;">프로젝트명</th>
-        <th style="width: 12%;">발주처</th>
-        <th style="width: 8%;">PM</th>
-        <th style="width: 8%;">단계</th>
-        <th style="width: 12%;">진행률</th>
-        <th style="width: 9%;">마감</th>
-        <th style="width: 21%;">담당자 / 금주예정</th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for r in rows %}
+  {% for team_name, rows in sorted_teams %}
+    <h2 class="team-title">■ {{ team_name }} <span class="team-count">({{ rows|length }}건)</span></h2>
+    <table class="team-table">
+      <thead>
         <tr>
-          <td class="center">{{ r.code }}</td>
-          <td>{{ r.name }}</td>
-          <td>{{ r.client }}</td>
-          <td class="center">{{ r.pm }}</td>
-          <td class="center">{{ r.stage }}</td>
-          <td>
-            <span class="progress-bar"><span class="progress-fill" style="width: {{ (r.progress * 100)|int }}%;"></span></span>
-            {{ r.progress|pct }}
-          </td>
-          <td class="center">{{ r.end_date or '' }}</td>
-          <td>
-            {{ r.assignees|join(', ') }}
-            {% if r.weekly_plan %}<br><span style="color: #555;">{{ r.weekly_plan }}</span>{% endif %}
-          </td>
+          <th style="width: 8%;">CODE</th>
+          <th style="width: 22%;">프로젝트명</th>
+          <th style="width: 12%;">발주처</th>
+          <th style="width: 8%;">PM</th>
+          <th style="width: 8%;">단계</th>
+          <th style="width: 12%;">진행률</th>
+          <th style="width: 9%;">마감</th>
+          <th style="width: 21%;">담당자 / 금주예정</th>
         </tr>
-      {% endfor %}
-    </tbody>
-  </table>
-
-  {% if loop.last %}
-    <div class="footer-note">
-      ※ 진행률은 task progress 평균 — 노션 프로젝트 단일 컬럼 부재 (PR-W 후속 보완).
-    </div>
-  {% endif %}
+      </thead>
+      <tbody>
+        {% for r in rows %}
+          <tr>
+            <td class="center">{{ r.code }}</td>
+            <td>{{ r.name }}</td>
+            <td>{{ r.client }}</td>
+            <td class="center">{{ r.pm }}</td>
+            <td class="center">{{ r.stage }}</td>
+            <td>
+              <span class="progress-bar"><span class="progress-fill" style="width: {{ (r.progress * 100)|int }}%;"></span></span>
+              {{ r.progress|pct }}
+            </td>
+            <td class="center">{{ r.end_date or '' }}</td>
+            <td>
+              {{ r.assignees|join(', ') }}
+              {% if r.weekly_plan %}<br><span style="color: #555;">{{ r.weekly_plan }}</span>{% endif %}
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% endfor %}
 </section>
-{% endfor %}
+{% endif %}
 
 </body>
 </html>
