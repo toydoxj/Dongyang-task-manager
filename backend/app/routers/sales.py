@@ -8,6 +8,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from datetime import date, datetime, timedelta, timezone
+from typing import Any
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
 from fastapi.responses import Response
@@ -60,6 +61,60 @@ from app.settings import get_settings
 
 logger = logging.getLogger("api.sales")
 router = APIRouter(prefix="/sales", tags=["sales"])
+
+
+async def _create_quote_task_for_sale(
+    notion: NotionService, sale_row: M.MirrorSales, db: Session
+) -> None:
+    """첫 견적 추가 시 노션 task 자동 생성 — 영업당 1회.
+
+    중복 방지: sales_ids에 이 영업 page_id가 연결된 active task가 이미 있으면 skip
+    (idempotent). 노션 task DB에 "영업" relation 컬럼이 부재하면 422 발생할 수
+    있으므로 실패는 logger.warn으로 흡수 (응답 흐름 유지).
+    """
+    existing = (
+        db.query(M.MirrorTask.page_id)
+        .filter(M.MirrorTask.archived.is_(False))
+        .filter(M.MirrorTask.sales_ids.any(sale_row.page_id))
+        .first()
+    )
+    if existing:
+        return
+
+    assignees = [a for a in (sale_row.assignees or []) if a]
+    title_parts: list[str] = []
+    if sale_row.code:
+        title_parts.append(sale_row.code)
+    title_parts.append("견적서 작성")
+    if sale_row.name:
+        title_parts.append(f"— {sale_row.name}")
+    title = " ".join(title_parts)
+
+    today_iso = date.today().isoformat()
+    props: dict[str, Any] = {
+        "내용": {"title": [{"text": {"content": title}}]},
+        "분류": {"select": {"name": "영업(서비스)"}},
+        "영업": {"relation": [{"id": sale_row.page_id}]},
+        "상태": {"status": {"name": "시작 전"}},
+        "기간": {"date": {"start": today_iso}},
+    }
+    if assignees:
+        props["담당자"] = {"multi_select": [{"name": a} for a in assignees]}
+
+    settings = get_settings()
+    try:
+        page = await notion.create_page(settings.notion_db_tasks, props)
+        try:
+            get_sync().upsert_page("tasks", page)
+        except Exception as e:  # noqa: BLE001
+            logger.warning("자동 quote task mirror upsert 실패: %s", e)
+    except Exception as e:  # noqa: BLE001
+        logger.warning(
+            "자동 quote task 생성 실패 (영업 %s — 노션 task DB에 '영업' relation "
+            "컬럼이 없으면 발생; 운영자가 노션 UI에서 직접 추가 필요): %s",
+            sale_row.code or sale_row.page_id,
+            e,
+        )
 
 # /me '내 영업'에서 완료·종결 단계는 가시화 부담을 줄이기 위해 숨김.
 # 제출 단계는 제출일 기준 60일 이내인 것만 노출 — 옛 제출 건 누적 방지.
@@ -423,8 +478,12 @@ async def add_sale_quote(
         .values(**update_values)
     )
     db.commit()
+    db.refresh(row)
 
     await _sync_sale_estimated_amount(db, page_id, notion)
+    # 첫 견적이면 노션 task DB에 견적서 작성 task 자동 생성 (PR-W follow-up).
+    # idempotent — 이미 sales_ids 연결된 task가 있으면 skip.
+    await _create_quote_task_for_sale(notion, row, db)
     return _form_to_response(new_form)
 
 
