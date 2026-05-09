@@ -134,6 +134,24 @@ class TeamProjectRow(BaseModel):
     end_date: str | None = None  # 마감 (계약 end 또는 완료일)
 
 
+class EmployeeWorkRow(BaseModel):
+    """직원 × 프로젝트 한 행 — 팀별 업무 현황 표 (PR-W follow-up).
+
+    한 직원이 N개 프로젝트 담당이면 N개 row. 같은 직원의 첫 row만 이름/직책 표시
+    하는 처리는 frontend/PDF 책임 (rowspan).
+    """
+
+    employee_name: str
+    position: str = ""  # 직책 (employees.position)
+    project_code: str
+    project_name: str
+    client: str = ""
+    stage: str = ""
+    last_week_summary: str = ""  # 지난주 actual_end_date 기준 task title 합치기
+    this_week_plan: str = ""  # weekly_plan_text 우선, 없으면 활성 task title
+    note: str = ""
+
+
 class WeeklyReport(BaseModel):
     period_start: date  # 월요일
     period_end: date  # 금요일
@@ -150,6 +168,9 @@ class WeeklyReport(BaseModel):
 
     # 팀별 진행 프로젝트 — key 정렬은 라우터/템플릿에서
     teams: dict[str, list[TeamProjectRow]] = Field(default_factory=dict)
+
+    # 팀별 업무 현황 (직원 × 프로젝트 행 단위) — PDF 일지 본래 양식
+    team_work: dict[str, list[EmployeeWorkRow]] = Field(default_factory=dict)
 
 
 # ── helper ──
@@ -212,6 +233,76 @@ def _avg_task_progress(db: Session, project_id: str) -> float:
     )
     vals = [r[0] for r in rows if r[0] is not None]
     return sum(vals) / len(vals) if vals else 0.0
+
+
+def _employee_last_week_done(
+    db: Session,
+    project_id: str,
+    employee: str,
+    last_week_start: date,
+    last_week_end: date,
+) -> str:
+    """지난주에 해당 직원이 (project, employee) 조합으로 완료한 task title 합치기.
+
+    actual_end_date가 [last_week_start, last_week_end] 범위에 있는 task — 실제 완료일 기준.
+    """
+    rows = (
+        db.query(M.MirrorTask.title)
+        .filter(M.MirrorTask.archived.is_(False))
+        .filter(M.MirrorTask.project_ids.any(project_id))
+        .filter(M.MirrorTask.assignees.any(employee))
+        .filter(M.MirrorTask.actual_end_date.isnot(None))
+        .filter(M.MirrorTask.actual_end_date >= last_week_start)
+        .filter(M.MirrorTask.actual_end_date <= last_week_end)
+        .all()
+    )
+    seen: set[str] = set()
+    out: list[str] = []
+    for (title,) in rows:
+        s = (title or "").strip()
+        if s and s not in seen:
+            seen.add(s)
+            out.append(s)
+    return " · ".join(out)
+
+
+def _employee_this_week_plan(
+    db: Session,
+    project_id: str,
+    employee: str,
+    week_start: date,
+    week_end: date,
+) -> str:
+    """이번 주 (project, employee) 조합 — weekly_plan_text 우선, 없으면 활성 task title.
+
+    활성 = 기간이 [week_start, week_end]와 교집합 + 완료 안 됨(actual_end_date 부재 또는 이번주 범위 안).
+    """
+    rows = (
+        db.query(M.MirrorTask.title, M.MirrorTask.weekly_plan_text)
+        .filter(M.MirrorTask.archived.is_(False))
+        .filter(M.MirrorTask.project_ids.any(project_id))
+        .filter(M.MirrorTask.assignees.any(employee))
+        .filter(or_(M.MirrorTask.start_date.is_(None), M.MirrorTask.start_date <= week_end))
+        .filter(or_(M.MirrorTask.end_date.is_(None), M.MirrorTask.end_date >= week_start))
+        .all()
+    )
+    plans: list[str] = []
+    titles: list[str] = []
+    seen_plans: set[str] = set()
+    seen_titles: set[str] = set()
+    for title, plan in rows:
+        p = (plan or "").strip()
+        if p and p not in seen_plans:
+            seen_plans.add(p)
+            plans.append(p)
+        t = (title or "").strip()
+        if t and t not in seen_titles:
+            seen_titles.add(t)
+            titles.append(t)
+    # weekly_plan_text가 하나라도 있으면 그것 우선, 없으면 task title fallback
+    if plans:
+        return " · ".join(plans)
+    return " · ".join(titles)
 
 
 def _project_weekly_plans(
@@ -527,6 +618,77 @@ def aggregate_team_projects(
     return dict(by_team)
 
 
+def aggregate_team_work(
+    db: Session, week_start: date, week_end: date
+) -> dict[str, list[EmployeeWorkRow]]:
+    """팀별 (직원 × 프로젝트) 행 단위 업무 현황 — PDF 일지 본래 양식.
+
+    각 active mirror_project의 assignees를 펼쳐 (employee, project) 쌍을 만들고,
+    지난주 완료/이번주 활성 task를 employee+project 단위로 집계.
+
+    팀 정렬: aggregate_team_projects와 동일 (template/router 책임).
+    팀 내 정렬: 직원 sort_order → 이름 → 프로젝트 stage → 프로젝트 code.
+    """
+    last_week_start = week_start - timedelta(days=7)
+    last_week_end = week_end - timedelta(days=7)
+
+    # 직원 정보 lookup (이름 → position, sort_order)
+    emp_meta: dict[str, tuple[str, int]] = {}
+    for emp in db.query(Employee.name, Employee.position, Employee.sort_order).all():
+        emp_meta[emp.name] = (emp.position or "", emp.sort_order or 0)
+
+    project_rows = (
+        db.query(M.MirrorProject)
+        .filter(M.MirrorProject.archived.is_(False))
+        .filter(M.MirrorProject.completed.is_(False))
+        .all()
+    )
+
+    by_team: dict[str, list[EmployeeWorkRow]] = defaultdict(list)
+    for r in project_rows:
+        if r.stage and r.stage not in _ACTIVE_STAGES:
+            continue
+        teams = [t for t in (r.teams or []) if t]
+        if not teams:
+            continue
+        proj = project_from_mirror(r)
+        client = proj.client_text or (proj.client_names[0] if proj.client_names else "")
+        assignees = [a for a in (r.assignees or []) if a]
+        if not assignees:
+            continue
+        for assignee in assignees:
+            position, _ = emp_meta.get(assignee, ("", 0))
+            row = EmployeeWorkRow(
+                employee_name=assignee,
+                position=position,
+                project_code=r.code,
+                project_name=r.name,
+                client=client,
+                stage=r.stage,
+                last_week_summary=_employee_last_week_done(
+                    db, r.page_id, assignee, last_week_start, last_week_end
+                ),
+                this_week_plan=_employee_this_week_plan(
+                    db, r.page_id, assignee, week_start, week_end
+                ),
+                note="",
+            )
+            for team in teams:
+                by_team[team].append(row)
+
+    # 팀 내 정렬: (직원 sort_order, 이름, 프로젝트 stage 우선순위, 프로젝트 code)
+    for team_rows in by_team.values():
+        team_rows.sort(
+            key=lambda x: (
+                emp_meta.get(x.employee_name, ("", 9999))[1],
+                x.employee_name,
+                _STAGE_SORT_PRIORITY.get(x.stage, 99),
+                x.project_code,
+            )
+        )
+    return dict(by_team)
+
+
 # ── main ──
 
 
@@ -549,4 +711,5 @@ def build_weekly_report(db: Session, week_start: date) -> WeeklyReport:
         sales=aggregate_sales(db, week_start, week_end),
         personal_schedule=aggregate_personal_schedule(db, week_start, week_end),
         teams=aggregate_team_projects(db, week_start, week_end),
+        team_work=aggregate_team_work(db, week_start, week_end),
     )

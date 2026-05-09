@@ -1348,6 +1348,18 @@ export interface WeeklyTeamProjectRow {
   end_date: string | null;
 }
 
+export interface WeeklyEmployeeWorkRow {
+  employee_name: string;
+  position: string;
+  project_code: string;
+  project_name: string;
+  client: string;
+  stage: string;
+  last_week_summary: string;
+  this_week_plan: string;
+  note: string;
+}
+
 export interface WeeklySealLogItem {
   project_name: string;
   client: string;
@@ -1380,6 +1392,7 @@ export interface WeeklyReport {
   sales: WeeklySalesItem[];
   personal_schedule: WeeklyPersonalScheduleEntry[];
   teams: Record<string, WeeklyTeamProjectRow[]>;
+  team_work: Record<string, WeeklyEmployeeWorkRow[]>;
 }
 
 export async function fetchWeeklyReport(weekStart: string): Promise<WeeklyReport> {
