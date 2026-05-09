@@ -1381,6 +1381,20 @@ export async function downloadWeeklyReportPdf(weekStart: string): Promise<void> 
   );
 }
 
+/** 주간 업무일지 PDF를 Blob으로 가져옴 (iframe 미리보기용).
+ * 호출자가 URL.createObjectURL로 변환해 사용하고, 사용 후 revokeObjectURL 책임. */
+export async function fetchWeeklyReportPdfBlob(weekStart: string): Promise<Blob> {
+  const res = await authFetch(`/api/weekly-report.pdf?week_start=${weekStart}`);
+  if (!res.ok) {
+    const detail = await res.json().catch(() => null);
+    throw new Error(
+      (detail as { detail?: string } | null)?.detail ??
+        `${res.status} ${res.statusText}`,
+    );
+  }
+  return await res.blob();
+}
+
 // ── 사내 공지 / 교육 일정 (PR-W Phase 2.4) ──
 
 export type NoticeKind = "공지" | "교육";
