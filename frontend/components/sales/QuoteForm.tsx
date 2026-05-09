@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 
+import InspectionLegalForm from "@/components/sales/InspectionLegalForm";
 import QuoteResultPanel from "@/components/sales/QuoteResultPanel";
 import { previewQuote } from "@/lib/api";
 import {
@@ -94,6 +95,29 @@ export default function QuoteForm({
         adj: value.adjustment_pct,
         tu: value.truncate_unit,
         fov: value.final_override,
+        // 시특법 자동 산정 (PR-Q5b) — 별표 23/제62조/제61조/별표 25/별표 26
+        sf: value.structure_form,
+        bu: value.building_usage,
+        ay: value.aging_years,
+        cx: value.complexity,
+        pr: value.prev_report,
+        ft: value.facility_type,
+        sa: value.sub_facility_areas,
+        tuc: value.travel_unit_cost,
+        hdw: value.helper_daily_wage,
+        vdc: value.vehicle_daily_cost,
+        fup: value.fuel_unit_price,
+        puc: value.print_unit_cost,
+        pc: value.print_copies,
+        rp: value.risk_pct,
+        ofd: value.opt_field_drawings,
+        ofs: value.opt_field_drawings_scope,
+        osa: value.opt_structural_analysis,
+        oat: value.opt_analysis_struct_type,
+        oac: value.opt_analysis_count,
+        ose: value.opt_seismic_eval,
+        osm: value.opt_seismic_multiplier,
+        ooi: value.opt_other_items,
         // legacy
         p: value.printing_fee,
         v: value.survey_fee,
@@ -534,27 +558,8 @@ export default function QuoteForm({
         )}
 
         {isInspectionLegal && (
-          <Section title="투입인원">
-            <Field label="조정 인.일 — 시특법 sheet의 4계수 곱 결과 (예: 15.24)">
-              <input
-                type="number"
-                min={0}
-                step={0.01}
-                className={inputCls}
-                placeholder="0.00"
-                value={value.manhours_override ?? ""}
-                onChange={(e) =>
-                  set(
-                    "manhours_override",
-                    e.target.value ? Number(e.target.value) : null,
-                  )
-                }
-              />
-            </Field>
-            <p className="text-[11px] text-stone-500">
-              xlsx 시특법 sheet의 H40 = ROUNDDOWN(C40·D40·E40·F40·G40, 2)
-              결과를 그대로 입력하세요. 직접경비는 아래 항목 list로.
-            </p>
+          <Section title="시특법 점검 자동 산정">
+            <InspectionLegalForm value={value} onChange={onChange} />
           </Section>
         )}
 

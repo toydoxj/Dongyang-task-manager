@@ -16,6 +16,10 @@
       color: #1a1a1a;
       font-size: 10pt;
       line-height: 1.5;
+    }
+    /* 1페이지 견적서 콘텐츠 wrapper — flex column으로 vertical center 효과.
+       2페이지 별표 26 산정 페이지가 추가되어도 첫 페이지 layout 유지. */
+    .quote-page-1 {
       display: flex;
       flex-direction: column;
       min-height: 261mm;  /* page content area = A4 297 - top 18 - bottom 18 */
@@ -372,9 +376,81 @@
       white-space: nowrap;
       flex-shrink: 0;
     }
+
+    /* ── 별표 26 선택과업 산정 페이지 (시특법 자동 산정 시만) ── */
+    .optional-tasks-page {
+      page-break-before: always;
+      break-before: page;
+      flex-shrink: 0;
+      padding-top: 0;
+    }
+    .optional-tasks-page .opt-title {
+      font-size: 18pt;
+      font-weight: 700;
+      letter-spacing: 0.05em;
+      margin-bottom: 4px;
+      color: #1a1a1a;
+    }
+    .optional-tasks-page .opt-subtitle {
+      font-size: 9pt;
+      color: #888;
+      margin-bottom: 18px;
+    }
+    .optional-tasks-page .opt-divider {
+      width: 80px;
+      height: 2.5px;
+      background: #7baa3c;
+      margin-bottom: 18px;
+    }
+    .optional-tasks-page .opt-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 9.5pt;
+      /* 표 내부에서 페이지 분리 방지 — 한 페이지 안 들어가면 통째 이동 */
+      page-break-inside: avoid;
+      break-inside: avoid;
+    }
+    .optional-tasks-page .opt-table th,
+    .optional-tasks-page .opt-table td {
+      border: 1px solid #ccc;
+      padding: 6px 10px;
+      text-align: left;
+      vertical-align: top;
+    }
+    .optional-tasks-page .opt-table th {
+      background: #f4f4f0;
+      font-weight: 600;
+      color: #444;
+    }
+    .optional-tasks-page .opt-table td.amount {
+      text-align: right;
+      white-space: nowrap;
+      font-variant-numeric: tabular-nums;
+    }
+    .optional-tasks-page .opt-table tr.total-row td {
+      font-weight: 700;
+      background: #fafaf6;
+    }
+    .optional-tasks-page .opt-section-title {
+      margin-top: 24px;
+      margin-bottom: 8px;
+      font-size: 11pt;
+      font-weight: 600;
+      color: #444;
+      /* 다음 표와 분리되지 않도록 */
+      page-break-after: avoid;
+      break-after: avoid;
+    }
+    .optional-tasks-page .opt-summary {
+      margin-top: 12px;
+      font-size: 9pt;
+      color: #666;
+      line-height: 1.6;
+    }
   </style>
 </head>
 <body>
+<div class="quote-page-1">
 
   <div class="header">
     <div class="brand">
@@ -475,7 +551,9 @@
         <td class="num">②</td>
         <td>직접경비</td>
         <td class="formula">
-          {%- if input.direct_expense_items and (input.direct_expense_items | selectattr('amount') | list | length) -%}
+          {%- if result.direct_expense_breakdown -%}
+            (직접경비 산정 상세 내역 참조)
+          {%- elif input.direct_expense_items and (input.direct_expense_items | selectattr('amount') | list | length) -%}
             {{ input.direct_expense_items | selectattr('amount') | list | length }}건 합계
           {%- else -%}
             인쇄 · 조사 · 교통비
@@ -483,7 +561,9 @@
         </td>
         <td class="right amount">{{ "{:,}".format(result.direct_expense | int) }}</td>
       </tr>
-      {# 직접경비 항목별 sub-row — 사용자가 입력한 동적 항목 list. 금액 0 항목은 skip #}
+      {# 직접경비 항목별 sub-row — 자동 산정 모드는 2페이지 분해 표 사용, 1페이지엔 노출 X.
+         수동 입력 모드일 때만 동적 항목 list 표시. 금액 0 항목은 skip #}
+      {%- if not result.direct_expense_breakdown -%}
       {%- for item in input.direct_expense_items or [] -%}
         {%- if item.amount and item.amount > 0 -%}
       <tr class="expense-detail">
@@ -494,6 +574,7 @@
       </tr>
         {%- endif -%}
       {%- endfor -%}
+      {%- endif -%}
       <tr>
         <td class="num">③</td>
         <td>제경비</td>
@@ -509,13 +590,25 @@
       <tr>
         <td class="num">⑤</td>
         <td>소계</td>
-        <td class="formula">① + ③ + ④</td>
+        <td class="formula">
+          {%- if result.direct_expense_breakdown -%}
+            ① + ② + ③ + ④
+          {%- else -%}
+            ① + ③ + ④
+          {%- endif -%}
+        </td>
         <td class="right amount">{{ "{:,}".format(result.subtotal | int) }}</td>
       </tr>
       <tr>
         <td class="num">⑥</td>
         <td>당사조정</td>
-        <td class="formula">⑤ × {{ input.adjustment_pct or 87 }}% + ②</td>
+        <td class="formula">
+          {%- if result.direct_expense_breakdown -%}
+            ⑤ × {{ input.adjustment_pct or 87 }}%
+          {%- else -%}
+            ⑤ × {{ input.adjustment_pct or 87 }}% + ②
+          {%- endif -%}
+        </td>
         <td class="right amount">{{ "{:,}".format(result.adjusted | int) }}</td>
       </tr>
       <tr class="deduction">
@@ -651,6 +744,162 @@
     <span>의문사항이나 불명확한 내용에 대해서는 즉시 담당자에게 연락바랍니다. 본 견적서는 상호합의 하에 조정될 수 있습니다.</span>
   </div>
   </div>
+
+</div>{# /.quote-page-1 #}
+
+  {# 직접경비·추가과업 산정 상세 — 시특법 자동 산정(정기/정밀점검/정밀안전진단)에서만 #}
+  {% if result.direct_expense_breakdown or result.optional_tasks %}
+  <div class="optional-tasks-page">
+    <div class="opt-title">직접경비 · 추가과업 산정 상세</div>
+    <div class="opt-divider"></div>
+    <div class="opt-subtitle">
+      시설물의 안전 및 유지관리 실시 등에 관한 지침 별표 22~26 — 본 견적의 산정 근거
+    </div>
+
+    {# 기본과업 인.일 산식 단계별 — 별표 22 base → 별표 23/제62조 보정 → 추가과업 합산 #}
+    {% if result.manhours_formula %}
+    <div class="opt-section-title">기본과업 투입 인.일 산식 (별표 22 + 보정)</div>
+    <table class="opt-table">
+      <thead>
+        <tr>
+          <th style="width: 40%;">단계</th>
+          <th style="width: 15%;" class="amount">연산</th>
+          <th style="width: 20%;" class="amount">값</th>
+          <th style="width: 25%;">비고</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for step in result.manhours_formula %}
+        <tr{% if '소계' in step.label or '전체' in step.label %} class="total-row"{% endif %}>
+          <td>{{ step.label }}</td>
+          <td class="amount">{{ step.operator }}</td>
+          <td class="amount">{{ "%.2f"|format(step.value) }}</td>
+          <td>{{ step.note }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    <div style="font-size: 9pt; color: #666; margin-top: 4px;">
+      외업: {{ "%.2f"|format(result.manhours_outdoor) }}인.일 (별표 22 외업 × 보정) ·
+      내업: {{ "%.2f"|format(result.manhours_indoor) }}인.일 (전체 - 외업)
+    </div>
+    {% endif %}
+
+    {# 별표 25 직접경비 항목별 분해 #}
+    {% if result.direct_expense_breakdown %}
+    <div class="opt-section-title">직접경비 산정 (별표 25)</div>
+    <table class="opt-table">
+      <thead>
+        <tr>
+          <th style="width: 25%;">항목</th>
+          <th style="width: 55%;">산식</th>
+          <th class="amount" style="width: 20%;">금액 (원)</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for d in result.direct_expense_breakdown %}
+        <tr>
+          <td>{{ d.label }}</td>
+          <td>{{ d.note }}</td>
+          <td class="amount">{{ "{:,}".format(d.amount|int) }}</td>
+        </tr>
+        {% endfor %}
+        {% set de_sum = result.direct_expense_breakdown|sum(attribute='amount') %}
+        <tr class="total-row">
+          <td colspan="2">직접경비 소계 (별표 25)</td>
+          <td class="amount">{{ "{:,}".format(de_sum|int) }}</td>
+        </tr>
+      </tbody>
+    </table>
+    {% endif %}
+
+    {# 별표 26 추가과업 — 인.일 합산 항목과 별도 합산 항목 분리 표시 #}
+    {% if result.optional_tasks %}
+    {% set tasks_in_labor = result.optional_tasks | selectattr('persons') | list %}
+    {% set tasks_in_expense = result.optional_tasks | rejectattr('persons') | list %}
+
+    {% if tasks_in_labor %}
+    <div class="opt-section-title">추가과업 — 인.일 합산 (직접인건비 산정 포함)</div>
+    <table class="opt-table">
+      <thead>
+        <tr>
+          <th style="width: 30%;">항목</th>
+          <th class="amount" style="width: 15%;">인원수</th>
+          <th class="amount" style="width: 35%;">산식</th>
+          <th class="amount" style="width: 20%;">환산 금액 (원)</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for t in tasks_in_labor %}
+        <tr>
+          <td>{{ t.label }}</td>
+          <td class="amount">{{ "%.1f"|format(t.persons) }} 인</td>
+          <td class="amount">{{ t.note }}</td>
+          <td class="amount">{{ "{:,}".format(t.amount|int) }}</td>
+        </tr>
+        {% endfor %}
+        {% set lp_sum_persons = tasks_in_labor|sum(attribute='persons') %}
+        {% set lp_sum_amount = tasks_in_labor|sum(attribute='amount') %}
+        <tr class="total-row">
+          <td>추가 인.일 소계</td>
+          <td class="amount">{{ "%.1f"|format(lp_sum_persons) }} 인</td>
+          <td></td>
+          <td class="amount">{{ "{:,}".format(lp_sum_amount|int) }}</td>
+        </tr>
+      </tbody>
+    </table>
+    {% endif %}
+
+    {% if tasks_in_expense %}
+    <div class="opt-section-title">추가과업 — 직접경비 합산</div>
+    <table class="opt-table">
+      <thead>
+        <tr>
+          <th style="width: 25%;">항목</th>
+          <th style="width: 55%;">산식</th>
+          <th class="amount" style="width: 20%;">금액 (원)</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for t in tasks_in_expense %}
+        <tr>
+          <td>{{ t.label }}</td>
+          <td>{{ t.note }}</td>
+          <td class="amount">{{ "{:,}".format(t.amount|int) }}</td>
+        </tr>
+        {% endfor %}
+        {% set ex_sum = tasks_in_expense|sum(attribute='amount') %}
+        <tr class="total-row">
+          <td colspan="2">직접경비 합산 소계</td>
+          <td class="amount">{{ "{:,}".format(ex_sum|int) }}</td>
+        </tr>
+      </tbody>
+    </table>
+    {% endif %}
+    {% endif %}
+
+    {# 직접경비 총합 — 1페이지 ② 와 일치 #}
+    <table class="opt-table" style="margin-top: 6px;">
+      <tbody>
+        <tr class="total-row">
+          <td style="width: 80%;">직접경비 합계 (1페이지 ② 직접경비 항목과 동일)</td>
+          <td class="amount" style="width: 20%;">{{ "{:,}".format(result.direct_expense|int) }}</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="opt-summary">
+      <strong>적용 근거</strong><br>
+      · 별표 22 (인.일 산정): 면적·종류별 기준인원수 + 별표 24 보간<br>
+      · 별표 23 (조정비): 구조형식·용도별 보정<br>
+      · 제62조 (대가의 보정): 경과년수·구조복잡도·전차보고서 보정<br>
+      · 별표 25 (제59조 직접경비 비용산정 기준): 여비 · 차량운행비 · 보조인부 · 위험수당 · 기계기구 손료 · 인쇄비<br>
+      · 별표 26-10-(3)·-15 (구조해석·내진평가): 인.일 합산 → 직접인건비 산정 포함<br>
+      · 별표 26-1 (실측도면): 기본과업비 × 10~20% → 직접경비 합산<br>
+      · 별표 26-기타 (코어채취·해체·자문 등): 직접경비 합산
+    </div>
+  </div>
+  {% endif %}
 
 </body>
 </html>

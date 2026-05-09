@@ -636,6 +636,45 @@ export interface QuoteInput {
   special_notes?: string;
   /** 견적 비고 — 자유 입력. */
   quote_note?: string;
+  // ── 시특법 점검 자동 산정 (PR-Q5b) — 정기/정밀점검/정밀안전진단 ──
+  // structure_form은 위 메타 필드를 그대로 사용 (별표 23(1) 키).
+  /** 별표 23(2) 용도: 업무용/상업용/주거용/특수용/경기장 등 */
+  building_usage?: string;
+  /** 경과년수 (제62조 2호) */
+  aging_years?: number | null;
+  /** 구조복잡도 (제62조 1호): 단순/보통/복잡 */
+  complexity?: string;
+  /** 전차보고서 (제62조 3호): 미제공/CAD/보고서+CAD */
+  prev_report?: string;
+  /** 시설물 형태 (제61조): 기본/인접/군집(소)/군집(대)/혼합 */
+  facility_type?: string;
+  /** 인접·군집 부속 면적 list */
+  sub_facility_areas?: number[];
+  /** 직접경비 단가 (사용자 입력, 시특법 자동 산정용) */
+  travel_unit_cost?: number;
+  helper_daily_wage?: number;
+  vehicle_daily_cost?: number;
+  fuel_unit_price?: number;
+  print_unit_cost?: number;
+  print_copies?: number;
+  risk_pct?: number;
+  // ── 별표 26 선택과업 ──
+  /** A. 실측도면 작성 */
+  opt_field_drawings?: boolean;
+  /** "기본"(10%) | "상세"(20%) */
+  opt_field_drawings_scope?: string;
+  /** B. 구조해석 */
+  opt_structural_analysis?: boolean;
+  /** "RC계" | "PC조" | "특수구조" */
+  opt_analysis_struct_type?: string;
+  /** 구조해석 개소 수 */
+  opt_analysis_count?: number;
+  /** C. 내진성 평가 */
+  opt_seismic_eval?: boolean;
+  /** 2.0(간략) ~ 3.0(정밀) */
+  opt_seismic_multiplier?: number;
+  /** 그 외 자유 입력 (별표 26-6/7/11/12/13/16) */
+  opt_other_items?: DirectExpenseItem[];
   // ── legacy (기존 영업 호환, 신규는 direct_expense_items 사용) ──
   printing_fee?: number;
   survey_fee?: number;
@@ -660,6 +699,25 @@ export interface QuoteFormResponse {
   attached_pdf_file_id?: string;
 }
 
+/** 별표 26 추가과업 항목별 분해 — PDF·산정 패널 표시용. */
+export interface OptionalTaskBreakdown {
+  label: string;
+  persons: number;
+  unit_rate: number;
+  base_pct: number;
+  base_amount: number;
+  amount: number;
+  note: string;
+}
+
+/** 기본과업 인.일 산식 단계별 — 별표 22 base → 별표 23 보정 → 제62조 → 추가과업 합산. */
+export interface ManhourFormulaStep {
+  label: string;
+  operator: string;
+  value: number;
+  note: string;
+}
+
 /** 견적서 산출 결과 — 백엔드 QuoteResult. */
 export interface QuoteResult {
   manhours_baseline: number;
@@ -677,4 +735,13 @@ export interface QuoteResult {
   final_with_vat: number;
   per_pyeong_area: number;
   per_pyeong: number;
+  /** 별표 25 직접경비 항목별 분해 — 시특법 자동 산정 시에만 채워짐. */
+  direct_expense_breakdown?: OptionalTaskBreakdown[];
+  /** 별표 26 추가과업 분해 — 시특법 자동 산정 시에만 채워짐. */
+  optional_tasks?: OptionalTaskBreakdown[];
+  /** 기본과업 인.일 산식 단계별 — 시특법 자동 산정 시 PDF 표시용. */
+  manhours_formula?: ManhourFormulaStep[];
+  /** 시특법 자동 산정 외업/내업 인.일. 0이면 미적용. */
+  manhours_outdoor?: number;
+  manhours_indoor?: number;
 }
