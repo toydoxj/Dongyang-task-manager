@@ -1,0 +1,31 @@
+{# 개인일정 mini matrix — context: members (list), week_days, schedule_by_employee #}
+<table class="schedule-mini">
+  <thead>
+    <tr>
+      <th style="text-align: left; width: 30%;">담당자</th>
+      {% for d in week_days %}
+        <th class="{% if d.is_holiday %}holiday-th{% endif %}" style="width: {{ (70 / week_days|length)|int }}%;"
+            title="{{ d.holiday_names|join(', ') }}">{{ d.label }}</th>
+      {% endfor %}
+    </tr>
+  </thead>
+  <tbody>
+    {% for m in members %}
+      {% set days = schedule_by_employee.get(m.name, []) %}
+      <tr>
+        <td class="emp-cell">
+          <div>{{ m.name }}</div>
+          {% if m.position %}<div class="pos">{{ m.position }}</div>{% endif %}
+        </td>
+        {% for d in week_days %}
+          {% set cells = days[loop.index0] if days|length > loop.index0 else [] %}
+          <td class="day-cell {% if d.is_holiday %}holiday-cell{% endif %}">
+            {% for c in cells %}
+              <span class="schedule-chip chip-{{ c.kind }}">{{ c.category }}</span>
+            {% endfor %}
+          </td>
+        {% endfor %}
+      </tr>
+    {% endfor %}
+  </tbody>
+</table>

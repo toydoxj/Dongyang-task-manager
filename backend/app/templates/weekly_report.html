@@ -22,20 +22,20 @@
       line-height: 1.4;
     }
 
-    /* ── 공용 ── */
-    .page { page-break-after: always; }
-    .page:last-child { page-break-after: auto; }
-
     h1 { font-size: 16pt; font-weight: 700; letter-spacing: 0.05em; }
     h2 {
       font-size: 11pt;
       font-weight: 700;
-      margin: 8px 0 4px 0;
+      margin: 10px 0 4px 0;
       padding: 3px 6px;
       background: #f0f4e8;
       border-left: 3px solid #7baa3c;
     }
-    h3 { font-size: 10pt; font-weight: 700; margin-top: 6px; }
+    h3 {
+      font-size: 9pt;
+      font-weight: 700;
+      margin-top: 4px;
+    }
 
     .header {
       display: flex;
@@ -51,17 +51,17 @@
       color: #666;
     }
 
-    /* ── table ── */
+    /* table 공통 */
     table {
       width: 100%;
       border-collapse: collapse;
-      font-size: 8.5pt;
+      font-size: 8pt;
       table-layout: fixed;
     }
     th, td {
       border: 0.5px solid #999;
       padding: 2px 4px;
-      vertical-align: middle;
+      vertical-align: top;
       word-break: keep-all;
       overflow: hidden;
     }
@@ -69,102 +69,101 @@
       background: #ebeef0;
       font-weight: 700;
       text-align: center;
-      font-size: 8pt;
+      font-size: 7.5pt;
     }
-    td.num { text-align: right; font-variant-numeric: tabular-nums; }
     td.center { text-align: center; }
-    .empty-row td {
+    td.num { text-align: right; font-variant-numeric: tabular-nums; }
+    .empty {
+      padding: 6px;
       text-align: center;
       color: #aaa;
       font-style: italic;
-      padding: 8px;
+      font-size: 8pt;
+      border: 0.5px dashed #ccc;
     }
 
-    /* ── 1페이지 layout ── */
-    .grid-2col {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 8px;
-    }
-    .grid-3col {
-      display: grid;
-      grid-template-columns: 1fr 1fr 1fr;
-      gap: 8px;
-    }
+    /* layout */
+    .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; }
+    .grid-5 { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr 1fr; gap: 4px; }
 
     .summary-line {
-      font-size: 9.5pt;
+      font-size: 9pt;
       padding: 4px 6px;
       background: #f7f7f5;
       border: 0.5px solid #ccc;
-      margin-bottom: 6px;
     }
     .summary-line strong { color: #2a572a; }
     .badge {
       display: inline-block;
       padding: 1px 5px;
-      font-size: 7.5pt;
+      font-size: 7pt;
       border-radius: 2px;
       background: #eee;
       color: #444;
       margin-left: 4px;
     }
-    .badge-warn { background: #fdd; color: #a33; }
     .badge-bid { background: #ddf; color: #339; }
+    .text-red { color: #b91c1c; font-weight: 600; }
+    .holiday-th { background: #fee2e2; color: #b91c1c; }
+    .holiday-cell { background: #fef2f2; }
 
-    /* ── 개인일정 매트릭스 ── */
-    .schedule-table th.day-col { width: 40px; }
-    .schedule-table td.day-cell {
-      text-align: center;
-      font-size: 7.5pt;
-      padding: 1px;
-    }
-    /* 한 팀 매트릭스(제목 + 표)가 페이지 경계에서 잘리지 않도록 */
-    .schedule-block {
+    /* 개인일정 5팀 카드 */
+    .schedule-card {
+      border: 0.5px solid #999;
       page-break-inside: avoid;
-      margin-bottom: 4px;
     }
-    .cat-외근, .cat-동행 { background: #ffe6cc; color: #8a4a00; }
-    .cat-출장 { background: #e6ccff; color: #4a008a; }
-    .cat-연차, .cat-휴가 { background: #ffd6d6; color: #8a0000; }
-    .cat-반차 { background: #fff4cc; color: #8a6500; }
-    .cat-파견 { background: #cce6ff; color: #00468a; }
-    .cat-교육 { background: #d6f5d6; color: #006600; }
+    .schedule-card-header {
+      background: #ebeef0;
+      padding: 2px 4px;
+      font-weight: 700;
+      font-size: 7.5pt;
+      border-bottom: 0.5px solid #999;
+    }
+    .schedule-card-header .count {
+      font-weight: normal;
+      font-size: 7pt;
+      color: #666;
+    }
+    .schedule-mini { font-size: 7pt; }
+    .schedule-mini th { padding: 1px 2px; font-size: 6.5pt; }
+    .schedule-mini td { padding: 1px 2px; }
+    .emp-cell { line-height: 1.1; }
+    .emp-cell .pos { font-size: 6pt; color: #666; }
+    .day-cell { text-align: center; }
+    .schedule-chip {
+      display: inline-block;
+      padding: 0 2px;
+      font-size: 6pt;
+      font-weight: 600;
+      line-height: 1.3;
+      border-radius: 2px;
+    }
+    .chip-project { background: #dbeafe; color: #1e40af; }
+    .chip-sale { background: #d1fae5; color: #065f46; }
+    .chip-other { background: #e5e7eb; color: #374151; }
 
-    /* ── 팀별 페이지 ── */
-    .team-page { page-break-before: always; }
-    .team-page table.team-table { font-size: 8pt; }
-    .team-page table.team-table td { padding: 1.5px 3px; }
-    .team-title {
-      margin-top: 10px;
+    /* 팀별 업무 현황 */
+    .tw-table { font-size: 7.5pt; page-break-inside: auto; }
+    .tw-table td { padding: 2px 3px; }
+    .tw-emp {
+      background: #f7f7f5;
+      border-right: 0.5px solid #999;
+      vertical-align: middle;
+    }
+    .tw-emp .name { font-weight: 600; }
+    .tw-emp .pos { font-size: 7pt; color: #666; }
+    .tw-team-header {
+      margin-top: 12px;
       page-break-after: avoid;
     }
-    .team-count {
-      font-size: 8.5pt;
-      color: #666;
-      font-weight: 400;
-    }
-    /* 한 팀 블록(제목 + 표)이 페이지 경계에서 잘리지 않도록 */
-    .team-page table.team-table {
-      page-break-inside: avoid;
-      margin-bottom: 6px;
-    }
-    .progress-bar {
-      width: 50px;
-      height: 8px;
-      background: #eee;
-      display: inline-block;
-      vertical-align: middle;
-      margin-right: 4px;
-    }
-    .progress-fill {
-      height: 100%;
-      background: #7baa3c;
-    }
+
+    section { page-break-inside: avoid; }
+    section.tw-section { page-break-inside: auto; }
 
     .footer-note {
-      margin-top: 12px;
-      font-size: 7.5pt;
+      margin-top: 8px;
+      font-size: 7pt;
       color: #999;
       text-align: right;
     }
@@ -172,20 +171,19 @@
 </head>
 <body>
 
-{# ────────── 1페이지 — Executive Summary ────────── #}
-<section class="page">
-  <div class="header">
-    <div>
-      <h1>주간 업무일지</h1>
-      <div style="font-size: 9pt; color: #555; margin-top: 2px;">{{ period_label }}</div>
-    </div>
-    <div class="meta">
-      <div>동양구조엔지니어링</div>
-      <div>생성: {{ generated_at }}</div>
-    </div>
+<div class="header">
+  <div>
+    <h1>주간 업무일지</h1>
+    <div style="font-size: 9pt; color: #555; margin-top: 2px;">{{ period_label }}</div>
   </div>
+  <div class="meta">
+    <div>동양구조엔지니어링</div>
+    <div>생성: {{ generated_at }}</div>
+  </div>
+</div>
 
-  {# ① 인원현황 #}
+{# ─── 인원현황 ─── #}
+<section>
   <h2>■ 인원현황</h2>
   <div class="summary-line">
     총원 <strong>{{ report.headcount.total }}인</strong>
@@ -200,77 +198,120 @@
       {% endif %}
     {% endif %}
   </div>
+</section>
 
-  {# ② 공지사항 + ⑫ 교육일정 — 둘 다 비어있으면 섹션 숨김 #}
-  {% if report.notices or report.education %}
-  <div class="grid-2col">
-    {% if report.notices %}
+{# ─── [공지][교육][건의] 3-col ─── #}
+<section>
+  <div class="grid-3">
     <div>
       <h2>■ 주요 공지사항</h2>
-      <ul style="list-style: disc inside; font-size: 8.5pt;">
-        {% for n in report.notices %}<li>{{ n }}</li>{% endfor %}
-      </ul>
+      {% if report.notices %}
+        <ul style="list-style: disc inside; font-size: 8pt;">
+          {% for n in report.notices %}<li>{{ n }}</li>{% endfor %}
+        </ul>
+      {% else %}<div class="empty">(없음)</div>{% endif %}
     </div>
-    {% endif %}
-    {% if report.education %}
     <div>
       <h2>■ 교육 일정</h2>
-      <ul style="list-style: disc inside; font-size: 8.5pt;">
-        {% for e in report.education %}<li>{{ e }}</li>{% endfor %}
-      </ul>
+      {% if report.education %}
+        <ul style="list-style: disc inside; font-size: 8pt;">
+          {% for e in report.education %}<li>{{ e }}</li>{% endfor %}
+        </ul>
+      {% else %}<div class="empty">(없음)</div>{% endif %}
     </div>
-    {% endif %}
+    <div>
+      <h2>■ 건의사항</h2>
+      {% if report.suggestions %}
+        <ul style="list-style: disc inside; font-size: 8pt;">
+          {% for s in report.suggestions %}
+            <li>{{ s.title }} <span style="font-size: 7pt; color: #888;">· {{ s.author }} · {{ s.status }}</span></li>
+          {% endfor %}
+        </ul>
+      {% else %}<div class="empty">(없음)</div>{% endif %}
+    </div>
   </div>
-  {% endif %}
+</section>
 
-  {# ③ 날인대장 #}
-  <h2>■ 날인대장</h2>
-  <table>
-    <thead>
-      <tr>
-        <th style="width: 30%;">프로젝트명</th>
-        <th style="width: 15%;">발주처</th>
-        <th style="width: 15%;">유형</th>
-        <th style="width: 12%;">상태</th>
-        <th style="width: 13%;">처리자</th>
-        <th style="width: 15%;">제출예정일</th>
-      </tr>
-    </thead>
-    <tbody>
+{# ─── [날인대장][완료] 2-col ─── #}
+<section>
+  <div class="grid-2">
+    <div>
+      <h2>■ 날인대장</h2>
       {% if report.seal_log %}
-        {% for s in report.seal_log %}
-          <tr>
-            <td>{{ s.project_name }}</td>
-            <td>{{ s.client }}</td>
-            <td class="center">{{ s.seal_type }}</td>
-            <td class="center">{{ s.status }}</td>
-            <td class="center">{{ s.handler }}</td>
-            <td class="center">{{ s.due_date or '' }}</td>
-          </tr>
-        {% endfor %}
-      {% else %}
-        <tr class="empty-row"><td colspan="6">(날인 진행건 없음)</td></tr>
-      {% endif %}
-    </tbody>
-  </table>
+        <table>
+          <thead>
+            <tr>
+              <th style="width: 12%;">승인일</th>
+              <th style="width: 13%;">CODE</th>
+              <th style="width: 28%;">용역명</th>
+              <th style="width: 17%;">제출처</th>
+              <th style="width: 15%;">유형</th>
+              <th style="width: 15%;">담당자</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for s in report.seal_log %}
+              <tr>
+                <td class="center">{{ s.approved_at|mmdd }}</td>
+                <td>{{ s.code }}</td>
+                <td>{{ s.name }}</td>
+                <td>{{ s.submission_target }}</td>
+                <td class="center">{{ s.seal_type }}</td>
+                <td class="center">{{ s.requester }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      {% else %}<div class="empty">(저번주 승인된 날인 없음)</div>{% endif %}
+    </div>
+    <div>
+      <h2>■ 완료 프로젝트</h2>
+      {% if report.completed %}
+        <table>
+          <thead>
+            <tr>
+              <th style="width: 13%;">상태</th>
+              <th style="width: 15%;">CODE</th>
+              <th style="width: 32%;">프로젝트명</th>
+              <th style="width: 22%;">발주처</th>
+              <th style="width: 18%;">담당자</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for c in report.completed %}
+              <tr>
+                <td class="center">{{ c.status_label }}</td>
+                <td>{{ c.code }}</td>
+                <td>{{ c.name }}</td>
+                <td>{{ c.client }}</td>
+                <td>{{ c.assignees|join(', ') }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      {% else %}<div class="empty">(완료 없음)</div>{% endif %}
+    </div>
+  </div>
+</section>
 
-  {# ④ 영업 #}
+{# ─── 영업 ─── #}
+<section>
   <h2>■ 영업</h2>
-  <table>
-    <thead>
-      <tr>
-        <th style="width: 8%;">영업번호</th>
-        <th style="width: 12%;">업무내용</th>
-        <th style="width: 25%;">PROJECT</th>
-        <th style="width: 13%;">발주처</th>
-        <th style="width: 15%;">규모</th>
-        <th style="width: 12%;">견적가</th>
-        <th style="width: 8%;">단계</th>
-        <th style="width: 7%;">제출일</th>
-      </tr>
-    </thead>
-    <tbody>
-      {% if report.sales %}
+  {% if report.sales %}
+    <table>
+      <thead>
+        <tr>
+          <th style="width: 7%;">영업번호</th>
+          <th style="width: 11%;">내용</th>
+          <th style="width: 24%;">PROJECT</th>
+          <th style="width: 13%;">발주처</th>
+          <th style="width: 14%;">규모</th>
+          <th style="width: 11%;">견적가</th>
+          <th style="width: 8%;">단계</th>
+          <th style="width: 12%;">영업시작일</th>
+        </tr>
+      </thead>
+      <tbody>
         {% for s in report.sales %}
           <tr>
             <td class="center">{{ s.code }}</td>
@@ -280,153 +321,180 @@
             <td>{{ s.scale }}</td>
             <td class="num">{{ s.estimated_amount|krw }}</td>
             <td class="center">{{ s.stage }}</td>
-            <td class="center">{{ s.submission_date or '' }}</td>
-          </tr>
-        {% endfor %}
-      {% else %}
-        <tr class="empty-row"><td colspan="8">(이번 주 영업건 없음)</td></tr>
-      {% endif %}
-    </tbody>
-  </table>
-
-  <div class="grid-2col">
-    {# ⑤ 완료 #}
-    <div>
-      <h2>■ 이번 주 완료</h2>
-      <table>
-        <thead><tr><th style="width: 18%;">CODE</th><th>프로젝트명</th><th style="width: 18%;">팀</th></tr></thead>
-        <tbody>
-          {% if report.completed %}
-            {% for c in report.completed %}
-              <tr>
-                <td class="center">{{ c.code }}</td>
-                <td>{{ c.name }}</td>
-                <td class="center">{{ c.teams|join(', ') }}</td>
-              </tr>
-            {% endfor %}
-          {% else %}
-            <tr class="empty-row"><td colspan="3">(완료 없음)</td></tr>
-          {% endif %}
-        </tbody>
-      </table>
-    </div>
-
-    {# ⑥ 신규 #}
-    <div>
-      <h2>■ 이번 주 신규</h2>
-      <table>
-        <thead><tr><th style="width: 18%;">CODE</th><th>프로젝트명</th><th style="width: 15%;">단계</th><th style="width: 18%;">팀</th></tr></thead>
-        <tbody>
-          {% if report.new_projects %}
-            {% for n in report.new_projects %}
-              <tr>
-                <td class="center">{{ n.code }}</td>
-                <td>{{ n.name }}</td>
-                <td class="center">{{ n.stage }}</td>
-                <td class="center">{{ n.teams|join(', ') }}</td>
-              </tr>
-            {% endfor %}
-          {% else %}
-            <tr class="empty-row"><td colspan="4">(신규 없음 — 휴리스틱 기반)</td></tr>
-          {% endif %}
-        </tbody>
-      </table>
-    </div>
-  </div>
-
-  {# ⑦ 개인 일정 매트릭스 #}
-  <h2>■ 개인 주간 일정</h2>
-  {% if schedule_matrix %}
-    {% for team_name, employees in schedule_matrix.items() %}
-      <div class="schedule-block">
-      <h3>{{ team_name }}</h3>
-      <table class="schedule-table">
-        <thead>
-          <tr>
-            <th style="width: 16%;">담당자</th>
-            {% for d in weekday_labels %}<th class="day-col">{{ d }}</th>{% endfor %}
-            <th>비고</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for emp_name, days in employees.items() %}
-            <tr>
-              <td>{{ emp_name }}</td>
-              {% for cells in days %}
-                <td class="day-cell">
-                  {% for c in cells %}
-                    <span class="cat-{{ c.category }}">{{ c.category[:2] }}</span>
-                  {% endfor %}
-                </td>
-              {% endfor %}
-              <td>
-                {% set notes = [] %}
-                {% for cells in days %}{% for c in cells %}{% if c.project_code %}{% set _ = notes.append(c.project_code) %}{% endif %}{% endfor %}{% endfor %}
-                {{ notes|unique|list|join(', ') }}
-              </td>
-            </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-      </div>
-    {% endfor %}
-  {% else %}
-    <div style="color: #aaa; font-size: 8pt; padding: 4px;">(이번 주 등록된 외근/연차/파견 일정 없음)</div>
-  {% endif %}
-</section>
-
-{# ────────── 2~N페이지 — 팀별 진행 (통합 섹션, 자연 분할) ────────── #}
-{% if sorted_teams %}
-<section class="team-page">
-  <div class="header">
-    <div>
-      <h1>팀별 진행 프로젝트</h1>
-      <div style="font-size: 8.5pt; color: #555; margin-top: 2px;">{{ period_label }}</div>
-    </div>
-    <div class="meta">
-      <div>동양구조엔지니어링</div>
-    </div>
-  </div>
-
-  {% for team_name, rows in sorted_teams %}
-    <h2 class="team-title">■ {{ team_name }} <span class="team-count">({{ rows|length }}건)</span></h2>
-    <table class="team-table">
-      <thead>
-        <tr>
-          <th style="width: 8%;">CODE</th>
-          <th style="width: 22%;">프로젝트명</th>
-          <th style="width: 12%;">발주처</th>
-          <th style="width: 8%;">PM</th>
-          <th style="width: 8%;">단계</th>
-          <th style="width: 12%;">진행률</th>
-          <th style="width: 9%;">마감</th>
-          <th style="width: 21%;">담당자 / 금주예정</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for r in rows %}
-          <tr>
-            <td class="center">{{ r.code }}</td>
-            <td>{{ r.name }}</td>
-            <td>{{ r.client }}</td>
-            <td class="center">{{ r.pm }}</td>
-            <td class="center">{{ r.stage }}</td>
-            <td>
-              <span class="progress-bar"><span class="progress-fill" style="width: {{ (r.progress * 100)|int }}%;"></span></span>
-              {{ r.progress|pct }}
-            </td>
-            <td class="center">{{ r.end_date or '' }}</td>
-            <td>
-              {{ r.assignees|join(', ') }}
-              {% if r.weekly_plan %}<br><span style="color: #555;">{{ r.weekly_plan }}</span>{% endif %}
-            </td>
+            <td class="center">{{ s.sales_start_date or '' }}</td>
           </tr>
         {% endfor %}
       </tbody>
     </table>
-  {% endfor %}
+  {% else %}<div class="empty">(저번주 시작 영업건 없음)</div>{% endif %}
 </section>
-{% endif %}
+
+{# ─── 신규 프로젝트 ─── #}
+<section>
+  <h2>■ 신규 프로젝트</h2>
+  {% if report.new_projects %}
+    <table>
+      <thead>
+        <tr>
+          <th style="width: 12%;">업무내용</th>
+          <th style="width: 10%;">CODE</th>
+          <th style="width: 32%;">용역명</th>
+          <th style="width: 16%;">발주처</th>
+          <th style="width: 17%;">규모</th>
+          <th style="width: 13%;">용역비</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for n in report.new_projects %}
+          <tr>
+            <td>{{ n.work_types|join('/') }}</td>
+            <td>{{ n.code }}</td>
+            <td>{{ n.name }}</td>
+            <td>{{ n.client }}</td>
+            <td>{{ n.scale }}</td>
+            <td class="num">{{ n.contract_amount|krw }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}<div class="empty">(신규 없음)</div>{% endif %}
+</section>
+
+{# ─── 개인 주간 일정 — 5팀 horizontal grid ─── #}
+<section style="page-break-inside: auto;">
+  <h2>■ 개인 주간 일정</h2>
+  <div class="grid-5">
+    {% for team in schedule_grid_teams %}
+      {% set members = report.team_members.get(team, []) %}
+      <div class="schedule-card">
+        <div class="schedule-card-header">
+          {{ team }} <span class="count">({{ members|length }}명)</span>
+        </div>
+        {% if members %}
+          {% include "_schedule_mini.html" %}
+        {% else %}
+          <div class="empty">(팀원 없음)</div>
+        {% endif %}
+        {% if loop.last %}
+          {# 진단팀 카드 끝에 본부 stack #}
+          {% set extra_members = report.team_members.get(schedule_extra_team, []) %}
+          {% if extra_members %}
+            <div class="schedule-card-header" style="border-top: 0.5px solid #999;">
+              {{ schedule_extra_team }} <span class="count">({{ extra_members|length }}명)</span>
+            </div>
+            {% set members = extra_members %}
+            {% include "_schedule_mini.html" %}
+          {% endif %}
+        {% endif %}
+      </div>
+    {% endfor %}
+  </div>
+  {% if report.holidays %}
+    <div class="footer-note">
+      ※ 공휴일: {% for h in report.holidays %}{{ h.date.strftime('%m/%d') }} {{ h.name }}{% if h.source == 'company' %}(사내){% endif %}{% if not loop.last %} · {% endif %}{% endfor %}
+    </div>
+  {% endif %}
+</section>
+
+{# ─── 팀별 업무 현황 ─── #}
+<section class="tw-section" style="page-break-before: always;">
+  <h2>■ 팀별 업무 현황</h2>
+  {% if team_work_team_order %}
+    {% for team in team_work_team_order %}
+      {% set rows = team_work_grouped[team] %}
+      <h3 class="tw-team-header">■ {{ team }} <span style="font-weight: normal; color: #666;">({{ rows|length }}건)</span></h3>
+      <table class="tw-table">
+        <thead>
+          <tr>
+            <th style="width: 8%;">담당자</th>
+            <th style="width: 8%;">CODE</th>
+            <th style="width: 22%;">PROJECT</th>
+            <th style="width: 13%;">발주처</th>
+            <th style="width: 9%;">진행단계</th>
+            <th style="width: 19%;">지난주 업무</th>
+            <th style="width: 19%;">이번주 업무</th>
+            <th style="width: 6%;">비고</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for item in rows %}
+            <tr>
+              {% if item.is_first %}
+                <td class="tw-emp" rowspan="{{ item.rowspan }}">
+                  <div class="name">{{ item.row.employee_name }}</div>
+                  {% if item.row.position %}<div class="pos">{{ item.row.position }}</div>{% endif %}
+                </td>
+              {% endif %}
+              <td>{{ item.row.project_code }}</td>
+              <td>{{ item.row.project_name }}</td>
+              <td>{{ item.row.client }}</td>
+              <td class="center">{{ item.row.phase or item.row.stage }}</td>
+              <td>{{ item.row.last_week_summary or '—' }}</td>
+              <td>{{ item.row.this_week_plan or '—' }}</td>
+              <td>{{ item.row.note }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% endfor %}
+  {% else %}<div class="empty">(배정된 진행 프로젝트 없음)</div>{% endif %}
+</section>
+
+{# ─── [대기][보류] 2-col ─── #}
+<section>
+  <div class="grid-2">
+    <div>
+      <h2>■ 대기 프로젝트</h2>
+      {% if report.waiting_projects %}
+        <table>
+          <thead>
+            <tr>
+              <th style="width: 12%;">CODE</th>
+              <th style="width: 50%;">용역명</th>
+              <th style="width: 23%;">발주처</th>
+              <th style="width: 15%;">담당팀</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for p in report.waiting_projects %}
+              <tr>
+                <td>{{ p.code }}</td>
+                <td{% if p.is_long_stalled %} class="text-red" title="3개월 이상 대기"{% endif %}>{{ p.name }}</td>
+                <td>{{ p.client }}</td>
+                <td>{{ p.teams|join(', ') }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      {% else %}<div class="empty">(없음)</div>{% endif %}
+    </div>
+    <div>
+      <h2>■ 보류 프로젝트</h2>
+      {% if report.on_hold_projects %}
+        <table>
+          <thead>
+            <tr>
+              <th style="width: 12%;">CODE</th>
+              <th style="width: 50%;">용역명</th>
+              <th style="width: 23%;">발주처</th>
+              <th style="width: 15%;">담당팀</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for p in report.on_hold_projects %}
+              <tr>
+                <td>{{ p.code }}</td>
+                <td>{{ p.name }}</td>
+                <td>{{ p.client }}</td>
+                <td>{{ p.teams|join(', ') }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      {% else %}<div class="empty">(없음)</div>{% endif %}
+    </div>
+  </div>
+</section>
 
 </body>
 </html>
