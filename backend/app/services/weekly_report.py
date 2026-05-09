@@ -535,13 +535,35 @@ def aggregate_notices(
     return notices, education
 
 
-def aggregate_completed(db: Session, week_start: date, week_end: date) -> list[CompletedProjectItem]:
-    """이번 주 완료 (completed=True + last_edited_time in week)."""
-    start_utc, end_utc = _kst_range(week_start, week_end)
+_TERMINATED_STAGES = frozenset({"종결", "타절"})
+
+
+def aggregate_completed(
+    db: Session,
+    week_start: date,
+    week_end: date,
+    last_week_end: date,
+) -> list[CompletedProjectItem]:
+    """완료 프로젝트 — 지난주 일지 작성 이후의 데이터.
+
+    기준: last_edited_time이 (last_week_end+1) ~ week_end. completed=True
+    뿐 아니라 stage in {종결, 타절}도 완료에 포함 (사용자 결정 2026-05-09).
+    """
+    cutoff_start = last_week_end + timedelta(days=1)
+    start_local = datetime.combine(cutoff_start, time.min, tzinfo=_KST)
+    end_local = datetime.combine(week_end, time.max, tzinfo=_KST)
+    start_utc = start_local.astimezone(timezone.utc)
+    end_utc = end_local.astimezone(timezone.utc)
+
     rows = (
         db.query(M.MirrorProject)
         .filter(M.MirrorProject.archived.is_(False))
-        .filter(M.MirrorProject.completed.is_(True))
+        .filter(
+            or_(
+                M.MirrorProject.completed.is_(True),
+                M.MirrorProject.stage.in_(_TERMINATED_STAGES),
+            )
+        )
         .filter(M.MirrorProject.last_edited_time >= start_utc)
         .filter(M.MirrorProject.last_edited_time <= end_utc)
         .order_by(M.MirrorProject.code)
@@ -558,12 +580,22 @@ def aggregate_completed(db: Session, week_start: date, week_end: date) -> list[C
     ]
 
 
-def aggregate_new_projects(db: Session, week_start: date, week_end: date) -> list[NewProjectItem]:
-    """이번 주 신규 — mirror_projects.created_time 부재로 last_edited_time + 초기 stage 휴리스틱.
+def aggregate_new_projects(
+    db: Session,
+    week_start: date,
+    week_end: date,
+    last_week_end: date,
+) -> list[NewProjectItem]:
+    """신규 프로젝트 — 지난주 일지 이후 만들어진 프로젝트.
 
-    추후 mirror_projects에 created_time 컬럼 추가하면 정확도 개선 (PR-W Phase 2 후속).
+    기준: last_edited_time이 (last_week_end+1) ~ week_end + 초기 stage 휴리스틱.
+    mirror_projects.created_time 부재로 정확도는 last_edited_time에 의존.
     """
-    start_utc, end_utc = _kst_range(week_start, week_end)
+    cutoff_start = last_week_end + timedelta(days=1)
+    start_local = datetime.combine(cutoff_start, time.min, tzinfo=_KST)
+    end_local = datetime.combine(week_end, time.max, tzinfo=_KST)
+    start_utc = start_local.astimezone(timezone.utc)
+    end_utc = end_local.astimezone(timezone.utc)
     rows = (
         db.query(M.MirrorProject)
         .filter(M.MirrorProject.archived.is_(False))
@@ -993,7 +1025,10 @@ def build_weekly_report(
         )
     if last_week_start is None:
         last_week_start = week_start - timedelta(days=7)
-    last_week_end = last_week_start + (week_end - week_start)
+    # 지난주 업무 범위 = [last_week_start, week_start - 1day]. 즉 이번주 시작 직전까지.
+    # 사용자 의미(2026-05-09): 3개 input은 지난주 업무 / 이번주 업무 두 범위를 셋팅.
+    # 갭 없는 연속 — 지난주 일지 이후 데이터는 이번주 일지에 모두 흡수.
+    last_week_end = week_start - timedelta(days=1)
 
     notices, education = aggregate_notices(db, week_start, week_end)
     return WeeklyReport(
@@ -1003,8 +1038,8 @@ def build_weekly_report(
         notices=notices,
         education=education,
         seal_log=[],  # 라우터에서 노션 직접 조회로 채움
-        completed=aggregate_completed(db, week_start, week_end),
-        new_projects=aggregate_new_projects(db, week_start, week_end),
+        completed=aggregate_completed(db, week_start, week_end, last_week_end),
+        new_projects=aggregate_new_projects(db, week_start, week_end, last_week_end),
         sales=aggregate_sales(db, week_start, week_end),
         personal_schedule=aggregate_personal_schedule(db, week_start, week_end),
         teams=aggregate_team_projects(db, week_start, week_end),

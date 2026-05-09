@@ -376,9 +376,9 @@ function ReportPreview({
         />
       </Section>
 
-      {/* 완료 / 신규 */}
+      {/* 완료 / 신규 — 지난주 일지 이후 cutoff */}
       <div className="grid gap-3 md:grid-cols-2">
-        <Section title="■ 이번 주 완료">
+        <Section title="■ 완료 프로젝트">
           <SimpleTable
             cols={["CODE", "프로젝트명", "팀"]}
             rows={data.completed.map((c) => [
@@ -389,7 +389,7 @@ function ReportPreview({
             empty="(완료 없음)"
           />
         </Section>
-        <Section title="■ 이번 주 신규">
+        <Section title="■ 신규 프로젝트">
           <SimpleTable
             cols={["CODE", "프로젝트명", "단계", "팀"]}
             rows={data.new_projects.map((n) => [
@@ -398,7 +398,7 @@ function ReportPreview({
               n.stage,
               n.teams.join(", "),
             ])}
-            empty="(신규 없음 — 휴리스틱 기반)"
+            empty="(신규 없음)"
           />
         </Section>
       </div>
