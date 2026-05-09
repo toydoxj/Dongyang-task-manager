@@ -13,6 +13,7 @@ import {
   type WeeklyPersonalScheduleEntry,
   type WeeklyReport,
   type WeeklyReportRange,
+  type WeeklyStageProject,
   type WeeklyTeamMember,
 } from "@/lib/api";
 import { cn } from "@/lib/utils";
@@ -351,7 +352,8 @@ function ReportPreview({
           <SimpleTable
             cols={["승인일", "CODE", "용역명", "제출처", "유형", "담당자"]}
             rows={data.seal_log.map((s) => [
-              (s.approved_at ?? "").slice(0, 10),
+              // 승인일 MM/DD 형식 (사용자 결정 — 연도 생략)
+              (s.approved_at ?? "").slice(5, 10).replace("-", "/"),
               s.code,
               s.name,
               s.submission_target,

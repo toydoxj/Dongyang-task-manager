@@ -498,9 +498,10 @@ def aggregate_stage_projects(
 ) -> list[StageProjectItem]:
     """주어진 stage들에 속한 active 프로젝트 list — cutoff 없음.
 
-    exclude_ids에 들어있는 page_id는 결과에서 제외 (예: 팀별 업무 현황에 이미
-    표시된 프로젝트는 "대기" 섹션에서 제외).
-    팀 미지정/이름 비어있는 row는 제외.
+    컬럼: CODE / 용역명 / 발주처 / 담당팀. 정렬: 담당팀 → CODE.
+    is_long_stalled: 대기(stages가 ['대기']에 한정)일 때만 의미 — last_edited_time이
+    90일 전 이상이면 True (3개월 이상 활동 없음, 사용자 결정 2026-05-10).
+    exclude_ids에 들어있는 page_id는 결과에서 제외.
     """
     excl = exclude_ids or set()
     rows = (
@@ -508,10 +509,11 @@ def aggregate_stage_projects(
         .filter(M.MirrorProject.archived.is_(False))
         .filter(M.MirrorProject.completed.is_(False))
         .filter(M.MirrorProject.stage.in_(stages))
-        .order_by(M.MirrorProject.code)
         .all()
     )
     client_name_by_id = _client_name_lookup(db)
+    long_stall_threshold = datetime.now(timezone.utc) - timedelta(days=90)
+    is_waiting_only = stages == ["대기"]
     items: list[StageProjectItem] = []
     for r in rows:
         if r.page_id in excl:
@@ -519,15 +521,22 @@ def aggregate_stage_projects(
         if not r.name and not r.code:
             continue
         proj = project_from_mirror(r)
+        is_long = (
+            is_waiting_only
+            and r.last_edited_time is not None
+            and r.last_edited_time < long_stall_threshold
+        )
         items.append(
             StageProjectItem(
                 code=r.code,
                 name=r.name,
                 client=_resolve_client_label(proj, client_name_by_id),
-                assignees=list(r.assignees or []),
-                end_date=proj.end_date or proj.contract_end,
+                teams=list(r.teams or []),
+                is_long_stalled=is_long,
             )
         )
+    # 정렬: 담당팀 → CODE (팀 미지정은 마지막)
+    items.sort(key=lambda x: (x.teams[0] if x.teams else "￿", x.code))
     return items
 
 
