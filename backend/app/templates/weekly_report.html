@@ -63,9 +63,11 @@
       padding: 2px 4px;
       vertical-align: top;
       letter-spacing: -0.04em;
-      white-space: nowrap;
+      /* PDF는 종이 — nowrap이 cell 밖 overflow 원인이 되므로 자연 줄바꿈 허용.
+       * 한국어는 word-break: keep-all로 단어 단위 wrap. */
+      word-break: keep-all;
+      overflow-wrap: break-word;
       overflow: hidden;
-      text-overflow: ellipsis;
     }
     th {
       background: #ebeef0;
