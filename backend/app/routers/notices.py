@@ -29,14 +29,14 @@ from app.security import get_current_user, require_admin
 
 router = APIRouter(prefix="/notices", tags=["notices"])
 
-_VALID_KINDS = {"공지", "교육"}
+_VALID_KINDS = {"공지", "교육", "휴일"}
 
 
 def _validate_kind(kind: str) -> None:
     if kind not in _VALID_KINDS:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"kind는 '공지' 또는 '교육'이어야 합니다 (입력: {kind!r})",
+            detail=f"kind는 {sorted(_VALID_KINDS)} 중 하나여야 합니다 (입력: {kind!r})",
         )
 
 

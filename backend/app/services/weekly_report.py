@@ -15,6 +15,7 @@ from collections import defaultdict
 from datetime import date, datetime, time, timedelta, timezone
 from typing import Any
 
+import holidays
 from pydantic import BaseModel, Field
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
@@ -135,6 +136,23 @@ class TeamProjectRow(BaseModel):
     end_date: str | None = None  # 마감 (계약 end 또는 완료일)
 
 
+class TeamMember(BaseModel):
+    """팀별 명단 표시용 — 일정 없는 직원도 행이 보이도록."""
+
+    name: str
+    position: str = ""
+    team: str = ""
+    sort_order: int = 0
+
+
+class HolidayItem(BaseModel):
+    """공휴일/사내휴일 한 건. weekly_report 주차 내 일자만 반환."""
+
+    date: date
+    name: str
+    source: str  # 'legal' (법정공휴일 lib) | 'company' (notices kind=휴일)
+
+
 class EmployeeWorkRow(BaseModel):
     """직원 × 프로젝트 한 행 — 팀별 업무 현황 표 (PR-W follow-up).
 
@@ -172,6 +190,13 @@ class WeeklyReport(BaseModel):
 
     # 팀별 업무 현황 (직원 × 프로젝트 행 단위) — PDF 일지 본래 양식
     team_work: dict[str, list[EmployeeWorkRow]] = Field(default_factory=dict)
+
+    # 팀별 재직 직원 명단 — 개인일정 grid에서 일정 없는 직원도 row 표시용.
+    # 키는 employees.team 그대로. 정렬은 sort_order → 이름.
+    team_members: dict[str, list[TeamMember]] = Field(default_factory=dict)
+
+    # 주차 내 공휴일/사내휴일 — frontend에서 요일 헤더 색상 + 라벨 표시
+    holidays: list[HolidayItem] = Field(default_factory=list)
 
 
 # ── helper ──
@@ -416,6 +441,74 @@ def aggregate_headcount(db: Session, week_start: date, week_end: date) -> Headco
         new_this_week=new_count,
         resigned_this_week=[r[0] for r in resigned_rows],
     )
+
+
+def aggregate_team_members(
+    db: Session, week_end: date
+) -> dict[str, list[TeamMember]]:
+    """팀별 재직 직원 명단 — 개인일정 grid에서 빈 칸이라도 행이 보이도록.
+
+    재직 = resigned_at IS NULL or resigned_at > week_end (주차 안에 퇴사한 사람도
+    표시). 팀별로 sort_order → 이름 정렬. 팀이 비어있는 직원은 제외.
+    """
+    rows = (
+        db.query(Employee)
+        .filter(or_(Employee.resigned_at.is_(None), Employee.resigned_at > week_end))
+        .all()
+    )
+    by_team: dict[str, list[TeamMember]] = defaultdict(list)
+    for e in rows:
+        team = (e.team or "").strip()
+        if not team:
+            continue
+        by_team[team].append(
+            TeamMember(
+                name=e.name,
+                position=e.position or "",
+                team=team,
+                sort_order=e.sort_order or 0,
+            )
+        )
+    for members in by_team.values():
+        members.sort(key=lambda m: (m.sort_order, m.name))
+    return dict(by_team)
+
+
+def aggregate_holidays(
+    db: Session, week_start: date, week_end: date
+) -> list[HolidayItem]:
+    """주차 내 공휴일/사내휴일 — 법정(holidays lib) + notices kind='휴일' 합치기.
+
+    동일 날짜에 두 source가 겹치면 사내(company) 먼저 + 법정 뒤 (frontend에서
+    구분 표시 가능). 정렬: 날짜 오름차순.
+    """
+    items: list[HolidayItem] = []
+    # 법정공휴일 — 대체공휴일 포함
+    kr = holidays.country_holidays("KR", years=[week_start.year, week_end.year])
+    cur = week_start
+    while cur <= week_end:
+        name = kr.get(cur)
+        if name:
+            items.append(HolidayItem(date=cur, name=name, source="legal"))
+        cur = cur + timedelta(days=1)
+    # 사내휴일 — notices kind='휴일' 게시기간 교집합
+    company_rows = (
+        db.query(Notice)
+        .filter(Notice.kind == "휴일")
+        .filter(Notice.start_date <= week_end)
+        .filter(or_(Notice.end_date.is_(None), Notice.end_date >= week_start))
+        .all()
+    )
+    for n in company_rows:
+        # 게시기간이 주차와 교집합인 모든 일자에 등록
+        s = max(n.start_date, week_start)
+        e = min(n.end_date or week_end, week_end)
+        cur = s
+        while cur <= e:
+            items.append(HolidayItem(date=cur, name=n.title, source="company"))
+            cur = cur + timedelta(days=1)
+    items.sort(key=lambda h: (h.date, 0 if h.source == "company" else 1))
+    return items
 
 
 def aggregate_notices(
@@ -837,4 +930,6 @@ def build_weekly_report(
         team_work=aggregate_team_work(
             db, week_start, week_end, last_week_start, last_week_end
         ),
+        team_members=aggregate_team_members(db, week_end),
+        holidays=aggregate_holidays(db, week_start, week_end),
     )

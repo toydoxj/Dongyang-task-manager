@@ -14,7 +14,7 @@ import {
   type NoticeKind,
 } from "@/lib/api";
 
-const KINDS: NoticeKind[] = ["공지", "교육"];
+const KINDS: NoticeKind[] = ["공지", "교육", "휴일"];
 
 interface FormState {
   id: number | null;
@@ -219,7 +219,7 @@ export default function AdminNoticesPage() {
       {/* 필터 + 목록 */}
       <div className="flex items-center gap-2">
         <span className="text-sm text-zinc-500">필터:</span>
-        {(["전체", "공지", "교육"] as const).map((k) => (
+        {(["전체", "공지", "교육", "휴일"] as const).map((k) => (
           <button
             key={k}
             onClick={() => setFilterKind(k)}
@@ -253,7 +253,9 @@ export default function AdminNoticesPage() {
                   className={`rounded px-1.5 py-0.5 text-[11px] font-medium ${
                     n.kind === "교육"
                       ? "bg-blue-500/15 text-blue-700 dark:text-blue-400"
-                      : "bg-amber-500/15 text-amber-700 dark:text-amber-400"
+                      : n.kind === "휴일"
+                        ? "bg-red-500/15 text-red-700 dark:text-red-400"
+                        : "bg-amber-500/15 text-amber-700 dark:text-amber-400"
                   }`}
                 >
                   {n.kind}

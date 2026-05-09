@@ -9,9 +9,11 @@ import {
   downloadWeeklyReportPdf,
   fetchWeeklyReport,
   type WeeklyEmployeeWorkRow,
+  type WeeklyHoliday,
   type WeeklyPersonalScheduleEntry,
   type WeeklyReport,
   type WeeklyReportRange,
+  type WeeklyTeamMember,
 } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
@@ -54,9 +56,14 @@ const TEAM_ORDER: Record<string, number> = {
   구조3팀: 3,
   구조4팀: 4,
   진단팀: 5,
+  본부: 6,
 };
 const teamSort = (a: string, b: string): number =>
   (TEAM_ORDER[a] ?? 99) - (TEAM_ORDER[b] ?? 99);
+
+/** 개인일정 grid에서 5팀 column 표시 순서 (본부는 5번째 column 끝에 별도 stack). */
+const SCHEDULE_GRID_TEAMS = ["구조1팀", "구조2팀", "구조3팀", "구조4팀", "진단팀"] as const;
+const SCHEDULE_EXTRA_TEAM = "본부";
 
 const WEEKDAYS = ["월", "화", "수", "목", "금"] as const;
 
@@ -72,30 +79,50 @@ const CATEGORY_STYLE: Record<string, string> = {
   교육: "bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300",
 };
 
-/** {team: {employee: [day0..day4 entries]}} 매트릭스. */
-function buildScheduleMatrix(
+/** 직원 단위 일정 lookup: {employee_name: [day0..day4 entries]}. team 무관 — team_members로 분류. */
+function buildScheduleByEmployee(
   entries: WeeklyPersonalScheduleEntry[],
   weekStart: string,
-): Record<string, Record<string, WeeklyPersonalScheduleEntry[][]>> {
+  weekEnd: string,
+): Record<string, WeeklyPersonalScheduleEntry[][]> {
   const start = new Date(`${weekStart}T00:00:00`);
-  const result: Record<string, Record<string, WeeklyPersonalScheduleEntry[][]>> = {};
+  const end = new Date(`${weekEnd}T00:00:00`);
+  const dayCount = Math.max(
+    1,
+    Math.round((end.getTime() - start.getTime()) / 86_400_000) + 1,
+  );
+  const result: Record<string, WeeklyPersonalScheduleEntry[][]> = {};
   for (const e of entries) {
     const sd = new Date(`${e.start_date}T00:00:00`);
     const ed = new Date(`${e.end_date}T00:00:00`);
     if (Number.isNaN(sd.getTime()) || Number.isNaN(ed.getTime())) continue;
-    const team = e.team || "기타";
-    const emp = e.employee_name;
-    if (!result[team]) result[team] = {};
-    if (!result[team][emp]) {
-      result[team][emp] = WEEKDAYS.map(() => []);
+    if (!result[e.employee_name]) {
+      result[e.employee_name] = Array.from({ length: dayCount }, () => []);
     }
-    for (let i = 0; i < 5; i++) {
+    for (let i = 0; i < dayCount; i++) {
       const day = new Date(start);
       day.setDate(start.getDate() + i);
-      if (sd <= day && day <= ed) result[team][emp][i].push(e);
+      if (sd <= day && day <= ed) result[e.employee_name][i].push(e);
     }
   }
   return result;
+}
+
+/** 주차 시작/종료에 맞는 요일 라벨 + 날짜 list 생성. 5일 고정이 아니라 가변 길이. */
+function buildWeekDays(weekStart: string, weekEnd: string): { iso: string; label: string }[] {
+  const KOR = ["일", "월", "화", "수", "목", "금", "토"];
+  const start = new Date(`${weekStart}T00:00:00`);
+  const end = new Date(`${weekEnd}T00:00:00`);
+  const days: { iso: string; label: string }[] = [];
+  const cur = new Date(start);
+  while (cur <= end) {
+    const y = cur.getFullYear();
+    const m = String(cur.getMonth() + 1).padStart(2, "0");
+    const d = String(cur.getDate()).padStart(2, "0");
+    days.push({ iso: `${y}-${m}-${d}`, label: KOR[cur.getDay()] });
+    cur.setDate(cur.getDate() + 1);
+  }
+  return days;
 }
 
 export default function WeeklyReportPage() {
@@ -150,14 +177,26 @@ export default function WeeklyReportPage() {
     () => (data ? Object.keys(data.team_work).sort(teamSort) : []),
     [data],
   );
-  const scheduleMatrix = useMemo(
-    () => (data ? buildScheduleMatrix(data.personal_schedule, weekStart) : {}),
-    [data, weekStart],
+  const scheduleByEmployee = useMemo(
+    () =>
+      data
+        ? buildScheduleByEmployee(data.personal_schedule, weekStart, weekEnd)
+        : {},
+    [data, weekStart, weekEnd],
   );
-  const scheduleTeams = useMemo(
-    () => Object.keys(scheduleMatrix).sort(teamSort),
-    [scheduleMatrix],
+  const weekDays = useMemo(
+    () => buildWeekDays(weekStart, weekEnd),
+    [weekStart, weekEnd],
   );
+  const holidayByIso = useMemo<Record<string, WeeklyHoliday[]>>(() => {
+    if (!data) return {};
+    const map: Record<string, WeeklyHoliday[]> = {};
+    for (const h of data.holidays) {
+      if (!map[h.date]) map[h.date] = [];
+      map[h.date].push(h);
+    }
+    return map;
+  }, [data]);
 
   return (
     <div className="space-y-4">
@@ -216,10 +255,10 @@ export default function WeeklyReportPage() {
       {data && (
         <ReportPreview
           data={data}
-          weekStart={weekStart}
           teamWorkNames={teamWorkNames}
-          scheduleMatrix={scheduleMatrix}
-          scheduleTeams={scheduleTeams}
+          scheduleByEmployee={scheduleByEmployee}
+          weekDays={weekDays}
+          holidayByIso={holidayByIso}
         />
       )}
     </div>
@@ -228,18 +267,18 @@ export default function WeeklyReportPage() {
 
 interface PreviewProps {
   data: WeeklyReport;
-  weekStart: string;
   teamWorkNames: string[];
-  scheduleMatrix: Record<string, Record<string, WeeklyPersonalScheduleEntry[][]>>;
-  scheduleTeams: string[];
+  scheduleByEmployee: Record<string, WeeklyPersonalScheduleEntry[][]>;
+  weekDays: { iso: string; label: string }[];
+  holidayByIso: Record<string, WeeklyHoliday[]>;
 }
 
 function ReportPreview({
   data,
-  weekStart,
   teamWorkNames,
-  scheduleMatrix,
-  scheduleTeams,
+  scheduleByEmployee,
+  weekDays,
+  holidayByIso,
 }: PreviewProps) {
   const period = `${data.period_start} ~ ${data.period_end}`;
   return (
@@ -364,87 +403,40 @@ function ReportPreview({
         </Section>
       </div>
 
-      {/* 개인 주간 일정 매트릭스 */}
+      {/* 개인 주간 일정 — 5팀 horizontal grid (본부는 진단팀 column 끝에 stack) */}
       <Section title="■ 개인 주간 일정">
-        {scheduleTeams.length === 0 ? (
-          <p className="text-xs text-zinc-500">
-            (이번 주 등록된 외근/연차/파견 일정 없음)
+        <div className="grid gap-2 lg:grid-cols-5">
+          {SCHEDULE_GRID_TEAMS.map((team) => (
+            <ScheduleTeamCard
+              key={team}
+              team={team}
+              members={data.team_members[team] ?? []}
+              scheduleByEmployee={scheduleByEmployee}
+              weekDays={weekDays}
+              holidayByIso={holidayByIso}
+              extra={
+                team === "진단팀"
+                  ? {
+                      title: SCHEDULE_EXTRA_TEAM,
+                      members: data.team_members[SCHEDULE_EXTRA_TEAM] ?? [],
+                    }
+                  : undefined
+              }
+            />
+          ))}
+        </div>
+        {data.holidays.length > 0 && (
+          <p className="text-[10px] text-zinc-500">
+            ※ 공휴일:{" "}
+            {data.holidays
+              .map(
+                (h) =>
+                  `${h.date.slice(5)} ${h.name}${
+                    h.source === "company" ? "(사내)" : ""
+                  }`,
+              )
+              .join(" · ")}
           </p>
-        ) : (
-          <div className="space-y-3">
-            {scheduleTeams.map((team) => (
-              <div key={team}>
-                <h3 className="mb-1 text-sm font-semibold">{team}</h3>
-                <div className="overflow-x-auto rounded border border-zinc-200 dark:border-zinc-800">
-                  <table className="w-full border-collapse text-xs">
-                    <thead className="bg-zinc-100 dark:bg-zinc-900">
-                      <tr>
-                        <th className="border-b border-zinc-200 px-2 py-1 text-left font-medium dark:border-zinc-800">
-                          담당자
-                        </th>
-                        {WEEKDAYS.map((d) => (
-                          <th
-                            key={d}
-                            className="w-12 border-b border-zinc-200 px-1 py-1 text-center font-medium dark:border-zinc-800"
-                          >
-                            {d}
-                          </th>
-                        ))}
-                        <th className="border-b border-zinc-200 px-2 py-1 text-left font-medium dark:border-zinc-800">
-                          비고
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {Object.entries(scheduleMatrix[team]).map(
-                        ([emp, days]) => {
-                          const projectCodes = Array.from(
-                            new Set(
-                              days.flatMap((cells) =>
-                                cells
-                                  .map((c) => c.project_code)
-                                  .filter(Boolean),
-                              ),
-                            ),
-                          );
-                          return (
-                            <tr
-                              key={emp}
-                              className="border-b border-zinc-100 last:border-0 dark:border-zinc-800"
-                            >
-                              <td className="px-2 py-1">{emp}</td>
-                              {days.map((cells, i) => (
-                                <td
-                                  key={i}
-                                  className="px-1 py-1 text-center"
-                                >
-                                  {cells.map((c, j) => (
-                                    <span
-                                      key={j}
-                                      className={cn(
-                                        "mr-0.5 inline-block rounded px-1 py-0.5 text-[10px] font-medium",
-                                        CATEGORY_STYLE[c.category] ??
-                                          "bg-zinc-200 text-zinc-700 dark:bg-zinc-700 dark:text-zinc-200",
-                                      )}
-                                    >
-                                      {c.category.slice(0, 2)}
-                                    </span>
-                                  ))}
-                                </td>
-                              ))}
-                              <td className="px-2 py-1 text-zinc-600 dark:text-zinc-400">
-                                {projectCodes.join(", ")}
-                              </td>
-                            </tr>
-                          );
-                        },
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            ))}
-          </div>
         )}
       </Section>
 
@@ -582,6 +574,150 @@ function TeamWorkTable({
         </table>
       </div>
     </div>
+  );
+}
+
+interface ScheduleTeamCardProps {
+  team: string;
+  members: WeeklyTeamMember[];
+  scheduleByEmployee: Record<string, WeeklyPersonalScheduleEntry[][]>;
+  weekDays: { iso: string; label: string }[];
+  holidayByIso: Record<string, WeeklyHoliday[]>;
+  /** 진단팀 column에만 — 본부 직원을 같은 카드 아래에 stack 표시. */
+  extra?: { title: string; members: WeeklyTeamMember[] };
+}
+
+function ScheduleTeamCard({
+  team,
+  members,
+  scheduleByEmployee,
+  weekDays,
+  holidayByIso,
+  extra,
+}: ScheduleTeamCardProps) {
+  return (
+    <div className="rounded border border-zinc-200 bg-white text-[10.5px] dark:border-zinc-800 dark:bg-zinc-950">
+      <div className="border-b border-zinc-200 bg-zinc-100 px-2 py-1 text-xs font-semibold dark:border-zinc-800 dark:bg-zinc-900">
+        {team}{" "}
+        <span className="font-normal text-zinc-500">({members.length}명)</span>
+      </div>
+      <ScheduleMiniTable
+        members={members}
+        scheduleByEmployee={scheduleByEmployee}
+        weekDays={weekDays}
+        holidayByIso={holidayByIso}
+      />
+      {extra && extra.members.length > 0 && (
+        <>
+          <div className="border-t border-b border-zinc-200 bg-zinc-100 px-2 py-1 text-xs font-semibold dark:border-zinc-800 dark:bg-zinc-900">
+            {extra.title}{" "}
+            <span className="font-normal text-zinc-500">
+              ({extra.members.length}명)
+            </span>
+          </div>
+          <ScheduleMiniTable
+            members={extra.members}
+            scheduleByEmployee={scheduleByEmployee}
+            weekDays={weekDays}
+            holidayByIso={holidayByIso}
+          />
+        </>
+      )}
+    </div>
+  );
+}
+
+function ScheduleMiniTable({
+  members,
+  scheduleByEmployee,
+  weekDays,
+  holidayByIso,
+}: {
+  members: WeeklyTeamMember[];
+  scheduleByEmployee: Record<string, WeeklyPersonalScheduleEntry[][]>;
+  weekDays: { iso: string; label: string }[];
+  holidayByIso: Record<string, WeeklyHoliday[]>;
+}) {
+  if (members.length === 0) {
+    return (
+      <div className="px-2 py-3 text-center text-[10px] italic text-zinc-400">
+        (팀원 없음)
+      </div>
+    );
+  }
+  return (
+    <table className="w-full border-collapse">
+      <thead className="bg-zinc-50 dark:bg-zinc-900/60">
+        <tr>
+          <th className="border-b border-zinc-200 px-1.5 py-0.5 text-left font-medium dark:border-zinc-800">
+            담당자
+          </th>
+          {weekDays.map((d) => {
+            const h = holidayByIso[d.iso];
+            return (
+              <th
+                key={d.iso}
+                title={h?.map((x) => x.name).join(", ")}
+                className={cn(
+                  "w-7 border-b border-l border-zinc-200 px-0 py-0.5 text-center font-medium dark:border-zinc-800",
+                  h && "bg-red-50 text-red-700 dark:bg-red-950/40 dark:text-red-300",
+                )}
+              >
+                {d.label}
+              </th>
+            );
+          })}
+        </tr>
+      </thead>
+      <tbody>
+        {members.map((m) => {
+          const days = scheduleByEmployee[m.name] ?? [];
+          return (
+            <tr
+              key={m.name}
+              className="border-b border-zinc-100 last:border-0 dark:border-zinc-800/60"
+            >
+              <td className="px-1.5 py-0.5 align-top">
+                <div className="font-medium leading-tight">{m.name}</div>
+                {m.position && (
+                  <div className="text-[9px] leading-tight text-zinc-500">
+                    {m.position}
+                  </div>
+                )}
+              </td>
+              {weekDays.map((d, i) => {
+                const cells = days[i] ?? [];
+                const isHoliday = !!holidayByIso[d.iso];
+                return (
+                  <td
+                    key={d.iso}
+                    className={cn(
+                      "border-l border-zinc-100 px-0 py-0.5 text-center align-middle dark:border-zinc-800/60",
+                      isHoliday &&
+                        "bg-red-50/50 dark:bg-red-950/20",
+                    )}
+                  >
+                    {cells.map((c, j) => (
+                      <span
+                        key={j}
+                        title={c.project_code || c.category}
+                        className={cn(
+                          "inline-block rounded px-0.5 text-[9px] font-medium leading-tight",
+                          CATEGORY_STYLE[c.category] ??
+                            "bg-zinc-200 text-zinc-700 dark:bg-zinc-700 dark:text-zinc-200",
+                        )}
+                      >
+                        {c.category.slice(0, 2)}
+                      </span>
+                    ))}
+                  </td>
+                );
+              })}
+            </tr>
+          );
+        })}
+      </tbody>
+    </table>
   );
 }
 

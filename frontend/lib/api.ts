@@ -1360,6 +1360,19 @@ export interface WeeklyEmployeeWorkRow {
   note: string;
 }
 
+export interface WeeklyTeamMember {
+  name: string;
+  position: string;
+  team: string;
+  sort_order: number;
+}
+
+export interface WeeklyHoliday {
+  date: string;       // YYYY-MM-DD
+  name: string;
+  source: "legal" | "company";
+}
+
 export interface WeeklySealLogItem {
   project_name: string;
   client: string;
@@ -1393,6 +1406,8 @@ export interface WeeklyReport {
   personal_schedule: WeeklyPersonalScheduleEntry[];
   teams: Record<string, WeeklyTeamProjectRow[]>;
   team_work: Record<string, WeeklyEmployeeWorkRow[]>;
+  team_members: Record<string, WeeklyTeamMember[]>;
+  holidays: WeeklyHoliday[];
 }
 
 export interface WeeklyReportRange {
@@ -1451,7 +1466,7 @@ export async function fetchWeeklyReportPdfBlob(
 
 // ── 사내 공지 / 교육 일정 (PR-W Phase 2.4) ──
 
-export type NoticeKind = "공지" | "교육";
+export type NoticeKind = "공지" | "교육" | "휴일";
 
 export interface Notice {
   id: number;
