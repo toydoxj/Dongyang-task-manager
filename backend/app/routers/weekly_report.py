@@ -42,31 +42,46 @@ def _validate_week_start(week_start: date) -> date:
 
 @router.get("", response_model=WeeklyReport)
 def get_weekly_report(
-    week_start: date = Query(..., description="주차 시작일 — 월요일 (YYYY-MM-DD)"),
+    week_start: date = Query(..., description="이번주 시작일 — 월요일 (YYYY-MM-DD)"),
+    week_end: date | None = Query(
+        None, description="이번주 종료일 (YYYY-MM-DD). default: week_start + 4일"
+    ),
+    last_week_start: date | None = Query(
+        None,
+        description="지난주 시작일 (YYYY-MM-DD). default: week_start - 7일",
+    ),
     _user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> WeeklyReport:
     """주간 업무일지 JSON.
 
     week_start가 월요일이 아니면 같은 주의 월요일로 자동 조정.
+    week_end / last_week_start는 미지정 시 default 적용 (이번주 = 월~금 5일,
+    지난주 = 정확히 7일 전 동일 길이).
     """
     ws = _validate_week_start(week_start)
     try:
-        return build_weekly_report(db, ws)
+        return build_weekly_report(
+            db, ws, week_end=week_end, last_week_start=last_week_start
+        )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
 
 @router.get(".pdf")
 def get_weekly_report_pdf(
-    week_start: date = Query(..., description="주차 시작일 — 월요일 (YYYY-MM-DD)"),
+    week_start: date = Query(..., description="이번주 시작일 — 월요일 (YYYY-MM-DD)"),
+    week_end: date | None = Query(None),
+    last_week_start: date | None = Query(None),
     _user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> Response:
     """주간 업무일지 PDF (WeasyPrint)."""
     ws = _validate_week_start(week_start)
     try:
-        report = build_weekly_report(db, ws)
+        report = build_weekly_report(
+            db, ws, week_end=week_end, last_week_start=last_week_start
+        )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     pdf_bytes = build_weekly_report_pdf(report)

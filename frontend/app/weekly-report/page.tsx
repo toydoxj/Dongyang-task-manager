@@ -11,6 +11,7 @@ import {
   type WeeklyEmployeeWorkRow,
   type WeeklyPersonalScheduleEntry,
   type WeeklyReport,
+  type WeeklyReportRange,
 } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
@@ -29,6 +30,22 @@ function toIsoDate(d: Date): string {
   const m = String(d.getMonth() + 1).padStart(2, "0");
   const day = String(d.getDate()).padStart(2, "0");
   return `${y}-${m}-${day}`;
+}
+
+function addDays(d: Date, n: number): Date {
+  const r = new Date(d);
+  r.setDate(r.getDate() + n);
+  return r;
+}
+
+/** 사용자 default: 오늘이 수요일(weekday=3)이거나 그 이후(목/금/토/일)이면
+ * 다음주 월요일을, 그 외(월/화)는 이번주 월요일을 시작일로 한다. */
+function defaultWeekStart(today: Date = new Date()): Date {
+  const wd = today.getDay(); // 0=일, 1=월, ..., 6=토
+  const thisMon = mondayOf(today);
+  // wd in {3,4,5,6,0}이면 다음 월요일. wd in {1,2}이면 이번 월요일.
+  const isWedOrLater = wd >= 3 || wd === 0;
+  return isWedOrLater ? addDays(thisMon, 7) : thisMon;
 }
 
 const TEAM_ORDER: Record<string, number> = {
@@ -83,27 +100,45 @@ function buildScheduleMatrix(
 
 export default function WeeklyReportPage() {
   const { user } = useAuth();
-  const [weekStart, setWeekStart] = useState<string>(
-    toIsoDate(mondayOf(new Date())),
+  // 3개 날짜 state — 사용자 default 계산.
+  const [weekStart, setWeekStart] = useState<string>(() =>
+    toIsoDate(defaultWeekStart()),
+  );
+  const [weekEnd, setWeekEnd] = useState<string>(() =>
+    toIsoDate(addDays(defaultWeekStart(), 4)),
+  );
+  const [lastWeekStart, setLastWeekStart] = useState<string>(() =>
+    toIsoDate(addDays(defaultWeekStart(), -7)),
   );
   const [downloading, setDownloading] = useState(false);
 
+  const range: WeeklyReportRange = {
+    weekStart,
+    weekEnd: weekEnd || undefined,
+    lastWeekStart: lastWeekStart || undefined,
+  };
+
   const { data, error, isLoading } = useSWR(
-    user && weekStart ? ["weekly-report", weekStart] : null,
-    () => fetchWeeklyReport(weekStart),
+    user && weekStart ? ["weekly-report", weekStart, weekEnd, lastWeekStart] : null,
+    () => fetchWeeklyReport(range),
   );
 
-  const handleDateChange = (value: string): void => {
+  /** 이번주 시작일 변경 → 종료일/지난주 시작일 자동 동기화. 사용자가 그 후
+   * 종료일/지난주 시작일을 직접 수정하면 그 값 유지. */
+  const handleWeekStartChange = (value: string): void => {
     if (!value) return;
     const d = new Date(`${value}T00:00:00`);
     if (Number.isNaN(d.getTime())) return;
-    setWeekStart(toIsoDate(mondayOf(d)));
+    const newStart = mondayOf(d);
+    setWeekStart(toIsoDate(newStart));
+    setWeekEnd(toIsoDate(addDays(newStart, 4)));
+    setLastWeekStart(toIsoDate(addDays(newStart, -7)));
   };
 
   const handleDownload = async (): Promise<void> => {
     setDownloading(true);
     try {
-      await downloadWeeklyReportPdf(weekStart);
+      await downloadWeeklyReportPdf(range);
     } catch (e) {
       alert(e instanceof Error ? e.message : "PDF 다운로드 실패");
     } finally {
@@ -133,13 +168,31 @@ export default function WeeklyReportPage() {
             월~금 주차 단위 자동 집계 (KST). 데이터: 노션 미러 + employees + 공지.
           </p>
         </div>
-        <div className="flex items-end gap-2">
+        <div className="flex flex-wrap items-end gap-2">
           <label className="flex flex-col text-xs text-zinc-500">
-            주차 시작 (월요일)
+            지난주 시작일
+            <input
+              type="date"
+              value={lastWeekStart}
+              onChange={(e) => setLastWeekStart(e.target.value)}
+              className="mt-1 rounded border border-zinc-300 bg-white px-2 py-1 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+            />
+          </label>
+          <label className="flex flex-col text-xs text-zinc-500">
+            이번주 시작일 <span className="text-zinc-400">(월요일)</span>
             <input
               type="date"
               value={weekStart}
-              onChange={(e) => handleDateChange(e.target.value)}
+              onChange={(e) => handleWeekStartChange(e.target.value)}
+              className="mt-1 rounded border border-zinc-300 bg-white px-2 py-1 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+            />
+          </label>
+          <label className="flex flex-col text-xs text-zinc-500">
+            이번주 종료일
+            <input
+              type="date"
+              value={weekEnd}
+              onChange={(e) => setWeekEnd(e.target.value)}
               className="mt-1 rounded border border-zinc-300 bg-white px-2 py-1 text-sm dark:border-zinc-700 dark:bg-zinc-900"
             />
           </label>

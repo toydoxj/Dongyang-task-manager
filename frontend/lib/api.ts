@@ -1395,8 +1395,23 @@ export interface WeeklyReport {
   team_work: Record<string, WeeklyEmployeeWorkRow[]>;
 }
 
-export async function fetchWeeklyReport(weekStart: string): Promise<WeeklyReport> {
-  const res = await authFetch(`/api/weekly-report?week_start=${weekStart}`);
+export interface WeeklyReportRange {
+  weekStart: string;            // 이번주 시작일 (월요일 권장)
+  weekEnd?: string;             // optional — default: weekStart + 4일
+  lastWeekStart?: string;       // optional — default: weekStart - 7일
+}
+
+function buildWeeklyReportQuery(range: WeeklyReportRange): string {
+  const qs = new URLSearchParams({ week_start: range.weekStart });
+  if (range.weekEnd) qs.set("week_end", range.weekEnd);
+  if (range.lastWeekStart) qs.set("last_week_start", range.lastWeekStart);
+  return qs.toString();
+}
+
+export async function fetchWeeklyReport(
+  range: WeeklyReportRange,
+): Promise<WeeklyReport> {
+  const res = await authFetch(`/api/weekly-report?${buildWeeklyReportQuery(range)}`);
   if (!res.ok) {
     const detail = await res.json().catch(() => null);
     throw new Error(
@@ -1407,17 +1422,23 @@ export async function fetchWeeklyReport(weekStart: string): Promise<WeeklyReport
   return (await res.json()) as WeeklyReport;
 }
 
-export async function downloadWeeklyReportPdf(weekStart: string): Promise<void> {
+export async function downloadWeeklyReportPdf(
+  range: WeeklyReportRange,
+): Promise<void> {
   await downloadPdfBlob(
-    `/api/weekly-report.pdf?week_start=${weekStart}`,
-    `${weekStart}_업무일지.pdf`,
+    `/api/weekly-report.pdf?${buildWeeklyReportQuery(range)}`,
+    `${range.weekStart}_업무일지.pdf`,
   );
 }
 
 /** 주간 업무일지 PDF를 Blob으로 가져옴 (iframe 미리보기용).
  * 호출자가 URL.createObjectURL로 변환해 사용하고, 사용 후 revokeObjectURL 책임. */
-export async function fetchWeeklyReportPdfBlob(weekStart: string): Promise<Blob> {
-  const res = await authFetch(`/api/weekly-report.pdf?week_start=${weekStart}`);
+export async function fetchWeeklyReportPdfBlob(
+  range: WeeklyReportRange,
+): Promise<Blob> {
+  const res = await authFetch(
+    `/api/weekly-report.pdf?${buildWeeklyReportQuery(range)}`,
+  );
   if (!res.ok) {
     const detail = await res.json().catch(() => null);
     throw new Error(

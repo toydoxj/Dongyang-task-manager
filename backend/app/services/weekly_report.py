@@ -186,12 +186,16 @@ def _classify_occupation(team: str, position: str) -> str:
     return "기타"
 
 
-def _kst_range(week_start: date) -> tuple[datetime, datetime]:
-    """월~금 [KST 00:00, 금 23:59:59.999999) 범위. UTC aware datetime 반환."""
+def _kst_range(week_start: date, week_end: date | None = None) -> tuple[datetime, datetime]:
+    """[week_start KST 00:00, week_end KST 23:59:59.999999) UTC aware datetime.
+
+    week_end가 None이면 월~금(default = week_start + 4일).
+    """
     if week_start.weekday() != 0:
         raise ValueError(f"week_start must be Monday, got {week_start.isoformat()} ({week_start.strftime('%A')})")
+    end = week_end if week_end is not None else (week_start + timedelta(days=4))
     start_local = datetime.combine(week_start, time.min, tzinfo=_KST)
-    end_local = datetime.combine(week_start + timedelta(days=4), time.max, tzinfo=_KST)
+    end_local = datetime.combine(end, time.max, tzinfo=_KST)
     return start_local.astimezone(timezone.utc), end_local.astimezone(timezone.utc)
 
 
@@ -440,7 +444,7 @@ def aggregate_notices(
 
 def aggregate_completed(db: Session, week_start: date, week_end: date) -> list[CompletedProjectItem]:
     """이번 주 완료 (completed=True + last_edited_time in week)."""
-    start_utc, end_utc = _kst_range(week_start)
+    start_utc, end_utc = _kst_range(week_start, week_end)
     rows = (
         db.query(M.MirrorProject)
         .filter(M.MirrorProject.archived.is_(False))
@@ -466,7 +470,7 @@ def aggregate_new_projects(db: Session, week_start: date, week_end: date) -> lis
 
     추후 mirror_projects에 created_time 컬럼 추가하면 정확도 개선 (PR-W Phase 2 후속).
     """
-    start_utc, end_utc = _kst_range(week_start)
+    start_utc, end_utc = _kst_range(week_start, week_end)
     rows = (
         db.query(M.MirrorProject)
         .filter(M.MirrorProject.archived.is_(False))
@@ -494,7 +498,7 @@ def aggregate_new_projects(db: Session, week_start: date, week_end: date) -> lis
 
 def aggregate_sales(db: Session, week_start: date, week_end: date) -> list[SalesItem]:
     """이번 주 활성 영업 — 진행 단계가 살아있고 last_edited_time 또는 submission_date in week."""
-    start_utc, end_utc = _kst_range(week_start)
+    start_utc, end_utc = _kst_range(week_start, week_end)
     rows = (
         db.query(M.MirrorSales)
         .filter(M.MirrorSales.archived.is_(False))
@@ -659,7 +663,11 @@ def aggregate_team_projects(
 
 
 def aggregate_team_work(
-    db: Session, week_start: date, week_end: date
+    db: Session,
+    week_start: date,
+    week_end: date,
+    last_week_start: date,
+    last_week_end: date,
 ) -> dict[str, list[EmployeeWorkRow]]:
     """팀별 (직원 × 프로젝트) 행 단위 업무 현황 — PDF 일지 본래 양식.
 
@@ -674,8 +682,6 @@ def aggregate_team_work(
 
     팀 내 정렬: 직원 sort_order → 이름 → 프로젝트 stage → 프로젝트 code.
     """
-    last_week_start = week_start - timedelta(days=7)
-    last_week_end = week_end - timedelta(days=7)
 
     # 직원 정보 lookup (이름 → position, team, sort_order). 재직자만 lookup
     # 대상으로 하되 team 정보는 사용자가 자유 입력하므로 employees.team 그대로 사용.
@@ -789,11 +795,31 @@ def aggregate_team_work(
 # ── main ──
 
 
-def build_weekly_report(db: Session, week_start: date) -> WeeklyReport:
-    """주차 보고서 build. week_start는 월요일 (validation in `_kst_range`)."""
+def build_weekly_report(
+    db: Session,
+    week_start: date,
+    *,
+    week_end: date | None = None,
+    last_week_start: date | None = None,
+) -> WeeklyReport:
+    """주차 보고서 build.
+
+    - week_start: 이번주 시작일 (월요일 권장 — validation in `_kst_range`)
+    - week_end: 이번주 종료일 (default: week_start + 4일 = 금요일)
+    - last_week_start: 지난주 시작일 (default: week_start - 7일).
+      last_week_end는 동일 길이로 자동 계산 — last_week_start + (week_end - week_start).
+    """
     if week_start.weekday() != 0:
         raise ValueError(f"week_start must be Monday, got {week_start.isoformat()}")
-    week_end = week_start + timedelta(days=4)
+    if week_end is None:
+        week_end = week_start + timedelta(days=4)
+    if week_end < week_start:
+        raise ValueError(
+            f"week_end({week_end}) must be >= week_start({week_start})"
+        )
+    if last_week_start is None:
+        last_week_start = week_start - timedelta(days=7)
+    last_week_end = last_week_start + (week_end - week_start)
 
     notices, education = aggregate_notices(db, week_start, week_end)
     return WeeklyReport(
@@ -808,5 +834,7 @@ def build_weekly_report(db: Session, week_start: date) -> WeeklyReport:
         sales=aggregate_sales(db, week_start, week_end),
         personal_schedule=aggregate_personal_schedule(db, week_start, week_end),
         teams=aggregate_team_projects(db, week_start, week_end),
-        team_work=aggregate_team_work(db, week_start, week_end),
+        team_work=aggregate_team_work(
+            db, week_start, week_end, last_week_start, last_week_end
+        ),
     )
