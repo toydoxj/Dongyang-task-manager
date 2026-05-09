@@ -1148,7 +1148,7 @@ export async function updateSaleQuote(
 /** 외부 견적 추가 (PR-EXT) — 산출 X, 금액만. 갑지 row만 표시. */
 export async function addSaleExternalQuote(
   saleId: string,
-  body: { service: string; amount: number },
+  body: { service: string; amount: number; vat_included?: boolean },
 ): Promise<QuoteFormResponse> {
   const res = await authFetch(`/api/sales/${saleId}/quotes/external`, {
     method: "POST",
@@ -1169,7 +1169,7 @@ export async function addSaleExternalQuote(
 export async function updateSaleExternalQuote(
   saleId: string,
   quoteId: string,
-  body: { service: string; amount: number },
+  body: { service: string; amount: number; vat_included?: boolean },
 ): Promise<QuoteFormResponse> {
   const res = await authFetch(
     `/api/sales/${saleId}/quotes/external/${quoteId}`,

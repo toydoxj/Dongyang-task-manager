@@ -152,7 +152,7 @@ class MirrorSales(Base):
     __tablename__ = "mirror_sales"
 
     page_id: Mapped[str] = mapped_column(String, primary_key=True)
-    code: Mapped[str] = mapped_column(String, default="", index=True)  # 영업코드 {YY}-영업-{NNN}
+    code: Mapped[str] = mapped_column(String, default="", index=True)  # 영업코드 영{YY}-{NNN}
     name: Mapped[str] = mapped_column(String, default="")  # 견적서명 (title)
     kind: Mapped[str] = mapped_column(String, default="", index=True)  # 수주영업|기술지원
     stage: Mapped[str] = mapped_column(String, default="", index=True)

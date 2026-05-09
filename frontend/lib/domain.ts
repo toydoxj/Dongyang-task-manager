@@ -701,6 +701,8 @@ export interface QuoteFormResponse {
   is_external?: boolean;
   service?: string;
   amount?: number;
+  /** 외부 견적 VAT 포함 여부 — default false (VAT 별도). 갑지 금액 옆 라벨. */
+  vat_included?: boolean;
   attached_pdf_url?: string;
   attached_pdf_name?: string;
   attached_pdf_file_id?: string;

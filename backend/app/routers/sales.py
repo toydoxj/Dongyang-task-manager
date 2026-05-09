@@ -233,6 +233,7 @@ class QuoteFormResponse(BaseModel):
     is_external: bool = False
     service: str = ""               # 외부 업무내용 (외부면 PDF 표·갑지 표시용)
     amount: float = 0               # 외부 금액 (result.final로도 보관, 갑지 합산)
+    vat_included: bool = False      # VAT 포함 여부 (외부 견적 — 갑지 라벨)
     attached_pdf_url: str = ""      # 첨부 PDF web url (PR-EXT-2 Drive upload)
     attached_pdf_name: str = ""     # 첨부 파일명 (표시용)
     attached_pdf_file_id: str = ""  # WORKS Drive file_id (backend download용)
@@ -243,6 +244,8 @@ class ExternalQuoteRequest(BaseModel):
 
     service: str
     amount: float = Field(default=0, ge=0)
+    # VAT 포함/별도 — default False(VAT 별도). 갑지 금액 옆 표시.
+    vat_included: bool = False
 
 
 def _next_quote_suffix(forms: list[dict]) -> str:
@@ -288,6 +291,7 @@ def _form_to_response(form: dict) -> QuoteFormResponse:
         is_external=bool(form.get("is_external")),
         service=form.get("service") or "",
         amount=float(form.get("amount") or 0),
+        vat_included=bool(form.get("vat_included")),
         attached_pdf_url=form.get("attached_pdf_url") or "",
         attached_pdf_name=form.get("attached_pdf_name") or "",
         attached_pdf_file_id=form.get("attached_pdf_file_id") or "",
@@ -600,6 +604,7 @@ async def add_external_quote(
         "is_external": True,
         "service": body.service,
         "amount": body.amount,
+        "vat_included": body.vat_included,
         # 갑지 합산은 result.final 사용 — 일관성 위해 final에도 amount 보관
         "input": {},
         "result": {"final": body.amount},
@@ -763,6 +768,7 @@ async def update_external_quote(
         **forms[target_idx],
         "service": body.service,
         "amount": body.amount,
+        "vat_included": body.vat_included,
         "result": {"final": body.amount},
     }
     db.execute(
@@ -890,6 +896,7 @@ def _collect_bundle_sections(
                 "is_external": is_external,
                 "service": form.get("service") or "",
                 "amount": float(form.get("amount") or 0),
+                "vat_included": bool(form.get("vat_included")),
                 "attached_pdf_url": form.get("attached_pdf_url") or "",
                 "attached_pdf_file_id": form.get("attached_pdf_file_id") or "",
             }

@@ -134,7 +134,11 @@ export default function SalesEditModal({
   const [editingQuoteId, setEditingQuoteId] = useState<string | null>(null);
   // 외부 견적 inline form (PR-EXT) — 산출 X, service + amount만.
   const [externalFormOpen, setExternalFormOpen] = useState(false);
-  const [externalDraft, setExternalDraft] = useState({ service: "", amount: 0 });
+  const [externalDraft, setExternalDraft] = useState({
+    service: "",
+    amount: 0,
+    vat_included: false,
+  });
   const [editingExternalId, setEditingExternalId] = useState<string | null>(null);
 
   // 종류별 default 자동 적용 — useRef로 prev type 추적해 모달 첫 prefill 시에는
@@ -614,7 +618,7 @@ export default function SalesEditModal({
                     disabled={!sale}
                     onClick={() => {
                       if (!sale) return;
-                      setExternalDraft({ service: "", amount: 0 });
+                      setExternalDraft({ service: "", amount: 0, vat_included: false });
                       setEditingExternalId(null);
                       setExternalFormOpen(true);
                     }}
@@ -690,13 +694,26 @@ export default function SalesEditModal({
                       }
                       className={inputCls}
                     />
+                    <label className="flex items-center gap-2 text-[11px] text-amber-700 dark:text-amber-400">
+                      <input
+                        type="checkbox"
+                        checked={externalDraft.vat_included}
+                        onChange={(e) =>
+                          setExternalDraft({
+                            ...externalDraft,
+                            vat_included: e.target.checked,
+                          })
+                        }
+                      />
+                      VAT 포함 (체크 해제 시 VAT 별도)
+                    </label>
                     <div className="flex justify-end gap-2">
                       <button
                         type="button"
                         onClick={() => {
                           setExternalFormOpen(false);
                           setEditingExternalId(null);
-                          setExternalDraft({ service: "", amount: 0 });
+                          setExternalDraft({ service: "", amount: 0, vat_included: false });
                         }}
                         className="rounded border border-zinc-300 px-2 py-1 text-[11px] hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800"
                       >
@@ -722,7 +739,7 @@ export default function SalesEditModal({
                             await refreshQuoteList();
                             setExternalFormOpen(false);
                             setEditingExternalId(null);
-                            setExternalDraft({ service: "", amount: 0 });
+                            setExternalDraft({ service: "", amount: 0, vat_included: false });
                           } catch (e) {
                             setErr(e instanceof Error ? e.message : "외부 견적 저장 실패");
                           } finally {
@@ -850,6 +867,7 @@ export default function SalesEditModal({
                                     setExternalDraft({
                                       service: q.service ?? "",
                                       amount: q.amount ?? 0,
+                                      vat_included: q.vat_included ?? false,
                                     });
                                     setEditingExternalId(q.id);
                                     setExternalFormOpen(true);

@@ -18,7 +18,7 @@ class Sale(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
     id: str
-    code: str = ""           # 영업코드 {YY}-영업-{NNN}
+    code: str = ""           # 영업코드 영{YY}-{NNN}
     name: str = ""           # 견적서명 (title)
     kind: str = ""           # 수주영업|기술지원
     stage: str = ""          # 준비|진행|제출|완료|종결 (사장 5단계)
@@ -115,7 +115,7 @@ class SaleCreateRequest(BaseModel):
     """영업 생성 요청. 노션 견적서 작성 리스트에 새 페이지를 추가."""
 
     name: str  # 견적서명
-    code: str = ""  # 영업코드 — 빈 문자열이면 backend가 {YY}-영업-{NNN}으로 자동 부여
+    code: str = ""  # 영업코드 — 빈 문자열이면 backend가 영{YY}-{NNN}으로 자동 부여
     kind: str = ""  # 수주영업|기술지원
     stage: str = ""
     category: list[str] = []
