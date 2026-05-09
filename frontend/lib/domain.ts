@@ -613,9 +613,19 @@ export interface QuoteInput {
   /** BMA 책임자/점검자 등급. null이면 default(책임자=특급, 점검자=초급). */
   bma_responsible_grade?: EngineerGrade | null;
   bma_inspector_grade?: EngineerGrade | null;
-  /** 건축물관리법점검 (PR-Q4) — 책임자/점검자 인.일 분리 입력. */
+  /** 건축물관리법점검 (PR-Q4) — 책임자/점검자 인.일 분리 입력 (수동 fallback). */
   inspection_responsible_days?: number | null;
   inspection_inspector_days?: number | null;
+  /** 건축물관리법점검 자동 산정 (PR-Q4b) — 산정표 기반.
+   * "정기" | "정기+구조" 입력 + gross_floor_area + building_usage 채우면 자동.
+   * 빈 값이면 inspection_responsible_days/inspector_days 수동 흐름 fallback. */
+  bma_inspection_type?: string;
+  /** 제38조② 구조안전 생략 (× 0.8) */
+  bma_skip_structural?: boolean;
+  /** 제38조③ 급수·배수·냉난방·환기 생략 (× 0.9) */
+  bma_skip_utility?: boolean;
+  /** 제39조 선택과업비 (마감재 해체·복구) — 자유 입력 */
+  bma_optional_task_amount?: number;
   /** 내진성능평가 (PR-Q8) — ① 현장조사 외업/내업, ② 해석 인.일 (3 필드 분리).
    * has_structural_drawings + gross_floor_area 있으면 PR-Q8b 보간 자동 채움. */
   field_outdoor_days?: number | null;

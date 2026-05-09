@@ -147,12 +147,19 @@ class QuoteInput(BaseModel):
     # 3자검토=특급기술자, 그 외=고급기술자). 사용자가 ENGINEERING_RATES_BY_GRADE
     # 키 중 하나로 override 가능.
     engineer_grade: str | None = None
-    # 점검류 (PR-Q4~Q7) — 책임자/점검자 인.일 분리 입력
+    # 점검류 (PR-Q4~Q7) — 책임자/점검자 인.일 분리 입력 (수동 입력 fallback)
     inspection_responsible_days: float | None = Field(default=None, ge=0)
     inspection_inspector_days: float | None = Field(default=None, ge=0)
     # BMA 책임자/점검자 등급 — None이면 default (책임자=특급, 점검자=초급)
     bma_responsible_grade: str | None = None
     bma_inspector_grade: str | None = None
+    # 건축물관리법점검 자동 산정 (PR-Q4b) — 산정표 기반.
+    # 입력하면 별표 1 보간 + 별표 3 보정 + 제37조 군집 + 제38조 추가 보정 자동.
+    # 미입력 시 inspection_responsible_days/inspector_days 수동 흐름 fallback.
+    bma_inspection_type: str = ""        # "정기" | "정기+구조" (그 외 수동)
+    bma_skip_structural: bool = False    # 제38조② 구조안전 생략 (× 0.8)
+    bma_skip_utility: bool = False       # 제38조③ 급수·배수·냉난방·환기 생략 (× 0.9)
+    bma_optional_task_amount: float = Field(default=0, ge=0)  # 선택과업비 (마감재 해체)
     # 내진성능평가 (PR-Q8) — ① 현장조사 외업/내업, ② 해석 인.일 (3 필드 분리)
     # None + has_structural_drawings 지정 시 PR-Q8b 보간 자동 채움.
     # 해석 인.일은 보간 base × 4계수(방법별·경년·구조형식·용도)인데 4계수가 매
@@ -578,16 +585,26 @@ def _calculate_supervision(inp: QuoteInput) -> QuoteResult:
 
 
 def _calculate_inspection_bma(inp: QuoteInput) -> QuoteResult:
-    """건축물관리법점검 strategy (PR-Q4).
+    """건축물관리법점검 strategy (PR-Q4 + PR-Q4b 자동 산정).
 
-    xlsx '건축물관리법점검견적26-09-02.xls' 양식 transcribe.
+    PR-Q4b 자동 산정 분기 (사장 운영 산정표 기반)
+    --------------------------------------------
+    inp.bma_inspection_type가 "정기" 또는 "정기+구조"이고 gross_floor_area>0,
+    building_usage가 BMA_USAGE_FACTORS 키이면 별표 1 보간 + 별표 3 보정 +
+    제37조 군집 + 제38조 추가 보정 자동.
 
-    산출 모델
-    - 책임자 인.일 × 456,237 + 점검자 인.일 × 235,459 (등급별 단가)
-    - 매 단계 INT() (xlsx 수식이 INT()로 wrap, 결과 정수만 누적)
-    - subtotal에 직접경비 포함 (구조감리와 동일 흐름) → adjusted = subtotal × adj%
-    - 절삭은 truncate_unit (xlsx 양식은 ROUNDDOWN(_, -5) = 100,000 단위)
-      → 사용자가 truncate_unit=100_000 선택 권장
+    산식 (산정표 B25)
+    - 직접인건비 = INT(책임자×기술사) + INT(점검자×초급)
+    - 제경비    = INT(직접인건비 × 1.10)              (제34조)
+    - 기술료    = INT((직접인건비+제경비) × 0.20)       (제35조)
+    - 직접경비  = 100,000원 (제36조 일괄)
+    - 소계      = 직접인건비+제경비+기술료+직접경비
+    - 업무대가  = 소계 × 경과조정 × 용도조정
+                  × (0.8 if 구조생략) × (0.9 if 급수생략)
+                  + 선택과업비
+
+    수동 fallback — bma_inspection_type 빈 값이면 기존 PR-Q4 흐름
+    (inspection_responsible_days/inspector_days 직접 입력).
 
     xlsx 검증 (책임자 1.44, 점검자 0.44, 직접경비 100,000, 조정 90%):
     - 직접인건비 = INT(456237×1.44) + INT(235459×0.44) = 656,981 + 103,601 = 760,582
@@ -598,29 +615,185 @@ def _calculate_inspection_bma(inp: QuoteInput) -> QuoteResult:
     - 절삭(10만) = 14,999
     - 최종      = 1,800,000 (xlsx F23)
     """
-    responsible = inp.inspection_responsible_days or 0
-    inspector = inp.inspection_inspector_days or 0
+    from app.services.bma_table import (
+        BMA_USAGE_FACTORS,
+        DIRECT_EXPENSE_FIXED,
+        INSPECTOR_RATE_DEFAULT,
+        RESPONSIBLE_RATE_DEFAULT,
+        apply_bma_facility_form,
+        bma_aging_factor,
+        interpolate_inspector_persons,
+        interpolate_responsible_persons,
+    )
+
+    # 자동 산정 트리거 — 종류·면적·용도 모두 채워졌을 때만.
+    auto_mode = (
+        inp.bma_inspection_type in ("정기", "정기+구조")
+        and inp.gross_floor_area > 0
+        and inp.building_usage in BMA_USAGE_FACTORS
+    )
 
     # 매 단계 INT() — xlsx 수식과 동일한 정수 누적 (truncation 보존).
-    # default: 책임자=특급기술자, 점검자=초급기술자. 사용자 선택 등급 우선.
-    responsible_rate = _resolve_rate(inp.bma_responsible_grade, "특급기술자")
-    inspector_rate = _resolve_rate(inp.bma_inspector_grade, "초급기술자")
-    direct_labor = (
-        int(responsible * responsible_rate) + int(inspector * inspector_rate)
+    # 사장 운영 산정표 default: 책임자 = 기술사(특급기술자) 노임 456,237원,
+    # 점검자 = 초급기술자 235,459원 (xlsx M8/M9 명시). backend
+    # ENGINEERING_RATES_BY_GRADE["기술사"]는 다른 연도(467,217) — 운영 단가
+    # 우선 적용. 사용자가 등급 select 변경 시 dict 단가 사용.
+    responsible_rate = (
+        _resolve_rate(inp.bma_responsible_grade, "기술사")
+        if inp.bma_responsible_grade
+        else RESPONSIBLE_RATE_DEFAULT
     )
-    direct_labor = int(direct_labor)  # F7 = INT(F8+F9)
+    inspector_rate = (
+        _resolve_rate(inp.bma_inspector_grade, "초급기술자")
+        if inp.bma_inspector_grade
+        else INSPECTOR_RATE_DEFAULT
+    )
 
-    if inp.direct_expense_items:
-        direct_expense = sum(item.amount for item in inp.direct_expense_items)
-    else:
-        direct_expense = (
-            inp.printing_fee + inp.survey_fee + 25_000 * inp.transport_persons
+    manhours_formula: list[ManhourFormulaStep] = []
+    direct_expense_breakdown: list[OptionalTaskBreakdown] = []
+    optional_tasks: list[OptionalTaskBreakdown] = []
+
+    if auto_mode:
+        structural_extra = inp.bma_inspection_type == "정기+구조"
+        # ── Step 1: 별표 1 보간 (책임자/점검자 분리) ────────
+        base_responsible = interpolate_responsible_persons(
+            inp.gross_floor_area, structural_extra
+        )
+        base_inspector = interpolate_inspector_persons(inp.gross_floor_area)
+
+        # ── Step 2: 제37조 군집건축물 합산 ──────────────────
+        ftype = inp.facility_type or "기본"
+        if ftype != "기본" and inp.sub_facility_areas:
+            base_responsible_adj = apply_bma_facility_form(
+                base_responsible, ftype, inp.sub_facility_areas,
+                lambda a: interpolate_responsible_persons(a, structural_extra),
+            )
+            base_inspector_adj = apply_bma_facility_form(
+                base_inspector, ftype, inp.sub_facility_areas,
+                interpolate_inspector_persons,
+            )
+        else:
+            base_responsible_adj = base_responsible
+            base_inspector_adj = base_inspector
+
+        responsible = base_responsible_adj
+        inspector = base_inspector_adj
+
+        # ── Step 3: 별표 3 보정비계 (소계에 곱) ─────────────
+        # 경과년수 — completion_year 우선 (KST 기준 자동 계산), 없으면 aging_years
+        if inp.completion_year:
+            from datetime import datetime, timedelta, timezone
+            _kst = timezone(timedelta(hours=9))
+            effective_aging = max(0, datetime.now(_kst).year - inp.completion_year)
+        else:
+            effective_aging = inp.aging_years or 0
+        ag_factor = bma_aging_factor(effective_aging)
+        uf_factor = BMA_USAGE_FACTORS[inp.building_usage]
+        # 제38조 추가 보정
+        skip_str_factor = 0.8 if inp.bma_skip_structural else 1.0
+        skip_util_factor = 0.9 if inp.bma_skip_utility else 1.0
+        adj_combined = ag_factor * uf_factor * skip_str_factor * skip_util_factor
+
+        # 산식 단계별 표시
+        manhours_formula.append(ManhourFormulaStep(
+            label="별표 1 — 점검책임자",
+            value=base_responsible,
+            note=f"{int(inp.gross_floor_area):,}㎡ {inp.bma_inspection_type}"
+            + (" (구조 +1)" if structural_extra else ""),
+        ))
+        manhours_formula.append(ManhourFormulaStep(
+            label="별표 1 — 점검자",
+            value=base_inspector,
+            note=f"{int(inp.gross_floor_area):,}㎡ {inp.bma_inspection_type}",
+        ))
+        if ftype != "기본" and inp.sub_facility_areas:
+            manhours_formula.append(ManhourFormulaStep(
+                label="제37조 군집건축물",
+                value=responsible + inspector,
+                note=f"{ftype} · 부속 {len(inp.sub_facility_areas)}동",
+            ))
+        manhours_formula.append(ManhourFormulaStep(
+            label="경과년수 보정 (별표 3-1)",
+            operator="×", value=ag_factor,
+            note=(
+                f"준공 {inp.completion_year}년 → {effective_aging}년 경과"
+                if inp.completion_year else f"{effective_aging}년"
+            ),
+        ))
+        manhours_formula.append(ManhourFormulaStep(
+            label="용도 보정 (별표 3-2)",
+            operator="×", value=uf_factor, note=inp.building_usage,
+        ))
+        if inp.bma_skip_structural:
+            manhours_formula.append(ManhourFormulaStep(
+                label="제38조② 구조안전 생략",
+                operator="×", value=0.8, note="구조안전 점검 생략",
+            ))
+        if inp.bma_skip_utility:
+            manhours_formula.append(ManhourFormulaStep(
+                label="제38조③ 급수 등 생략",
+                operator="×", value=0.9, note="급수·배수·냉난방·환기 생략",
+            ))
+        manhours_formula.append(ManhourFormulaStep(
+            label="조정비계 (소계 × 적용)",
+            value=adj_combined,
+            note=f"× {adj_combined:.4g}",
+        ))
+
+        # ── Step 4: 직접인건비 ──────────────────────────────
+        direct_labor = int(responsible * responsible_rate) + int(
+            inspector * inspector_rate
         )
 
-    overhead = int(direct_labor * (inp.overhead_pct / 100))           # F11=INT(F7*1.1)
-    tech_fee = int((direct_labor + overhead) * (inp.tech_fee_pct / 100))  # F13=INT(...×0.2)
-    subtotal = direct_labor + overhead + tech_fee + direct_expense    # F17 (직접경비 포함)
-    adjusted = subtotal * (inp.adjustment_pct / 100)                  # F19 = F17 × adj
+        # ── Step 5: 제경비/기술료/직접경비 (제34/35/36조) ──
+        overhead = int(direct_labor * (inp.overhead_pct / 100))
+        tech_fee = int((direct_labor + overhead) * (inp.tech_fee_pct / 100))
+        direct_expense = float(DIRECT_EXPENSE_FIXED)
+
+        direct_expense_breakdown.append(OptionalTaskBreakdown(
+            label="직접경비 일괄 (제36조)",
+            amount=direct_expense,
+            note="여비·차량·현장경비·위험수당 등 100,000원 일괄",
+        ))
+
+        subtotal_before_adj = direct_labor + overhead + tech_fee + direct_expense
+
+        # ── Step 6: 보정비계 적용 (소계 × 조정) ─────────────
+        adjusted = subtotal_before_adj * adj_combined
+
+        # ── Step 7: 선택과업비 (제39조 마감재 해체·복구) ───
+        if inp.bma_optional_task_amount > 0:
+            adjusted += inp.bma_optional_task_amount
+            optional_tasks.append(OptionalTaskBreakdown(
+                label="선택과업 (제39조 — 마감재 해체·복구)",
+                amount=inp.bma_optional_task_amount,
+                note="사용자 직접 입력 — 적산자료 참조",
+            ))
+
+        # subtotal은 표시용 (조정 전 + 선택과업 미포함). adjusted_pct는 무시
+        # (BMA는 산정표가 자체 보정비계 적용 — adjustment_pct 파라미터 사용 X).
+        subtotal = subtotal_before_adj
+        mh = responsible + inspector
+        mh_outdoor = 0.0  # BMA는 외업/내업 분리 X (산정표에 명시 X)
+    else:
+        # 수동 fallback — 기존 PR-Q4 흐름
+        responsible = inp.inspection_responsible_days or 0
+        inspector = inp.inspection_inspector_days or 0
+        direct_labor = int(responsible * responsible_rate) + int(
+            inspector * inspector_rate
+        )
+        if inp.direct_expense_items:
+            direct_expense = sum(item.amount for item in inp.direct_expense_items)
+        else:
+            direct_expense = (
+                inp.printing_fee + inp.survey_fee + 25_000 * inp.transport_persons
+            )
+        overhead = int(direct_labor * (inp.overhead_pct / 100))
+        tech_fee = int((direct_labor + overhead) * (inp.tech_fee_pct / 100))
+        subtotal = direct_labor + overhead + tech_fee + direct_expense
+        adjusted = subtotal * (inp.adjustment_pct / 100)
+        mh = responsible + inspector
+        mh_outdoor = 0.0
 
     adjusted_int = int(_excel_round_half_up(adjusted, 0))
     if inp.final_override is not None:
@@ -634,15 +807,13 @@ def _calculate_inspection_bma(inp: QuoteInput) -> QuoteResult:
     vat_amount = int(_excel_round_half_up(final_amount * 0.1, 0))
     final_with_vat = final_amount + vat_amount
 
-    # 인.일 합산은 표시용
-    mh_total = int(round((responsible + inspector) * 100)) / 100
     per_pyeong_area = inp.gross_floor_area / 3.3 if inp.gross_floor_area else 0
     per_pyeong = final_amount / per_pyeong_area if per_pyeong_area else 0
 
     return QuoteResult(
         manhours_baseline=0,
         manhours_baseline_rounded=0,
-        manhours_total=int(mh_total),
+        manhours_total=int(round(mh)),
         direct_labor=direct_labor,
         direct_expense=direct_expense,
         overhead=overhead,
@@ -655,6 +826,11 @@ def _calculate_inspection_bma(inp: QuoteInput) -> QuoteResult:
         final_with_vat=final_with_vat,
         per_pyeong_area=per_pyeong_area,
         per_pyeong=per_pyeong,
+        optional_tasks=optional_tasks,
+        direct_expense_breakdown=direct_expense_breakdown,
+        manhours_formula=manhours_formula,
+        manhours_outdoor=mh_outdoor,
+        manhours_indoor=mh - mh_outdoor if auto_mode else 0.0,
     )
 
 

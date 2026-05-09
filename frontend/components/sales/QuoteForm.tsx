@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 
+import BmaInspectionForm from "@/components/sales/BmaInspectionForm";
 import InspectionLegalForm from "@/components/sales/InspectionLegalForm";
 import QuoteResultPanel from "@/components/sales/QuoteResultPanel";
 import { previewQuote } from "@/lib/api";
@@ -122,6 +123,11 @@ export default function QuoteForm({
         ooi: value.opt_other_items,
         // 영업정보 동기화 토글
         sws: value.sync_with_sale,
+        // BMA 자동 산정 (PR-Q4b)
+        bit: value.bma_inspection_type,
+        bss: value.bma_skip_structural,
+        bsu: value.bma_skip_utility,
+        bot: value.bma_optional_task_amount,
         // legacy
         p: value.printing_fee,
         v: value.survey_fee,
@@ -184,18 +190,18 @@ export default function QuoteForm({
     qt === "정기안전점검" || qt === "정밀점검" || qt === "정밀안전진단";
   const isInspectionBma = qt === "건축물관리법점검";
 
-  // 시특법 자동 산정 종류 진입 시 legacy direct_expense_items를 비움.
-  // 별표 25/26 자동 산정만 사용하므로 legacy 항목이 list row·산정에 영향 X.
+  // 시특법·BMA 자동 산정 종류 진입 시 legacy direct_expense_items를 비움.
+  // 별표 25/26 또는 BMA 산정표 자동 산정만 사용 — legacy 항목이 list row·산정에 영향 X.
   useEffect(() => {
     if (
-      isInspectionLegal &&
+      (isInspectionLegal || isInspectionBma) &&
       value.direct_expense_items &&
       value.direct_expense_items.length > 0
     ) {
       onChange({ ...value, direct_expense_items: [] });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isInspectionLegal]);
+  }, [isInspectionLegal, isInspectionBma]);
   const isSeismicEval = qt === "내진성능평가";
   // 내진평가 패키지 부속 (내진보강설계/3자검토)도 단일 인.일 입력 모델
   const isSimpleManhours =
@@ -607,45 +613,8 @@ export default function QuoteForm({
         )}
 
         {isInspectionBma && (
-          <Section title="투입인원 (책임자 · 점검자)">
-            <div className="grid grid-cols-2 gap-2">
-              <Field label="책임자 인.일">
-                <input
-                  type="number"
-                  min={0}
-                  step={0.01}
-                  className={inputCls}
-                  placeholder="예: 1.44"
-                  value={value.inspection_responsible_days ?? ""}
-                  onChange={(e) =>
-                    set(
-                      "inspection_responsible_days",
-                      e.target.value ? Number(e.target.value) : null,
-                    )
-                  }
-                />
-              </Field>
-              <Field label="점검자 인.일">
-                <input
-                  type="number"
-                  min={0}
-                  step={0.01}
-                  className={inputCls}
-                  placeholder="예: 0.44"
-                  value={value.inspection_inspector_days ?? ""}
-                  onChange={(e) =>
-                    set(
-                      "inspection_inspector_days",
-                      e.target.value ? Number(e.target.value) : null,
-                    )
-                  }
-                />
-              </Field>
-            </div>
-            <p className="text-[11px] text-stone-500">
-              건축물관리법점검은 책임자(456,237원/일) + 점검자(235,459원/일)
-              등급별 단가 분리 산출.
-            </p>
+          <Section title="건축물관리법 정기점검 자동 산정">
+            <BmaInspectionForm value={value} onChange={onChange} />
           </Section>
         )}
 

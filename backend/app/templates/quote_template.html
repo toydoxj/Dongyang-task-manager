@@ -603,7 +603,9 @@
         <td class="num">⑥</td>
         <td>당사조정</td>
         <td class="formula">
-          {%- if result.direct_expense_breakdown -%}
+          {%- if input.quote_type == '건축물관리법점검' and input.bma_inspection_type in ('정기', '정기+구조') -%}
+            ⑤ × 보정비계{% if input.bma_optional_task_amount and input.bma_optional_task_amount > 0 %} + 선택과업{% endif %}
+          {%- elif result.direct_expense_breakdown -%}
             ⑤ × {{ input.adjustment_pct or 87 }}%
           {%- else -%}
             ⑤ × {{ input.adjustment_pct or 87 }}% + ②
@@ -747,18 +749,23 @@
 
 </div>{# /.quote-page-1 #}
 
-  {# 직접경비·추가과업 산정 상세 — 시특법 자동 산정(정기/정밀점검/정밀안전진단)에서만 #}
+  {# 직접경비·추가과업 산정 상세 — 시특법(PR-Q5b) / BMA(PR-Q4b) 자동 산정 #}
   {% if result.direct_expense_breakdown or result.optional_tasks %}
+  {% set is_bma = (input.quote_type == '건축물관리법점검') %}
   <div class="optional-tasks-page">
-    <div class="opt-title">직접경비 · 추가과업 산정 상세</div>
+    <div class="opt-title">{% if is_bma %}직접경비 · 선택과업 산정 상세{% else %}직접경비 · 추가과업 산정 상세{% endif %}</div>
     <div class="opt-divider"></div>
     <div class="opt-subtitle">
-      산정 근거 : 시설물의 안전 및 유지관리 실시 등에 관한 지침 (국토교통부 고시 제2022-539호)
+      {% if is_bma -%}
+        산정 근거 : 건축물관리점검지침 (국토교통부 고시 제2024-579호) · 사장 운영 산정표
+      {%- else -%}
+        산정 근거 : 시설물의 안전 및 유지관리 실시 등에 관한 지침 (국토교통부 고시 제2022-539호)
+      {%- endif %}
     </div>
 
-    {# 기본과업 인.일 산식 단계별 — 별표 22 base → 별표 23/제62조 보정 → 추가과업 합산 #}
+    {# 기본과업 인.일 산식 단계별 — 별표 1 또는 22 + 보정 누적 #}
     {% if result.manhours_formula %}
-    <div class="opt-section-title">기본과업 투입 인.일 산식 (별표 22 + 보정)</div>
+    <div class="opt-section-title">{% if is_bma %}기본과업 투입 인.일 산식 (별표 1 + 보정){% else %}기본과업 투입 인.일 산식 (별표 22 + 보정){% endif %}</div>
     <table class="opt-table">
       <thead>
         <tr>
@@ -779,15 +786,17 @@
         {% endfor %}
       </tbody>
     </table>
+    {% if not is_bma %}
     <div style="font-size: 9pt; color: #666; margin-top: 4px;">
       외업: {{ "%.2f"|format(result.manhours_outdoor) }}인.일 (별표 22 외업 × 보정) ·
       내업: {{ "%.2f"|format(result.manhours_indoor) }}인.일 (전체 - 외업)
     </div>
     {% endif %}
+    {% endif %}
 
-    {# 별표 25 직접경비 항목별 분해 #}
+    {# 직접경비 항목별 분해 — 시특법: 별표 25 / BMA: 제36조 일괄 #}
     {% if result.direct_expense_breakdown %}
-    <div class="opt-section-title">직접경비 산정 (별표 25)</div>
+    <div class="opt-section-title">{% if is_bma %}직접경비 산정 (제36조){% else %}직접경비 산정 (별표 25){% endif %}</div>
     <table class="opt-table">
       <thead>
         <tr>
@@ -806,7 +815,7 @@
         {% endfor %}
         {% set de_sum = result.direct_expense_breakdown|sum(attribute='amount') %}
         <tr class="total-row">
-          <td colspan="2">직접경비 소계 (별표 25)</td>
+          <td colspan="2">{% if is_bma %}직접경비 소계 (제36조){% else %}직접경비 소계 (별표 25){% endif %}</td>
           <td class="amount">{{ "{:,}".format(de_sum|int) }}</td>
         </tr>
       </tbody>
@@ -851,7 +860,7 @@
     {% endif %}
 
     {% if tasks_in_expense %}
-    <div class="opt-section-title">추가과업 — 직접경비 합산</div>
+    <div class="opt-section-title">{% if is_bma %}선택과업 — 별도 합산{% else %}추가과업 — 직접경비 합산{% endif %}</div>
     <table class="opt-table">
       <thead>
         <tr>
@@ -870,7 +879,7 @@
         {% endfor %}
         {% set ex_sum = tasks_in_expense|sum(attribute='amount') %}
         <tr class="total-row">
-          <td colspan="2">직접경비 합산 소계</td>
+          <td colspan="2">{% if is_bma %}선택과업 소계 (제39조){% else %}직접경비 합산 소계{% endif %}</td>
           <td class="amount">{{ "{:,}".format(ex_sum|int) }}</td>
         </tr>
       </tbody>
@@ -889,6 +898,18 @@
     </table>
 
     <div class="opt-summary">
+      {% if is_bma %}
+      <strong>적용 근거 (건축물관리점검지침)</strong><br>
+      · 별표 1 (기준인원수): 정기점검·긴급점검 면적별 책임자·점검자 인.일 (선형 보간)<br>
+      · 제33조② (구조안전 추가): 사용승인 후 20년 경과 건축물 — 점검책임자 1인 가산<br>
+      · 별표 3-(1) (경과년수 조정): 7단계 (5년 1.0 → 55년 초과 1.30)<br>
+      · 별표 3-(2) (용도 조정): 5단계 (근린 1.0 → 문화·운수·의료 등 1.40)<br>
+      · 제37조 (군집건축물): 1,000㎡ 기준 분기 + 부속 동 0.7 가중<br>
+      · 제38조② (구조 생략): × 0.8 / ③ (급수 등 생략): × 0.9<br>
+      · 제36조 (직접경비): 100,000원 일괄 (여비·차량·현장경비·위험수당)<br>
+      · 제39조 (선택과업): 마감재 해체·복구 비용 — 적산자료 참조 별도 산정<br>
+      · 노임단가: 책임자 기술사(특급) 456,237원 / 점검자 초급기술자 235,459원
+      {% else %}
       <strong>적용 근거</strong><br>
       · 별표 22 (인.일 산정): 면적·종류별 기준인원수 + 별표 24 보간<br>
       · 별표 23 (조정비): 구조형식·용도별 보정<br>
@@ -897,6 +918,7 @@
       · 별표 26-10-(3)·-15 (구조해석·내진평가): 인.일 합산 → 직접인건비 산정 포함<br>
       · 별표 26-1 (실측도면): 기본과업비 × 10~20% → 직접경비 합산<br>
       · 별표 26-기타 (코어채취·해체·자문 등): 직접경비 합산
+      {% endif %}
     </div>
   </div>
   {% endif %}
