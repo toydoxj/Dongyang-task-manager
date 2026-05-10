@@ -6,6 +6,7 @@ import useSWR from "swr";
 
 import { useAuth } from "@/components/AuthGuard";
 import LoadingState from "@/components/ui/LoadingState";
+import PublishChecklist from "@/components/weekly-report/PublishChecklist";
 import SectionNav from "@/components/weekly-report/SectionNav";
 import StatusBar from "@/components/weekly-report/StatusBar";
 import {
@@ -168,6 +169,7 @@ export default function WeeklyReportPage() {
   );
   const [downloading, setDownloading] = useState(false);
   const [publishing, setPublishing] = useState(false);
+  const [publishOpen, setPublishOpen] = useState(false);
   // 사용자가 lastWeekStart를 한 번이라도 직접 수정했으면 last-published 자동 셋팅 차단
   const [lastWeekStartAuto, setLastWeekStartAuto] = useState(true);
 
@@ -232,14 +234,12 @@ export default function WeeklyReportPage() {
     }
   };
 
-  const handlePublish = async (): Promise<void> => {
-    if (
-      !confirm(
-        "전 직원에게 '주간업무일지 업로드' 알림이 발송되고 WORKS Drive에 PDF가 저장됩니다.\n\n계속 진행하시겠습니까?",
-      )
-    ) {
-      return;
-    }
+  const openPublishChecklist = (): void => {
+    if (!data) return;
+    setPublishOpen(true);
+  };
+
+  const doPublish = async (): Promise<void> => {
     setPublishing(true);
     try {
       const res = await publishWeeklyReport(range);
@@ -249,6 +249,7 @@ export default function WeeklyReportPage() {
       alert(
         `발행 완료\n파일: ${res.file_name}\n전송 ${res.recipient_count}명${failNote}`,
       );
+      setPublishOpen(false);
     } catch (e) {
       alert(e instanceof Error ? e.message : "발행 실패");
     } finally {
@@ -344,7 +345,7 @@ export default function WeeklyReportPage() {
           </button>
           {isAdmin && (
             <button
-              onClick={handlePublish}
+              onClick={openPublishChecklist}
               disabled={publishing || !data}
               className="rounded bg-zinc-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-zinc-700 disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300"
               title="WORKS Drive 업로드 + 전직원 알림 발송"
@@ -372,6 +373,15 @@ export default function WeeklyReportPage() {
           scheduleByEmployee={scheduleByEmployee}
           weekDays={weekDays}
           holidayByIso={holidayByIso}
+        />
+      )}
+
+      {publishOpen && data && isAdmin && (
+        <PublishChecklist
+          data={data}
+          publishing={publishing}
+          onConfirm={doPublish}
+          onClose={() => setPublishOpen(false)}
         />
       )}
     </div>
