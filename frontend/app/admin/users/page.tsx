@@ -316,6 +316,7 @@ function UserRow({
   const roleColors: Record<UserRole, string> = {
     admin: "bg-purple-500/15 text-purple-600 dark:text-purple-400",
     team_lead: "bg-blue-500/15 text-blue-600 dark:text-blue-400",
+    manager: "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400",
     member: "bg-zinc-500/15 text-zinc-500",
   };
   return (
@@ -335,6 +336,7 @@ function UserRow({
           >
             <option value="admin">{ROLE_LABEL.admin}</option>
             <option value="team_lead">{ROLE_LABEL.team_lead}</option>
+            <option value="manager">{ROLE_LABEL.manager}</option>
             <option value="member">{ROLE_LABEL.member}</option>
           </select>
         ) : (

@@ -26,7 +26,7 @@ from app.services import sso_drive, sso_works
 from app.services.employee_link import link_user_to_employee
 from app.settings import get_settings
 
-VALID_ROLES = {"admin", "team_lead", "member"}
+VALID_ROLES = {"admin", "team_lead", "manager", "member"}
 # 회사 이메일 도메인 강제 (직원만 사용 허용)
 ALLOWED_EMAIL_DOMAIN = "@dyce.kr"
 # SSO 세션 분리 단위. 동일 사용자가 둘 다 활성 세션을 동시에 보유 가능.
@@ -364,7 +364,7 @@ def approve_user(
 
 
 class RoleUpdate(BaseModel):
-    role: Literal["admin", "team_lead", "member"]
+    role: Literal["admin", "team_lead", "manager", "member"]
 
 
 @router.patch("/users/{user_id}/role", response_model=UserInfo)

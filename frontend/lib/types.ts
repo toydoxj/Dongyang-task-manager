@@ -9,7 +9,9 @@ function resolveApiBase(): string {
 
 export const API_BASE: string = resolveApiBase();
 
-export type UserRole = "admin" | "team_lead" | "member";
+// 'manager' = 관리팀(office) — 대시보드/직원일정/사용매뉴얼 + 프로젝트/영업/발주처/수금/지출/계약서 9개 메뉴.
+// 직원 업무·내 업무·날인·건의·유틸 등은 미노출. backend API 권한은 추후 확장.
+export type UserRole = "admin" | "team_lead" | "manager" | "member";
 
 export interface UserInfo {
   id: number;
@@ -29,6 +31,7 @@ export interface UserInfo {
 export const ROLE_LABEL: Record<UserRole, string> = {
   admin: "관리자",
   team_lead: "팀장",
+  manager: "관리팀",
   member: "일반직원",
 };
 

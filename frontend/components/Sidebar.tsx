@@ -14,35 +14,65 @@ interface NavItem {
   href: string;
   label: string;
   roles?: UserRole[]; // 미지정 시 모든 사용자 접근 가능
+  /** 이 role에게는 명시적으로 hide (roles와 별도). manager용 — 9개 메뉴만 노출. */
+  hiddenForRoles?: UserRole[];
   external?: boolean; // true면 새 탭으로 열기 (next/link 대신 <a target="_blank">)
 }
 
-const NAV: NavItem[] = [
-  // 사용자 결정 2026-05-11 — team_lead 기준 순서 정리.
-  // admin은 동일 순서 + 하단 admin only 그룹 추가로 노출.
-  { href: "/", label: "대시보드", roles: ["admin", "team_lead"] },
-  { href: "/me", label: "내 업무" },
+interface NavGroup {
+  /** 그룹 헤더 라벨. null이면 헤더 미표시(첫 그룹). */
+  label: string | null;
+  items: NavItem[];
+}
+
+const NAV_GROUPS: NavGroup[] = [
+  // 공통 — 일반 사용자 작업 영역. manager는 일부만 노출.
   {
-    href: "/admin/employee-work",
-    label: "직원 업무",
-    roles: ["admin", "team_lead"],
+    label: null,
+    items: [
+      { href: "/", label: "대시보드", roles: ["admin", "team_lead", "manager"] },
+      { href: "/me", label: "내 업무", hiddenForRoles: ["manager"] },
+      {
+        href: "/admin/employee-work",
+        label: "직원 업무",
+        roles: ["admin", "team_lead"],
+      },
+      // 직원 일정은 task.dyce.kr 내부 FullCalendar에서 보기. NAVER WORKS Calendar에는 backend가 단방향 동기화.
+      { href: "/schedule", label: "직원 일정" },
+      { href: "/seal-requests", label: "날인요청", hiddenForRoles: ["manager"] },
+      { href: "/suggestions", label: "건의사항", hiddenForRoles: ["manager"] },
+      // 주간업무일지는 /me 또는 대시보드 우상단 '주간업무일지 보기' 버튼에서 진입.
+      { href: "/utilities", label: "유틸 런처", hiddenForRoles: ["manager"] },
+      { href: "/help", label: "사용 매뉴얼" },
+    ],
   },
-  // 직원 일정은 task.dyce.kr 내부 FullCalendar에서 보기. NAVER WORKS Calendar에는 backend가 단방향 동기화.
-  { href: "/schedule", label: "직원 일정" },
-  { href: "/seal-requests", label: "날인요청" },
-  { href: "/suggestions", label: "건의사항" },
-  // 주간업무일지는 /me 또는 대시보드 우상단 '주간업무일지 보기' 버튼에서 진입.
-  { href: "/utilities", label: "유틸 런처" },
-  { href: "/help", label: "사용 매뉴얼" },
-  // ── admin only ──
-  { href: "/projects", label: "프로젝트", roles: ["admin"] },
-  { href: "/sales", label: "영업 관리", roles: ["admin"] },
-  { href: "/admin/incomes/clients", label: "발주처 관리", roles: ["admin"] },
-  { href: "/admin/notices", label: "공지/교육 관리", roles: ["admin"] },
-  { href: "/admin/incomes", label: "수금 관리", roles: ["admin"] },
-  { href: "/admin/employees", label: "직원 관리", roles: ["admin"] },
-  { href: "/admin/users", label: "사용자 관리", roles: ["admin"] },
-  { href: "/admin/drive", label: "Drive 연결", roles: ["admin"] },
+  // 운영 — admin + manager. 프로젝트·영업·발주처·돈·계약 흐름.
+  {
+    label: "운영 관리",
+    items: [
+      { href: "/projects", label: "프로젝트", roles: ["admin", "manager"] },
+      { href: "/sales", label: "영업 관리", roles: ["admin", "manager"] },
+      {
+        href: "/admin/incomes/clients",
+        label: "발주처 관리",
+        roles: ["admin", "manager"],
+      },
+      { href: "/admin/incomes", label: "수금 관리", roles: ["admin", "manager"] },
+      // 지출 관리 / 계약서 관리는 페이지 미구현 — placeholder route. 추후 page 추가 시 link 활성화.
+      { href: "/admin/expenses", label: "지출 관리", roles: ["admin", "manager"] },
+      { href: "/admin/contracts", label: "계약서 관리", roles: ["admin", "manager"] },
+    ],
+  },
+  // 시스템 — admin only. 공지·직원·사용자·Drive 등 인프라 설정.
+  {
+    label: "시스템 관리",
+    items: [
+      { href: "/admin/notices", label: "공지/교육 관리", roles: ["admin"] },
+      { href: "/admin/employees", label: "직원 관리", roles: ["admin"] },
+      { href: "/admin/users", label: "사용자 관리", roles: ["admin"] },
+      { href: "/admin/drive", label: "Drive 연결", roles: ["admin"] },
+    ],
+  },
 ];
 
 interface Props {
@@ -117,50 +147,66 @@ export default function Sidebar({ mobileOpen, onCloseMobile }: Props) {
         </button>
       </div>
 
-      <nav className="flex-1 space-y-1 overflow-y-auto p-3">
-        {NAV.filter(
-          (n) => !n.roles || (user?.role && n.roles.includes(user.role)),
-        ).map((n) => {
-          const active =
-            !n.external &&
-            (pathname === n.href || pathname.startsWith(`${n.href}/`));
-          const showBadge =
-            n.href === "/seal-requests" && showSealBadge && sealCount > 0;
-          const itemClass = cn(
-            "flex items-center justify-between rounded-md px-3 py-2 text-sm transition-colors",
-            active
-              ? "bg-zinc-800 text-white"
-              : "text-zinc-400 hover:bg-zinc-900 hover:text-zinc-100",
-          );
-          if (n.external) {
-            return (
-              <a
-                key={n.href}
-                href={n.href}
-                target="_blank"
-                rel="noopener noreferrer"
-                onClick={onCloseMobile}
-                className={itemClass}
-              >
-                <span>{n.label}</span>
-                <span className="text-xs text-zinc-500">↗</span>
-              </a>
-            );
-          }
+      <nav className="flex-1 space-y-3 overflow-y-auto p-3">
+        {NAV_GROUPS.map((group, gi) => {
+          const visibleItems = group.items.filter((n) => {
+            if (!user?.role) return false;
+            if (n.hiddenForRoles?.includes(user.role)) return false;
+            if (n.roles && !n.roles.includes(user.role)) return false;
+            return true;
+          });
+          if (visibleItems.length === 0) return null;
           return (
-            <Link
-              key={n.href}
-              href={n.href}
-              onClick={onCloseMobile}
-              className={itemClass}
-            >
-              <span>{n.label}</span>
-              {showBadge && (
-                <span className="rounded-full bg-red-500 px-1.5 py-0.5 text-[10px] font-medium text-white">
-                  {sealCount}
-                </span>
+            <div key={`group-${gi}`} className="space-y-1">
+              {group.label && (
+                <div className="px-3 pt-1 text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
+                  {group.label}
+                </div>
               )}
-            </Link>
+              {visibleItems.map((n) => {
+                const active =
+                  !n.external &&
+                  (pathname === n.href || pathname.startsWith(`${n.href}/`));
+                const showBadge =
+                  n.href === "/seal-requests" && showSealBadge && sealCount > 0;
+                const itemClass = cn(
+                  "flex items-center justify-between rounded-md px-3 py-2 text-sm transition-colors",
+                  active
+                    ? "bg-zinc-800 text-white"
+                    : "text-zinc-400 hover:bg-zinc-900 hover:text-zinc-100",
+                );
+                if (n.external) {
+                  return (
+                    <a
+                      key={n.href}
+                      href={n.href}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      onClick={onCloseMobile}
+                      className={itemClass}
+                    >
+                      <span>{n.label}</span>
+                      <span className="text-xs text-zinc-500">↗</span>
+                    </a>
+                  );
+                }
+                return (
+                  <Link
+                    key={n.href}
+                    href={n.href}
+                    onClick={onCloseMobile}
+                    className={itemClass}
+                  >
+                    <span>{n.label}</span>
+                    {showBadge && (
+                      <span className="rounded-full bg-red-500 px-1.5 py-0.5 text-[10px] font-medium text-white">
+                        {sealCount}
+                      </span>
+                    )}
+                  </Link>
+                );
+              })}
+            </div>
           );
         })}
       </nav>
