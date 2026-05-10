@@ -38,6 +38,8 @@ export default function MyPage() {
   const [taskCreate, setTaskCreate] = useState<{
     projectId: string;
     status?: string;
+    /** 분류 prefill (휴가 카드 + 버튼 등). */
+    category?: string;
   } | null>(null);
   // '해야할 일' 섹션 접기 (사용자가 자주 보는 영역이라 default 펼침)
   const [todoCollapsed, setTodoCollapsed] = useState(false);
@@ -222,6 +224,9 @@ export default function MyPage() {
                 projects={projects ?? []}
                 onClickTask={setEditing}
                 onDeleteTask={handleDeleteTask}
+                onAddVacation={() =>
+                  setTaskCreate({ projectId: "", category: "휴가(연차)" })
+                }
               />
             )}
           </div>
@@ -403,6 +408,7 @@ export default function MyPage() {
         projects={projects ?? []}
         defaultAssignee={effectiveName}
         initialStatus={taskCreate?.status}
+        initialCategory={taskCreate?.category}
         onClose={() => setTaskCreate(null)}
         onCreated={refreshTasks}
       />
@@ -415,11 +421,14 @@ function TodayTasks({
   projects,
   onClickTask,
   onDeleteTask,
+  onAddVacation,
 }: {
   tasks: Task[];
   projects: Project[];
   onClickTask: (t: Task) => void;
   onDeleteTask: (t: Task) => void;
+  /** 휴가 카드 + 버튼 클릭. 부모가 setTaskCreate({ category: '휴가(연차)' }) 처리. */
+  onAddVacation?: () => void;
 }) {
   const open = tasks.filter((t) => t.status !== "완료");
   open.sort((a, b) => {
@@ -551,6 +560,8 @@ function TodayTasks({
               showTime
               showProjectBadge
               findProject={findProject}
+              onAdd={c === "휴가" ? onAddVacation : undefined}
+              addLabel={c === "휴가" ? "+ 새 휴가" : undefined}
             />
           ))}
         </div>
@@ -701,6 +712,8 @@ function CategoryCard({
   showTime,
   showProjectBadge,
   findProject,
+  onAdd,
+  addLabel,
 }: {
   label: string;
   items: Task[];
@@ -709,14 +722,33 @@ function CategoryCard({
   showTime?: boolean;
   showProjectBadge?: boolean;
   findProject?: (pid: string | undefined) => Project | undefined;
+  /** 우상단 + 버튼 클릭 핸들러. 없으면 버튼 미표시. */
+  onAdd?: () => void;
+  /** + 버튼 라벨. 기본 '+ 새 항목'. */
+  addLabel?: string;
 }) {
   return (
     <div className="rounded-xl border border-zinc-200 bg-white p-3 dark:border-zinc-800 dark:bg-zinc-900">
-      <header className="mb-2 flex items-center justify-between">
+      <header className="mb-2 flex items-center justify-between gap-2">
         <h4 className="text-xs font-semibold text-zinc-700 dark:text-zinc-300">
           {label}
         </h4>
-        <span className="text-[10px] text-zinc-500">{items.length}</span>
+        <div className="flex items-center gap-2">
+          <span className="text-[10px] text-zinc-500">{items.length}</span>
+          {onAdd && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onAdd();
+              }}
+              className="rounded-md border border-zinc-300 px-1.5 py-0.5 text-[10px] hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800"
+              title={addLabel ?? "+ 새 항목"}
+            >
+              {addLabel ?? "+"}
+            </button>
+          )}
+        </div>
       </header>
       {items.length === 0 ? (
         <p className="py-4 text-center text-[11px] text-zinc-400">없음</p>

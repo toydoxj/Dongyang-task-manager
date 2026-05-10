@@ -50,6 +50,7 @@ def _ensure_can_modify_task(user: User, assignees: list[str] | None) -> None:
 @router.get("", response_model=TaskListResponse)
 def list_tasks(
     project_id: str | None = Query(default=None),
+    sale_id: str | None = Query(default=None, description="영업 page_id로 필터 (mirror_tasks.sales_ids @> [sale_id])"),
     assignee: str | None = Query(default=None),
     status_name: str | None = Query(default=None, alias="status"),
     mine: bool = Query(default=False),
@@ -73,6 +74,8 @@ def list_tasks(
         # Postgres ARRAY contains: project_ids @> ARRAY[project_id]
         # — .any() 는 'value = ANY(array)' 로 GIN 미적용. .contains() 가 @> 컴파일 → GIN 활용.
         stmt = stmt.where(M.MirrorTask.project_ids.contains([project_id]))  # type: ignore[attr-defined]
+    if sale_id:
+        stmt = stmt.where(M.MirrorTask.sales_ids.contains([sale_id]))  # type: ignore[attr-defined]
     if assignee:
         stmt = stmt.where(M.MirrorTask.assignees.contains([assignee]))  # type: ignore[attr-defined]
     if status_name:

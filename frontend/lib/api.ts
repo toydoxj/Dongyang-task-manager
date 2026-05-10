@@ -178,6 +178,8 @@ export async function setProjectStage(
 
 export async function listTasks(filters: {
   project_id?: string;
+  /** 영업 page_id로 필터 (mirror_tasks.sales_ids relation). */
+  sale_id?: string;
   assignee?: string;
   status?: string;
   mine?: boolean;

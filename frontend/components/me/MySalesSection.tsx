@@ -1,9 +1,10 @@
 "use client";
 
 import { useState } from "react";
+import { mutate } from "swr";
 
+import SaleTaskRow from "@/components/me/SaleTaskRow";
 import SalesEditModal from "@/components/sales/SalesEditModal";
-import SalesTable from "@/components/sales/SalesTable";
 import LoadingState from "@/components/ui/LoadingState";
 import type { Sale } from "@/lib/domain";
 import { useSales } from "@/lib/hooks";
@@ -73,21 +74,44 @@ export default function MySalesSection({
         <div className="space-y-4">
           {bid.length > 0 && (
             <SubGroup label="수주영업" count={bid.length} color="blue">
-              <SalesTable sales={bid} onClickRow={setEditing} showKindColumn={false} />
+              <div className="space-y-3">
+                {bid.map((s) => (
+                  <SaleTaskRow
+                    key={s.id}
+                    sale={s}
+                    onClickHeader={setEditing}
+                    onChanged={() => mutate((k) => Array.isArray(k) && k[0] === "tasks")}
+                  />
+                ))}
+              </div>
             </SubGroup>
           )}
           {presales.length > 0 && (
             <SubGroup label="기술지원" count={presales.length} color="purple">
-              <SalesTable
-                sales={presales}
-                onClickRow={setEditing}
-                showKindColumn={false}
-              />
+              <div className="space-y-3">
+                {presales.map((s) => (
+                  <SaleTaskRow
+                    key={s.id}
+                    sale={s}
+                    onClickHeader={setEditing}
+                    onChanged={() => mutate((k) => Array.isArray(k) && k[0] === "tasks")}
+                  />
+                ))}
+              </div>
             </SubGroup>
           )}
           {other.length > 0 && (
             <SubGroup label="유형 미설정" count={other.length} color="zinc">
-              <SalesTable sales={other} onClickRow={setEditing} showKindColumn={false} />
+              <div className="space-y-3">
+                {other.map((s) => (
+                  <SaleTaskRow
+                    key={s.id}
+                    sale={s}
+                    onClickHeader={setEditing}
+                    onChanged={() => mutate((k) => Array.isArray(k) && k[0] === "tasks")}
+                  />
+                ))}
+              </div>
             </SubGroup>
           )}
         </div>
