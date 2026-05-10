@@ -18,16 +18,15 @@ interface NavItem {
 }
 
 const NAV: NavItem[] = [
-  // ── admin / team_lead 전용 (상단) ──
+  // 사용자 결정 2026-05-11 — team_lead 기준 순서 정리.
+  // admin은 동일 순서 + 하단 admin only 그룹 추가로 노출.
   { href: "/", label: "대시보드", roles: ["admin", "team_lead"] },
-  { href: "/projects", label: "프로젝트", roles: ["admin", "team_lead"] },
+  { href: "/me", label: "내 업무" },
   {
     href: "/admin/employee-work",
     label: "직원 업무",
     roles: ["admin", "team_lead"],
   },
-  // ── 모든 사용자 — 일반직원 메뉴 순서 (사용자 결정 2026-05-11) ──
-  { href: "/me", label: "내 업무" },
   // 직원 일정은 task.dyce.kr 내부 FullCalendar에서 보기. NAVER WORKS Calendar에는 backend가 단방향 동기화.
   { href: "/schedule", label: "직원 일정" },
   { href: "/seal-requests", label: "날인요청" },
@@ -36,6 +35,7 @@ const NAV: NavItem[] = [
   { href: "/utilities", label: "유틸 런처" },
   { href: "/help", label: "사용 매뉴얼" },
   // ── admin only ──
+  { href: "/projects", label: "프로젝트", roles: ["admin"] },
   { href: "/admin/notices", label: "공지/교육 관리", roles: ["admin"] },
   { href: "/admin/incomes", label: "수금 관리", roles: ["admin"] },
   { href: "/admin/employees", label: "직원 관리", roles: ["admin"] },

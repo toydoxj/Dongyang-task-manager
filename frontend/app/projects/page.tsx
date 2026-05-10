@@ -28,8 +28,9 @@ function cmpDateDesc(a: string | null, b: string | null): number {
 export default function ProjectsPage() {
   const { user } = useAuth();
   const router = useRouter();
-  // 일반직원은 프로젝트 목록 접근 불가 — /me로 redirect
-  const allowed = user?.role === "admin" || user?.role === "team_lead";
+  // admin만 프로젝트 목록 접근 가능 (사용자 결정 2026-05-11)
+  // — team_lead/일반직원은 /me로 redirect
+  const allowed = user?.role === "admin";
   useEffect(() => {
     if (user && !allowed) router.replace("/me");
   }, [user, allowed, router]);
