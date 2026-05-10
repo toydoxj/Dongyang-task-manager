@@ -1,6 +1,6 @@
 "use client";
 
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import useSWR from "swr";
 
@@ -9,13 +9,95 @@ import ProjectCard from "@/components/projects/ProjectCard";
 import ProjectFilter, {
   type FilterState,
 } from "@/components/projects/ProjectFilter";
+import ProjectPresets, {
+  PRESETS,
+  type PresetKey,
+} from "@/components/projects/ProjectPresets";
 import LoadingState from "@/components/ui/LoadingState";
 import { getEmployeeTeamsMap } from "@/lib/api";
-import { useProjects } from "@/lib/hooks";
+import { useProjects, useSealRequests } from "@/lib/hooks";
+import type { Project } from "@/lib/domain";
 
 const PAGE_SIZE = 60;
+const STALE_DAYS = 90;
+const DUE_SOON_DAYS = 30;
+const RECENT_EDIT_DAYS = 7;
+const INCOME_ISSUE_RATIO = 0.3;
+const PENDING_SEAL_STATUSES = new Set(["1차검토 중", "2차검토 중"]);
 
 type SortKey = "start_desc" | "start_asc" | "name_asc" | "amount_desc";
+
+function ymd(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+function startOfWeekMonday(d: Date): Date {
+  const x = new Date(d);
+  x.setHours(0, 0, 0, 0);
+  const day = x.getDay() || 7;
+  x.setDate(x.getDate() - (day - 1));
+  return x;
+}
+
+function isValidPreset(s: string | null): s is PresetKey {
+  return !!s && PRESETS.some((p) => p.key === s);
+}
+
+/** 활성 프리셋이 통과하는 프로젝트인지 판정. seals/myTeam은 외부 데이터 의존. */
+function projectMatchesPreset(
+  p: Project,
+  preset: PresetKey,
+  ctx: {
+    todayStr: string;
+    weekStartStr: string;
+    weekEndStr: string;
+    dueSoonEndStr: string;
+    staleCutoffStr: string;
+    recentEditCutoffStr: string;
+    sealActiveProjectIds: Set<string>;
+    myTeam: string | null;
+  },
+): boolean {
+  switch (preset) {
+    case "inProgress":
+      return p.stage === "진행중";
+    case "thisWeekStart":
+      return (
+        p.start_date != null &&
+        p.start_date.slice(0, 10) >= ctx.weekStartStr &&
+        p.start_date.slice(0, 10) < ctx.weekEndStr
+      );
+    case "dueSoon":
+      return (
+        p.stage === "진행중" &&
+        p.contract_end != null &&
+        p.contract_end.slice(0, 10) >= ctx.todayStr &&
+        p.contract_end.slice(0, 10) <= ctx.dueSoonEndStr
+      );
+    case "stalled":
+      return (
+        (p.stage === "진행중" || p.stage === "대기") &&
+        p.start_date != null &&
+        p.start_date.slice(0, 10) <= ctx.staleCutoffStr
+      );
+    case "myTeam":
+      return ctx.myTeam != null && p.teams.includes(ctx.myTeam);
+    case "sealActive":
+      return ctx.sealActiveProjectIds.has(p.id);
+    case "incomeIssue":
+      // 계약 체결 + 용역비 대비 수금 < 30%
+      if (!p.contract_signed) return false;
+      if (p.contract_amount == null || p.contract_amount <= 0) return false;
+      return (
+        (p.collection_total ?? 0) < p.contract_amount * INCOME_ISSUE_RATIO
+      );
+    case "recentEdit":
+      return (
+        p.last_edited_time != null &&
+        p.last_edited_time.slice(0, 10) >= ctx.recentEditCutoffStr
+      );
+  }
+}
 
 /** 시작일 내림차순 비교 (null은 항상 뒤로). */
 function cmpDateDesc(a: string | null, b: string | null): number {
@@ -28,6 +110,7 @@ function cmpDateDesc(a: string | null, b: string | null): number {
 export default function ProjectsPage() {
   const { user } = useAuth();
   const router = useRouter();
+  const searchParams = useSearchParams();
   // admin과 manager만 프로젝트 목록 접근 가능 (사용자 결정 2026-05-11)
   // — team_lead/일반직원은 /me로 redirect
   const allowed = user?.role === "admin" || user?.role === "manager";
@@ -42,6 +125,15 @@ export default function ProjectsPage() {
     ["employee-teams-map"],
     () => getEmployeeTeamsMap(),
   );
+  // 날인 진행중 preset 판정용
+  const { data: sealData } = useSealRequests(undefined, allowed);
+
+  // URL ?preset 동기화 — 첫 진입 시 active state 시드
+  const presetFromUrl = searchParams.get("preset");
+  const initialPreset = isValidPreset(presetFromUrl) ? presetFromUrl : null;
+  const [activePreset, setActivePreset] = useState<PresetKey | null>(
+    initialPreset,
+  );
   const [filter, setFilter] = useState<FilterState>({
     query: "",
     stage: "",
@@ -55,6 +147,53 @@ export default function ProjectsPage() {
     setFilter(next);
     setVisibleCount(PAGE_SIZE);
   };
+
+  const updatePreset = (next: PresetKey | null): void => {
+    setActivePreset(next);
+    setVisibleCount(PAGE_SIZE);
+    // URL 동기화 (스크롤 보존)
+    const params = new URLSearchParams(searchParams.toString());
+    if (next) params.set("preset", next);
+    else params.delete("preset");
+    const qs = params.toString();
+    router.replace(qs ? `/projects?${qs}` : "/projects", { scroll: false });
+  };
+
+  // preset 평가 컨텍스트 (날짜 cutoff + sealActive id set + myTeam)
+  const presetCtx = useMemo(() => {
+    const today = new Date();
+    const todayStr = ymd(today);
+    const weekStart = startOfWeekMonday(today);
+    const weekEnd = new Date(weekStart);
+    weekEnd.setDate(weekEnd.getDate() + 7);
+    const dueSoonEnd = new Date(today);
+    dueSoonEnd.setDate(dueSoonEnd.getDate() + DUE_SOON_DAYS);
+    const staleCutoff = new Date(today);
+    staleCutoff.setDate(staleCutoff.getDate() - STALE_DAYS);
+    const recentEditCutoff = new Date(today);
+    recentEditCutoff.setDate(recentEditCutoff.getDate() - RECENT_EDIT_DAYS);
+
+    const sealActiveProjectIds = new Set<string>();
+    for (const s of sealData?.items ?? []) {
+      if (!PENDING_SEAL_STATUSES.has(s.status)) continue;
+      for (const pid of s.project_ids) sealActiveProjectIds.add(pid);
+    }
+
+    // 본인 팀 — 직원 명부 lookup (user.name 기준).
+    const myTeam =
+      user?.name && teamsMap?.[user.name] ? teamsMap[user.name] : null;
+
+    return {
+      todayStr,
+      weekStartStr: ymd(weekStart),
+      weekEndStr: ymd(weekEnd),
+      dueSoonEndStr: ymd(dueSoonEnd),
+      staleCutoffStr: ymd(staleCutoff),
+      recentEditCutoffStr: ymd(recentEditCutoff),
+      sealActiveProjectIds,
+      myTeam,
+    };
+  }, [sealData, teamsMap, user]);
 
   const filtered = useMemo(() => {
     if (!all) return [];
@@ -82,6 +221,9 @@ export default function ProjectsPage() {
         const hay = `${p.code} ${p.name}`.toLowerCase();
         if (!hay.includes(q)) return false;
       }
+      if (activePreset && !projectMatchesPreset(p, activePreset, presetCtx)) {
+        return false;
+      }
       return true;
     });
     // 정렬
@@ -99,7 +241,20 @@ export default function ProjectsPage() {
       }
     });
     return sorted;
-  }, [all, filter, sortKey, teamsMap]);
+  }, [all, filter, sortKey, teamsMap, activePreset, presetCtx]);
+
+  // 각 preset을 적용했을 때의 결과 수 — chip count 표시용
+  const presetCounts = useMemo(() => {
+    if (!all) return undefined;
+    const out: Partial<Record<PresetKey, number>> = {};
+    // 다른 필터(검색·완료 여부 등)와 무관하게 전체 프로젝트 대비 prelim count
+    for (const p of PRESETS) {
+      out[p.key] = all.filter((proj) =>
+        projectMatchesPreset(proj, p.key, presetCtx),
+      ).length;
+    }
+    return out;
+  }, [all, presetCtx]);
 
   if (!user || !allowed) return null;
 
@@ -120,6 +275,11 @@ export default function ProjectsPage() {
 
       {all && (
         <>
+          <ProjectPresets
+            activeKey={activePreset}
+            onChange={updatePreset}
+            counts={presetCounts}
+          />
           <ProjectFilter
             value={filter}
             onChange={updateFilter}
