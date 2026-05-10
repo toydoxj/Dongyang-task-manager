@@ -114,6 +114,8 @@
     }
     td.center { text-align: center; }
     td.num { text-align: right; font-variant-numeric: tabular-nums; }
+    /* 영업/신규 표 규모 cell — 본문 폰트 -2pt (긴 텍스트 가독성 + 공간 절약) */
+    td.scale-cell { font-size: 5pt; }
     .empty {
       padding: 5px;
       text-align: center;
@@ -411,10 +413,11 @@
       <thead>
         <tr>
           <th style="width: 9%;">영업번호</th>
-          <th style="width: 38%;">PROJECT</th>
-          <th style="width: 18%;">발주처</th>
-          <th style="width: 17%;">규모</th>
+          <th style="width: 33%;">PROJECT</th>
+          <th style="width: 17%;">발주처</th>
+          <th style="width: 16%;">규모</th>
           <th style="width: 12%;">견적가</th>
+          <th style="width: 7%;">수주확률</th>
           <th style="width: 6%;">비고</th>
         </tr>
       </thead>
@@ -424,8 +427,9 @@
             <td class="center">{{ s.code }}</td>
             <td>{{ s.name }}</td>
             <td>{{ s.client }}</td>
-            <td class="center">{{ s.scale }}</td>
+            <td class="center scale-cell">{{ s.scale }}</td>
             <td class="num">{{ s.estimated_amount|krw }}</td>
+            <td class="center">{% if s.probability is not none %}{{ s.probability|int }}%{% endif %}</td>
             <td class="center">{% if s.is_bid %}(입찰){% endif %}</td>
           </tr>
         {% endfor %}
@@ -456,7 +460,7 @@
             <td>{{ n.code }}</td>
             <td>{{ n.name }}</td>
             <td>{{ n.client }}</td>
-            <td>{{ n.scale }}</td>
+            <td class="scale-cell">{{ n.scale }}</td>
             <td class="num">{{ n.contract_amount|krw }}</td>
           </tr>
         {% endfor %}

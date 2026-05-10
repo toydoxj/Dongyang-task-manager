@@ -122,8 +122,9 @@ class SalesItem(BaseModel):
     category: list[str] = Field(default_factory=list)
     name: str
     client: str = ""
-    scale: str = ""  # "44,594.71㎡ / 지하6층, 지상12층"
+    scale: str = ""  # "44,594.71㎡ / 지하6층, 지상12층 / 3동"
     estimated_amount: float | None = None
+    probability: float | None = None  # 수주확률 0~100
     is_bid: bool = False
     stage: str = ""
     submission_date: str | None = None
@@ -290,7 +291,7 @@ def _client_name(props: dict[str, Any]) -> str:
 
 
 def _scale_text(sale: M.MirrorSales) -> str:
-    """영업 row의 규모 표기 — '44,594.71㎡ / 지하6층, 지상12층' 형식."""
+    """영업 row의 규모 표기 — '44,594.71㎡ / 지하6층, 지상12층 / 3동' 형식."""
     parts: list[str] = []
     if sale.gross_floor_area:
         parts.append(f"{sale.gross_floor_area:,.2f}㎡")
@@ -301,6 +302,8 @@ def _scale_text(sale: M.MirrorSales) -> str:
         floors.append(f"지상{int(sale.floors_above)}층")
     if floors:
         parts.append(", ".join(floors))
+    if sale.building_count:
+        parts.append(f"{int(sale.building_count)}동")
     return " / ".join(parts)
 
 
@@ -796,6 +799,7 @@ def aggregate_sales(
                 client=client_name,
                 scale=_scale_text(s),
                 estimated_amount=s.estimated_amount,
+                probability=s.probability,
                 is_bid=s.is_bid,
                 stage=s.stage,
                 submission_date=s.submission_date.isoformat() if s.submission_date else None,

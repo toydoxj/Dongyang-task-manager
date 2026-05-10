@@ -1316,6 +1316,8 @@ export interface WeeklySalesItem {
   client: string;
   scale: string;
   estimated_amount: number | null;
+  /** 수주확률 0~100 (PM 직접 입력). */
+  probability: number | null;
   is_bid: boolean;
   stage: string;
   submission_date: string | null;
