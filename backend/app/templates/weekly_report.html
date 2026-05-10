@@ -119,9 +119,10 @@
     /* 용역명/발주처 cell — 텍스트 길이 따라 단계 축소 (em 기반 → 모든 표 호환).
      * Jinja `fit_cell` 매크로가 길이 보고 class 부여.
      * 발주처(좁은 cell, 회사명 한 단어) 전용 단계는 더 공격적: shrink-3 추가. */
-    td.cell-shrink-1 { font-size: 0.9em; }
-    td.cell-shrink-2 { font-size: 0.8em; }
-    td.cell-shrink-3 { font-size: 0.7em; }
+    td.cell-shrink-1 { font-size: 0.85em; }
+    td.cell-shrink-2 { font-size: 0.75em; }
+    td.cell-shrink-3 { font-size: 0.65em; }
+    td.cell-shrink-4 { font-size: 0.55em; }
     .empty {
       padding: 5px;
       text-align: center;
@@ -287,13 +288,15 @@
 {%- endmacro -%}
 
 {# 발주처/제출처용 — 좁은 cell + 회사명 한 단어, 줄바꿈 시 가독성 나쁨.
-   더 공격적 임계값: 10 / 14 / 18. #}
+   매우 공격적 임계값(한자/특수문자 포함 회사명):
+   8/10/13 → 단계별 0.85/0.75/0.65em, 15+ → 0.55em (㈜포스코… 16자도 한 줄). #}
 {%- macro fit_client_cell(value, extra_class='') -%}
   {%- set L = (value|string)|length -%}
   {%- set shrink = '' -%}
-  {%- if L >= 18 -%}{%- set shrink = 'cell-shrink-3' -%}
-  {%- elif L >= 14 -%}{%- set shrink = 'cell-shrink-2' -%}
-  {%- elif L >= 10 -%}{%- set shrink = 'cell-shrink-1' -%}{%- endif -%}
+  {%- if L >= 15 -%}{%- set shrink = 'cell-shrink-4' -%}
+  {%- elif L >= 13 -%}{%- set shrink = 'cell-shrink-3' -%}
+  {%- elif L >= 10 -%}{%- set shrink = 'cell-shrink-2' -%}
+  {%- elif L >= 8 -%}{%- set shrink = 'cell-shrink-1' -%}{%- endif -%}
   {%- set classes = (extra_class ~ ' ' ~ shrink)|trim -%}
   <td{% if classes %} class="{{ classes }}"{% endif %}>{{ value }}</td>
 {%- endmacro -%}
