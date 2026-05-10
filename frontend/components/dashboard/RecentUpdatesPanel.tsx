@@ -49,7 +49,7 @@ export default function RecentUpdatesPanel({ projects }: Props) {
           {recent.map((p) => (
             <li key={p.id}>
               <Link
-                href={`/project?id=${p.id}`}
+                href={`/projects/${p.id}`}
                 className="flex items-center gap-2 py-1.5 text-xs hover:bg-zinc-50 dark:hover:bg-zinc-800/40"
               >
                 <span className="font-mono text-[10px] text-zinc-500">

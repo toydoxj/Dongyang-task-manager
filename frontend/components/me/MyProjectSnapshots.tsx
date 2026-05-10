@@ -94,7 +94,7 @@ function SnapshotCard({ snapshot }: { snapshot: Snapshot }) {
   const { project: p, inProgress, dueSoon, overdue, lastActivity } = snapshot;
   return (
     <Link
-      href={`/project?id=${p.id}`}
+      href={`/projects/${p.id}`}
       className="block rounded-xl border border-zinc-200 bg-white p-3 transition-colors hover:border-zinc-300 hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900 dark:hover:border-zinc-700 dark:hover:bg-zinc-800"
     >
       <div className="flex items-start justify-between gap-2">

@@ -776,7 +776,7 @@ function TaskCard({
       </button>
       {t.project_ids[0] && (
         <Link
-          href={`/project?id=${t.project_ids[0]}`}
+          href={`/projects/${t.project_ids[0]}`}
           className="flex shrink-0 items-center px-3 text-[10px] text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800"
           title="프로젝트로 이동"
         >

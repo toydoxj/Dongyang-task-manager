@@ -81,7 +81,7 @@ function ProjectLink({ id, children }: { id: string; children: React.ReactNode }
   if (!id || user?.role !== "admin") return <>{children}</>;
   return (
     <Link
-      href={`/project?id=${encodeURIComponent(id)}`}
+      href={`/projects/${encodeURIComponent(id)}`}
       className="text-blue-700 underline-offset-2 hover:underline dark:text-blue-400"
     >
       {children}

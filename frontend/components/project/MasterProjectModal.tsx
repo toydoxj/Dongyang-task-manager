@@ -205,7 +205,7 @@ function Body({
             {mp.sub_projects.map((sp) => (
               <li key={sp.id}>
                 <Link
-                  href={`/project?id=${sp.id}`}
+                  href={`/projects/${sp.id}`}
                   onClick={onClose}
                   className="flex items-center justify-between gap-2 rounded-md border border-zinc-200 bg-white px-2.5 py-1.5 text-[11px] hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900 dark:hover:bg-zinc-800"
                 >

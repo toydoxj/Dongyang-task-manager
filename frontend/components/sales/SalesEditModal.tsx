@@ -518,7 +518,7 @@ export default function SalesEditModal({
       refreshSales();
       onClose();
       if (typeof window !== "undefined") {
-        window.location.href = `/project?id=${project.id}`;
+        window.location.href = `/projects/${project.id}`;
       }
     } catch (e) {
       setErr(e instanceof Error ? e.message : "수주 전환 실패");

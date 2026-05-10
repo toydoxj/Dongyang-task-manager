@@ -106,7 +106,7 @@ export default function PriorityActionsPanel({
       ctaLabel: CTA.openProject,
       ctaHref:
         stalledProjects.length === 1
-          ? `/project?id=${stalledProjects[0].id}`
+          ? `/projects/${stalledProjects[0].id}`
           : "/projects",
     },
     {

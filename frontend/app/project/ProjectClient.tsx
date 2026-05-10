@@ -165,7 +165,7 @@ export default function ProjectClient({ id }: { id: string }) {
           onClick={() =>
             router.push(
               `/sales?sale=${encodeURIComponent(linkedSale.id)}&from=${encodeURIComponent(
-                `/project?id=${id}`,
+                `/projects/${id}`,
               )}`,
             )
           }

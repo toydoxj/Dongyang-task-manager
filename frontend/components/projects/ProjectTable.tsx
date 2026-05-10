@@ -62,7 +62,7 @@ export default function ProjectTable({ projects, tagsById }: Props) {
               >
                 <td className="px-2 py-1.5 font-mono text-[10px] text-zinc-500">
                   <Link
-                    href={`/project?id=${p.id}`}
+                    href={`/projects/${p.id}`}
                     className="hover:text-zinc-900 dark:hover:text-zinc-100"
                   >
                     {p.code || "—"}
@@ -70,7 +70,7 @@ export default function ProjectTable({ projects, tagsById }: Props) {
                 </td>
                 <td className="max-w-[280px] truncate px-2 py-1.5 font-medium text-zinc-800 dark:text-zinc-200">
                   <Link
-                    href={`/project?id=${p.id}`}
+                    href={`/projects/${p.id}`}
                     className="hover:underline"
                     title={p.name}
                   >

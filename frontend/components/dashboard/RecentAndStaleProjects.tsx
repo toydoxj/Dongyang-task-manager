@@ -160,7 +160,7 @@ function ProjectRow({ project }: { project: Project }) {
   return (
     <li>
       <Link
-        href={`/project?id=${project.id}`}
+        href={`/projects/${project.id}`}
         className="flex items-center gap-2 rounded-md border border-zinc-200 bg-zinc-50/60 px-2 py-1.5 text-xs transition-colors hover:bg-zinc-100 dark:border-zinc-800 dark:bg-zinc-950/60 dark:hover:bg-zinc-800"
       >
         <span
