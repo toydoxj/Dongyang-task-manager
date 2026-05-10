@@ -5,8 +5,6 @@ import { API_BASE } from "./types";
 import type {
   CashflowEntry,
   CashflowResponse,
-  Client,
-  ClientListResponse,
   ContractItem,
   ContractItemListResponse,
   DriveChildrenResponse,
@@ -282,53 +280,8 @@ export async function deleteIncome(pageId: string): Promise<void> {
   }
 }
 
-// ── 협력업체(발주처) ──
-
-export async function listClients(): Promise<ClientListResponse> {
-  const res = await authFetch(`/api/clients`);
-  return jsonOrThrow<ClientListResponse>(res);
-}
-
-export interface ClientCreateRequest {
-  name: string;
-  category?: string;
-}
-
-export async function createClient(
-  body: ClientCreateRequest,
-): Promise<Client> {
-  const res = await authFetch(`/api/clients`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
-  return jsonOrThrow<Client>(res);
-}
-
-export interface ClientUpdateRequest {
-  name?: string | null;
-  category?: string | null;
-}
-
-export async function updateClient(
-  pageId: string,
-  body: ClientUpdateRequest,
-): Promise<Client> {
-  const res = await authFetch(`/api/clients/${pageId}`, {
-    method: "PATCH",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
-  return jsonOrThrow<Client>(res);
-}
-
-export async function deleteClient(pageId: string): Promise<void> {
-  const res = await authFetch(`/api/clients/${pageId}`, { method: "DELETE" });
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(text || `삭제 실패 (${res.status})`);
-  }
-}
+// ── 협력업체(발주처) ── (Phase 4-A — lib/api/clients.ts로 이동)
+export * from "./api/clients";
 
 // ── 계약 항목 (공동수급/추가용역) ──
 
