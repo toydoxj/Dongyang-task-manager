@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import useSWR from "swr";
 
 import { useAuth } from "@/components/AuthGuard";
@@ -23,6 +23,28 @@ import type { Project } from "@/lib/domain";
 
 const PAGE_SIZE = 60;
 const STALE_DAYS = 90;
+// COMMON-002 — list ↔ 상세 왕복 시 필터/스크롤 보존 (탭 단위 저장).
+const SS_KEY = "projects-page-state-v1";
+
+interface SavedState {
+  filter?: FilterState;
+  sortKey?: SortKey;
+  view?: "cards" | "table";
+  activePreset?: PresetKey | null;
+  visibleCount?: number;
+  scrollY?: number;
+}
+
+function loadSavedState(): SavedState {
+  if (typeof window === "undefined") return {};
+  const raw = window.sessionStorage.getItem(SS_KEY);
+  if (!raw) return {};
+  try {
+    return JSON.parse(raw) as SavedState;
+  } catch {
+    return {};
+  }
+}
 const DUE_SOON_DAYS = 30;
 const RECENT_EDIT_DAYS = 7;
 const INCOME_ISSUE_RATIO = 0.3;
@@ -131,26 +153,85 @@ export default function ProjectsPage() {
   // 날인 진행중 preset 판정용
   const { data: sealData } = useSealRequests(undefined, allowed);
 
-  // URL ?preset 동기화 — 첫 진입 시 active state 시드
+  // URL ?preset 우선, 없으면 sessionStorage. 모든 state는 lazy init으로 sessionStorage 1회 read.
   const presetFromUrl = searchParams.get("preset");
-  const initialPreset = isValidPreset(presetFromUrl) ? presetFromUrl : null;
-  const [activePreset, setActivePreset] = useState<PresetKey | null>(
-    initialPreset,
+  const presetFromUrlValid =
+    presetFromUrl != null && isValidPreset(presetFromUrl);
+
+  const [activePreset, setActivePreset] = useState<PresetKey | null>(() =>
+    presetFromUrlValid
+      ? (presetFromUrl as PresetKey)
+      : (loadSavedState().activePreset ?? null),
   );
-  const [filter, setFilter] = useState<FilterState>({
-    query: "",
-    stage: "",
-    team: "",
-    completed: "open",
-  });
-  const [sortKey, setSortKey] = useState<SortKey>("start_desc");
-  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
-  const [view, setView] = useState<"cards" | "table">("cards");
+  const [filter, setFilter] = useState<FilterState>(
+    () =>
+      loadSavedState().filter ?? {
+        query: "",
+        stage: "",
+        team: "",
+        completed: "open",
+      },
+  );
+  const [sortKey, setSortKey] = useState<SortKey>(
+    () => loadSavedState().sortKey ?? "start_desc",
+  );
+  const [visibleCount, setVisibleCount] = useState(
+    () => loadSavedState().visibleCount ?? PAGE_SIZE,
+  );
+  const [view, setView] = useState<"cards" | "table">(
+    () => loadSavedState().view ?? "cards",
+  );
 
   const updateFilter = (next: FilterState) => {
     setFilter(next);
     setVisibleCount(PAGE_SIZE);
   };
+
+  // state 변경 시 sessionStorage 저장 (scrollY는 별도 scroll listener로 갱신).
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const next: SavedState = {
+      ...loadSavedState(),
+      filter,
+      sortKey,
+      view,
+      activePreset,
+      visibleCount,
+    };
+    window.sessionStorage.setItem(SS_KEY, JSON.stringify(next));
+  }, [filter, sortKey, view, activePreset, visibleCount]);
+
+  // 데이터 로드 후 1회 scroll restore (back navigation 대응).
+  const scrollRestoredRef = useRef(false);
+  useEffect(() => {
+    if (scrollRestoredRef.current || !all) return;
+    const y = loadSavedState().scrollY;
+    if (typeof y === "number" && y > 0) {
+      requestAnimationFrame(() => window.scrollTo(0, y));
+    }
+    scrollRestoredRef.current = true;
+  }, [all]);
+
+  // scroll 위치를 200ms debounce로 sessionStorage에 저장.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    let timer: number | undefined;
+    const onScroll = (): void => {
+      if (timer) window.clearTimeout(timer);
+      timer = window.setTimeout(() => {
+        const next: SavedState = {
+          ...loadSavedState(),
+          scrollY: window.scrollY,
+        };
+        window.sessionStorage.setItem(SS_KEY, JSON.stringify(next));
+      }, 200);
+    };
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => {
+      window.removeEventListener("scroll", onScroll);
+      if (timer) window.clearTimeout(timer);
+    };
+  }, []);
 
   const updatePreset = (next: PresetKey | null): void => {
     setActivePreset(next);
