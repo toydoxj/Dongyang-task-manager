@@ -84,12 +84,13 @@ function ProjectLink({ id, children }: { id: string; children: React.ReactNode }
   );
 }
 
-/** 영업 상세 link (sales 페이지에 ?sale=...로 모달 open). */
+/** 영업 상세 link (sales 페이지에 ?sale=...로 모달 open).
+ * from=/weekly-report를 함께 넘겨 모달 닫기 시 원래 페이지로 복귀. */
 function SaleLink({ id, children }: { id: string; children: React.ReactNode }) {
   if (!id) return <>{children}</>;
   return (
     <Link
-      href={`/sales?sale=${encodeURIComponent(id)}`}
+      href={`/sales?sale=${encodeURIComponent(id)}&from=${encodeURIComponent("/weekly-report")}`}
       className="text-emerald-700 underline-offset-2 hover:underline dark:text-emerald-400"
     >
       {children}

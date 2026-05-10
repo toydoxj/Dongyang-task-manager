@@ -120,9 +120,12 @@ export default function SalesPage() {
         onClose={() => {
           setEditing(null);
           setCreating(false);
-          // ?sale=... query를 제거 — 그대로 두면 데이터 refresh 후 useEffect가
-          // 다시 트리거되어 모달이 재오픈됨.
-          if (queriedSaleId) {
+          // referrer가 같이 넘어왔으면 (예: 주간 업무일지) 그 페이지로 복귀.
+          // 그렇지 않은 경우엔 ?sale= query만 제거 (refresh 후 useEffect 재트리거 방지).
+          const fromPath = searchParams.get("from");
+          if (fromPath && fromPath.startsWith("/")) {
+            router.push(fromPath);
+          } else if (queriedSaleId) {
             router.replace("/sales", { scroll: false });
           }
         }}
