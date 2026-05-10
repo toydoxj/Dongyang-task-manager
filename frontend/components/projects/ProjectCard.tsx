@@ -16,7 +16,49 @@ const STAGE_BADGE: Record<string, string> = {
   "이관": "bg-zinc-400/15 text-zinc-400 border-zinc-400/30",
 };
 
-export default function ProjectCard({ project }: { project: Project }) {
+// PROJ-002 — 상태 태그 (페이지에서 계산해 tags prop으로 전달).
+export type ProjectTag =
+  | "stalled"
+  | "dueSoon"
+  | "sealActive"
+  | "incomeIssue"
+  | "noAssignee"
+  | "recentEdit";
+
+const TAG_STYLE: Record<ProjectTag, { label: string; className: string }> = {
+  stalled: {
+    label: "장기 정체",
+    className: "bg-amber-100 text-amber-800 dark:bg-amber-500/20 dark:text-amber-300",
+  },
+  dueSoon: {
+    label: "마감 임박",
+    className: "bg-orange-100 text-orange-800 dark:bg-orange-500/20 dark:text-orange-300",
+  },
+  sealActive: {
+    label: "날인 진행중",
+    className: "bg-violet-100 text-violet-800 dark:bg-violet-500/20 dark:text-violet-300",
+  },
+  incomeIssue: {
+    label: "수금 지연",
+    className: "bg-red-100 text-red-800 dark:bg-red-500/20 dark:text-red-300",
+  },
+  noAssignee: {
+    label: "담당 미정",
+    className: "bg-zinc-200 text-zinc-700 dark:bg-zinc-700 dark:text-zinc-300",
+  },
+  recentEdit: {
+    label: "최근 변경",
+    className: "bg-emerald-100 text-emerald-800 dark:bg-emerald-500/20 dark:text-emerald-300",
+  },
+};
+
+export default function ProjectCard({
+  project,
+  tags = [],
+}: {
+  project: Project;
+  tags?: ProjectTag[];
+}) {
   const rateNumber =
     typeof project.collection_rate === "number"
       ? project.collection_rate
@@ -48,6 +90,22 @@ export default function ProjectCard({ project }: { project: Project }) {
           </span>
         )}
       </div>
+
+      {tags.length > 0 && (
+        <div className="mt-2 flex flex-wrap gap-1">
+          {tags.map((t) => (
+            <span
+              key={t}
+              className={cn(
+                "rounded px-1.5 py-0.5 text-[10px] font-medium leading-none",
+                TAG_STYLE[t].className,
+              )}
+            >
+              {TAG_STYLE[t].label}
+            </span>
+          ))}
+        </div>
+      )}
 
       <dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-1.5 text-[11px]">
         <Row

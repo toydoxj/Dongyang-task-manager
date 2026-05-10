@@ -5,7 +5,9 @@ import { useEffect, useMemo, useState } from "react";
 import useSWR from "swr";
 
 import { useAuth } from "@/components/AuthGuard";
-import ProjectCard from "@/components/projects/ProjectCard";
+import ProjectCard, {
+  type ProjectTag,
+} from "@/components/projects/ProjectCard";
 import ProjectFilter, {
   type FilterState,
 } from "@/components/projects/ProjectFilter";
@@ -13,6 +15,7 @@ import ProjectPresets, {
   PRESETS,
   type PresetKey,
 } from "@/components/projects/ProjectPresets";
+import ProjectTable from "@/components/projects/ProjectTable";
 import LoadingState from "@/components/ui/LoadingState";
 import { getEmployeeTeamsMap } from "@/lib/api";
 import { useProjects, useSealRequests } from "@/lib/hooks";
@@ -142,6 +145,7 @@ export default function ProjectsPage() {
   });
   const [sortKey, setSortKey] = useState<SortKey>("start_desc");
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
+  const [view, setView] = useState<"cards" | "table">("cards");
 
   const updateFilter = (next: FilterState) => {
     setFilter(next);
@@ -243,6 +247,29 @@ export default function ProjectsPage() {
     return sorted;
   }, [all, filter, sortKey, teamsMap, activePreset, presetCtx]);
 
+  // PROJ-002 — 각 프로젝트의 상태 태그 (cards/table 둘 다 공유)
+  const tagsById = useMemo(() => {
+    const m = new Map<string, ProjectTag[]>();
+    if (!all) return m;
+    const closedStages = new Set(["완료", "타절", "종결", "이관"]);
+    for (const p of all) {
+      const tags: ProjectTag[] = [];
+      if (projectMatchesPreset(p, "stalled", presetCtx)) tags.push("stalled");
+      if (projectMatchesPreset(p, "dueSoon", presetCtx)) tags.push("dueSoon");
+      if (projectMatchesPreset(p, "sealActive", presetCtx))
+        tags.push("sealActive");
+      if (projectMatchesPreset(p, "incomeIssue", presetCtx))
+        tags.push("incomeIssue");
+      if (p.assignees.length === 0 && !closedStages.has(p.stage)) {
+        tags.push("noAssignee");
+      }
+      if (projectMatchesPreset(p, "recentEdit", presetCtx))
+        tags.push("recentEdit");
+      m.set(p.id, tags);
+    }
+    return m;
+  }, [all, presetCtx]);
+
   // 각 preset을 적용했을 때의 결과 수 — chip count 표시용
   const presetCounts = useMemo(() => {
     if (!all) return undefined;
@@ -286,21 +313,47 @@ export default function ProjectsPage() {
             totalCount={all.length}
             filteredCount={filtered.length}
           />
-          <div className="flex items-center gap-2 text-xs">
-            <span className="text-zinc-500">정렬</span>
-            <select
-              value={sortKey}
-              onChange={(e) => {
-                setSortKey(e.target.value as SortKey);
-                setVisibleCount(PAGE_SIZE);
-              }}
-              className="rounded-md border border-zinc-300 bg-white px-2.5 py-1 outline-none dark:border-zinc-700 dark:bg-zinc-950"
-            >
-              <option value="start_desc">최신 시작일 (내림차순)</option>
-              <option value="start_asc">오래된 시작일 (오름차순)</option>
-              <option value="name_asc">이름 (가나다)</option>
-              <option value="amount_desc">용역비 (큰 금액 순)</option>
-            </select>
+          <div className="flex flex-wrap items-center gap-3 text-xs">
+            <div className="flex items-center gap-2">
+              <span className="text-zinc-500">정렬</span>
+              <select
+                value={sortKey}
+                onChange={(e) => {
+                  setSortKey(e.target.value as SortKey);
+                  setVisibleCount(PAGE_SIZE);
+                }}
+                className="rounded-md border border-zinc-300 bg-white px-2.5 py-1 outline-none dark:border-zinc-700 dark:bg-zinc-950"
+              >
+                <option value="start_desc">최신 시작일 (내림차순)</option>
+                <option value="start_asc">오래된 시작일 (오름차순)</option>
+                <option value="name_asc">이름 (가나다)</option>
+                <option value="amount_desc">용역비 (큰 금액 순)</option>
+              </select>
+            </div>
+            <div className="flex items-center gap-1 rounded-md border border-zinc-300 p-0.5 dark:border-zinc-700">
+              <button
+                type="button"
+                onClick={() => setView("cards")}
+                className={
+                  view === "cards"
+                    ? "rounded bg-zinc-900 px-2 py-0.5 text-white dark:bg-zinc-100 dark:text-zinc-900"
+                    : "rounded px-2 py-0.5 text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800"
+                }
+              >
+                카드
+              </button>
+              <button
+                type="button"
+                onClick={() => setView("table")}
+                className={
+                  view === "table"
+                    ? "rounded bg-zinc-900 px-2 py-0.5 text-white dark:bg-zinc-100 dark:text-zinc-900"
+                    : "rounded px-2 py-0.5 text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800"
+                }
+              >
+                테이블
+              </button>
+            </div>
           </div>
         </>
       )}
@@ -314,13 +367,24 @@ export default function ProjectsPage() {
 
       {all && (
         <>
-          <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
-            {filtered.slice(0, visibleCount).map((p) => (
-              <ProjectCard key={p.id} project={p} />
-            ))}
-          </div>
+          {view === "cards" ? (
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
+              {filtered.slice(0, visibleCount).map((p) => (
+                <ProjectCard
+                  key={p.id}
+                  project={p}
+                  tags={tagsById.get(p.id) ?? []}
+                />
+              ))}
+            </div>
+          ) : (
+            <ProjectTable
+              projects={filtered.slice(0, visibleCount)}
+              tagsById={tagsById}
+            />
+          )}
 
-          {filtered.length === 0 && (
+          {filtered.length === 0 && view === "cards" && (
             <p className="py-12 text-center text-sm text-zinc-500">
               조건에 맞는 프로젝트가 없습니다.
             </p>
