@@ -74,9 +74,10 @@ const WEEKDAYS = ["월", "화", "수", "목", "금"] as const;
 
 /** 개인일정 cell 색상 — task source 기준 (사용자 결정 2026-05-09):
  * project=파랑, sale=초록, other=회색 (개인 휴가/연차 등). */
-/** 프로젝트 상세 link (page_id 비어있으면 plain text). */
+/** 프로젝트 상세 link — admin만 활성화. 비admin은 plain text (사용자 결정 2026-05-11). */
 function ProjectLink({ id, children }: { id: string; children: React.ReactNode }) {
-  if (!id) return <>{children}</>;
+  const { user } = useAuth();
+  if (!id || user?.role !== "admin") return <>{children}</>;
   return (
     <Link
       href={`/project?id=${encodeURIComponent(id)}`}
@@ -87,10 +88,10 @@ function ProjectLink({ id, children }: { id: string; children: React.ReactNode }
   );
 }
 
-/** 영업 상세 link (sales 페이지에 ?sale=...로 모달 open).
- * from=/weekly-report를 함께 넘겨 모달 닫기 시 원래 페이지로 복귀. */
+/** 영업 상세 link — admin만 활성화. 비admin은 plain text. */
 function SaleLink({ id, children }: { id: string; children: React.ReactNode }) {
-  if (!id) return <>{children}</>;
+  const { user } = useAuth();
+  if (!id || user?.role !== "admin") return <>{children}</>;
   return (
     <Link
       href={`/sales?sale=${encodeURIComponent(id)}&from=${encodeURIComponent("/weekly-report")}`}
