@@ -141,6 +141,12 @@
       font-weight: 600;
       line-height: 1.3;
       border-radius: 2px;
+      white-space: nowrap;
+    }
+    /* day-cell도 chip이 한 줄로 들어가도록 word-break 해제 */
+    .schedule-mini .day-cell {
+      word-break: normal;
+      overflow-wrap: normal;
     }
     .chip-project { background: #dbeafe; color: #1e40af; }
     .chip-sale { background: #d1fae5; color: #065f46; }
