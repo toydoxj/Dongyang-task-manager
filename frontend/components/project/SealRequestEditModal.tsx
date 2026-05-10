@@ -39,7 +39,7 @@ export default function SealRequestEditModal({ item, onClose, onSaved }: Props) 
       if (c) return c.name;
     }
     return "";
-  }, [realSourceNameOverride, item.real_source_id, clients]);
+  }, [realSourceNameOverride, item, clients]);
   const setRealSourceName = setRealSourceNameOverride;
   const [purpose, setPurpose] = useState(item.purpose);
   const [revision, setRevision] = useState(item.revision ?? 0);

@@ -32,7 +32,7 @@ export default function ProjectHeader({
   /** 프로젝트 제목 옆 버튼 슬롯 (편집/날인요청 등). */
   actions?: React.ReactNode;
 }) {
-  const { user, driveLocalRoot } = useAuth();
+  const { driveLocalRoot } = useAuth();
   const [masterOpen, setMasterOpen] = useState(false);
   const [driveBusy, setDriveBusy] = useState(false);
   const [driveError, setDriveError] = useState<string | null>(null);
@@ -65,22 +65,6 @@ export default function ProjectHeader({
     driveLocalRoot && folderName
       ? `${driveLocalRoot}\\${folderName}`
       : "";
-
-  // file:// URL은 RFC 8089 표준: file:///{drive_letter}/{encoded_path}
-  // drive letter('W:')는 보존, path segment만 encodeURIComponent
-  const fileUrl = (() => {
-    if (!localPath) return "";
-    const fwd = localPath.replace(/\\/g, "/");
-    const colon = fwd.indexOf(":");
-    if (colon < 0) return `file:///${fwd}`;
-    const drive = fwd.slice(0, colon + 1); // "W:"
-    const rest = fwd.slice(colon + 1); // "/[업무관리]/..."
-    const encoded = rest
-      .split("/")
-      .map((seg) => (seg ? encodeURIComponent(seg) : seg))
-      .join("/");
-    return `file:///${drive}${encoded}`;
-  })();
 
   const copyLocalPath = async (): Promise<void> => {
     if (!localPath) return;

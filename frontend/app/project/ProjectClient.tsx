@@ -32,6 +32,19 @@ const SEAL_STATUS_COLOR: Record<string, string> = {
   반려: "bg-red-500/15 text-red-700 dark:text-red-400",
 };
 
+/** 뒤로 가기 버튼 — render 외부 정의 (rules-of-hooks/static-components). */
+function BackButton({ onClick }: { onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="text-xs text-zinc-500 hover:underline"
+    >
+      ← 뒤로
+    </button>
+  );
+}
+
 export default function ProjectClient({ id }: { id: string }) {
   const router = useRouter();
   const { mutate } = useSWRConfig();
@@ -56,15 +69,6 @@ export default function ProjectClient({ id }: { id: string }) {
       router.push("/projects");
     }
   };
-  const BackButton = (): React.ReactElement => (
-    <button
-      type="button"
-      onClick={goBack}
-      className="text-xs text-zinc-500 hover:underline"
-    >
-      ← 뒤로
-    </button>
-  );
 
   const { data: project, error: projectErr } = useProject(id);
   const { data: tasksData, error: tasksErr } = useTasks({ project_id: id });
@@ -100,7 +104,7 @@ export default function ProjectClient({ id }: { id: string }) {
   if (error) {
     return (
       <div className="space-y-3">
-        <BackButton />
+        <BackButton onClick={goBack} />
         <div className="rounded-md border border-red-500/40 bg-red-500/5 p-3 text-sm text-red-400">
           {error instanceof Error ? error.message : String(error)}
         </div>
@@ -111,7 +115,7 @@ export default function ProjectClient({ id }: { id: string }) {
   if (!project || !tasks || !cashflow) {
     return (
       <div className="space-y-4">
-        <BackButton />
+        <BackButton onClick={goBack} />
         <LoadingState
           message="프로젝트 상세 불러오는 중"
           height="h-64"
@@ -234,7 +238,7 @@ export default function ProjectClient({ id }: { id: string }) {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <BackButton />
+        <BackButton onClick={goBack} />
         <div className="flex items-center gap-2">
           {project.url && (
             <a

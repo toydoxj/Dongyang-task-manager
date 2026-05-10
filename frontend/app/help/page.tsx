@@ -162,8 +162,8 @@ export default function HelpPage() {
           <li>
             <B>「발행」</B> (admin) — 확인 dialog 후 WORKS Drive{" "}
             <Code>[주간업무일지]/YYYYMMDD_주간업무일지.pdf</Code> 업로드 +{" "}
-            <B>전 직원에게 Bot 알림 발송</B> ("MMDD~MMDD 주간업무일지가 업로드
-            되었습니다.") + 발행 로그 기록 (다음 일지 default 셋팅 기준)
+            <B>전 직원에게 Bot 알림 발송</B> (&quot;MMDD~MMDD 주간업무일지가 업로드
+            되었습니다.&quot;) + 발행 로그 기록 (다음 일지 default 셋팅 기준)
           </li>
           <li>
             프로젝트명 / 영업명 등의 link는 <B>관리자만</B> 활성화 — 일반

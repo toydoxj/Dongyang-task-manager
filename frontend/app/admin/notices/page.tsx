@@ -126,7 +126,7 @@ export default function AdminNoticesPage() {
       <header>
         <h1 className="text-2xl font-semibold">공지 / 교육 관리</h1>
         <p className="mt-1 text-sm text-zinc-500">
-          주간 업무일지 1페이지의 "주요 공지사항" / "교육 일정"에 표시됩니다.
+          주간 업무일지 1페이지의 &quot;주요 공지사항&quot; / &quot;교육 일정&quot;에 표시됩니다.
           게시기간이 보고서 주차와 겹치는 항목만 PDF에 노출.
         </p>
       </header>

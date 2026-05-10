@@ -94,7 +94,7 @@ function Form({
       if (c) return c.name;
     }
     return "";
-  }, [realSourceNameOverride, redoFrom?.real_source_id, clients]);
+  }, [realSourceNameOverride, redoFrom, clients]);
   const setRealSourceName = setRealSourceNameOverride;
   const [purpose, setPurpose] = useState(redoFrom?.purpose ?? "");
   const [revision, setRevision] = useState(redoFrom?.revision ?? 0);

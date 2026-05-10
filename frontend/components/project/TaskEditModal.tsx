@@ -472,8 +472,8 @@ function Form({
               </div>
               <p className="text-[10px] text-zinc-500">
                 담당자({firstAssignee || "본인"}) 기준. 미담당 프로젝트 선택 시
-                자동으로 담당 추가 — task 상태가 시작 전이면 진행단계 "대기",
-                진행 중이면 "진행중"으로 자동 설정.
+                자동으로 담당 추가 — task 상태가 시작 전이면 진행단계 &quot;대기&quot;,
+                진행 중이면 &quot;진행중&quot;으로 자동 설정.
               </p>
             </div>
           </Field>

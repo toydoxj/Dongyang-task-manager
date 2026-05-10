@@ -96,8 +96,7 @@ export default function SalesEditModal({
   onChanged,
   defaultAssignee,
 }: Props) {
-  const { user } = useAuth();
-  const isAdmin = user?.role === "admin";
+  useAuth(); // session check만 — 별도 사용처 없음
   const { mutate } = useSWRConfig();
 
   // internal sale state — createSale 후 신규 sale을 모달 안에 mirror하여
@@ -332,7 +331,7 @@ export default function SalesEditModal({
     listSaleQuotes(sale.id)
       .then((qs) => setQuoteList(qs))
       .catch((e) => {
-        // eslint-disable-next-line no-console
+         
         console.error("견적 list fetch:", e);
       });
   }, [open, sale]);
@@ -765,7 +764,7 @@ export default function SalesEditModal({
 
                 {quoteList.length === 0 ? (
                   <p className="rounded-md border border-dashed border-zinc-300 px-3 py-4 text-center text-xs text-zinc-500 dark:border-zinc-700">
-                    아직 견적 없음. "+ 신규 견적"으로 작성하세요.
+                    아직 견적 없음. &quot;+ 신규 견적&quot;으로 작성하세요.
                   </p>
                 ) : (
                   <ul className="space-y-1">

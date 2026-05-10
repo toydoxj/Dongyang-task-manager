@@ -72,6 +72,10 @@ function formatYMD(ms: number): string {
 }
 
 export default function AssigneeTimeline({ project, logs }: Props) {
+  // Date.now() / let 변수 mutation — useMemo 룰(purity)이 엄격하게 잡지만
+  // segment 누적 알고리즘 본질상 임시 mutable Map과 시점 timestamp가 필요.
+  // 결과는 deterministic (logs/project 변경 시 재계산).
+  /* eslint-disable react-hooks/purity */
   const { lanes, minMs, maxMs } = useMemo(() => {
     // 1) 시간순 누적해 segments 생성
     const open: Map<string, Segment> = new Map();
@@ -178,6 +182,7 @@ export default function AssigneeTimeline({ project, logs }: Props) {
 
     return { lanes, minMs, maxMs };
   }, [project, logs]);
+  /* eslint-enable react-hooks/purity */
 
   if (lanes.length === 0) {
     return null;

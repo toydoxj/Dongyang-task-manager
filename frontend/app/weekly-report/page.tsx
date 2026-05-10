@@ -70,8 +70,6 @@ const teamSort = (a: string, b: string): number =>
 const SCHEDULE_GRID_TEAMS = ["구조1팀", "구조2팀", "구조3팀", "구조4팀", "진단팀"] as const;
 const SCHEDULE_EXTRA_TEAM = "본부";
 
-const WEEKDAYS = ["월", "화", "수", "목", "금"] as const;
-
 /** 개인일정 cell 색상 — task source 기준 (사용자 결정 2026-05-09):
  * project=파랑, sale=초록, other=회색 (개인 휴가/연차 등). */
 /** 프로젝트 상세 link — admin만 활성화. 비admin은 plain text (사용자 결정 2026-05-11). */
@@ -192,7 +190,7 @@ export default function WeeklyReportPage() {
         /* 발행 이력 없거나 실패 — 무시 */
       });
     // user/auto flag만 의존성. lastWeekStart 자체는 사용자 수정 차단 위해 제외.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [user, lastWeekStartAuto]);
 
   const isAdmin = user?.role === "admin";
