@@ -24,7 +24,9 @@
 | **Phase 2 PR-F** 프로젝트 강화 (PROJ-002 + PROJ-003) | 카드에 상태 태그 6종(장기 정체/마감 임박/날인 진행중/수금 지연/담당 미정/최근 변경) 추가 + 카드/테이블 보기 토글 + ProjectTable.tsx 신규. tagsById Map은 useMemo로 캐시. **PROJ-004 본격 quick action 보류** — 카드/행 click이 이미 상세 navigation이라 추가 가치 작음, Phase 3에서 anchor (#tasks/#seals) + filter URL 형식과 묶어 진행 | faa1256 |
 | **Phase 2 PR-G** 내 업무 프로젝트 스냅샷 (MY-004) | `/me` 브리핑 카드 다음에 담당 프로젝트별 진행 요약 카드(진행 중/임박/지연 + 최근 활동 일자) — 손볼 일이 많은 순(overdue × 10 + dueSoon)으로 정렬. **MY-003 본격 TASK quick action 보류** — TaskEditModal이 이미 모든 액션 제공 + TodayTasks 분류 기준 그룹과 결합 시 회귀 위험. Phase 3로 이전 | 622534a |
 | **Phase 2 PR-H** 주간업무일지 발행 체크리스트 (WEEK-004) | confirm dialog → `PublishChecklist` 모달. 자동 평가 1(빈 자동 섹션 수) + 수동 체크 4(공지·교육·건의/완료/보류·대기/PDF 미리보기). 모두 통과해야 [발행] 활성. **WEEK-005 source link 확대 보류** — 일부 섹션은 이미 admin link 적용, 전체 확대는 권한·table column 변경이라 회귀 영향 큼. Phase 3로 이전 | 7a3209c |
-| **Phase 2 PR-I** 프로젝트 list 필터/스크롤 sessionStorage 보존 (COMMON-002) | `/projects`에서 filter/sortKey/view/activePreset/visibleCount + scrollY를 sessionStorage(`projects-page-state-v1`)에 보존. 상세 ↔ list 왕복 또는 새로고침 시 자동 복원. URL `?preset` 우선 (외부 진입 deep-link 대응). **COMMON-001 배지 디자인 시스템 통합 보류** — 현재 6+ 곳에 분산된 배지가 모두 정상 동작 중이라 일괄 추출은 시각 회귀 위험. Phase 3·4 리팩터링 사이클에 묶어 진행 | 신규 |
+| **Phase 2 PR-I** 프로젝트 list 필터/스크롤 sessionStorage 보존 (COMMON-002) | `/projects`에서 filter/sortKey/view/activePreset/visibleCount + scrollY를 sessionStorage(`projects-page-state-v1`)에 보존. 상세 ↔ list 왕복 또는 새로고침 시 자동 복원. URL `?preset` 우선 (외부 진입 deep-link 대응). **COMMON-001 배지 디자인 시스템 통합 보류** — 현재 6+ 곳에 분산된 배지가 모두 정상 동작 중이라 일괄 추출은 시각 회귀 위험. Phase 3·4 리팩터링 사이클에 묶어 진행 | c584e57 |
+| **PDF 폰트 spec 정리** | 17+개 분기 폰트 사이즈를 `docs/pdf_font.md`에 카테고리별 정리(A 헤더/B 본문/C 표/D cell-shrink+매크로/E 섹션 예외/F 기타) + 6 영역 사이즈 변경(.title-line 16→15pt, .period 11→10pt, .summary-line 8→7pt, .empty 7→5pt, .stage-table 5→5.5pt) + cell-shrink em→절대 pt + .tw-table base 6.5pt override (해석 B). | be4aaa5 |
+| **Phase 3 PR-J** 대시보드 — 최근 변경/경고 패널 분리 (DASH-004) | ChartsTabs.운영 리스크 탭에 `RecentUpdatesPanel` (last_edited_time 7일 이내 Top 10) + `WarningItemsPanel` (정체·기한 초과·담당 미정·수금 지연 4종 chip 표시, 경고 수 많은 순) 추가. 액션 패널과 차별 — "주의 깊게 모니터링" 영역 | 신규 |
 
 ## 미완료 / 보류
 

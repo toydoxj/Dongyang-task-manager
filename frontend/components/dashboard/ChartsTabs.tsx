@@ -6,10 +6,12 @@ import CashflowForecast from "@/components/dashboard/CashflowForecast";
 import EmployeeLoadHeatmap from "@/components/dashboard/EmployeeLoadHeatmap";
 import ExpenseTrend from "@/components/dashboard/ExpenseTrend";
 import RecentAndStaleProjects from "@/components/dashboard/RecentAndStaleProjects";
+import RecentUpdatesPanel from "@/components/dashboard/RecentUpdatesPanel";
 import RevenueCollectionChart from "@/components/dashboard/RevenueCollectionChart";
 import StageBoard from "@/components/dashboard/StageBoard";
 import StaleTaskAlert from "@/components/dashboard/StaleTaskAlert";
 import TeamLoadHeatmap from "@/components/dashboard/TeamLoadHeatmap";
+import WarningItemsPanel from "@/components/dashboard/WarningItemsPanel";
 import WorkTypeTreemap from "@/components/dashboard/WorkTypeTreemap";
 import LoadingState from "@/components/ui/LoadingState";
 import type { CashflowEntry, Project, Task } from "@/lib/domain";
@@ -70,6 +72,10 @@ export default function ChartsTabs({
       {active === "risk" && (
         <div className="space-y-4">
           <RecentAndStaleProjects projects={projects} />
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+            <WarningItemsPanel projects={projects} />
+            <RecentUpdatesPanel projects={projects} />
+          </div>
           {allTasks && allTasks.length > 0 && <StaleTaskAlert tasks={allTasks} />}
         </div>
       )}
