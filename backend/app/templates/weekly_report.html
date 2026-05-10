@@ -5,7 +5,7 @@
   <title>주간 업무일지</title>
   <style>
     @page {
-      size: A4 landscape;
+      size: A4 portrait;
       margin: 22mm 12mm 12mm 12mm;
       @top-left {
         content: element(weekly-header);
@@ -86,6 +86,7 @@
       font-size: 5pt;
       color: #666;
       white-space: nowrap;
+      letter-spacing: -0.1em;  /* 자간 ≈ 90% */
     }
 
     /* table 공통 */
@@ -171,7 +172,10 @@
     .emp-cell .pos { font-size: 5pt; color: #666; }
     .day-cell { text-align: center; }
     .schedule-chip {
-      display: inline-block;
+      display: block;          /* 각 chip이 한 줄씩 — 2개 이상이면 자동 줄바꿈 */
+      width: max-content;
+      max-width: 100%;
+      margin: 1px auto;
       padding: 0 2px;
       font-size: 5pt;
       font-weight: 600;
@@ -179,20 +183,30 @@
       border-radius: 2px;
       white-space: nowrap;
     }
-    /* day-cell도 chip이 한 줄로 들어가도록 word-break 해제 */
+    /* day-cell — flex 제거 (WeasyPrint table-cell + flex 조합 artifact 회피) */
     .schedule-mini .day-cell {
       word-break: normal;
       overflow-wrap: normal;
+      text-align: center;
     }
     .chip-project { background: #dbeafe; color: #1e40af; }
     .chip-sale { background: #d1fae5; color: #065f46; }
     .chip-other { background: #e5e7eb; color: #374151; }
 
     /* 팀별 업무 현황 */
+    /* table 자체에 border 두면 page break fragment 상하 외곽선이 끊김.
+     * wrapper div + box-decoration-break: clone으로 분할된 fragment마다
+     * 외곽 박스가 그려지도록 처리. */
+    .tw-table-wrap {
+      border: 1px solid #000;
+      box-decoration-break: clone;
+      -webkit-box-decoration-break: clone;
+      page-break-inside: auto;
+    }
     .tw-table {
       font-size: 6.5pt;
       page-break-inside: auto;
-      border: 1px solid #000;  /* 외곽 검은색 박스 */
+      border: 0;
     }
     .tw-table td { padding: 2px 3px; }
     .tw-emp {
@@ -214,6 +228,10 @@
     }
     .tw-table tr.group-start > td { border-top: 0.5px solid #333; }
     .tw-table tbody tr:not(.group-start) > td.tw-emp { border-top: 0; }
+    /* CODE cell (2번째) — 1pt 축소. 지난주/이번주 업무 (6,7번째) — 1pt 축소. */
+    .tw-table tbody td:nth-child(2),
+    .tw-table tbody td:nth-child(6),
+    .tw-table tbody td:nth-child(7) { font-size: 5.5pt; }
     .tw-team-header {
       margin-top: 10px;
       page-break-after: avoid;
@@ -260,8 +278,16 @@
   <h2>인원현황</h2>
   <div class="summary-line">
     총원 <strong>{{ report.headcount.total }}인</strong>
+    {# 인원 표시: 기타는 제외, 구조설계/관리세무는 +1로 표시(관리세무는 라벨도 '관리'로). #}
     {% for occ, n in report.headcount.by_occupation.items() %}
-      &nbsp;│&nbsp; {{ occ }} {{ n }}
+      {% if occ == '기타' %}{# skip #}
+      {% elif occ == '구조설계' %}
+        &nbsp;│&nbsp; 구조설계 {{ n + 1 }}
+      {% elif occ == '관리세무' %}
+        &nbsp;│&nbsp; 관리 {{ n + 1 }}
+      {% else %}
+        &nbsp;│&nbsp; {{ occ }} {{ n }}
+      {% endif %}
     {% endfor %}
     {% if report.headcount.new_this_week or report.headcount.resigned_this_week %}
       &nbsp;│&nbsp; <span class="badge">변동</span>
@@ -468,7 +494,10 @@
   {% if team_work_team_order %}
     {% for team in team_work_team_order %}
       {% set rows = team_work_grouped[team] %}
-      <h3 class="tw-team-header">{{ team }} <span style="font-weight: normal; color: #666;">({{ rows|length }}건)</span></h3>
+      {# 건수: 같은 프로젝트가 여러 담당자에게 배정되어도 1건으로 카운트 (source_id 기준 unique) #}
+      {% set unique_count = rows|map(attribute='row.source_id')|select|unique|list|length %}
+      <h3 class="tw-team-header">{{ team }} <span style="font-weight: normal; color: #666;">({{ unique_count }}건)</span></h3>
+      <div class="tw-table-wrap">
       <table class="tw-table">
         <thead>
           <tr>
@@ -503,6 +532,7 @@
           {% endfor %}
         </tbody>
       </table>
+      </div>
     {% endfor %}
   {% else %}<div class="empty">(배정된 진행 프로젝트 없음)</div>{% endif %}
 </section>

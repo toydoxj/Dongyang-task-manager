@@ -847,14 +847,16 @@ def aggregate_personal_schedule(
 
 
 def _vacation_label(task: M.MirrorTask) -> str:
-    """휴가 task를 duration 기반으로 '연차'/'반차' 라벨로 변환.
+    """휴가 task → 라벨. 우선순위: task 제목 키워드 > duration fallback.
 
-    노션 task의 "기간" date range — properties JSONB에 시:분 정보 포함.
-    duration ≥ 4h면 연차, < 4h면 반차. 사용자 결정(2026-05-09):
-    frontend는 단일 "휴가(연차)" 옵션 유지, backend가 표시 시점에 분기.
-
-    파싱 실패 또는 date-only(시간 정보 없음)는 '연차'로 fallback.
+    사용자 요청(2026-05-10): 일률 "연차"가 아니라 제목에 명시된 표현 그대로
+    표시. 운영자가 "오전반차" / "오후반차" / "반차" / "연차" 등 자유 입력 가능.
+    제목에 키워드가 없으면 duration ≥ 4h '연차', < 4h '반차'로 fallback.
     """
+    title = (task.title or "").strip()
+    for kw in ("오전반차", "오후반차", "반차", "연차"):
+        if kw in title:
+            return kw
     period = (task.properties or {}).get("기간", {}).get("date") or {}
     start_iso = period.get("start") or ""
     end_iso = period.get("end") or ""
@@ -870,7 +872,7 @@ def _vacation_label(task: M.MirrorTask) -> str:
 
 
 _SCHEDULE_TEXT_CATEGORIES = frozenset(
-    {"외근", "출장", "교육", "연차", "반차", "파견", "동행"}
+    {"외근", "출장", "교육", "연차", "반차", "오전반차", "오후반차", "파견", "동행"}
 )
 
 

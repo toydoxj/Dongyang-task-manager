@@ -55,12 +55,13 @@ TASK_DB_REQUIRED: dict[str, dict[str, Any]] = {
             # 파견은 PR-W 범위에서 제외.
         ]
     ),
-    # 활동 유형 — 분류와 독립. 프로젝트 task가 외근/출장일 수 있음.
+    # 활동 유형 — 분류와 독립. 프로젝트 task가 외근/출장/파견일 수 있음.
     "활동": _select(
         [
             ("사무실", "default"),
             ("외근", "orange"),
             ("출장", "red"),
+            ("파견", "blue"),
         ]
     ),
     # PR-W Phase 2.2 — 금주예정사항. mirror_tasks.weekly_plan_text로 동기화.
