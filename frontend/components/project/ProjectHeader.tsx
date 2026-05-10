@@ -4,25 +4,15 @@ import { useMemo, useState } from "react";
 import useSWR from "swr";
 
 import { useAuth } from "@/components/AuthGuard";
+import StageBadge from "@/components/ui/StageBadge";
 import { getEmployeeTeamsMap } from "@/lib/api";
 import { authFetch } from "@/lib/auth";
 import type { Project } from "@/lib/domain";
 import { formatDate } from "@/lib/format";
-import { cn } from "@/lib/utils";
 
 import DriveExplorerModal from "./DriveExplorerModal";
 import MasterProjectModal from "./MasterProjectModal";
 import ProjectStageChangeModal from "./ProjectStageChangeModal";
-
-const STAGE_BADGE: Record<string, string> = {
-  "진행중": "bg-blue-500/15 text-blue-400 border-blue-500/30",
-  "대기": "bg-purple-500/15 text-purple-400 border-purple-500/30",
-  "보류": "bg-pink-500/15 text-pink-400 border-pink-500/30",
-  "완료": "bg-emerald-500/15 text-emerald-400 border-emerald-500/30",
-  "타절": "bg-red-500/15 text-red-400 border-red-500/30",
-  "종결": "bg-zinc-500/15 text-zinc-400 border-zinc-500/30",
-  "이관": "bg-zinc-400/15 text-zinc-400 border-zinc-400/30",
-};
 
 export default function ProjectHeader({
   project,
@@ -151,15 +141,7 @@ export default function ProjectHeader({
               >
                 단계변경
               </button>
-              <span
-                className={cn(
-                  "rounded-md border px-3 py-1 text-xs font-medium",
-                  STAGE_BADGE[project.stage] ??
-                    "border-zinc-500/30 bg-zinc-500/15 text-zinc-400",
-                )}
-              >
-                {project.stage}
-              </span>
+              <StageBadge stage={project.stage} className="px-3 py-1 text-xs" />
             </div>
           )}
           {project.drive_url ? (

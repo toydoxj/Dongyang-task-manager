@@ -3,19 +3,9 @@
 import Link from "next/link";
 
 import type { ProjectTag } from "@/components/projects/ProjectCard";
+import StageBadge from "@/components/ui/StageBadge";
 import type { Project } from "@/lib/domain";
 import { formatDate, formatPercent, formatWon } from "@/lib/format";
-import { cn } from "@/lib/utils";
-
-const STAGE_BADGE: Record<string, string> = {
-  "진행중": "bg-blue-500/15 text-blue-400 border-blue-500/30",
-  "대기": "bg-purple-500/15 text-purple-400 border-purple-500/30",
-  "보류": "bg-pink-500/15 text-pink-400 border-pink-500/30",
-  "완료": "bg-emerald-500/15 text-emerald-400 border-emerald-500/30",
-  "타절": "bg-red-500/15 text-red-400 border-red-500/30",
-  "종결": "bg-zinc-500/15 text-zinc-400 border-zinc-500/30",
-  "이관": "bg-zinc-400/15 text-zinc-400 border-zinc-400/30",
-};
 
 const TAG_LABEL: Record<ProjectTag, string> = {
   stalled: "정체",
@@ -78,17 +68,7 @@ export default function ProjectTable({ projects, tagsById }: Props) {
                   </Link>
                 </td>
                 <td className="px-2 py-1.5">
-                  {p.stage && (
-                    <span
-                      className={cn(
-                        "rounded-md border px-1.5 py-0.5 text-[10px] font-medium",
-                        STAGE_BADGE[p.stage] ??
-                          "border-zinc-500/30 bg-zinc-500/15 text-zinc-400",
-                      )}
-                    >
-                      {p.stage}
-                    </span>
-                  )}
+                  <StageBadge stage={p.stage} className="px-1.5" />
                 </td>
                 <td className="max-w-[160px] truncate px-2 py-1.5 text-zinc-700 dark:text-zinc-300">
                   {p.client_names.length > 0

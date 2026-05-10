@@ -3,19 +3,10 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 
+import StageBadge from "@/components/ui/StageBadge";
 import type { Project } from "@/lib/domain";
 import { formatDate, formatPercent, formatWon } from "@/lib/format";
 import { cn } from "@/lib/utils";
-
-const STAGE_BADGE: Record<string, string> = {
-  "진행중": "bg-blue-500/15 text-blue-400 border-blue-500/30",
-  "대기": "bg-purple-500/15 text-purple-400 border-purple-500/30",
-  "보류": "bg-pink-500/15 text-pink-400 border-pink-500/30",
-  "완료": "bg-emerald-500/15 text-emerald-400 border-emerald-500/30",
-  "타절": "bg-red-500/15 text-red-400 border-red-500/30",
-  "종결": "bg-zinc-500/15 text-zinc-400 border-zinc-500/30",
-  "이관": "bg-zinc-400/15 text-zinc-400 border-zinc-400/30",
-};
 
 // PROJ-002 — 상태 태그 (페이지에서 계산해 tags prop으로 전달).
 export type ProjectTag =
@@ -79,17 +70,7 @@ export default function ProjectCard({
             {project.name || "(제목 없음)"}
           </h3>
         </div>
-        {project.stage && (
-          <span
-            className={cn(
-              "rounded-md border px-2 py-0.5 text-[10px] font-medium",
-              STAGE_BADGE[project.stage] ??
-                "border-zinc-500/30 bg-zinc-500/15 text-zinc-400",
-            )}
-          >
-            {project.stage}
-          </span>
-        )}
+        <StageBadge stage={project.stage} />
       </div>
 
       {tags.length > 0 && (

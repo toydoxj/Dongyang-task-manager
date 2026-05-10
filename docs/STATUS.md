@@ -31,7 +31,8 @@
 | **Phase 3 PR-L** 공통 CTA 문구 표준 (COMMON-003) | `lib/cta.ts` 신규 — 8 표준 CTA 상수(detail/openProject/viewTasks/viewSeals/viewIncomes/viewMyTasks/viewLoad/viewSource). PriorityActionsPanel 4개 라벨을 표준으로 교체. 신규 추가 list/액션 패널 작성 시 이 상수 import 권장 | 0be3bfc |
 | **Phase 3 PR-M** 프로젝트 상세 URL 재구조화 (PROJ-005) | `/project?id={id}` → **`/projects/{id}`** dynamic route. 기존 path는 client redirect 페이지로 유지(외부 hardcoded URL — Bot 알림·북마크 호환). 17 사용처(15 파일)의 internal link sed 일괄 substring 교체 + ProjectClient의 sale referrer query도 갱신. build 25 routes 정상 (○ static + ƒ /projects/[id] dynamic) | da9007a |
 | **회수 PR-N** 프로젝트 카드 quick action (PROJ-004 본격) | ProjectCard footer에 4 chip(TASK/날인/매출/노션). 카드 본문 click(상세)와 별개로 특정 영역으로 deep-link. ProjectClient의 SealHistoryList/TaskKanban/ProjectCashflowChart에 `id="seals/tasks/cashflow"` anchor + scroll-mt 추가. nested anchor 회피 위해 chip은 button + stopPropagation + router.push (external은 window.open) | d6bc320 |
-| **회수 PR-O** 주간일지 섹션 → 관리 페이지 link (WEEK-005 본격) | Section 컴포넌트에 `sourceHref` prop 추가, 12 섹션 모두 admin용 「관리 ↗」 link. 인원현황→/admin/employees / 공지·교육→/admin/notices / 건의→/suggestions / 완료·신규·대기·보류→/projects / 영업→/sales / 날인대장→/seal-requests / 개인일정→/schedule / 팀별업무→/admin/employee-work. admin만 노출 (비admin은 link 없음) | 신규 |
+| **회수 PR-O** 주간일지 섹션 → 관리 페이지 link (WEEK-005 본격) | Section 컴포넌트에 `sourceHref` prop 추가, 12 섹션 모두 admin용 「관리 ↗」 link. 인원현황→/admin/employees / 공지·교육→/admin/notices / 건의→/suggestions / 완료·신규·대기·보류→/projects / 영업→/sales / 날인대장→/seal-requests / 개인일정→/schedule / 팀별업무→/admin/employee-work. admin만 노출 (비admin은 link 없음) | 04b4ea7 |
+| **회수 PR-P** StageBadge 추출 (COMMON-001 부분) | 7개 stage 색상 매핑(진행중/대기/보류/완료/타절/종결/이관)이 ProjectCard·ProjectTable·ProjectHeader 3개 파일에 동일 중복 → `components/ui/StageBadge.tsx`로 추출. className override prop으로 size·padding 변형 지원. ProjectTaskRow/SaleTaskRow의 작은 STAGE_BADGE("진행 중"·"대기" 띄어쓰기 다름)는 별도 enum이므로 유지 | 신규 |
 
 ## 미완료 / 보류
 
