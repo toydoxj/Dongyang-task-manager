@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useMemo, useState } from "react";
 
 import SalesEditModal from "@/components/sales/SalesEditModal";
 import SalesTable from "@/components/sales/SalesTable";
@@ -20,7 +20,11 @@ export default function SalesPage() {
   const searchParams = useSearchParams();
   const [kindFilter, setKindFilter] = useState<string>("");
   const [stageFilter, setStageFilter] = useState<string>("");
-  const [editing, setEditing] = useState<Sale | null>(null);
+  // 두 source를 통합해 modal에 전달:
+  //   ① URL ?sale={id} (외부 진입 — 주간보고/프로젝트 상세 등 referrer)
+  //   ② 사용자가 list row 클릭
+  // useMemo로 derived — effect 내 setState 제거.
+  const [clickedSale, setClickedSale] = useState<Sale | null>(null);
   const [creating, setCreating] = useState(false);
 
   const filters = {
@@ -29,15 +33,14 @@ export default function SalesPage() {
   };
   const { data, error } = useSales(filters);
 
-  // ?sale={page_id} query string으로 진입 시 자동 modal open.
-  // 프로젝트 상세 페이지의 "영업 상세" 버튼 → 해당 영업 modal 진입 (PR-LK).
   const queriedSaleId = searchParams.get("sale");
-  useEffect(() => {
-    if (!queriedSaleId || !data?.items) return;
-    if (editing && editing.id === queriedSaleId) return;
-    const target = data.items.find((s) => s.id === queriedSaleId);
-    if (target) setEditing(target);
-  }, [queriedSaleId, data, editing]);
+  const editing = useMemo<Sale | null>(() => {
+    // URL이 있으면 URL 우선. data 로드 전이면 null.
+    if (queriedSaleId) {
+      return data?.items.find((s) => s.id === queriedSaleId) ?? null;
+    }
+    return clickedSale;
+  }, [queriedSaleId, data, clickedSale]);
 
   return (
     <div className="space-y-4">
@@ -111,14 +114,14 @@ export default function SalesPage() {
       {data == null ? (
         <LoadingState message="영업 목록 불러오는 중" height="h-32" />
       ) : (
-        <SalesTable sales={data.items} onClickRow={setEditing} />
+        <SalesTable sales={data.items} onClickRow={setClickedSale} />
       )}
 
       <SalesEditModal
         sale={editing}
         openNew={creating}
         onClose={() => {
-          setEditing(null);
+          setClickedSale(null);
           setCreating(false);
           // referrer가 같이 넘어왔으면 (예: 주간 업무일지) 그 페이지로 복귀.
           // 그렇지 않은 경우엔 ?sale= query만 제거 (refresh 후 useEffect 재트리거 방지).

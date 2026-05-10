@@ -122,6 +122,9 @@ export default function DriveExplorerModal({
     }
   };
 
+  // open prop이 false → true로 전환되면 stack/items reset + Drive API fetch.
+  // open은 외부 prop이라 useState lazy로 못 잡음. setState는 mount-fetch 패턴의 본질.
+  /* eslint-disable react-hooks/set-state-in-effect, react-hooks/exhaustive-deps */
   useEffect(() => {
     if (!open) return;
     if (initialFolderId) {
@@ -134,8 +137,8 @@ export default function DriveExplorerModal({
       setStack([{ fileId: null, name: rootLabel || "루트" }]);
       void load(null, undefined, false);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, projectId, initialFolderId]);
+  /* eslint-enable react-hooks/set-state-in-effect, react-hooks/exhaustive-deps */
 
   const enterFolder = (it: DriveItem): void => {
     setStack([...stack, { fileId: it.fileId, name: it.fileName }]);

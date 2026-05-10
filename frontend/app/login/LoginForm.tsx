@@ -1,7 +1,7 @@
 "use client";
 
 import { useSearchParams } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useRef } from "react";
 
 import { worksLoginUrl } from "@/lib/auth";
 
@@ -15,16 +15,18 @@ interface Props {
 export default function LoginForm({ worksEnabled }: Props) {
   const search = useSearchParams();
   const errorMessage = search?.get("error") ?? null;
-  const [autoRedirected, setAutoRedirected] = useState(false);
+  // 이중 redirect 방지 — useState였으나 setState in effect 룰 위반이라 ref로 변경.
+  // 어차피 redirect 1회만 트리거되면 되므로 render 결과에 영향 X.
+  const autoRedirectedRef = useRef(false);
 
   useEffect(() => {
     // 에러로 돌아온 케이스 또는 SSO 비활성 시에는 자동 redirect 금지 (무한 루프 방지)
     if (errorMessage) return;
     if (!worksEnabled) return;
-    if (autoRedirected) return;
-    setAutoRedirected(true);
+    if (autoRedirectedRef.current) return;
+    autoRedirectedRef.current = true;
     window.location.replace(worksLoginUrl("/"));
-  }, [errorMessage, worksEnabled, autoRedirected]);
+  }, [errorMessage, worksEnabled]);
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-zinc-950 px-4">

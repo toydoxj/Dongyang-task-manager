@@ -8,7 +8,7 @@
  * - 종결: stage="종결" + end_date + 용역비/VAT 0
  */
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import useSWR from "swr";
 
 import Modal from "@/components/ui/Modal";
@@ -34,7 +34,8 @@ export default function ProjectStageChangeModal({
 }: Props) {
   const today = new Date().toISOString().slice(0, 10);
   const [mode, setMode] = useState<Mode | null>(defaultMode ?? null);
-  const [endDate, setEndDate] = useState(today);
+  // endDate는 mode/prevEndDate에서 derived. 사용자가 직접 입력하면 override.
+  const [endDateOverride, setEndDateOverride] = useState<string | null>(null);
   const [terminationAmount, setTerminationAmount] = useState("");
   const [terminationVat, setTerminationVat] = useState("");
   const [busy, setBusy] = useState(false);
@@ -56,14 +57,13 @@ export default function ProjectStageChangeModal({
     return "";
   }, [logData]);
 
-  // mode가 완료로 바뀔 때 이전 완료일이 있으면 자동 prefill
-  useEffect(() => {
-    if (mode === "완료" && prevEndDate) {
-      setEndDate(prevEndDate);
-    } else if (mode && mode !== "완료") {
-      setEndDate(today);
-    }
-  }, [mode, prevEndDate, today]);
+  // endDate derived: 사용자 override > 완료 모드 + 이전 완료일 > 오늘
+  // (이전엔 effect 내 setState였으나 set-state-in-effect 룰 위반 — useMemo로 변환)
+  const endDate = useMemo<string>(() => {
+    if (endDateOverride !== null) return endDateOverride;
+    if (mode === "완료" && prevEndDate) return prevEndDate;
+    return today;
+  }, [endDateOverride, mode, prevEndDate, today]);
 
   const submit = async (): Promise<void> => {
     if (!mode) return;
@@ -131,7 +131,7 @@ export default function ProjectStageChangeModal({
               <input
                 type="date"
                 value={endDate}
-                onChange={(e) => setEndDate(e.target.value)}
+                onChange={(e) => setEndDateOverride(e.target.value)}
                 className={inputCls}
               />
             </Field>

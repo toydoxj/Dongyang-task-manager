@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import useSWR, { useSWRConfig } from "swr";
 
 import { useAuth } from "@/components/AuthGuard";
@@ -83,21 +83,19 @@ function Form({
   const [title, setTitle] = useState("");
   const [dueDate, setDueDate] = useState("");
   const [note, setNote] = useState(redoFrom?.note ?? "");
-  // 조건부 필드 — 재날인요청 시 이전 값 prefill
-  const [realSourceName, setRealSourceName] = useState("");
-  // clients가 lazy loading이라 mount 직후 redoFrom의 real_source_id 매칭이 비어있음.
-  // useEffect로 한 번 보정.
-  useEffect(() => {
-    if (
-      redoFrom?.real_source_id &&
-      !realSourceName &&
-      clients.length > 0
-    ) {
+  // 조건부 필드 — 재날인요청 시 이전 값 prefill.
+  // realSourceName: clients lazy load 후 redoFrom의 client name으로 자동 fill,
+  // 사용자 직접 입력 시 override.  effect 내 setState 룰 회피 위해 useMemo 패턴.
+  const [realSourceNameOverride, setRealSourceNameOverride] = useState<string | null>(null);
+  const realSourceName = useMemo<string>(() => {
+    if (realSourceNameOverride !== null) return realSourceNameOverride;
+    if (redoFrom?.real_source_id && clients.length > 0) {
       const c = clients.find((x) => x.id === redoFrom.real_source_id);
-      if (c) setRealSourceName(c.name);
+      if (c) return c.name;
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [clients.length]);
+    return "";
+  }, [realSourceNameOverride, redoFrom?.real_source_id, clients]);
+  const setRealSourceName = setRealSourceNameOverride;
   const [purpose, setPurpose] = useState(redoFrom?.purpose ?? "");
   const [revision, setRevision] = useState(redoFrom?.revision ?? 0);
   const [withSafetyCert, setWithSafetyCert] = useState(
