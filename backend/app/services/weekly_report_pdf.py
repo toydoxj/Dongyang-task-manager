@@ -6,7 +6,7 @@ Jinja2 + WeasyPrint. paged media 특성상 일부 layout(특히 grid/flex)은
 from __future__ import annotations
 
 from collections import defaultdict
-from datetime import date, datetime, timedelta
+from datetime import date, timedelta
 from pathlib import Path
 
 from jinja2 import Environment, FileSystemLoader, select_autoescape
@@ -169,6 +169,5 @@ def build_weekly_report_pdf(report: WeeklyReport) -> bytes:
         schedule_grid_teams=SCHEDULE_GRID_TEAMS,
         schedule_extra_team=SCHEDULE_EXTRA_TEAM,
         logo_svg=_read_logo_svg(),
-        generated_at=datetime.now().strftime("%Y-%m-%d %H:%M"),
     )
     return HTML(string=html).write_pdf()

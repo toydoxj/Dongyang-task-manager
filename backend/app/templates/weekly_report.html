@@ -41,16 +41,44 @@
     .header {
       display: flex;
       justify-content: space-between;
-      align-items: flex-end;
+      align-items: center;
       border-bottom: 2px solid #7baa3c;
       padding-bottom: 6px;
       margin-bottom: 10px;
     }
-    .header .meta {
-      text-align: right;
-      font-size: 8pt;
-      color: #666;
+    .header .title-line {
+      font-size: 16pt;
+      font-weight: 700;
+      letter-spacing: 0.02em;
     }
+    .header .title-line .period {
+      font-size: 11pt;
+      font-weight: 500;
+      color: #555;
+      margin-left: 8px;
+    }
+    .header .brand {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .header .brand-logo {
+      width: 26px;
+      height: 26px;
+      flex-shrink: 0;
+    }
+    .header .brand-logo svg {
+      width: 100%;
+      height: 100%;
+    }
+    .header .brand-text {
+      font-size: 9pt;
+      line-height: 1.2;
+      text-align: left;
+      color: #333;
+    }
+    .header .brand-text .ko { font-weight: 700; }
+    .header .brand-text .en { font-size: 7pt; color: #666; }
 
     /* table 공통 */
     table {
@@ -199,13 +227,15 @@
 <body>
 
 <div class="header">
-  <div>
-    <h1>주간 업무일지</h1>
-    <div style="font-size: 9pt; color: #555; margin-top: 2px;">{{ period_label }}</div>
+  <div class="title-line">
+    주간업무일지<span class="period">{{ period_label }}</span>
   </div>
-  <div class="meta">
-    <div>동양구조엔지니어링</div>
-    <div>생성: {{ generated_at }}</div>
+  <div class="brand">
+    {% if logo_svg %}<div class="brand-logo">{{ logo_svg|safe }}</div>{% endif %}
+    <div class="brand-text">
+      <div class="ko">(주)동양구조</div>
+      <div class="en">Dongyang Consulting Engineers. Co., Ltd.</div>
+    </div>
   </div>
 </div>
 
@@ -330,20 +360,18 @@
     <table>
       <thead>
         <tr>
-          <th style="width: 8%;">영업번호</th>
-          <th style="width: 13%;">내용</th>
-          <th style="width: 30%;">PROJECT</th>
-          <th style="width: 16%;">발주처</th>
-          <th style="width: 16%;">규모</th>
+          <th style="width: 9%;">영업번호</th>
+          <th style="width: 38%;">PROJECT</th>
+          <th style="width: 18%;">발주처</th>
+          <th style="width: 17%;">규모</th>
           <th style="width: 12%;">견적가</th>
-          <th style="width: 5%;">비고</th>
+          <th style="width: 6%;">비고</th>
         </tr>
       </thead>
       <tbody>
         {% for s in report.sales %}
           <tr>
             <td class="center">{{ s.code }}</td>
-            <td>{{ s.category|join('/') }}</td>
             <td>{{ s.name }}</td>
             <td>{{ s.client }}</td>
             <td>{{ s.scale }}</td>
