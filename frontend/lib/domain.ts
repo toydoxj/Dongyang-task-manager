@@ -497,6 +497,8 @@ export interface Sale {
   building_count: number | null;
   note: string;
   submission_date: string | null;
+  /** 영업시작일 (PR-W cutoff 기준). */
+  sales_start_date: string | null;
   vat_inclusive: string;
   performance_design_amount: number | null;
   wind_tunnel_amount: number | null;
@@ -536,6 +538,8 @@ export interface SaleCreateRequest {
   building_count?: number;
   note?: string;
   submission_date?: string;
+  /** 영업시작일 (YYYY-MM-DD). 빈 문자열이면 노션에서 clear. */
+  sales_start_date?: string;
   vat_inclusive?: string;
   performance_design_amount?: number;
   wind_tunnel_amount?: number;

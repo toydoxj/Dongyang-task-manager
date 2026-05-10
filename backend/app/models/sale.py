@@ -136,6 +136,7 @@ class SaleCreateRequest(BaseModel):
     building_count: float | None = None
     note: str = ""
     submission_date: str | None = None
+    sales_start_date: str | None = None  # 영업시작일 (PR-W cutoff 기준)
     vat_inclusive: str = ""
     performance_design_amount: float | None = None
     wind_tunnel_amount: float | None = None
@@ -161,6 +162,7 @@ class SaleUpdateRequest(BaseModel):
     building_count: float | None = None
     note: str | None = None
     submission_date: str | None = None
+    sales_start_date: str | None = None  # 영업시작일 (PR-W cutoff 기준)
     vat_inclusive: str | None = None
     performance_design_amount: float | None = None
     wind_tunnel_amount: float | None = None
@@ -251,6 +253,9 @@ def sale_create_to_props(req: SaleCreateRequest) -> dict[str, Any]:
     d = _date(req.submission_date)
     if d:
         props["제출일"] = d
+    d = _date(req.sales_start_date)
+    if d:
+        props["영업시작일"] = d
     if req.vat_inclusive:
         props["VAT포함"] = {"select": {"name": req.vat_inclusive}}
     if req.location:
@@ -305,6 +310,12 @@ def sale_update_to_props(req: SaleUpdateRequest) -> dict[str, Any]:
     if req.submission_date is not None:
         props["제출일"] = (
             {"date": None} if req.submission_date == "" else {"date": {"start": req.submission_date}}
+        )
+    if req.sales_start_date is not None:
+        props["영업시작일"] = (
+            {"date": None}
+            if req.sales_start_date == ""
+            else {"date": {"start": req.sales_start_date}}
         )
     if req.vat_inclusive is not None:
         props["VAT포함"] = (

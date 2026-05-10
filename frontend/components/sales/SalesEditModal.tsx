@@ -182,6 +182,7 @@ export default function SalesEditModal({
         building_count: sale.building_count ?? undefined,
         note: sale.note || undefined,
         submission_date: sale.submission_date || undefined,
+        sales_start_date: sale.sales_start_date || undefined,
         vat_inclusive: sale.vat_inclusive || undefined,
         performance_design_amount: sale.performance_design_amount ?? undefined,
         wind_tunnel_amount: sale.wind_tunnel_amount ?? undefined,
@@ -1269,16 +1270,28 @@ export default function SalesEditModal({
             </Field>
           </div>
 
-          <Field label="제출일">
-            <input
-              type="date"
-              className={inputCls}
-              value={form.submission_date ?? ""}
-              onChange={(e) =>
-                setForm({ ...form, submission_date: e.target.value || undefined })
-              }
-            />
-          </Field>
+          <div className="grid grid-cols-2 gap-4">
+            <Field label="영업시작일">
+              <input
+                type="date"
+                className={inputCls}
+                value={form.sales_start_date ?? ""}
+                onChange={(e) =>
+                  setForm({ ...form, sales_start_date: e.target.value || undefined })
+                }
+              />
+            </Field>
+            <Field label="제출일">
+              <input
+                type="date"
+                className={inputCls}
+                value={form.submission_date ?? ""}
+                onChange={(e) =>
+                  setForm({ ...form, submission_date: e.target.value || undefined })
+                }
+              />
+            </Field>
+          </div>
 
           <Field label="담당자 (콤마 구분)">
             <input
