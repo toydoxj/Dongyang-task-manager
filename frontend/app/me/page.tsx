@@ -9,6 +9,7 @@ import { useAuth } from "@/components/AuthGuard";
 import MyProjectSnapshots from "@/components/me/MyProjectSnapshots";
 import MySalesSection from "@/components/me/MySalesSection";
 import MyWorkSummaryCards from "@/components/me/MyWorkSummaryCards";
+import TasksByTimeView from "@/components/me/TasksByTimeView";
 import ProjectCreateModal from "@/components/me/ProjectCreateModal";
 import OtherTasksKanban from "@/components/me/OtherTasksKanban";
 import ProjectImportModal from "@/components/me/ProjectImportModal";
@@ -49,6 +50,10 @@ export default function MyPage() {
   } | null>(null);
   // '해야할 일' 섹션 접기 (사용자가 자주 보는 영역이라 default 펼침)
   const [todoCollapsed, setTodoCollapsed] = useState(false);
+  // MY-002 — 분류(category) 기준 vs 시간(timeline) 기준 view 토글. default category.
+  const [todoViewMode, setTodoViewMode] = useState<"category" | "time">(
+    "category",
+  );
 
   // 다른 직원 보기 모드면 mine 대신 assignee=name 으로 fetch
   const fetchFilters = effectiveName
@@ -283,24 +288,59 @@ export default function MyPage() {
       />
 
       <section className="rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
-        <button
-          type="button"
-          onClick={() => setTodoCollapsed((v) => !v)}
-          className="flex w-full items-center justify-between gap-2 text-left"
-          aria-expanded={!todoCollapsed}
-        >
-          <h2 className="flex items-center gap-2 text-sm font-medium text-zinc-700 dark:text-zinc-300">
-            <span className="text-zinc-400">{todoCollapsed ? "▶" : "▼"}</span>
-            해야할 일
-          </h2>
+        <div className="flex items-center justify-between gap-3">
+          <button
+            type="button"
+            onClick={() => setTodoCollapsed((v) => !v)}
+            className="flex flex-1 items-center gap-2 text-left"
+            aria-expanded={!todoCollapsed}
+          >
+            <h2 className="flex items-center gap-2 text-sm font-medium text-zinc-700 dark:text-zinc-300">
+              <span className="text-zinc-400">{todoCollapsed ? "▶" : "▼"}</span>
+              해야할 일
+            </h2>
+          </button>
+          {!todoCollapsed && (
+            <div className="flex items-center gap-1 rounded-md border border-zinc-300 p-0.5 text-[11px] dark:border-zinc-700">
+              <button
+                type="button"
+                onClick={() => setTodoViewMode("category")}
+                className={
+                  todoViewMode === "category"
+                    ? "rounded bg-zinc-900 px-2 py-0.5 text-white dark:bg-zinc-100 dark:text-zinc-900"
+                    : "rounded px-2 py-0.5 text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800"
+                }
+              >
+                분류
+              </button>
+              <button
+                type="button"
+                onClick={() => setTodoViewMode("time")}
+                className={
+                  todoViewMode === "time"
+                    ? "rounded bg-zinc-900 px-2 py-0.5 text-white dark:bg-zinc-100 dark:text-zinc-900"
+                    : "rounded px-2 py-0.5 text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800"
+                }
+              >
+                시간
+              </button>
+            </div>
+          )}
           <span className="text-[10px] text-zinc-500">
             {todoCollapsed ? "펼치기" : "접기"}
           </span>
-        </button>
+        </div>
         {!todoCollapsed && (
           <div className="mt-3">
             {tasks == null ? (
               <LoadingState message="내 업무 TASK 불러오는 중" height="h-32" />
+            ) : todoViewMode === "time" ? (
+              <TasksByTimeView
+                tasks={tasks}
+                projects={projects ?? []}
+                onClickTask={setEditing}
+                onDeleteTask={handleDeleteTask}
+              />
             ) : (
               <TodayTasks
                 tasks={tasks}
