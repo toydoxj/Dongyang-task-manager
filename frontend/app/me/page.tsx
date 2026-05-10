@@ -668,6 +668,7 @@ function TodayTasks({
   const scheduleByBucket = new Map<string, Task[]>([
     ["외근", []],
     ["출장", []],
+    ["파견", []],
     ["휴가", []],
   ]);
   const unclassified: Task[] = [];
@@ -680,11 +681,13 @@ function TodayTasks({
     const scheduleBucket =
       isVacationCat(t.category)
         ? "휴가"
-        : t.activity === "출장" || t.category === "출장"
-          ? "출장"
-          : t.activity === "외근" || t.category === "외근"
-            ? "외근"
-            : null;
+        : t.activity === "파견" || t.category === "파견"
+          ? "파견"
+          : t.activity === "출장" || t.category === "출장"
+            ? "출장"
+            : t.activity === "외근" || t.category === "외근"
+              ? "외근"
+              : null;
     if (scheduleBucket) {
       scheduleByBucket.get(scheduleBucket)!.push(t);
     }
@@ -698,6 +701,7 @@ function TodayTasks({
     } else if (
       t.category === "외근" ||
       t.category === "출장" ||
+      t.category === "파견" ||
       isVacationCat(t.category)
     ) {
       // 일정 분류 task는 메인 영역에 추가 안 함 (일정 카드에만 표시)
@@ -752,8 +756,8 @@ function TodayTasks({
 
   // scope === "schedule"
   return (
-    <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-      {(["외근", "출장", "휴가"] as const).map((c) => (
+    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      {(["외근", "출장", "파견", "휴가"] as const).map((c) => (
         <CategoryCard
           key={c}
           label={c}
@@ -810,7 +814,9 @@ function ActivityBadge({ activity }: { activity?: string }) {
       ? "bg-orange-500/15 text-orange-600 dark:text-orange-400"
       : activity === "출장"
         ? "bg-red-500/15 text-red-600 dark:text-red-400"
-        : "bg-zinc-500/15 text-zinc-500";
+        : activity === "파견"
+          ? "bg-violet-500/15 text-violet-600 dark:text-violet-400"
+          : "bg-zinc-500/15 text-zinc-500";
   return (
     <span className={cn("rounded px-1 py-0.5 text-[9px] font-medium", cls)}>
       {activity}

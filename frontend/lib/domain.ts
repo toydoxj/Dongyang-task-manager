@@ -423,12 +423,12 @@ export type TaskCategory = (typeof TASK_CATEGORIES)[number];
  * 휴가는 반차/시간 단위 등 시간 지정이 필요. "휴가"는 옛 표기 호환. */
 export const TIME_BASED_CATEGORIES: readonly string[] = ["휴가(연차)", "휴가"];
 
-/** 활동 유형 — 분류와 독립. 프로젝트 task의 외근/출장 표시용. */
-export const ACTIVITY_TYPES = ["사무실", "외근", "출장"] as const;
+/** 활동 유형 — 분류와 독립. 프로젝트 task의 외근/출장/파견 표시용. */
+export const ACTIVITY_TYPES = ["사무실", "외근", "출장", "파견"] as const;
 export type ActivityType = (typeof ACTIVITY_TYPES)[number];
 
-/** 시간 지정이 필요한 활동 (외근/출장). */
-export const TIME_BASED_ACTIVITIES: readonly string[] = ["외근", "출장"];
+/** 시간 지정이 필요한 활동 (외근/출장/파견). */
+export const TIME_BASED_ACTIVITIES: readonly string[] = ["외근", "출장", "파견"];
 
 /** task가 시간 기반 일정인지 판정 — 분류 또는 활동 중 하나라도 시간 기반이면. */
 export function isTimeBasedTask(category?: string, activity?: string): boolean {
