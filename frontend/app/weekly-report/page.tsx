@@ -308,18 +308,38 @@ function ReportPreview({
   const period = `${data.period_start} ~ ${data.period_end}`;
   return (
     <div className="weekly-report-tables space-y-4">
-      {/* 인원 */}
-      <Section title="■ 인원현황">
+      {/* PDF 헤더 양식 동등 — 좌측 제목/기간, 우측 회사명 */}
+      <div className="flex items-end justify-between gap-3 border-b-2 border-emerald-600/70 pb-1">
+        <div className="text-lg font-bold tracking-wide">
+          주간업무일지
+          <span className="ml-2 text-sm font-medium text-zinc-500">{period}</span>
+        </div>
+        <div className="text-right leading-tight">
+          <div className="text-sm font-bold text-zinc-700 dark:text-zinc-200">
+            (주)동양구조
+          </div>
+          <div className="text-[9px] font-bold tracking-tighter text-zinc-500">
+            Dongyang Consulting Engineers. Co., Ltd.
+          </div>
+        </div>
+      </div>
+
+      {/* 인원 — PDF와 동일: 기타 제외, 구조설계/관리세무는 +1로 표시(관리세무→'관리') */}
+      <Section title="인원현황">
         <div className="rounded border border-zinc-200 bg-zinc-50 p-2 text-sm dark:border-zinc-800 dark:bg-zinc-900">
-          <span className="font-medium">{period}</span>
-          <span className="mx-2 text-zinc-400">│</span>
           총원 <strong>{data.headcount.total}</strong>인
-          {Object.entries(data.headcount.by_occupation).map(([k, v]) => (
-            <span key={k} className="text-zinc-600 dark:text-zinc-400">
-              {" "}
-              · {k} {v}
-            </span>
-          ))}
+          {Object.entries(data.headcount.by_occupation).flatMap(([k, v]) => {
+            if (k === "기타") return [];
+            const label = k === "관리세무" ? "관리" : k;
+            const count = k === "구조설계" || k === "관리세무" ? v + 1 : v;
+            return [
+              <span key={k} className="text-zinc-600 dark:text-zinc-400">
+                {" "}
+                <span className="mx-1 text-zinc-400">│</span>
+                {label} {count}
+              </span>,
+            ];
+          })}
           {(data.headcount.new_this_week > 0 ||
             data.headcount.resigned_this_week.length > 0) && (
             <>
@@ -337,26 +357,42 @@ function ReportPreview({
               )}
             </>
           )}
+          {data.holidays.length > 0 && (
+            <>
+              <span className="mx-2 text-zinc-400">│</span>
+              <span className="rounded bg-zinc-200 px-1.5 py-0.5 text-xs dark:bg-zinc-700">
+                공휴일
+              </span>{" "}
+              {data.holidays
+                .map(
+                  (h) =>
+                    `${h.date.slice(5).replace("-", "/")} ${h.name}${
+                      h.source === "company" ? "(사내)" : ""
+                    }`,
+                )
+                .join(" · ")}
+            </>
+          )}
         </div>
       </Section>
 
       {/* [공지][교육][건의] 3-col grid (모두 있어야 보임 — 빈 칸은 "(없음)" 표시) */}
       <div className="grid gap-3 md:grid-cols-3">
-        <Section title="■ 주요 공지사항">
+        <Section title="주요 공지사항">
           {data.notices.length > 0 ? (
             <BulletList items={data.notices} />
           ) : (
             <p className="text-xs text-zinc-500">(없음)</p>
           )}
         </Section>
-        <Section title="■ 교육 일정">
+        <Section title="교육 일정">
           {data.education.length > 0 ? (
             <BulletList items={data.education} />
           ) : (
             <p className="text-xs text-zinc-500">(없음)</p>
           )}
         </Section>
-        <Section title="■ 건의사항">
+        <Section title="건의사항">
           {data.suggestions.length > 0 ? (
             <ul className="list-inside list-disc space-y-0.5 text-sm">
               {data.suggestions.map((s, i) => (
@@ -374,71 +410,65 @@ function ReportPreview({
         </Section>
       </div>
 
-      {/* [날인대장][완료프로젝트] 2-col */}
-      <div className="grid gap-3 md:grid-cols-2">
-        <Section title="■ 날인대장">
-          <SimpleTable
-            cols={["승인일", "CODE", "용역명", "제출처", "유형", "담당자"]}
-            rows={data.seal_log.map((s) => [
-              (s.approved_at ?? "").slice(5, 10).replace("-", "/"),
-              s.code,
-              <ProjectLink key="n" id={s.project_id}>{s.name}</ProjectLink>,
-              s.submission_target,
-              s.seal_type,
-              s.requester,
-            ])}
-            empty="(저번주 승인된 날인 없음)"
-          />
-        </Section>
-        <Section title="■ 완료 프로젝트">
-          <SimpleTable
-            cols={["상태", "CODE", "프로젝트명", "발주처", "담당자"]}
-            rows={data.completed.map((c) => [
-              c.status_label,
-              c.code,
-              <ProjectLink key="n" id={c.page_id}>{c.name}</ProjectLink>,
-              c.client,
-              c.assignees.join(", "),
-            ])}
-            empty="(완료 없음)"
-          />
-        </Section>
-      </div>
+      {/* 완료 → 날인대장 세로 배치 (PDF와 동일) */}
+      <Section title="완료 프로젝트">
+        <SimpleTable
+          cols={["상태", "CODE", "프로젝트명", "발주처", "담당팀", "소요기간(개월)"]}
+          rows={data.completed.map((c) => [
+            c.status_label,
+            c.code,
+            <ProjectLink key="n" id={c.page_id}>{c.name}</ProjectLink>,
+            c.client,
+            c.teams.join(", "),
+            c.duration_months != null ? c.duration_months.toFixed(1) : "",
+          ])}
+          empty="(완료 없음)"
+        />
+      </Section>
+      <Section title="날인대장">
+        <SimpleTable
+          cols={["승인일", "CODE", "용역명", "제출처", "유형", "담당자"]}
+          rows={data.seal_log.map((s) => [
+            (s.approved_at ?? "").slice(5, 10).replace("-", "/"),
+            s.code,
+            <ProjectLink key="n" id={s.project_id}>{s.name}</ProjectLink>,
+            s.submission_target,
+            s.seal_type,
+            s.requester,
+          ])}
+          empty="(저번주 승인된 날인 없음)"
+        />
+      </Section>
 
-      {/* 영업 */}
-      <Section title="■ 영업">
+      {/* 영업 — PDF와 동일: 영업번호/PROJECT/발주처/규모/견적가/수주확률/비고 */}
+      <Section title="영업">
         <SimpleTable
           cols={[
             "영업번호",
-            "내용",
             "PROJECT",
             "발주처",
             "규모",
             "견적가",
-            "단계",
-            "영업시작일",
+            "수주확률",
+            "비고",
           ]}
           rows={data.sales.map((s) => [
             s.code,
-            s.category.join("/"),
-            <SaleLink key="n" id={s.page_id}>
-              {s.name}
-              {s.is_bid && <span className="ml-1 text-[10px]">[입찰]</span>}
-            </SaleLink>,
+            <SaleLink key="n" id={s.page_id}>{s.name}</SaleLink>,
             s.client,
             s.scale,
             s.estimated_amount
               ? `₩${s.estimated_amount.toLocaleString()}`
               : "",
-            s.stage,
-            s.sales_start_date ?? "",
+            s.probability != null ? `${Math.round(s.probability)}%` : "",
+            s.is_bid ? "(입찰)" : "",
           ])}
           empty="(저번주 시작 영업건 없음 — 노션 '영업시작일' 입력 필요)"
         />
       </Section>
 
       {/* 신규 프로젝트 (완료는 위 2-col에 배치됨) */}
-      <Section title="■ 신규 프로젝트">
+      <Section title="신규 프로젝트">
         <SimpleTable
           cols={["업무내용", "CODE", "용역명", "발주처", "규모", "용역비"]}
           rows={data.new_projects.map((n) => [
@@ -454,7 +484,7 @@ function ReportPreview({
       </Section>
 
       {/* 개인 주간 일정 — 5팀 horizontal grid (본부는 진단팀 column 끝에 stack) */}
-      <Section title="■ 개인 주간 일정">
+      <Section title="개인 주간 일정">
         <div className="grid gap-2 lg:grid-cols-5">
           {SCHEDULE_GRID_TEAMS.map((team) => (
             <ScheduleTeamCard
@@ -491,7 +521,7 @@ function ReportPreview({
       </Section>
 
       {/* 팀별 업무 현황 — 직원 × 프로젝트 행 단위 */}
-      <Section title="■ 팀별 업무 현황">
+      <Section title="팀별 업무 현황">
         {teamWorkNames.length === 0 ? (
           <p className="text-xs text-zinc-500">(배정된 진행 프로젝트 없음)</p>
         ) : (
@@ -508,12 +538,12 @@ function ReportPreview({
       </Section>
 
       {/* 대기 프로젝트 — 자체 2-열 분할 (대기가 길어 보류와 같이 두면 비대칭) */}
-      <Section title="■ 대기 프로젝트">
+      <Section title="대기 프로젝트">
         <SplitStageGrid rows={data.waiting_projects} highlightStalled />
       </Section>
 
       {/* 보류 프로젝트 — 자체 2-열 분할 */}
-      <Section title="■ 보류 프로젝트">
+      <Section title="보류 프로젝트">
         <SplitStageGrid rows={data.on_hold_projects} />
       </Section>
     </div>
@@ -882,9 +912,10 @@ function Section({
   title: string;
   children: React.ReactNode;
 }) {
+  // PDF 양식과 동일 — 회색 배경 + 좌측 회색 막대, 불릿 마크 없음.
   return (
     <section className="space-y-2">
-      <h2 className="border-l-2 border-emerald-500 bg-emerald-50/60 px-2 py-1 text-sm font-semibold text-emerald-800 dark:bg-emerald-900/20 dark:text-emerald-300">
+      <h2 className="border-l-[3px] border-zinc-500 bg-zinc-200/70 px-2 py-1 text-xs font-bold text-zinc-700 dark:border-zinc-500 dark:bg-zinc-800/70 dark:text-zinc-200">
         {title}
       </h2>
       {children}
