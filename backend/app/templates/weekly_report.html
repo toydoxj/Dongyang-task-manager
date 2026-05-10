@@ -204,9 +204,8 @@
     .tw-emp .name { font-weight: 600; }
     .tw-emp .pos { font-size: 6pt; color: #666; }
     /* 같은 직원 그룹 안의 emp cell — 위/아래 가로선 없음 (셀병합 시각).
-     * 같은 직원 내부 row 구분선은 연한 회색 → 시선 분산 최소.
-     * 다른 직원으로 바뀌는 row만 일반 실선으로 명확히 구분. */
-    .tw-table tbody tr > td { border-top: 0.5px solid #ddd; }
+     * 같은 직원 내부 row 구분선도 모두 제거 → 담당자 경계만 명확히. */
+    .tw-table tbody tr > td { border-top: 0; border-bottom: 0; }
     .tw-table tr.group-start > td { border-top: 0.5px solid #999; }
     .tw-team-header {
       margin-top: 10px;
