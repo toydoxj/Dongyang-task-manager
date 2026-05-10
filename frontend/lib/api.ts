@@ -31,10 +31,6 @@ import type {
   SaleCreateRequest,
   SaleListResponse,
   SaleUpdateRequest,
-  Task,
-  TaskCreateRequest,
-  TaskListResponse,
-  TaskUpdateRequest,
 } from "./domain";
 
 async function jsonOrThrow<T>(res: Response): Promise<T> {
@@ -174,44 +170,8 @@ export async function setProjectStage(
 
 // ── 업무TASK ──
 
-export async function listTasks(filters: {
-  project_id?: string;
-  /** 영업 page_id로 필터 (mirror_tasks.sales_ids relation). */
-  sale_id?: string;
-  assignee?: string;
-  status?: string;
-  mine?: boolean;
-  schedule_only?: boolean;
-} = {}): Promise<TaskListResponse> {
-  const res = await authFetch(`/api/tasks${qs(filters)}`);
-  return jsonOrThrow<TaskListResponse>(res);
-}
-
-export async function createTask(body: TaskCreateRequest): Promise<Task> {
-  const res = await authFetch(`/api/tasks`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
-  return jsonOrThrow<Task>(res);
-}
-
-export async function updateTask(
-  pageId: string,
-  body: TaskUpdateRequest,
-): Promise<Task> {
-  const res = await authFetch(`/api/tasks/${pageId}`, {
-    method: "PATCH",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
-  return jsonOrThrow<Task>(res);
-}
-
-export async function archiveTask(pageId: string): Promise<{ status: string }> {
-  const res = await authFetch(`/api/tasks/${pageId}`, { method: "DELETE" });
-  return jsonOrThrow<{ status: string }>(res);
-}
+// ── 업무 TASK ── (Phase 4-A — lib/api/tasks.ts로 이동)
+export * from "./api/tasks";
 
 // ── Cashflow ──
 
@@ -562,68 +522,8 @@ export async function deleteMasterImage(
   }
 }
 
-// ── 건의사항 ──
-
-export interface SuggestionItem {
-  id: string;
-  title: string;
-  content: string;
-  author: string;
-  status: string;
-  resolution: string;
-  created_time: string | null;
-  last_edited_time: string | null;
-}
-
-export interface SuggestionListResponse {
-  items: SuggestionItem[];
-  count: number;
-}
-
-export async function listSuggestions(): Promise<SuggestionListResponse> {
-  const res = await authFetch(`/api/suggestions`);
-  return jsonOrThrow<SuggestionListResponse>(res);
-}
-
-export async function createSuggestion(body: {
-  title: string;
-  content?: string;
-}): Promise<SuggestionItem> {
-  const res = await authFetch(`/api/suggestions`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
-  return jsonOrThrow<SuggestionItem>(res);
-}
-
-export async function updateSuggestion(
-  id: string,
-  body: {
-    title?: string;
-    content?: string;
-    status?: string;
-    resolution?: string;
-  },
-): Promise<SuggestionItem> {
-  const res = await authFetch(`/api/suggestions/${id}`, {
-    method: "PATCH",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
-  return jsonOrThrow<SuggestionItem>(res);
-}
-
-export async function deleteSuggestion(id: string): Promise<void> {
-  const res = await authFetch(`/api/suggestions/${id}`, { method: "DELETE" });
-  if (!res.ok) {
-    const detail = await res
-      .json()
-      .then((d) => (d as { detail?: string }).detail)
-      .catch(() => undefined);
-    throw new Error(detail ?? `${res.status} ${res.statusText}`);
-  }
-}
+// ── 건의사항 ── (Phase 4-A — lib/api/suggestions.ts로 이동)
+export * from "./api/suggestions";
 
 // ── 날인요청 ──
 
@@ -1539,104 +1439,5 @@ export async function downloadLastPublishedWeeklyReportPdf(): Promise<void> {
   URL.revokeObjectURL(url);
 }
 
-// ── 사내 공지 / 교육 일정 (PR-W Phase 2.4) ──
-
-export type NoticeKind = "공지" | "교육" | "휴일";
-
-export interface Notice {
-  id: number;
-  kind: NoticeKind;
-  title: string;
-  body: string;
-  start_date: string;       // YYYY-MM-DD
-  end_date: string | null;
-  author_user_id: number | null;
-  created_at: string;
-  updated_at: string;
-}
-
-export interface NoticeListResponse {
-  items: Notice[];
-  count: number;
-}
-
-export interface NoticeCreateBody {
-  kind: NoticeKind;
-  title: string;
-  body?: string;
-  start_date: string;
-  end_date?: string | null;
-}
-
-export interface NoticeUpdateBody {
-  kind?: NoticeKind;
-  title?: string;
-  body?: string;
-  start_date?: string;
-  end_date?: string | null;
-}
-
-export async function listNotices(params?: {
-  weekStart?: string;
-  kind?: NoticeKind;
-}): Promise<NoticeListResponse> {
-  const qs = new URLSearchParams();
-  if (params?.weekStart) qs.set("week_start", params.weekStart);
-  if (params?.kind) qs.set("kind", params.kind);
-  const url = `/api/notices${qs.toString() ? `?${qs.toString()}` : ""}`;
-  const res = await authFetch(url);
-  if (!res.ok) {
-    const detail = await res.json().catch(() => null);
-    throw new Error(
-      (detail as { detail?: string } | null)?.detail ??
-        `${res.status} ${res.statusText}`,
-    );
-  }
-  return (await res.json()) as NoticeListResponse;
-}
-
-export async function createNotice(body: NoticeCreateBody): Promise<Notice> {
-  const res = await authFetch("/api/notices", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
-  if (!res.ok) {
-    const detail = await res.json().catch(() => null);
-    throw new Error(
-      (detail as { detail?: string } | null)?.detail ??
-        `${res.status} ${res.statusText}`,
-    );
-  }
-  return (await res.json()) as Notice;
-}
-
-export async function updateNotice(
-  id: number,
-  body: NoticeUpdateBody,
-): Promise<Notice> {
-  const res = await authFetch(`/api/notices/${id}`, {
-    method: "PATCH",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
-  if (!res.ok) {
-    const detail = await res.json().catch(() => null);
-    throw new Error(
-      (detail as { detail?: string } | null)?.detail ??
-        `${res.status} ${res.statusText}`,
-    );
-  }
-  return (await res.json()) as Notice;
-}
-
-export async function deleteNotice(id: number): Promise<void> {
-  const res = await authFetch(`/api/notices/${id}`, { method: "DELETE" });
-  if (!res.ok && res.status !== 204) {
-    const detail = await res.json().catch(() => null);
-    throw new Error(
-      (detail as { detail?: string } | null)?.detail ??
-        `${res.status} ${res.statusText}`,
-    );
-  }
-}
+// ── 사내 공지 / 교육 일정 / 휴일 (PR-W Phase 2.4) ── (Phase 4-A — lib/api/notices.ts로 이동)
+export * from "./api/notices";
