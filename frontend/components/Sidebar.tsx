@@ -36,6 +36,8 @@ const NAV: NavItem[] = [
   { href: "/help", label: "사용 매뉴얼" },
   // ── admin only ──
   { href: "/projects", label: "프로젝트", roles: ["admin"] },
+  { href: "/sales", label: "영업 관리", roles: ["admin"] },
+  { href: "/admin/incomes/clients", label: "발주처 관리", roles: ["admin"] },
   { href: "/admin/notices", label: "공지/교육 관리", roles: ["admin"] },
   { href: "/admin/incomes", label: "수금 관리", roles: ["admin"] },
   { href: "/admin/employees", label: "직원 관리", roles: ["admin"] },
