@@ -263,14 +263,20 @@ export default function ProjectClient({ id }: { id: string }) {
 
       <AssigneeTimeline project={project} logs={logs} />
 
-      <SealHistoryList
-        seals={seals}
-        onClick={(s) => setSealDetailId(s.id)}
-      />
+      <div id="seals" className="scroll-mt-4">
+        <SealHistoryList
+          seals={seals}
+          onClick={(s) => setSealDetailId(s.id)}
+        />
+      </div>
 
-      <TaskKanban tasks={tasks} onChanged={refreshTasks} onCreate={openCreate} />
+      <div id="tasks" className="scroll-mt-4">
+        <TaskKanban tasks={tasks} onChanged={refreshTasks} onCreate={openCreate} />
+      </div>
 
-      <ProjectCashflowChart project={project} entries={cashflow} />
+      <div id="cashflow" className="scroll-mt-4">
+        <ProjectCashflowChart project={project} entries={cashflow} />
+      </div>
 
       <TaskCreateModal
         open={createOpen}

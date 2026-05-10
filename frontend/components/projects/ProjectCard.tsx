@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 
 import type { Project } from "@/lib/domain";
 import { formatDate, formatPercent, formatWon } from "@/lib/format";
@@ -131,7 +132,53 @@ export default function ProjectCard({
           <Row label="수금률" value={formatPercent(rateNumber)} />
         )}
       </dl>
+
+      {/* PROJ-004 — 카드 quick action: 본문 click(상세)과 별개로 특정 영역으로 이동 */}
+      <div className="mt-3 flex flex-wrap gap-1 border-t border-zinc-100 pt-2 dark:border-zinc-800">
+        <QuickActionChip
+          label="TASK"
+          href={`/projects/${project.id}#tasks`}
+        />
+        <QuickActionChip
+          label="날인"
+          href={`/seal-requests?project_id=${project.id}`}
+        />
+        <QuickActionChip
+          label="매출"
+          href={`/projects/${project.id}#cashflow`}
+        />
+        {project.url && (
+          <QuickActionChip label="노션" href={project.url} external />
+        )}
+      </div>
     </Link>
+  );
+}
+
+/** 카드 본문 Link 안에서 nested anchor 회피용 — button + stopPropagation + 직접 navigate. */
+function QuickActionChip({
+  label,
+  href,
+  external = false,
+}: {
+  label: string;
+  href: string;
+  external?: boolean;
+}) {
+  const router = useRouter();
+  return (
+    <button
+      type="button"
+      onClick={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        if (external) window.open(href, "_blank", "noopener,noreferrer");
+        else router.push(href);
+      }}
+      className="rounded border border-zinc-300 bg-white px-1.5 py-0.5 text-[10px] font-medium text-zinc-600 hover:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800"
+    >
+      {label}
+    </button>
   );
 }
 

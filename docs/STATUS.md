@@ -29,7 +29,8 @@
 | **Phase 3 PR-J** 대시보드 — 최근 변경/경고 패널 분리 (DASH-004) | ChartsTabs.운영 리스크 탭에 `RecentUpdatesPanel` (last_edited_time 7일 이내 Top 10) + `WarningItemsPanel` (정체·기한 초과·담당 미정·수금 지연 4종 chip 표시, 경고 수 많은 순) 추가. 액션 패널과 차별 — "주의 깊게 모니터링" 영역 | a5f160f |
 | **Phase 3 PR-K** /me 팀장 모드 분리 (MY-005) | `/me` 헤더에 admin/team_lead용 직원 select dropdown 추가. "내 업무" + 팀원 list (team_lead는 본인 팀, admin은 전체) → 선택 시 `?as=이름`으로 navigate. listEmployees + getEmployeeTeamsMap SWR로 fetch (canSwitchView일 때만). 기존 ?as= 메커니즘 + UI만 추가 | 13fe98e |
 | **Phase 3 PR-L** 공통 CTA 문구 표준 (COMMON-003) | `lib/cta.ts` 신규 — 8 표준 CTA 상수(detail/openProject/viewTasks/viewSeals/viewIncomes/viewMyTasks/viewLoad/viewSource). PriorityActionsPanel 4개 라벨을 표준으로 교체. 신규 추가 list/액션 패널 작성 시 이 상수 import 권장 | 0be3bfc |
-| **Phase 3 PR-M** 프로젝트 상세 URL 재구조화 (PROJ-005) | `/project?id={id}` → **`/projects/{id}`** dynamic route. 기존 path는 client redirect 페이지로 유지(외부 hardcoded URL — Bot 알림·북마크 호환). 17 사용처(15 파일)의 internal link sed 일괄 substring 교체 + ProjectClient의 sale referrer query도 갱신. build 25 routes 정상 (○ static + ƒ /projects/[id] dynamic) | 신규 |
+| **Phase 3 PR-M** 프로젝트 상세 URL 재구조화 (PROJ-005) | `/project?id={id}` → **`/projects/{id}`** dynamic route. 기존 path는 client redirect 페이지로 유지(외부 hardcoded URL — Bot 알림·북마크 호환). 17 사용처(15 파일)의 internal link sed 일괄 substring 교체 + ProjectClient의 sale referrer query도 갱신. build 25 routes 정상 (○ static + ƒ /projects/[id] dynamic) | da9007a |
+| **회수 PR-N** 프로젝트 카드 quick action (PROJ-004 본격) | ProjectCard footer에 4 chip(TASK/날인/매출/노션). 카드 본문 click(상세)와 별개로 특정 영역으로 deep-link. ProjectClient의 SealHistoryList/TaskKanban/ProjectCashflowChart에 `id="seals/tasks/cashflow"` anchor + scroll-mt 추가. nested anchor 회피 위해 chip은 button + stopPropagation + router.push (external은 window.open) | 신규 |
 
 ## 미완료 / 보류
 
