@@ -1,6 +1,6 @@
 # 작업 Status
 
-> 마지막 업데이트: 2026-05-09 (commit 9e36b3b 기준)
+> 마지막 업데이트: 2026-05-10 (commit c33299c 기준)
 
 ## 완료된 PR
 
@@ -12,13 +12,17 @@
 | **PR-Q4b** BMA 자동 산정 | 건축물관리점검지침 별표 1·3 + 제37·38조 + 산정표 ±1원 일치 (`bma_table.py`) | 78bdb0f / d224e62 |
 | **영업코드 형식** | `{YY}-영업-{NNN}` → `영{YY}-{NNN}` (옛 형식도 sequence pool 포함) | cf5d257 |
 | **PR-LK** 영업↔프로젝트 | reverse lookup endpoint + 동일 프로젝트 날인요청 N개 허용 | 9e36b3b |
+| **PR-W** 주간업무일지 | 9개 섹션(인원현황/공지/완료/날인대장/영업/신규/개인일정/팀별업무/대기·보류) + WeasyPrint PDF + admin 발행(Drive 업로드 + 전직원 Bot 알림 + `WeeklyReportPublishLog`) + 비admin `last-published.pdf` 다운로드 + 일요일 23:59 KST `weekly_snapshot` cron + manager role 사이드바 | 9e36b3b ~ 56e306d |
 | **CLAUDE.md 개선** | root + frontend/AGENTS.md + backend/CLAUDE.md (신규) | (커밋 외) |
+| **Phase 0 품질·권한·문서** | lint 56→0 (set-state-in-effect / exhaustive-deps / purity / static-components 본격 fix) + `/admin/incomes`·`/sales` admin\|\|manager 가드 정합 + `/admin/{expenses,contracts}` placeholder + `UnauthorizedRedirect` (1.5초 toast → 자동 redirect) + USER_MANUAL.md 동기화 | 27ad9e6 ~ c33299c |
 
 ## 미완료 / 보류
 
-| PR | 상태 | 비고 |
+| 항목 | 상태 | 비고 |
 |---|---|---|
-| **PR-W** 주간업무일지 | 계획만, 코드 X | 13.5일 추정. PDF + Dashboard + 공지 게시판 + 매주 월 05:00 KST cron. 재개 시 `docs/PLAN_WEEKLY_REPORT.md` + `PLAN_REPORT_FORMAT.md` reference |
+| **Phase 1 UX 1차** | 계획만 | DASH/PROJ/MY/WEEK 상단 KPI·액션 패널·프리셋·요약 — `.claude/plans/federated-stirring-hedgehog.md` |
+| **Phase 4-B SalesEditModal 본격 분해** | 보류 | 1500+ 줄 단일 컴포넌트 — set-state-in-effect 8건 file-level disable + TODO 표시 (`SalesEditModal.tsx`) |
+| **Backend atomicity·페이징·silent except** | 보류 | `sales.py:1038~`, `seal_requests.py:862~` Drive↔Notion atomicity / `query_all` 페이징 / silent except 정리 |
 
 ## 핵심 helper / 모듈 위치
 
