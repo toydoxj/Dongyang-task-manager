@@ -5,17 +5,9 @@ import { useRouter } from "next/navigation";
 import { useEffect } from "react";
 
 import { useAuth } from "@/components/AuthGuard";
-import CashflowForecast from "@/components/dashboard/CashflowForecast";
-import EmployeeLoadHeatmap from "@/components/dashboard/EmployeeLoadHeatmap";
-import ExpenseTrend from "@/components/dashboard/ExpenseTrend";
+import ChartsTabs from "@/components/dashboard/ChartsTabs";
 import KPICards from "@/components/dashboard/KPICards";
 import PriorityActionsPanel from "@/components/dashboard/PriorityActionsPanel";
-import RecentAndStaleProjects from "@/components/dashboard/RecentAndStaleProjects";
-import RevenueCollectionChart from "@/components/dashboard/RevenueCollectionChart";
-import StageBoard from "@/components/dashboard/StageBoard";
-import StaleTaskAlert from "@/components/dashboard/StaleTaskAlert";
-import TeamLoadHeatmap from "@/components/dashboard/TeamLoadHeatmap";
-import WorkTypeTreemap from "@/components/dashboard/WorkTypeTreemap";
 import LoadingState from "@/components/ui/LoadingState";
 import {
   useCashflow,
@@ -110,91 +102,13 @@ export default function DashboardPage() {
             sealRequests={sealRequests ?? []}
           />
 
-          <section>
-            <h2 className="mb-2 text-sm font-medium text-zinc-700 dark:text-zinc-300">
-              월별 수주 / 수금 / 지출 추이
-            </h2>
-            <RevenueCollectionChart
-              projects={projects}
-              incomes={incomes}
-              expenses={expenses ?? []}
-            />
-          </section>
-
-          <section>
-            <h2 className="mb-2 text-sm font-medium text-zinc-700 dark:text-zinc-300">
-              진행단계별 보드
-            </h2>
-            <StageBoard projects={projects} />
-          </section>
-
-          <RecentAndStaleProjects projects={projects} />
-
-          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-            <section>
-              <h2 className="mb-2 text-sm font-medium text-zinc-700 dark:text-zinc-300">
-                팀별 부하
-              </h2>
-              <TeamLoadHeatmap projects={projects} />
-            </section>
-            <section>
-              <h2 className="mb-2 text-sm font-medium text-zinc-700 dark:text-zinc-300">
-                직원별 부하
-              </h2>
-              <EmployeeLoadHeatmap projects={projects} />
-            </section>
-          </div>
-
-          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-            <section>
-              <h2 className="mb-2 text-sm font-medium text-zinc-700 dark:text-zinc-300">
-                업무유형 매출 (전체)
-              </h2>
-              <WorkTypeTreemap
-                projects={projects}
-                title="업무유형 매출 — 전체"
-                subtitle="누적 전체"
-              />
-            </section>
-            <section>
-              <h2 className="mb-2 text-sm font-medium text-zinc-700 dark:text-zinc-300">
-                업무유형 매출 (최근 1년)
-              </h2>
-              <WorkTypeTreemap
-                projects={recentYearProjects}
-                title="업무유형 매출 — 최근 1년"
-                subtitle="시작일 기준 최근 12개월"
-              />
-            </section>
-          </div>
-
-          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-            <section>
-              <h2 className="mb-2 text-sm font-medium text-zinc-700 dark:text-zinc-300">
-                현금흐름 예측 (향후 12개월)
-              </h2>
-              <CashflowForecast projects={projects} />
-            </section>
-            <section>
-              <h2 className="mb-2 text-sm font-medium text-zinc-700 dark:text-zinc-300">
-                지출 구분 월간 추이
-              </h2>
-              {expenses ? (
-                <ExpenseTrend expenses={expenses} />
-              ) : (
-                <LoadingState message="지출 데이터 분석 중" height="h-64" />
-              )}
-            </section>
-          </div>
-
-          {allTasks && allTasks.length > 0 && (
-            <section>
-              <h2 className="mb-2 text-sm font-medium text-zinc-700 dark:text-zinc-300">
-                업무 적체 알림
-              </h2>
-              <StaleTaskAlert tasks={allTasks} />
-            </section>
-          )}
+          <ChartsTabs
+            projects={projects}
+            incomes={incomes}
+            expenses={expenses ?? []}
+            allTasks={allTasks}
+            recentYearProjects={recentYearProjects}
+          />
         </>
       )}
     </div>
