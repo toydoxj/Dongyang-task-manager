@@ -3,6 +3,8 @@
 import { useRouter, useSearchParams } from "next/navigation";
 import { useMemo, useState } from "react";
 
+import { useAuth } from "@/components/AuthGuard";
+import UnauthorizedRedirect from "@/components/UnauthorizedRedirect";
 import SalesEditModal from "@/components/sales/SalesEditModal";
 import SalesTable from "@/components/sales/SalesTable";
 import LoadingState from "@/components/ui/LoadingState";
@@ -18,6 +20,9 @@ const KIND_FILTERS = [
 export default function SalesPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const { user } = useAuth();
+  // 운영(영업) — admin + manager. 사이드바 노출과 정합 맞춤.
+  const allowed = user?.role === "admin" || user?.role === "manager";
   const [kindFilter, setKindFilter] = useState<string>("");
   const [stageFilter, setStageFilter] = useState<string>("");
   // 두 source를 통합해 modal에 전달:
@@ -31,7 +36,7 @@ export default function SalesPage() {
     ...(kindFilter ? { kind: kindFilter } : {}),
     ...(stageFilter ? { stage: stageFilter } : {}),
   };
-  const { data, error } = useSales(filters);
+  const { data, error } = useSales(filters, allowed);
 
   const queriedSaleId = searchParams.get("sale");
   const editing = useMemo<Sale | null>(() => {
@@ -41,6 +46,15 @@ export default function SalesPage() {
     }
     return clickedSale;
   }, [queriedSaleId, data, clickedSale]);
+
+  if (user && !allowed) {
+    return (
+      <UnauthorizedRedirect
+        message="영업 관리 권한이 없습니다."
+        targetPath="/"
+      />
+    );
+  }
 
   return (
     <div className="space-y-4">

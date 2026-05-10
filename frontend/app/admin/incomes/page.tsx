@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 
 import { useAuth } from "@/components/AuthGuard";
+import UnauthorizedRedirect from "@/components/UnauthorizedRedirect";
 import IncomeFormModal from "@/components/admin/IncomeFormModal";
 import LoadingState from "@/components/ui/LoadingState";
 import { listContractItems } from "@/lib/api";
@@ -25,15 +26,16 @@ interface IncomeRow {
 
 export default function IncomesAdminPage() {
   const { user } = useAuth();
-  const isAdmin = user?.role === "admin";
-  const { data: projectsData } = useProjects(undefined, isAdmin);
+  // 운영(수금) — admin + manager. 사이드바 노출과 정합 맞춤.
+  const allowed = user?.role === "admin" || user?.role === "manager";
+  const { data: projectsData } = useProjects(undefined, allowed);
   const { data: cashflowData, mutate } = useCashflow(
     { flow: "income" },
-    isAdmin,
+    allowed,
   );
   // 미수금 계산 시 분담 항목 단위 분모가 필요 — 전체 contract items 일괄 fetch
   const { data: contractItemsData, mutate: mutateItems } = useSWR(
-    isAdmin ? ["contract-items", "all"] : null,
+    allowed ? ["contract-items", "all"] : null,
     () => listContractItems(),
   );
 
@@ -162,11 +164,12 @@ export default function IncomesAdminPage() {
   const visible = filtered.slice().reverse();
   const totalAmount = filtered.reduce((s, r) => s + r.entry.amount, 0);
 
-  if (user && !isAdmin) {
+  if (user && !allowed) {
     return (
-      <main className="p-6">
-        <p className="text-sm text-red-500">관리자 권한이 필요합니다.</p>
-      </main>
+      <UnauthorizedRedirect
+        message="수금 관리 권한이 없습니다."
+        targetPath="/"
+      />
     );
   }
 

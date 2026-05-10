@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 
 import { useAuth } from "@/components/AuthGuard";
+import UnauthorizedRedirect from "@/components/UnauthorizedRedirect";
 import ClientFormModal from "@/components/admin/ClientFormModal";
 import LoadingState from "@/components/ui/LoadingState";
 import type { Client } from "@/lib/domain";
@@ -16,10 +17,11 @@ interface ClientRow {
 
 export default function ClientsAdminPage() {
   const { user } = useAuth();
-  const isAdmin = user?.role === "admin";
-  const { data: clientData, mutate } = useClients(isAdmin);
-  const { data: projectsData } = useProjects(undefined, isAdmin);
-  const { data: incomeData } = useCashflow({ flow: "income" }, isAdmin);
+  // 운영(발주처) — admin + manager. 사이드바 노출과 정합 맞춤.
+  const allowed = user?.role === "admin" || user?.role === "manager";
+  const { data: clientData, mutate } = useClients(allowed);
+  const { data: projectsData } = useProjects(undefined, allowed);
+  const { data: incomeData } = useCashflow({ flow: "income" }, allowed);
 
   const [query, setQuery] = useState("");
   const [categoryFilter, setCategoryFilter] = useState<string>("");
@@ -71,11 +73,12 @@ export default function ClientsAdminPage() {
     return true;
   });
 
-  if (user && !isAdmin) {
+  if (user && !allowed) {
     return (
-      <main className="p-6">
-        <p className="text-sm text-red-500">관리자 권한이 필요합니다.</p>
-      </main>
+      <UnauthorizedRedirect
+        message="발주처 관리 권한이 없습니다."
+        targetPath="/"
+      />
     );
   }
 
