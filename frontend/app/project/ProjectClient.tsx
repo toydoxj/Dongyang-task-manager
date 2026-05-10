@@ -158,7 +158,13 @@ export default function ProjectClient({ id }: { id: string }) {
       {linkedSale && (
         <button
           type="button"
-          onClick={() => router.push(`/sales?sale=${linkedSale.id}`)}
+          onClick={() =>
+            router.push(
+              `/sales?sale=${encodeURIComponent(linkedSale.id)}&from=${encodeURIComponent(
+                `/project?id=${id}`,
+              )}`,
+            )
+          }
           className="rounded-md border border-emerald-400 px-2.5 py-1 text-xs text-emerald-700 hover:bg-emerald-50 dark:border-emerald-700 dark:text-emerald-400 dark:hover:bg-emerald-950"
           title={`영업 ${linkedSale.code || ""} ${linkedSale.name} 상세 보기`}
         >
