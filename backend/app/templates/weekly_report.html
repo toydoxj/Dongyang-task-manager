@@ -206,12 +206,14 @@
     .tw-emp .name { font-weight: 600; }
     .tw-emp .pos { font-size: 6pt; color: #666; }
     /* 모든 row 사이 회색 가로선 + 담당자 경계는 진한 색 강조.
-     * emp cell도 동일 가로선 통과 — 텍스트는 첫 row만 표시. */
+     * 단 같은 담당자 그룹 내부의 emp cell은 가로선 없음(셀병합 시각).
+     * 담당자 경계 row의 emp cell은 그룹 경계선 동일 두께로 표시. */
     .tw-table tbody tr > td {
       border-top: 0.5px solid #ccc;
       border-bottom: 0;
     }
     .tw-table tr.group-start > td { border-top: 0.5px solid #333; }
+    .tw-table tbody tr:not(.group-start) > td.tw-emp { border-top: 0; }
     .tw-team-header {
       margin-top: 10px;
       page-break-after: avoid;
