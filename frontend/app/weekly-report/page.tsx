@@ -424,7 +424,7 @@ function ReportPreview({
 
       {/* 인원 — PDF와 동일: 구조설계/안전진단/관리 순서 + 총원 = 3개 합계 (기타 제외).
           구조설계 = 노션 '구조설계' + 1, 관리 = 노션 '관리세무' + 1. */}
-      <Section title="인원현황" id="headcount" badge="auto">
+      <Section title="인원현황" id="headcount" badge="auto" sourceHref="/admin/employees">
         {(() => {
           const sDesign = (data.headcount.by_occupation["구조설계"] ?? 0) + 1;
           const sInspect = data.headcount.by_occupation["안전진단"] ?? 0;
@@ -482,21 +482,21 @@ function ReportPreview({
 
       {/* [공지][교육][건의] 3-col grid (모두 있어야 보임 — 빈 칸은 "(없음)" 표시) */}
       <div id="manual-section" className="grid gap-3 md:grid-cols-3">
-        <Section title="주요 공지사항" badge="manual">
+        <Section title="주요 공지사항" badge="manual" sourceHref="/admin/notices">
           {data.notices.length > 0 ? (
             <BulletList items={data.notices} />
           ) : (
             <p className="text-xs text-zinc-500">(없음)</p>
           )}
         </Section>
-        <Section title="교육 일정" badge="manual">
+        <Section title="교육 일정" badge="manual" sourceHref="/admin/notices">
           {data.education.length > 0 ? (
             <BulletList items={data.education} />
           ) : (
             <p className="text-xs text-zinc-500">(없음)</p>
           )}
         </Section>
-        <Section title="건의사항" badge="manual">
+        <Section title="건의사항" badge="manual" sourceHref="/suggestions">
           {data.suggestions.length > 0 ? (
             <ul className="list-inside list-disc space-y-0.5 text-sm">
               {data.suggestions.map((s, i) => (
@@ -515,7 +515,7 @@ function ReportPreview({
       </div>
 
       {/* 완료 → 날인대장 세로 배치 (PDF와 동일) */}
-      <Section title="완료 프로젝트" id="completed" badge="auto">
+      <Section title="완료 프로젝트" id="completed" badge="auto" sourceHref="/projects">
         <SimpleTable
           cols={["상태", "CODE", "프로젝트명", "발주처", "담당팀", "소요기간(개월)"]}
           rows={data.completed.map((c) => [
@@ -529,7 +529,7 @@ function ReportPreview({
           empty="(완료 없음)"
         />
       </Section>
-      <Section title="날인대장" id="seal-ledger" badge="auto">
+      <Section title="날인대장" id="seal-ledger" badge="auto" sourceHref="/seal-requests">
         <SimpleTable
           cols={["승인일", "CODE", "용역명", "제출처", "유형", "담당자"]}
           rows={data.seal_log.map((s) => [
@@ -545,7 +545,7 @@ function ReportPreview({
       </Section>
 
       {/* 영업 — PDF와 동일: 영업번호/PROJECT/발주처/규모/견적가/수주확률/비고 */}
-      <Section title="영업" id="sales" badge="auto">
+      <Section title="영업" id="sales" badge="auto" sourceHref="/sales">
         <SimpleTable
           cols={[
             "영업번호",
@@ -572,7 +572,7 @@ function ReportPreview({
       </Section>
 
       {/* 신규 프로젝트 (완료는 위 2-col에 배치됨) */}
-      <Section title="신규 프로젝트" id="new-projects" badge="auto">
+      <Section title="신규 프로젝트" id="new-projects" badge="auto" sourceHref="/projects">
         <SimpleTable
           cols={["업무내용", "CODE", "용역명", "발주처", "규모", "용역비"]}
           rows={data.new_projects.map((n) => [
@@ -588,7 +588,7 @@ function ReportPreview({
       </Section>
 
       {/* 개인 주간 일정 — 5팀 horizontal grid (본부는 진단팀 column 끝에 stack) */}
-      <Section title="개인 주간 일정" id="personal-schedule" badge="auto">
+      <Section title="개인 주간 일정" id="personal-schedule" badge="auto" sourceHref="/schedule">
         <div className="grid gap-2 lg:grid-cols-5">
           {SCHEDULE_GRID_TEAMS.map((team) => (
             <ScheduleTeamCard
@@ -625,7 +625,7 @@ function ReportPreview({
       </Section>
 
       {/* 팀별 업무 현황 — 직원 × 프로젝트 행 단위 */}
-      <Section title="팀별 업무 현황" id="team-work" badge="auto">
+      <Section title="팀별 업무 현황" id="team-work" badge="auto" sourceHref="/admin/employee-work">
         {teamWorkNames.length === 0 ? (
           <p className="text-xs text-zinc-500">(배정된 진행 프로젝트 없음)</p>
         ) : (
@@ -642,12 +642,12 @@ function ReportPreview({
       </Section>
 
       {/* 대기 프로젝트 — 자체 2-열 분할 (대기가 길어 보류와 같이 두면 비대칭) */}
-      <Section title="대기 프로젝트" id="waiting" badge="auto">
+      <Section title="대기 프로젝트" id="waiting" badge="auto" sourceHref="/projects">
         <SplitStageGrid rows={data.waiting_projects} highlightStalled />
       </Section>
 
       {/* 보류 프로젝트 — 자체 2-열 분할 */}
-      <Section title="보류 프로젝트" id="on-hold" badge="auto">
+      <Section title="보류 프로젝트" id="on-hold" badge="auto" sourceHref="/projects">
         <SplitStageGrid rows={data.on_hold_projects} />
       </Section>
     </div>
@@ -1013,19 +1013,33 @@ function Section({
   title,
   id,
   badge,
+  sourceHref,
   children,
 }: {
   title: string;
   id?: string;
   badge?: SectionBadge;
+  /** WEEK-005 — admin이 이 섹션의 원본/관리 페이지로 점프할 link. admin만 노출. */
+  sourceHref?: string;
   children: React.ReactNode;
 }) {
+  const { user } = useAuth();
+  const isAdmin = user?.role === "admin";
   // PDF 양식과 동일 — 회색 배경 + 좌측 회색 막대, 불릿 마크 없음.
   return (
     <section id={id} className="scroll-mt-16 space-y-2">
       <h2 className="flex items-center gap-1.5 border-l-[3px] border-zinc-500 bg-zinc-200/70 px-2 py-1 text-xs font-bold text-zinc-700 dark:border-zinc-500 dark:bg-zinc-800/70 dark:text-zinc-200">
         <span>{title}</span>
         {badge && <BadgeChip kind={badge} />}
+        {sourceHref && isAdmin && (
+          <Link
+            href={sourceHref}
+            className="ml-auto inline-flex items-center gap-1 rounded border border-zinc-400 bg-white px-1.5 py-0.5 text-[10px] font-medium text-zinc-600 hover:bg-zinc-100 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700"
+            title="원본/관리 페이지"
+          >
+            관리 ↗
+          </Link>
+        )}
       </h2>
       {children}
     </section>
