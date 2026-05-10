@@ -189,12 +189,14 @@
     .chip-other { background: #e5e7eb; color: #374151; }
 
     /* 팀별 업무 현황 */
-    .tw-table { font-size: 6.5pt; page-break-inside: auto; }
+    .tw-table {
+      font-size: 6.5pt;
+      page-break-inside: auto;
+      border: 1px solid #000;  /* 외곽 검은색 박스 */
+    }
     .tw-table td { padding: 2px 3px; }
     .tw-emp {
       background: #f7f7f5;
-      border-top: 0;
-      border-bottom: 0;
       border-right: 0.5px solid #999;
       vertical-align: middle;
       text-align: center;
@@ -203,10 +205,13 @@
     }
     .tw-emp .name { font-weight: 600; }
     .tw-emp .pos { font-size: 6pt; color: #666; }
-    /* 같은 직원 그룹 안의 emp cell — 위/아래 가로선 없음 (셀병합 시각).
-     * 같은 직원 내부 row 구분선도 모두 제거 → 담당자 경계만 명확히. */
-    .tw-table tbody tr > td { border-top: 0; border-bottom: 0; }
-    .tw-table tr.group-start > td { border-top: 0.5px solid #999; }
+    /* 모든 row 사이 회색 가로선 + 담당자 경계는 진한 색 강조.
+     * emp cell도 동일 가로선 통과 — 텍스트는 첫 row만 표시. */
+    .tw-table tbody tr > td {
+      border-top: 0.5px solid #ccc;
+      border-bottom: 0;
+    }
+    .tw-table tr.group-start > td { border-top: 0.5px solid #333; }
     .tw-team-header {
       margin-top: 10px;
       page-break-after: avoid;
