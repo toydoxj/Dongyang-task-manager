@@ -1,14 +1,16 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import useSWR from "swr";
 
 import { useAuth } from "@/components/AuthGuard";
 import LoadingState from "@/components/ui/LoadingState";
 import {
   downloadWeeklyReportPdf,
+  fetchLastPublishedWeeklyReport,
   fetchWeeklyReport,
+  publishWeeklyReport,
   type WeeklyEmployeeWorkRow,
   type WeeklyHoliday,
   type WeeklyPersonalScheduleEntry,
@@ -163,6 +165,9 @@ export default function WeeklyReportPage() {
     toIsoDate(addDays(defaultWeekStart(), -7)),
   );
   const [downloading, setDownloading] = useState(false);
+  const [publishing, setPublishing] = useState(false);
+  // 사용자가 lastWeekStart를 한 번이라도 직접 수정했으면 last-published 자동 셋팅 차단
+  const [lastWeekStartAuto, setLastWeekStartAuto] = useState(true);
 
   const range: WeeklyReportRange = {
     weekStart,
@@ -170,13 +175,33 @@ export default function WeeklyReportPage() {
     lastWeekStart: lastWeekStart || undefined,
   };
 
+  // 마지막 발행 로그 기반 자동 lastWeekStart 셋팅 (mount 1회).
+  // 발행된 일지의 week_end + 1일 = 다음 일지의 last_week_start (저번주 시작 기준).
+  useEffect(() => {
+    if (!user || !lastWeekStartAuto) return;
+    void fetchLastPublishedWeeklyReport()
+      .then((info) => {
+        if (!info.week_end) return;
+        const nextLws = new Date(`${info.week_end}T00:00:00`);
+        nextLws.setDate(nextLws.getDate() + 1);
+        setLastWeekStart(toIsoDate(nextLws));
+      })
+      .catch(() => {
+        /* 발행 이력 없거나 실패 — 무시 */
+      });
+    // user/auto flag만 의존성. lastWeekStart 자체는 사용자 수정 차단 위해 제외.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user, lastWeekStartAuto]);
+
+  const isAdmin = user?.role === "admin";
+
   const { data, error, isLoading } = useSWR(
     user && weekStart ? ["weekly-report", weekStart, weekEnd, lastWeekStart] : null,
     () => fetchWeeklyReport(range),
   );
 
   /** 이번주 시작일 변경 → 종료일/지난주 시작일 자동 동기화. 사용자가 그 후
-   * 종료일/지난주 시작일을 직접 수정하면 그 값 유지. */
+   * 종료일/지난주 시작일을 직접 수정하면 그 값 유지 (자동 셋팅 차단). */
   const handleWeekStartChange = (value: string): void => {
     if (!value) return;
     const d = new Date(`${value}T00:00:00`);
@@ -185,6 +210,7 @@ export default function WeeklyReportPage() {
     setWeekStart(toIsoDate(newStart));
     setWeekEnd(toIsoDate(addDays(newStart, 4)));
     setLastWeekStart(toIsoDate(addDays(newStart, -7)));
+    setLastWeekStartAuto(false); // week_start 변경하면 last-published 자동 셋팅 차단
   };
 
   const handleDownload = async (): Promise<void> => {
@@ -192,9 +218,33 @@ export default function WeeklyReportPage() {
     try {
       await downloadWeeklyReportPdf(range);
     } catch (e) {
-      alert(e instanceof Error ? e.message : "PDF 다운로드 실패");
+      alert(e instanceof Error ? e.message : "PDF 확인 실패");
     } finally {
       setDownloading(false);
+    }
+  };
+
+  const handlePublish = async (): Promise<void> => {
+    if (
+      !confirm(
+        "전 직원에게 '주간업무일지 업로드' 알림이 발송되고 WORKS Drive에 PDF가 저장됩니다.\n\n계속 진행하시겠습니까?",
+      )
+    ) {
+      return;
+    }
+    setPublishing(true);
+    try {
+      const res = await publishWeeklyReport(range);
+      const failNote = res.notify_failed_count
+        ? ` (실패 ${res.notify_failed_count})`
+        : "";
+      alert(
+        `발행 완료\n파일: ${res.file_name}\n전송 ${res.recipient_count}명${failNote}`,
+      );
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "발행 실패");
+    } finally {
+      setPublishing(false);
     }
   };
 
@@ -238,7 +288,10 @@ export default function WeeklyReportPage() {
             <input
               type="date"
               value={lastWeekStart}
-              onChange={(e) => setLastWeekStart(e.target.value)}
+              onChange={(e) => {
+                setLastWeekStart(e.target.value);
+                setLastWeekStartAuto(false);
+              }}
               className="mt-1 rounded border border-zinc-300 bg-white px-2 py-1 text-sm dark:border-zinc-700 dark:bg-zinc-900"
             />
           </label>
@@ -265,8 +318,18 @@ export default function WeeklyReportPage() {
             disabled={downloading || !data}
             className="rounded bg-emerald-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-50"
           >
-            {downloading ? "다운로드 중..." : "PDF 다운로드"}
+            {downloading ? "확인 중..." : "PDF 확인"}
           </button>
+          {isAdmin && (
+            <button
+              onClick={handlePublish}
+              disabled={publishing || !data}
+              className="rounded bg-zinc-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-zinc-700 disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300"
+              title="WORKS Drive 업로드 + 전직원 알림 발송"
+            >
+              {publishing ? "발행 중..." : "발행"}
+            </button>
+          )}
         </div>
       </header>
 

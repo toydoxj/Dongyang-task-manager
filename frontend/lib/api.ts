@@ -1507,6 +1507,57 @@ export async function fetchWeeklyReportPdfBlob(
   return await res.blob();
 }
 
+// 발행 (admin only) — WORKS Drive 업로드 + 전직원 알림 + 발행 로그 저장
+export interface PublishWeeklyReportResponse {
+  file_id: string;
+  file_url: string;
+  file_name: string;
+  recipient_count: number;
+  notify_failed_count: number;
+  log_id: number;
+}
+
+export async function publishWeeklyReport(
+  range: WeeklyReportRange,
+): Promise<PublishWeeklyReportResponse> {
+  const body: Record<string, string | undefined> = {
+    week_start: range.weekStart,
+    week_end: range.weekEnd,
+    last_week_start: range.lastWeekStart,
+  };
+  const res = await authFetch(`/api/weekly-report/publish`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const detail = await res.json().catch(() => null);
+    throw new Error(
+      (detail as { detail?: string } | null)?.detail ??
+        `${res.status} ${res.statusText}`,
+    );
+  }
+  return (await res.json()) as PublishWeeklyReportResponse;
+}
+
+export interface LastPublishedWeeklyReport {
+  week_start: string | null;
+  week_end: string | null;
+  published_at: string | null;
+}
+
+export async function fetchLastPublishedWeeklyReport(): Promise<LastPublishedWeeklyReport> {
+  const res = await authFetch(`/api/weekly-report/last-published`);
+  if (!res.ok) {
+    const detail = await res.json().catch(() => null);
+    throw new Error(
+      (detail as { detail?: string } | null)?.detail ??
+        `${res.status} ${res.statusText}`,
+    );
+  }
+  return (await res.json()) as LastPublishedWeeklyReport;
+}
+
 // ── 사내 공지 / 교육 일정 (PR-W Phase 2.4) ──
 
 export type NoticeKind = "공지" | "교육" | "휴일";

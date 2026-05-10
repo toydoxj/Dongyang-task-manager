@@ -84,6 +84,7 @@ def init_db() -> None:
         employee,
         mirror,
         snapshot,
+        weekly_publish,
     )
 
     if _is_sqlite:

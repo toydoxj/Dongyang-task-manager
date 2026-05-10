@@ -22,7 +22,10 @@ from sqlalchemy.orm import Session
 from app.db import get_db
 from app.models import mirror as M
 from app.models.auth import User
-from app.security import get_current_user
+from app.models.employee import Employee
+from app.models.weekly_publish import WeeklyReportPublishLog
+from app.security import get_current_user, require_admin
+from app.services import sso_drive, sso_works_bot
 from app.services.notion import NotionService, get_notion
 from app.services.weekly_report import (
     SealLogItem,
@@ -31,6 +34,7 @@ from app.services.weekly_report import (
     build_weekly_report,
 )
 from app.services.weekly_report_pdf import build_weekly_report_pdf
+from pydantic import BaseModel
 
 logger = logging.getLogger("weekly_report")
 
@@ -240,4 +244,164 @@ async def get_weekly_report_pdf(
                 f"inline; filename*=UTF-8''{url_quote(fname)}"
             ),
         },
+    )
+
+
+# ── 발행 (PUBLISH) — admin only ─────────────────────────────────────────
+
+
+class PublishRequest(BaseModel):
+    week_start: date
+    week_end: date | None = None
+    last_week_start: date | None = None
+
+
+class PublishResponse(BaseModel):
+    file_id: str
+    file_url: str
+    file_name: str
+    recipient_count: int
+    notify_failed_count: int
+    log_id: int
+
+
+class LastPublishedResponse(BaseModel):
+    week_start: date | None = None
+    week_end: date | None = None
+    published_at: str | None = None
+
+
+_PUBLISH_FOLDER_NAME = "주간업무일지"
+
+
+async def _resolve_publish_folder() -> str:
+    """[주간업무일지] 폴더 file_id 반환 — 없으면 sharedrive root에 새로 생성.
+
+    create_folder는 409 발생 시 기존 폴더 재조회로 idempotent 처리.
+    """
+    settings = sso_drive.get_settings()
+    if not settings.works_drive_root_folder_id:
+        raise sso_drive.DriveError("WORKS_DRIVE_ROOT_FOLDER_ID 미설정")
+    meta = await sso_drive.create_folder(
+        settings, settings.works_drive_root_folder_id, _PUBLISH_FOLDER_NAME
+    )
+    return meta.get("file", {}).get("fileId") or meta.get("fileId") or ""
+
+
+def _format_period_short(start: date, end: date) -> str:
+    """알림용 기간 — 'MMDD~MMDD' (월일만)."""
+    return f"{start.strftime('%m%d')}~{end.strftime('%m%d')}"
+
+
+@router.post("/publish", response_model=PublishResponse)
+async def publish_weekly_report(
+    body: PublishRequest,
+    user: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+    notion: NotionService = Depends(get_notion),
+) -> PublishResponse:
+    """주간 업무일지 발행 — admin only.
+
+    1. PDF 빌드
+    2. WORKS Drive `[주간업무일지]/{YYYYMMDD}_주간업무일지.pdf` 업로드
+    3. 전직원(works_user_id 또는 email 있는 active employees) 에게 bot 알림
+    4. publish log 저장 (다음 일지의 last_week_start 자동 셋팅 기준)
+    """
+    ws = _validate_week_start(body.week_start)
+    try:
+        report = build_weekly_report(
+            db, ws, week_end=body.week_end, last_week_start=body.last_week_start
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    lws = body.last_week_start or (ws - timedelta(days=7))
+    lwe = ws - timedelta(days=1)
+    report.seal_log = await _build_seal_log(user, notion, db, lws, lwe)
+    report.suggestions = await _build_suggestions(user, notion, lws, lwe)
+
+    pdf_bytes = build_weekly_report_pdf(report)
+    file_name = f"{ws.strftime('%Y%m%d')}_주간업무일지.pdf"
+
+    # WORKS Drive 업로드 — 실패 시 즉시 500 (publish 실패).
+    try:
+        folder_id = await _resolve_publish_folder()
+        upload_result = await sso_drive.upload_file(
+            folder_id,
+            file_name,
+            pdf_bytes,
+            content_type="application/pdf",
+        )
+    except sso_drive.DriveError as e:
+        raise HTTPException(
+            status_code=500, detail=f"WORKS Drive 업로드 실패: {e}"
+        )
+    file_id = upload_result.get("fileId") or upload_result.get("file", {}).get("fileId") or ""
+    file_url = upload_result.get("fileUrl") or upload_result.get("webUrl") or ""
+
+    # 전직원 알림 — works_user_id 우선, 없으면 email. 둘 다 없으면 skip.
+    recipients = db.query(Employee).all()
+    period_short = _format_period_short(report.period_start, report.period_end)
+    notify_text = f"{period_short} 주간업무일지가 업로드 되었습니다."
+    sent_count = 0
+    failed_count = 0
+    for emp in recipients:
+        target = (emp.works_user_id or "").strip() or (emp.email or "").strip()
+        if not target:
+            continue
+        try:
+            ok = await sso_works_bot.send_text(target, notify_text)
+        except Exception as e:  # noqa: BLE001
+            logger.warning("publish notify exception (%s): %s", target, e)
+            ok = False
+        if ok:
+            sent_count += 1
+        else:
+            failed_count += 1
+
+    log = WeeklyReportPublishLog(
+        week_start=ws,
+        week_end=report.period_end,
+        last_week_start=lws,
+        last_week_end=lwe,
+        published_by=user.name or user.email or "",
+        file_id=file_id,
+        file_url=file_url,
+        file_name=file_name,
+        recipient_count=sent_count,
+        notify_failed_count=failed_count,
+    )
+    db.add(log)
+    db.commit()
+    db.refresh(log)
+
+    return PublishResponse(
+        file_id=file_id,
+        file_url=file_url,
+        file_name=file_name,
+        recipient_count=sent_count,
+        notify_failed_count=failed_count,
+        log_id=log.id,
+    )
+
+
+@router.get("/last-published", response_model=LastPublishedResponse)
+def get_last_published(
+    _user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> LastPublishedResponse:
+    """가장 최근 발행된 일지의 week_start/week_end. 다음 일지 작성 시
+    last_week_start 자동 셋팅의 근거. 발행 이력이 없으면 None.
+    """
+    log = (
+        db.query(WeeklyReportPublishLog)
+        .order_by(WeeklyReportPublishLog.published_at.desc())
+        .first()
+    )
+    if not log:
+        return LastPublishedResponse()
+    return LastPublishedResponse(
+        week_start=log.week_start,
+        week_end=log.week_end,
+        published_at=log.published_at.isoformat() if log.published_at else None,
     )
