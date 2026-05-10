@@ -406,22 +406,26 @@ function ReportPreview({
         </div>
       </div>
 
-      {/* 인원 — PDF와 동일: 기타 제외, 구조설계/관리세무는 +1로 표시(관리세무→'관리') */}
+      {/* 인원 — PDF와 동일: 구조설계/안전진단/관리 순서 + 총원 = 3개 합계 (기타 제외).
+          구조설계 = 노션 '구조설계' + 1, 관리 = 노션 '관리세무' + 1. */}
       <Section title="인원현황">
+        {(() => {
+          const sDesign = (data.headcount.by_occupation["구조설계"] ?? 0) + 1;
+          const sInspect = data.headcount.by_occupation["안전진단"] ?? 0;
+          const sOffice = (data.headcount.by_occupation["관리세무"] ?? 0) + 1;
+          const totalDisplay = sDesign + sInspect + sOffice;
+          return (
         <div className="rounded border border-zinc-200 bg-zinc-50 p-2 text-sm dark:border-zinc-800 dark:bg-zinc-900">
-          총원 <strong>{data.headcount.total}</strong>인
-          {Object.entries(data.headcount.by_occupation).flatMap(([k, v]) => {
-            if (k === "기타") return [];
-            const label = k === "관리세무" ? "관리" : k;
-            const count = k === "구조설계" || k === "관리세무" ? v + 1 : v;
-            return [
-              <span key={k} className="text-zinc-600 dark:text-zinc-400">
-                {" "}
-                <span className="mx-1 text-zinc-400">│</span>
-                {label} {count}
-              </span>,
-            ];
-          })}
+          총원 <strong>{totalDisplay}</strong>인
+          <span className="text-zinc-600 dark:text-zinc-400">
+            <span className="mx-1 text-zinc-400">│</span>구조설계 {sDesign}
+          </span>
+          <span className="text-zinc-600 dark:text-zinc-400">
+            <span className="mx-1 text-zinc-400">│</span>안전진단 {sInspect}
+          </span>
+          <span className="text-zinc-600 dark:text-zinc-400">
+            <span className="mx-1 text-zinc-400">│</span>관리 {sOffice}
+          </span>
           {(data.headcount.new_this_week > 0 ||
             data.headcount.resigned_this_week.length > 0) && (
             <>
@@ -456,6 +460,8 @@ function ReportPreview({
             </>
           )}
         </div>
+          );
+        })()}
       </Section>
 
       {/* [공지][교육][건의] 3-col grid (모두 있어야 보임 — 빈 칸은 "(없음)" 표시) */}
