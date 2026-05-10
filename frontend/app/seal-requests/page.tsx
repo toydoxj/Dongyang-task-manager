@@ -50,17 +50,7 @@ export default function SealRequestsPage() {
   const [tab, setTab] = useState<StatusTab>("전체");
   const [selected, setSelected] = useState<SealRequestItem | null>(null);
 
-  // docs/request.md: 일반직원은 날인요청 페이지 접근 불가
-  if (user && !isAdminOrLead) {
-    return (
-      <div className="rounded-md border border-amber-500/40 bg-amber-500/5 p-6 text-center text-sm text-amber-600 dark:text-amber-400">
-        날인요청 페이지는 팀장/관리자만 접근할 수 있습니다.
-        <br />
-        본인 요청 진행상황은 프로젝트 상세에서 확인하세요.
-      </div>
-    );
-  }
-
+  // hooks는 early return 이전에 모두 호출 (rules-of-hooks)
   const { data, error, isLoading, mutate } = useSWR(
     user && isAdminOrLead ? ["seal-requests"] : null,
     () => listSealRequests(),
@@ -74,6 +64,17 @@ export default function SealRequestsPage() {
     }
     return c;
   }, [all]);
+
+  // docs/request.md: 일반직원은 날인요청 페이지 접근 불가
+  if (user && !isAdminOrLead) {
+    return (
+      <div className="rounded-md border border-amber-500/40 bg-amber-500/5 p-6 text-center text-sm text-amber-600 dark:text-amber-400">
+        날인요청 페이지는 팀장/관리자만 접근할 수 있습니다.
+        <br />
+        본인 요청 진행상황은 프로젝트 상세에서 확인하세요.
+      </div>
+    );
+  }
 
   const filtered = tab === "전체" ? all : all.filter((x) => x.status === tab);
 
@@ -202,7 +203,7 @@ function DetailModal({
 }) {
   const { driveLocalRoot } = useAuth();
   const { data: clientData } = useClients(true);
-  const clients = clientData?.items ?? [];
+  const clients = useMemo(() => clientData?.items ?? [], [clientData]);
   // 프로젝트명/발주처 표시용 — 첫 번째 project_id로 lookup
   const projectId = item.project_ids?.[0] ?? "";
   const { data: project } = useProject(projectId || null);

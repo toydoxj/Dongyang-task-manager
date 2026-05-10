@@ -58,13 +58,8 @@ export default function EmployeesAdminPage() {
     return () => clearTimeout(t);
   }, [q]);
 
-  if (user && user.role !== "admin") {
-    return (
-      <main className="p-6">
-        <p className="text-sm text-red-500">관리자 권한이 필요합니다.</p>
-      </main>
-    );
-  }
+  // hooks (useSensors/useMemo/useState 등) 호출 전 early return 금지 — rules-of-hooks.
+  // 권한 체크는 모든 hook 호출 후로 이동 (page-level guard는 layout 또는 router에서 처리 권장).
 
   async function onUpload(f: File) {
     setUploading(true);
@@ -121,7 +116,7 @@ export default function EmployeesAdminPage() {
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
   );
-  const items = data?.items ?? [];
+  const items = useMemo(() => data?.items ?? [], [data]);
   const itemIds = useMemo(() => items.map((e) => e.id), [items]);
   // optimistic: 드래그 중에 list 표시 순서 보존
   const [localOrder, setLocalOrder] = useState<Employee[] | null>(null);
@@ -146,6 +141,15 @@ export default function EmployeesAdminPage() {
       setErrMsg(err instanceof Error ? err.message : "정렬 저장 실패");
       setLocalOrder(null);
     }
+  }
+
+  // 권한 체크 — 모든 hook 호출 후
+  if (user && user.role !== "admin") {
+    return (
+      <main className="p-6">
+        <p className="text-sm text-red-500">관리자 권한이 필요합니다.</p>
+      </main>
+    );
   }
 
   return (

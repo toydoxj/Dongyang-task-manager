@@ -104,6 +104,9 @@ export default function EmployeeWorkSelectorPage() {
     return Array.from(map.entries()).sort(
       ([a], [b]) => teamOrder(a) - teamOrder(b),
     );
+    // TEAM_ORDER는 module-level constant, positionOrder/teamOrder는 함수 reference
+    // — render마다 reference가 바뀌긴 하나 본질적 의도(employees만 변경 시 재계산)에 영향 없음.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [employees]);
 
   if (!user || !allowed) return null;

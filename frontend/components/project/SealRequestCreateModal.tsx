@@ -72,9 +72,9 @@ function Form({
     !fixedProject && user?.name ? { mine: true } : undefined,
     !fixedProject,
   );
-  const myProjects = projectData?.items ?? [];
+  const myProjects = useMemo(() => projectData?.items ?? [], [projectData]);
   const { data: clientData } = useClients(true);
-  const clients = clientData?.items ?? [];
+  const clients = useMemo(() => clientData?.items ?? [], [clientData]);
 
   const [projectId, setProjectId] = useState(fixedProject?.id ?? "");
   const [sealType, setSealType] = useState<SealType>(

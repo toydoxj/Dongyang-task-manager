@@ -25,7 +25,7 @@ interface Props {
  */
 export default function SealRequestEditModal({ item, onClose, onSaved }: Props) {
   const { data: clientData } = useClients(true);
-  const clients = clientData?.items ?? [];
+  const clients = useMemo(() => clientData?.items ?? [], [clientData]);
 
   const [title, setTitle] = useState(item.title);
   const [dueDate, setDueDate] = useState(item.due_date ?? "");
