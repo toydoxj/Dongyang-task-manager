@@ -117,9 +117,11 @@
     /* 영업/신규 표 규모 cell — 본문 폰트 -2pt (긴 텍스트 가독성 + 공간 절약) */
     td.scale-cell { font-size: 5pt; }
     /* 용역명/발주처 cell — 텍스트 길이 따라 단계 축소 (em 기반 → 모든 표 호환).
-     * Jinja `fit_cell` 매크로가 길이 보고 class 부여. */
+     * Jinja `fit_cell` 매크로가 길이 보고 class 부여.
+     * 발주처(좁은 cell, 회사명 한 단어) 전용 단계는 더 공격적: shrink-3 추가. */
     td.cell-shrink-1 { font-size: 0.9em; }
     td.cell-shrink-2 { font-size: 0.8em; }
+    td.cell-shrink-3 { font-size: 0.7em; }
     .empty {
       padding: 5px;
       text-align: center;
@@ -273,13 +275,25 @@
 </head>
 <body>
 
-{# 길이 기반 단계 폰트 매크로 — 용역명/발주처 cell의 자동 fit-text 흉내.
-   화이트스페이스가 출력되지 않도록 - 사용. extra_class는 center 등 조합용. #}
+{# 길이 기반 단계 폰트 매크로 — 용역명/발주처 cell의 자동 fit-text 흉내. #}
+{# 용역명용 — 비교적 넓은 cell, 줄바꿈 일부 허용. 임계값: 18 / 30. #}
 {%- macro fit_cell(value, extra_class='') -%}
   {%- set L = (value|string)|length -%}
   {%- set shrink = '' -%}
   {%- if L >= 30 -%}{%- set shrink = 'cell-shrink-2' -%}
   {%- elif L >= 18 -%}{%- set shrink = 'cell-shrink-1' -%}{%- endif -%}
+  {%- set classes = (extra_class ~ ' ' ~ shrink)|trim -%}
+  <td{% if classes %} class="{{ classes }}"{% endif %}>{{ value }}</td>
+{%- endmacro -%}
+
+{# 발주처/제출처용 — 좁은 cell + 회사명 한 단어, 줄바꿈 시 가독성 나쁨.
+   더 공격적 임계값: 10 / 14 / 18. #}
+{%- macro fit_client_cell(value, extra_class='') -%}
+  {%- set L = (value|string)|length -%}
+  {%- set shrink = '' -%}
+  {%- if L >= 18 -%}{%- set shrink = 'cell-shrink-3' -%}
+  {%- elif L >= 14 -%}{%- set shrink = 'cell-shrink-2' -%}
+  {%- elif L >= 10 -%}{%- set shrink = 'cell-shrink-1' -%}{%- endif -%}
   {%- set classes = (extra_class ~ ' ' ~ shrink)|trim -%}
   <td{% if classes %} class="{{ classes }}"{% endif %}>{{ value }}</td>
 {%- endmacro -%}
@@ -380,7 +394,7 @@
             <td class="center">{{ c.status_label }}</td>
             <td class="center">{{ c.code }}</td>
             {{ fit_cell(c.name) }}
-            {{ fit_cell(c.client) }}
+            {{ fit_client_cell(c.client) }}
             <td class="center">{{ c.teams|join(', ') }}</td>
             <td class="center">{% if c.duration_months is not none %}{{ '%.1f'|format(c.duration_months) }}{% endif %}</td>
           </tr>
@@ -410,7 +424,7 @@
             <td class="center">{{ s.approved_at|mmdd }}</td>
             <td class="center">{{ s.code }}</td>
             {{ fit_cell(s.name) }}
-            {{ fit_cell(s.submission_target) }}
+            {{ fit_client_cell(s.submission_target) }}
             <td class="center">{{ s.seal_type }}</td>
             <td class="center">{{ s.requester }}</td>
           </tr>
@@ -441,7 +455,7 @@
           <tr>
             <td class="center">{{ s.code }}</td>
             {{ fit_cell(s.name) }}
-            {{ fit_cell(s.client) }}
+            {{ fit_client_cell(s.client) }}
             <td class="center scale-cell">{{ s.scale }}</td>
             <td class="num">{{ s.estimated_amount|krw }}</td>
             <td class="center">{% if s.probability is not none %}{{ s.probability|int }}%{% endif %}</td>
@@ -474,7 +488,7 @@
             <td class="center">{{ n.work_types|join('/') }}</td>
             <td>{{ n.code }}</td>
             {{ fit_cell(n.name) }}
-            {{ fit_cell(n.client) }}
+            {{ fit_client_cell(n.client) }}
             <td class="scale-cell">{{ n.scale }}</td>
             <td class="num">{{ n.contract_amount|krw }}</td>
           </tr>
@@ -551,7 +565,7 @@
               </td>
               <td class="center">{{ item.row.project_code }}</td>
               {{ fit_cell(item.row.project_name) }}
-              {{ fit_cell(item.row.client) }}
+              {{ fit_client_cell(item.row.client) }}
               <td class="center">{{ item.row.phase or item.row.stage }}</td>
               <td>{{ item.row.last_week_summary or '—' }}</td>
               <td>{{ item.row.this_week_plan or '—' }}</td>
@@ -587,7 +601,7 @@
                 <tr>
                   <td class="center">{{ p.code }}</td>
                   {{ fit_cell(p.name, 'text-red' if p.is_long_stalled else '') }}
-                  {{ fit_cell(p.client) }}
+                  {{ fit_client_cell(p.client) }}
                   <td class="center">{{ p.teams|join(', ') }}</td>
                 </tr>
               {% endfor %}
@@ -625,7 +639,7 @@
                 <tr>
                   <td class="center">{{ p.code }}</td>
                   {{ fit_cell(p.name) }}
-                  {{ fit_cell(p.client) }}
+                  {{ fit_client_cell(p.client) }}
                   <td class="center">{{ p.teams|join(', ') }}</td>
                 </tr>
               {% endfor %}
