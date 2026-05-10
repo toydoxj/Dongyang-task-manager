@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useState } from "react";
 import useSWR from "swr";
 
 import { useAuth } from "./AuthGuard";
@@ -101,6 +102,11 @@ export default function Sidebar({ mobileOpen, onCloseMobile }: Props) {
     window.location.href = "/login";
   };
 
+  // label 있는 그룹의 펼침 상태 (default 펼침). 사용자 클릭으로 toggle.
+  const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({});
+  const toggleGroup = (label: string): void =>
+    setCollapsedGroups((prev) => ({ ...prev, [label]: !prev[label] }));
+
   return (
     <aside
       className={cn(
@@ -156,14 +162,23 @@ export default function Sidebar({ mobileOpen, onCloseMobile }: Props) {
             return true;
           });
           if (visibleItems.length === 0) return null;
+          const collapsed = group.label
+            ? !!collapsedGroups[group.label]
+            : false;
           return (
             <div key={`group-${gi}`} className="space-y-1">
               {group.label && (
-                <div className="px-3 pt-1 text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
-                  {group.label}
-                </div>
+                <button
+                  type="button"
+                  onClick={() => toggleGroup(group.label as string)}
+                  aria-expanded={!collapsed}
+                  className="flex w-full items-center justify-between px-3 pt-1 text-[10px] font-semibold uppercase tracking-wider text-zinc-500 hover:text-zinc-300"
+                >
+                  <span>{group.label}</span>
+                  <span className="text-zinc-500">{collapsed ? "▶" : "▼"}</span>
+                </button>
               )}
-              {visibleItems.map((n) => {
+              {!collapsed && visibleItems.map((n) => {
                 const active =
                   !n.external &&
                   (pathname === n.href || pathname.startsWith(`${n.href}/`));
