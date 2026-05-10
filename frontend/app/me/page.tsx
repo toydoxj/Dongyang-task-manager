@@ -28,6 +28,16 @@ import { dDayLabel, formatDate } from "@/lib/format";
 import { keys, useProjects, useSealRequests, useTasks } from "@/lib/hooks";
 import { cn } from "@/lib/utils";
 
+// PR-T — 4탭 navigation key/label 상수.
+type TabKey = "todo" | "projects" | "sales" | "other";
+
+const TABS: { key: TabKey; label: string }[] = [
+  { key: "todo", label: "해야할 일" },
+  { key: "projects", label: "담당 프로젝트" },
+  { key: "sales", label: "내 영업" },
+  { key: "other", label: "기타 업무" },
+];
+
 export default function MyPage() {
   const { user } = useAuth();
   const router = useRouter();
@@ -59,6 +69,20 @@ export default function MyPage() {
   const [todoViewMode, setTodoViewMode] = useState<"category" | "time">(
     "category",
   );
+  // PR-T — 4탭 구분 (해야할일 / 담당프로젝트 / 내영업 / 기타업무).
+  // URL `?tab=` 우선, 없으면 default "todo".
+  const tabFromUrl = sp.get("tab");
+  const isValidTab = (s: string | null): s is TabKey =>
+    s === "todo" || s === "projects" || s === "sales" || s === "other";
+  const [activeTab, setActiveTab] = useState<TabKey>(
+    isValidTab(tabFromUrl) ? tabFromUrl : "todo",
+  );
+  const onChangeTab = (next: TabKey): void => {
+    setActiveTab(next);
+    const params = new URLSearchParams(sp.toString());
+    params.set("tab", next);
+    router.replace(`/me?${params.toString()}`, { scroll: false });
+  };
 
   // 다른 직원 보기 모드면 mine 대신 assignee=name 으로 fetch
   const fetchFilters = effectiveName
@@ -301,6 +325,31 @@ export default function MyPage() {
         tasks={tasks ?? []}
       />
 
+      {/* PR-T — 4 탭 navigation */}
+      <nav
+        aria-label="섹션 전환"
+        className="flex flex-wrap items-center gap-1 border-b border-zinc-200 dark:border-zinc-800"
+      >
+        {TABS.map((t) => {
+          const isActive = activeTab === t.key;
+          return (
+            <button
+              key={t.key}
+              type="button"
+              onClick={() => onChangeTab(t.key)}
+              className={
+                isActive
+                  ? "-mb-px border-b-2 border-zinc-900 px-3 py-1.5 text-sm font-semibold text-zinc-900 dark:border-zinc-100 dark:text-zinc-100"
+                  : "px-3 py-1.5 text-sm font-medium text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300"
+              }
+            >
+              {t.label}
+            </button>
+          );
+        })}
+      </nav>
+
+      {activeTab === "todo" && (
       <section className="rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
         <div className="flex items-center justify-between gap-3">
           <button
@@ -370,9 +419,9 @@ export default function MyPage() {
           </div>
         )}
       </section>
+      )}
 
-      <hr className="border-zinc-200 dark:border-zinc-800" />
-
+      {activeTab === "projects" && (
       <section>
         <div className="mb-2 flex items-center justify-between gap-2">
           <h2 className="flex items-center gap-2 text-sm font-medium text-zinc-700 dark:text-zinc-300">
@@ -471,16 +520,16 @@ export default function MyPage() {
           </div>
         )}
       </section>
+      )}
 
-      <hr className="border-zinc-200 dark:border-zinc-800" />
+      {activeTab === "sales" && (
+        <MySalesSection
+          effectiveName={effectiveName}
+          isViewingOther={isViewingOther}
+        />
+      )}
 
-      <MySalesSection
-        effectiveName={effectiveName}
-        isViewingOther={isViewingOther}
-      />
-
-      <hr className="border-zinc-200 dark:border-zinc-800" />
-
+      {activeTab === "other" && (
       <section>
         <div className="mb-2 flex items-center justify-between">
           <h2 className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
@@ -518,6 +567,7 @@ export default function MyPage() {
           />
         )}
       </section>
+      )}
 
       <TaskEditModal
         task={editing}

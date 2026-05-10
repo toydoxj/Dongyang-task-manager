@@ -36,7 +36,8 @@
 | **회수 PR-Q** /me TasksByTimeView 본격 (MY-002) | 「해야할 일」 헤더 옆에 [분류]/[시간] view toggle 추가. 시간 view = 5개 색상 그룹(지연·오늘·이번 주·이후·미정·최근 완료) + 각 그룹 task row(title·project·end_date·D-day chip·삭제). 기존 분류 view는 그대로 유지(default). 사용자가 시점 우선시 vs 도메인 우선시 자유 전환 | 9c8f8d2 |
 | **회수 PR-R** TasksByTimeView quick action (MY-003) | TaskRow에 quick action 3개 추가: ✓ 완료 처리(updateTask로 status='완료' 즉시 PATCH) / 📁 프로젝트 열기(/projects/{id}) / 🔖 관련 날인(/seal-requests?project_id={id}). 페이지에 `handleCompleteTask` callback. 기존 분류 view(TodayTasks)는 회귀 위험으로 그대로 유지 — quick action은 시간 view 전용 | 943bc4c |
 | **Phase 4-A PR-S1** lib/api.ts 도메인 분리 — 파일럿(clients) | `lib/api/_internal.ts` (jsonOrThrow + qs + authFetch re-export) + `lib/api/clients.ts` (listClients/createClient/updateClient/deleteClient). lib/api.ts에서 해당 함수 제거 + `export * from "./api/clients";` re-export. import "@/lib/api" 경로 모두 호환. 후속 PR-S2~S5에서 나머지 12 도메인 분리 예정 | cf6ee53 |
-| **Phase 4-A PR-S2** lib/api.ts 분리 — tasks + suggestions + notices | 작은 도메인 3개 분리. tasks(40 줄), suggestions(60 줄), notices(100 줄). 각 도메인별 파일 + lib/api.ts re-export. unused type import(Task*) 정리 | 신규 |
+| **Phase 4-A PR-S2** lib/api.ts 분리 — tasks + suggestions + notices | 작은 도메인 3개 분리. tasks(40 줄), suggestions(60 줄), notices(100 줄). 각 도메인별 파일 + lib/api.ts re-export. unused type import(Task*) 정리 | fcd6872 |
+| **PR-T** /me 4탭 구조 (사용자 요청) | 헤더+요약 카드+스냅샷 다음에 4탭 nav([해야할 일]/[담당 프로젝트]/[내 영업]/[기타 업무]). 각 탭 click 시 해당 섹션만 conditional render. 기존 hr 구분선 제거. URL `?tab=` 동기화. 「해야할 일」 안의 [분류/시간] toggle은 todo 탭 내부에서 그대로 유지 | 신규 |
 
 ## 미완료 / 보류
 
