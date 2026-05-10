@@ -175,22 +175,30 @@ export default function MyPage() {
 
   return (
     <div className="space-y-6">
-      <header>
-        <h1 className="text-2xl font-semibold">
-          {isViewingOther ? `${effectiveName} 님의 업무` : "내 업무"}
-        </h1>
-        <p className="mt-1 text-sm text-zinc-500">
-          {isViewingOther ? (
-            <>
-              {effectiveName} 님이 담당자로 지정된 진행중 프로젝트와 업무 TASK
-              입니다. <Link href="/admin/employee-work" className="underline">
-                ← 직원 변경
-              </Link>
-            </>
-          ) : (
-            `${effectiveName} 님이 담당자로 지정된 진행중 프로젝트와 업무 TASK 입니다.`
-          )}
-        </p>
+      <header className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-semibold">
+            {isViewingOther ? `${effectiveName} 님의 업무` : "내 업무"}
+          </h1>
+          <p className="mt-1 text-sm text-zinc-500">
+            {isViewingOther ? (
+              <>
+                {effectiveName} 님이 담당자로 지정된 진행중 프로젝트와 업무 TASK
+                입니다. <Link href="/admin/employee-work" className="underline">
+                  ← 직원 변경
+                </Link>
+              </>
+            ) : (
+              `${effectiveName} 님이 담당자로 지정된 진행중 프로젝트와 업무 TASK 입니다.`
+            )}
+          </p>
+        </div>
+        <Link
+          href="/weekly-report"
+          className="rounded-md bg-emerald-600 px-3 py-2 text-sm font-medium text-white hover:bg-emerald-700"
+        >
+          주간업무일지 보기
+        </Link>
       </header>
 
       {error && (
