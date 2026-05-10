@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 import { authFetch } from "@/lib/auth";
 import { API_BASE } from "@/lib/types";
@@ -33,27 +33,30 @@ function fmtDateTime(iso?: string | null): string {
   }
 }
 
+/** OAuth 콜백 query를 mount 시 1회 읽어 초기 메시지로 변환.
+ * useState lazy initializer라 effect cascading 발생 X. SSR에서는 window 미정의라 null. */
+function readOAuthCallbackMessage(): { info: string | null; error: string | null } {
+  if (typeof window === "undefined") return { info: null, error: null };
+  const params = new URLSearchParams(window.location.search);
+  if (params.get("drive_connected") === "1") {
+    return { info: "WORKS Drive 연결이 완료되었습니다.", error: null };
+  }
+  const err = params.get("drive_error");
+  if (err) return { info: null, error: `연결 실패: ${err}` };
+  return { info: null, error: null };
+}
+
 export default function DriveAdminPage() {
   const [status, setStatus] = useState<DriveStatus | null>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [info, setInfo] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(
+    () => readOAuthCallbackMessage().error,
+  );
+  const [info] = useState<string | null>(
+    () => readOAuthCallbackMessage().info,
+  );
 
-  useEffect(() => {
-    if (typeof window !== "undefined") {
-      const params = new URLSearchParams(window.location.search);
-      if (params.get("drive_connected") === "1") {
-        setInfo("WORKS Drive 연결이 완료되었습니다.");
-        window.history.replaceState(null, "", window.location.pathname);
-      } else if (params.get("drive_error")) {
-        setError(`연결 실패: ${params.get("drive_error")}`);
-        window.history.replaceState(null, "", window.location.pathname);
-      }
-    }
-    void load();
-  }, []);
-
-  async function load(): Promise<void> {
+  const load = useCallback(async (): Promise<void> => {
     setLoading(true);
     try {
       const res = await authFetch("/api/admin/drive/status");
@@ -65,7 +68,21 @@ export default function DriveAdminPage() {
     } finally {
       setLoading(false);
     }
-  }
+  }, []);
+
+  // mount 1회 — query string은 useState lazy initializer에서 처리됨.
+  // 여기서는 URL 정리 + 데이터 로드. load()는 내부에서 setState 동기 호출하지만
+  // mount-time fetch는 일반적 패턴 (cf. SWR로 대체 시 root cause 해결).
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get("drive_connected") === "1" || params.get("drive_error")) {
+        window.history.replaceState(null, "", window.location.pathname);
+      }
+    }
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- mount-time fetch
+    void load();
+  }, [load]);
 
   return (
     <div className="mx-auto max-w-2xl space-y-4">
