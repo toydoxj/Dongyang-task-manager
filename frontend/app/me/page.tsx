@@ -7,6 +7,7 @@ import { useSWRConfig } from "swr";
 
 import { useAuth } from "@/components/AuthGuard";
 import MySalesSection from "@/components/me/MySalesSection";
+import MyWorkSummaryCards from "@/components/me/MyWorkSummaryCards";
 import ProjectCreateModal from "@/components/me/ProjectCreateModal";
 import OtherTasksKanban from "@/components/me/OtherTasksKanban";
 import ProjectImportModal from "@/components/me/ProjectImportModal";
@@ -17,7 +18,7 @@ import LoadingState from "@/components/ui/LoadingState";
 import { archiveTask } from "@/lib/api";
 import type { Project, ProjectListResponse, Task } from "@/lib/domain";
 import { dDayLabel, formatDate } from "@/lib/format";
-import { keys, useProjects, useTasks } from "@/lib/hooks";
+import { keys, useProjects, useSealRequests, useTasks } from "@/lib/hooks";
 import { cn } from "@/lib/utils";
 
 export default function MyPage() {
@@ -53,6 +54,8 @@ export default function MyPage() {
 
   const { data: projectData, error: projectErr } = useProjects(fetchFilters);
   const { data: tasksData, error: tasksErr } = useTasks(fetchFilters);
+  // MY-001 카드 — 본인 검토자(lead/admin) 매칭에 사용. backend는 status 필터 없음 → 전체 fetch.
+  const { data: sealData } = useSealRequests();
 
   const error = projectErr ?? tasksErr;
   const allTasks = tasksData?.items;
@@ -206,6 +209,13 @@ export default function MyPage() {
           {error instanceof Error ? error.message : String(error)}
         </div>
       )}
+
+      <MyWorkSummaryCards
+        myName={effectiveName}
+        projects={projects ?? []}
+        tasks={tasks ?? []}
+        sealRequests={sealData?.items ?? []}
+      />
 
       <section className="rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
         <button
