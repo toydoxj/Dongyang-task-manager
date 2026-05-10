@@ -18,28 +18,29 @@ interface NavItem {
 }
 
 const NAV: NavItem[] = [
+  // ── admin / team_lead 전용 (상단) ──
   { href: "/", label: "대시보드", roles: ["admin", "team_lead"] },
-  { href: "/projects", label: "프로젝트" },
-  { href: "/me", label: "내 업무" },
+  { href: "/projects", label: "프로젝트", roles: ["admin", "team_lead"] },
   {
     href: "/admin/employee-work",
     label: "직원 업무",
     roles: ["admin", "team_lead"],
   },
-  // 직원 일정은 task.dyce.kr 내부 FullCalendar에서 보기. 등록은 grid에서.
-  // NAVER WORKS Calendar 공유 캘린더에는 backend가 단방향 자동 동기화.
+  // ── 모든 사용자 — 일반직원 메뉴 순서 (사용자 결정 2026-05-11) ──
+  { href: "/me", label: "내 업무" },
+  // 직원 일정은 task.dyce.kr 내부 FullCalendar에서 보기. NAVER WORKS Calendar에는 backend가 단방향 동기화.
   { href: "/schedule", label: "직원 일정" },
-  { href: "/suggestions", label: "건의사항" },
   { href: "/seal-requests", label: "날인요청" },
-  // 주간업무일지는 대시보드 우상단 '주간업무일지 보기' 버튼에서 진입.
+  { href: "/suggestions", label: "건의사항" },
+  // 주간업무일지는 /me 또는 대시보드 우상단 '주간업무일지 보기' 버튼에서 진입.
   { href: "/utilities", label: "유틸 런처" },
+  { href: "/help", label: "사용 매뉴얼" },
+  // ── admin only ──
   { href: "/admin/notices", label: "공지/교육 관리", roles: ["admin"] },
   { href: "/admin/incomes", label: "수금 관리", roles: ["admin"] },
   { href: "/admin/employees", label: "직원 관리", roles: ["admin"] },
   { href: "/admin/users", label: "사용자 관리", roles: ["admin"] },
   { href: "/admin/drive", label: "Drive 연결", roles: ["admin"] },
-  // 사용 매뉴얼은 모든 사용자가 볼 수 있음
-  { href: "/help", label: "사용 매뉴얼" },
 ];
 
 interface Props {

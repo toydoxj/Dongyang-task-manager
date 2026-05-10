@@ -1,8 +1,10 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
+import { useEffect, useMemo, useState } from "react";
 import useSWR from "swr";
 
+import { useAuth } from "@/components/AuthGuard";
 import ProjectCard from "@/components/projects/ProjectCard";
 import ProjectFilter, {
   type FilterState,
@@ -24,7 +26,15 @@ function cmpDateDesc(a: string | null, b: string | null): number {
 }
 
 export default function ProjectsPage() {
-  const { data, error } = useProjects();
+  const { user } = useAuth();
+  const router = useRouter();
+  // 일반직원은 프로젝트 목록 접근 불가 — /me로 redirect
+  const allowed = user?.role === "admin" || user?.role === "team_lead";
+  useEffect(() => {
+    if (user && !allowed) router.replace("/me");
+  }, [user, allowed, router]);
+
+  const { data, error } = useProjects(undefined, allowed);
   const all = data?.items;
   // 직원 명부의 assignee.team 으로 프로젝트 팀을 자동 집계 (노션 '담당팀' 누락 보완).
   const { data: teamsMap } = useSWR(
@@ -89,6 +99,8 @@ export default function ProjectsPage() {
     });
     return sorted;
   }, [all, filter, sortKey, teamsMap]);
+
+  if (!user || !allowed) return null;
 
   return (
     <div className="space-y-4">
