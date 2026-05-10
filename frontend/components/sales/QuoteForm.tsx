@@ -136,6 +136,9 @@ export default function QuoteForm({
     [value],
   );
 
+  // input 변경 시 debounced API preview — 외부 시스템(quote API) 동기화 패턴.
+  // result/loading setState는 fetch 결과 반영의 본질이라 explicit disable.
+  /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
     if (!value.gross_floor_area || value.gross_floor_area <= 0) {
       setResult(null);
@@ -154,7 +157,6 @@ export default function QuoteForm({
         })
         .catch((e) => {
           // silent fail은 향후 디버깅 어려움 — 콘솔에 한 줄 남김
-          // eslint-disable-next-line no-console
           console.error("previewQuote 실패:", e);
           if (!cancelled) {
             setResult(null);
@@ -172,6 +174,7 @@ export default function QuoteForm({
     // pivotKey만 변경되면 재산출. value 전체에 의존하면 텍스트 입력 때마다 호출됨.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pivotKey]);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   const set = <K extends keyof QuoteInput>(k: K, v: QuoteInput[K]): void => {
     onChange({ ...value, [k]: v });

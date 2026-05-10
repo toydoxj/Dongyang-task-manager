@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useMemo, useState } from "react";
 
 import Modal from "@/components/ui/Modal";
 import {
@@ -29,15 +29,18 @@ export default function SealRequestEditModal({ item, onClose, onSaved }: Props) 
 
   const [title, setTitle] = useState(item.title);
   const [dueDate, setDueDate] = useState(item.due_date ?? "");
-  const [realSourceName, setRealSourceName] = useState("");
-  // clients 데이터가 늦게 로드되므로 mount 후 한 번 prefill (초기 빈 값에서 채움)
-  useEffect(() => {
-    if (!realSourceName && item.real_source_id && clients.length > 0) {
+  // realSourceName: clients lazy load 후 item.real_source_id의 client name으로 자동 fill,
+  // 사용자 직접 입력 시 override.  effect 내 setState 룰 회피 위해 useMemo 패턴.
+  const [realSourceNameOverride, setRealSourceNameOverride] = useState<string | null>(null);
+  const realSourceName = useMemo<string>(() => {
+    if (realSourceNameOverride !== null) return realSourceNameOverride;
+    if (item.real_source_id && clients.length > 0) {
       const c = clients.find((x) => x.id === item.real_source_id);
-      if (c) setRealSourceName(c.name);
+      if (c) return c.name;
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [clients.length]);
+    return "";
+  }, [realSourceNameOverride, item.real_source_id, clients]);
+  const setRealSourceName = setRealSourceNameOverride;
   const [purpose, setPurpose] = useState(item.purpose);
   const [revision, setRevision] = useState(item.revision ?? 0);
   const [withSafetyCert, setWithSafetyCert] = useState(item.with_safety_cert);
