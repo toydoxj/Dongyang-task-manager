@@ -14,8 +14,7 @@
       {% set days = schedule_by_employee.get(m.name, []) %}
       <tr>
         <td class="emp-cell">
-          <div>{{ m.name }}</div>
-          {% if m.position %}<div class="pos">{{ m.position }}</div>{% endif %}
+          <span class="name">{{ m.name }}</span>{% if m.position %}<span class="pos"> {{ m.position }}</span>{% endif %}
         </td>
         {% for d in week_days %}
           {% set cells = days[loop.index0] if days|length > loop.index0 else [] %}

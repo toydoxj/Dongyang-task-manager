@@ -24,12 +24,13 @@
 
     h1 { font-size: 15pt; font-weight: 700; letter-spacing: 0.05em; }
     h2 {
-      font-size: 10pt;
+      font-size: 8pt;
       font-weight: 700;
       margin: 8px 0 3px 0;
       padding: 2px 6px;
-      background: #f0f4e8;
-      border-left: 3px solid #7baa3c;
+      background: #ececec;
+      border-left: 3px solid #888;
+      color: #333;
     }
     h3 {
       font-size: 8pt;
@@ -150,13 +151,19 @@
     .tw-table td { padding: 2px 3px; }
     .tw-emp {
       background: #f7f7f5;
+      border-top: 0;
+      border-bottom: 0;
       border-right: 0.5px solid #999;
       vertical-align: middle;
+      text-align: center;
       -webkit-print-color-adjust: exact;
       print-color-adjust: exact;
     }
     .tw-emp .name { font-weight: 600; }
     .tw-emp .pos { font-size: 6pt; color: #666; }
+    /* 같은 직원 그룹 안의 emp cell — 위/아래 가로선 없음 (셀병합 시각).
+     * 다른 직원으로 바뀌는 row 전체에 굵은 윗선 → 명확한 구분. */
+    .tw-table tr.group-start > td { border-top: 1.5px solid #555; }
     .tw-team-header {
       margin-top: 10px;
       page-break-after: avoid;
@@ -198,7 +205,7 @@
 
 {# ─── 인원현황 ─── #}
 <section>
-  <h2>■ 인원현황</h2>
+  <h2>인원현황</h2>
   <div class="summary-line">
     총원 <strong>{{ report.headcount.total }}인</strong>
     {% for occ, n in report.headcount.by_occupation.items() %}
@@ -222,7 +229,7 @@
 <section>
   <div class="grid-3">
     <div>
-      <h2>■ 주요 공지사항</h2>
+      <h2>주요 공지사항</h2>
       {% if report.notices %}
         <ul style="list-style: disc inside; font-size: 8pt;">
           {% for n in report.notices %}<li>{{ n }}</li>{% endfor %}
@@ -230,7 +237,7 @@
       {% else %}<div class="empty">(없음)</div>{% endif %}
     </div>
     <div>
-      <h2>■ 교육 일정</h2>
+      <h2>교육 일정</h2>
       {% if report.education %}
         <ul style="list-style: disc inside; font-size: 8pt;">
           {% for e in report.education %}<li>{{ e }}</li>{% endfor %}
@@ -238,7 +245,7 @@
       {% else %}<div class="empty">(없음)</div>{% endif %}
     </div>
     <div>
-      <h2>■ 건의사항</h2>
+      <h2>건의사항</h2>
       {% if report.suggestions %}
         <ul style="list-style: disc inside; font-size: 8pt;">
           {% for s in report.suggestions %}
@@ -254,7 +261,7 @@
 <section>
   <div class="grid-2">
     <div>
-      <h2>■ 날인대장</h2>
+      <h2>날인대장</h2>
       {% if report.seal_log %}
         <table>
           <thead>
@@ -271,7 +278,7 @@
             {% for s in report.seal_log %}
               <tr>
                 <td class="center">{{ s.approved_at|mmdd }}</td>
-                <td>{{ s.code }}</td>
+                <td class="center">{{ s.code }}</td>
                 <td>{{ s.name }}</td>
                 <td>{{ s.submission_target }}</td>
                 <td class="center">{{ s.seal_type }}</td>
@@ -283,7 +290,7 @@
       {% else %}<div class="empty">(저번주 승인된 날인 없음)</div>{% endif %}
     </div>
     <div>
-      <h2>■ 완료 프로젝트</h2>
+      <h2>완료 프로젝트</h2>
       {% if report.completed %}
         <table>
           <thead>
@@ -298,7 +305,7 @@
             {% for c in report.completed %}
               <tr>
                 <td class="center">{{ c.status_label }}</td>
-                <td>{{ c.code }}</td>
+                <td class="center">{{ c.code }}</td>
                 <td>{{ c.name }}</td>
                 <td>{{ c.client }}</td>
               </tr>
@@ -312,7 +319,7 @@
 
 {# ─── 영업 ─── #}
 <section>
-  <h2>■ 영업</h2>
+  <h2>영업</h2>
   {% if report.sales %}
     <table>
       <thead>
@@ -347,7 +354,7 @@
 
 {# ─── 신규 프로젝트 ─── #}
 <section>
-  <h2>■ 신규 프로젝트</h2>
+  <h2>신규 프로젝트</h2>
   {% if report.new_projects %}
     <table>
       <thead>
@@ -378,7 +385,7 @@
 
 {# ─── 개인 주간 일정 — 5팀 horizontal grid ─── #}
 <section style="page-break-inside: auto;">
-  <h2>■ 개인 주간 일정</h2>
+  <h2>개인 주간 일정</h2>
   <div class="grid-5">
     {% for team in schedule_grid_teams %}
       {% set members = report.team_members.get(team, []) %}
@@ -409,35 +416,36 @@
 
 {# ─── 팀별 업무 현황 ─── #}
 <section class="tw-section" style="page-break-before: always;">
-  <h2>■ 팀별 업무 현황</h2>
+  <h2>팀별 업무 현황</h2>
   {% if team_work_team_order %}
     {% for team in team_work_team_order %}
       {% set rows = team_work_grouped[team] %}
-      <h3 class="tw-team-header">■ {{ team }} <span style="font-weight: normal; color: #666;">({{ rows|length }}건)</span></h3>
+      <h3 class="tw-team-header">{{ team }} <span style="font-weight: normal; color: #666;">({{ rows|length }}건)</span></h3>
       <table class="tw-table">
         <thead>
           <tr>
-            <th style="width: 6%;">담당자</th>
-            <th style="width: 7%;">CODE</th>
-            <th style="width: 23%;">PROJECT</th>
+            <th style="width: 5%;">담당자</th>
+            <th style="width: 6%;">CODE</th>
+            <th style="width: 24%;">PROJECT</th>
             <th style="width: 14%;">발주처</th>
-            <th style="width: 9%;">진행단계</th>
-            <th style="width: 22%;">지난주 업무</th>
-            <th style="width: 19%;">이번주 업무</th>
+            <th style="width: 7%;">진행단계</th>
+            <th style="width: 23%;">지난주 업무</th>
+            <th style="width: 21%;">이번주 업무</th>
           </tr>
         </thead>
         <tbody>
           {# rowspan을 쓰면 page break 시 background가 깨지므로
-             매 row마다 emp cell을 두고 첫 row만 텍스트 표시 — page break 안전. #}
+             매 row마다 emp cell을 두되 가로 border 제거 → 시각적 셀병합.
+             직원이 바뀌는 row에 group-start 클래스로 굵은 윗선 표시. #}
           {% for item in rows %}
-            <tr>
+            <tr {% if item.is_first and not loop.first %}class="group-start"{% endif %}>
               <td class="tw-emp">
                 {% if item.is_first %}
                   <div class="name">{{ item.row.employee_name }}</div>
                   {% if item.row.position %}<div class="pos">{{ item.row.position }}</div>{% endif %}
                 {% endif %}
               </td>
-              <td>{{ item.row.project_code }}</td>
+              <td class="center">{{ item.row.project_code }}</td>
               <td>{{ item.row.project_name }}</td>
               <td>{{ item.row.client }}</td>
               <td class="center">{{ item.row.phase or item.row.stage }}</td>
@@ -453,7 +461,7 @@
 
 {# ─── 대기 프로젝트 — 자체 2-col 분할 ─── #}
 <section class="stage-section">
-  <h2>■ 대기 프로젝트</h2>
+  <h2>대기 프로젝트</h2>
   {% if report.waiting_projects %}
     {% set wait_half = (report.waiting_projects|length + 1) // 2 %}
     <div class="stage-split">
@@ -471,10 +479,10 @@
             <tbody>
               {% for p in chunk %}
                 <tr>
-                  <td>{{ p.code }}</td>
+                  <td class="center">{{ p.code }}</td>
                   <td{% if p.is_long_stalled %} class="text-red" title="3개월 이상 대기"{% endif %}>{{ p.name }}</td>
                   <td>{{ p.client }}</td>
-                  <td>{{ p.teams|join(', ') }}</td>
+                  <td class="center">{{ p.teams|join(', ') }}</td>
                 </tr>
               {% endfor %}
             </tbody>
@@ -489,7 +497,7 @@
 
 {# ─── 보류 프로젝트 — 자체 2-col 분할 ─── #}
 <section class="stage-section">
-  <h2>■ 보류 프로젝트</h2>
+  <h2>보류 프로젝트</h2>
   {% if report.on_hold_projects %}
     {% set hold_half = (report.on_hold_projects|length + 1) // 2 %}
     <div class="stage-split">
@@ -507,10 +515,10 @@
             <tbody>
               {% for p in chunk %}
                 <tr>
-                  <td>{{ p.code }}</td>
+                  <td class="center">{{ p.code }}</td>
                   <td>{{ p.name }}</td>
                   <td>{{ p.client }}</td>
-                  <td>{{ p.teams|join(', ') }}</td>
+                  <td class="center">{{ p.teams|join(', ') }}</td>
                 </tr>
               {% endfor %}
             </tbody>
