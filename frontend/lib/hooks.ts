@@ -14,8 +14,10 @@ import {
   listMasterImages,
   listProjects,
   listSales,
+  listSealRequests,
   listTasks,
 } from "./api";
+import type { SealListResponse } from "./api";
 import type {
   CashflowResponse,
   ClientListResponse,
@@ -46,6 +48,8 @@ export const keys = {
   sales: (filters?: Parameters<typeof listSales>[0]) =>
     ["sales", filters ?? null] as const,
   sale: (id: string) => ["sale", id] as const,
+  sealRequests: (filters?: Parameters<typeof listSealRequests>[0]) =>
+    ["seal-requests", filters ?? null] as const,
 };
 
 export function useProjects(
@@ -84,6 +88,16 @@ export function useSales(
 
 export function useSale(id: string | null): SWRResponse<Sale> {
   return useSWR(id ? keys.sale(id) : null, () => getSale(id!));
+}
+
+export function useSealRequests(
+  filters?: Parameters<typeof listSealRequests>[0],
+  enabled: boolean = true,
+): SWRResponse<SealListResponse> {
+  return useSWR(
+    enabled ? keys.sealRequests(filters) : null,
+    () => listSealRequests(filters),
+  );
 }
 
 export function useCashflow(

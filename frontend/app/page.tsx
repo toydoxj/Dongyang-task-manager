@@ -8,6 +8,8 @@ import { useAuth } from "@/components/AuthGuard";
 import CashflowForecast from "@/components/dashboard/CashflowForecast";
 import EmployeeLoadHeatmap from "@/components/dashboard/EmployeeLoadHeatmap";
 import ExpenseTrend from "@/components/dashboard/ExpenseTrend";
+import KPICards from "@/components/dashboard/KPICards";
+import PriorityActionsPanel from "@/components/dashboard/PriorityActionsPanel";
 import RecentAndStaleProjects from "@/components/dashboard/RecentAndStaleProjects";
 import RevenueCollectionChart from "@/components/dashboard/RevenueCollectionChart";
 import StageBoard from "@/components/dashboard/StageBoard";
@@ -15,7 +17,12 @@ import StaleTaskAlert from "@/components/dashboard/StaleTaskAlert";
 import TeamLoadHeatmap from "@/components/dashboard/TeamLoadHeatmap";
 import WorkTypeTreemap from "@/components/dashboard/WorkTypeTreemap";
 import LoadingState from "@/components/ui/LoadingState";
-import { useCashflow, useProjects, useTasks } from "@/lib/hooks";
+import {
+  useCashflow,
+  useProjects,
+  useSealRequests,
+  useTasks,
+} from "@/lib/hooks";
 
 export default function DashboardPage() {
   const { user } = useAuth();
@@ -37,6 +44,7 @@ export default function DashboardPage() {
   );
   const { data: expenseData } = useCashflow({ flow: "expense" }, allowed);
   const { data: tasksData } = useTasks(undefined, allowed);
+  const { data: sealData } = useSealRequests(undefined, allowed);
 
   if (!user || !allowed) return null;
 
@@ -45,6 +53,7 @@ export default function DashboardPage() {
   const incomes = cashflowData?.items;
   const expenses = expenseData?.items;
   const allTasks = tasksData?.items;
+  const sealRequests = sealData?.items;
   const loading = !projects || !incomes;
 
   // 최근 1년 (시작일 기준)
@@ -87,6 +96,20 @@ export default function DashboardPage() {
 
       {projects && incomes && (
         <>
+          <KPICards
+            projects={projects}
+            tasks={allTasks ?? []}
+            incomes={incomes}
+            expenses={expenses ?? []}
+            sealRequests={sealRequests ?? []}
+          />
+
+          <PriorityActionsPanel
+            projects={projects}
+            tasks={allTasks ?? []}
+            sealRequests={sealRequests ?? []}
+          />
+
           <section>
             <h2 className="mb-2 text-sm font-medium text-zinc-700 dark:text-zinc-300">
               월별 수주 / 수금 / 지출 추이
