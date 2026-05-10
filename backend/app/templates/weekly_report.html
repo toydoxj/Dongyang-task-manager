@@ -18,23 +18,23 @@
     body {
       font-family: 'NanumGothic', 'Nanum Gothic', sans-serif;
       color: #1a1a1a;
-      font-size: 9pt;
-      line-height: 1.4;
+      font-size: 8pt;
+      line-height: 1.35;
     }
 
-    h1 { font-size: 16pt; font-weight: 700; letter-spacing: 0.05em; }
+    h1 { font-size: 15pt; font-weight: 700; letter-spacing: 0.05em; }
     h2 {
-      font-size: 11pt;
+      font-size: 10pt;
       font-weight: 700;
-      margin: 10px 0 4px 0;
-      padding: 3px 6px;
+      margin: 8px 0 3px 0;
+      padding: 2px 6px;
       background: #f0f4e8;
       border-left: 3px solid #7baa3c;
     }
     h3 {
-      font-size: 9pt;
+      font-size: 8pt;
       font-weight: 700;
-      margin-top: 4px;
+      margin-top: 3px;
     }
 
     .header {
@@ -55,16 +55,14 @@
     table {
       width: 100%;
       border-collapse: collapse;
-      font-size: 8pt;
+      font-size: 7pt;
       table-layout: fixed;
     }
     th, td {
       border: 0.5px solid #999;
-      padding: 2px 4px;
+      padding: 2px 3px;
       vertical-align: top;
       letter-spacing: -0.04em;
-      /* PDF는 종이 — nowrap이 cell 밖 overflow 원인이 되므로 자연 줄바꿈 허용.
-       * 한국어는 word-break: keep-all로 단어 단위 wrap. */
       word-break: keep-all;
       overflow-wrap: break-word;
       overflow: hidden;
@@ -73,16 +71,16 @@
       background: #ebeef0;
       font-weight: 700;
       text-align: center;
-      font-size: 7.5pt;
+      font-size: 6.5pt;
     }
     td.center { text-align: center; }
     td.num { text-align: right; font-variant-numeric: tabular-nums; }
     .empty {
-      padding: 6px;
+      padding: 5px;
       text-align: center;
       color: #aaa;
       font-style: italic;
-      font-size: 8pt;
+      font-size: 7pt;
       border: 0.5px dashed #ccc;
     }
 
@@ -92,16 +90,16 @@
     .grid-5 { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr 1fr; gap: 4px; }
 
     .summary-line {
-      font-size: 9pt;
-      padding: 4px 6px;
+      font-size: 8pt;
+      padding: 3px 6px;
       background: #f7f7f5;
       border: 0.5px solid #ccc;
     }
     .summary-line strong { color: #2a572a; }
     .badge {
       display: inline-block;
-      padding: 1px 5px;
-      font-size: 7pt;
+      padding: 1px 4px;
+      font-size: 6pt;
       border-radius: 2px;
       background: #eee;
       color: #444;
@@ -121,24 +119,24 @@
       background: #ebeef0;
       padding: 2px 4px;
       font-weight: 700;
-      font-size: 7.5pt;
+      font-size: 6.5pt;
       border-bottom: 0.5px solid #999;
     }
     .schedule-card-header .count {
       font-weight: normal;
-      font-size: 7pt;
+      font-size: 6pt;
       color: #666;
     }
-    .schedule-mini { font-size: 7pt; }
-    .schedule-mini th { padding: 1px 2px; font-size: 6.5pt; }
+    .schedule-mini { font-size: 6pt; }
+    .schedule-mini th { padding: 1px 2px; font-size: 5.5pt; }
     .schedule-mini td { padding: 1px 2px; }
     .emp-cell { line-height: 1.1; }
-    .emp-cell .pos { font-size: 6pt; color: #666; }
+    .emp-cell .pos { font-size: 5pt; color: #666; }
     .day-cell { text-align: center; }
     .schedule-chip {
       display: inline-block;
       padding: 0 2px;
-      font-size: 6pt;
+      font-size: 5pt;
       font-weight: 600;
       line-height: 1.3;
       border-radius: 2px;
@@ -148,26 +146,38 @@
     .chip-other { background: #e5e7eb; color: #374151; }
 
     /* 팀별 업무 현황 */
-    .tw-table { font-size: 7.5pt; page-break-inside: auto; }
+    .tw-table { font-size: 6.5pt; page-break-inside: auto; }
     .tw-table td { padding: 2px 3px; }
     .tw-emp {
       background: #f7f7f5;
       border-right: 0.5px solid #999;
       vertical-align: middle;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
     }
     .tw-emp .name { font-weight: 600; }
-    .tw-emp .pos { font-size: 7pt; color: #666; }
+    .tw-emp .pos { font-size: 6pt; color: #666; }
     .tw-team-header {
-      margin-top: 12px;
+      margin-top: 10px;
       page-break-after: avoid;
     }
 
     section { page-break-inside: avoid; }
     section.tw-section { page-break-inside: auto; }
 
+    /* 대기/보류 — 폰트 -2pt + 행높이 최소 + 자체 2-col 분할 */
+    .stage-section { page-break-inside: avoid; }
+    .stage-split { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
+    .stage-table { font-size: 5pt; }
+    .stage-table th, .stage-table td {
+      padding: 1px 2px;
+      line-height: 1.15;
+    }
+    .stage-table th { font-size: 5pt; }
+
     .footer-note {
-      margin-top: 8px;
-      font-size: 7pt;
+      margin-top: 6px;
+      font-size: 6pt;
       color: #999;
       text-align: right;
     }
@@ -200,6 +210,10 @@
       {% if report.headcount.resigned_this_week %}
         / 퇴사 {{ report.headcount.resigned_this_week|length }} ({{ report.headcount.resigned_this_week|join(', ') }})
       {% endif %}
+    {% endif %}
+    {% if report.holidays %}
+      &nbsp;│&nbsp; <span class="badge">공휴일</span>
+      {% for h in report.holidays %}{{ h.date.strftime('%m/%d') }} {{ h.name }}{% if h.source == 'company' %}(사내){% endif %}{% if not loop.last %} · {% endif %}{% endfor %}
     {% endif %}
   </div>
 </section>
@@ -245,12 +259,12 @@
         <table>
           <thead>
             <tr>
-              <th style="width: 12%;">승인일</th>
-              <th style="width: 13%;">CODE</th>
-              <th style="width: 28%;">용역명</th>
-              <th style="width: 17%;">제출처</th>
-              <th style="width: 15%;">유형</th>
-              <th style="width: 15%;">담당자</th>
+              <th style="width: 9%;">승인일</th>
+              <th style="width: 11%;">CODE</th>
+              <th style="width: 32%;">용역명</th>
+              <th style="width: 19%;">제출처</th>
+              <th style="width: 18%;">유형</th>
+              <th style="width: 11%;">담당자</th>
             </tr>
           </thead>
           <tbody>
@@ -274,11 +288,10 @@
         <table>
           <thead>
             <tr>
-              <th style="width: 13%;">상태</th>
-              <th style="width: 15%;">CODE</th>
-              <th style="width: 32%;">프로젝트명</th>
-              <th style="width: 22%;">발주처</th>
-              <th style="width: 18%;">담당자</th>
+              <th style="width: 9%;">상태</th>
+              <th style="width: 12%;">CODE</th>
+              <th style="width: 49%;">프로젝트명</th>
+              <th style="width: 30%;">발주처</th>
             </tr>
           </thead>
           <tbody>
@@ -288,7 +301,6 @@
                 <td>{{ c.code }}</td>
                 <td>{{ c.name }}</td>
                 <td>{{ c.client }}</td>
-                <td>{{ c.assignees|join(', ') }}</td>
               </tr>
             {% endfor %}
           </tbody>
@@ -340,12 +352,12 @@
     <table>
       <thead>
         <tr>
-          <th style="width: 12%;">업무내용</th>
-          <th style="width: 10%;">CODE</th>
-          <th style="width: 32%;">용역명</th>
-          <th style="width: 16%;">발주처</th>
+          <th style="width: 9%;">업무내용</th>
+          <th style="width: 8%;">CODE</th>
+          <th style="width: 37%;">용역명</th>
+          <th style="width: 17%;">발주처</th>
           <th style="width: 17%;">규모</th>
-          <th style="width: 13%;">용역비</th>
+          <th style="width: 12%;">용역비</th>
         </tr>
       </thead>
       <tbody>
@@ -393,11 +405,6 @@
       </div>
     {% endfor %}
   </div>
-  {% if report.holidays %}
-    <div class="footer-note">
-      ※ 공휴일: {% for h in report.holidays %}{{ h.date.strftime('%m/%d') }} {{ h.name }}{% if h.source == 'company' %}(사내){% endif %}{% if not loop.last %} · {% endif %}{% endfor %}
-    </div>
-  {% endif %}
 </section>
 
 {# ─── 팀별 업무 현황 ─── #}
@@ -410,24 +417,26 @@
       <table class="tw-table">
         <thead>
           <tr>
-            <th style="width: 8%;">담당자</th>
-            <th style="width: 8%;">CODE</th>
-            <th style="width: 22%;">PROJECT</th>
-            <th style="width: 13%;">발주처</th>
+            <th style="width: 6%;">담당자</th>
+            <th style="width: 7%;">CODE</th>
+            <th style="width: 23%;">PROJECT</th>
+            <th style="width: 14%;">발주처</th>
             <th style="width: 9%;">진행단계</th>
             <th style="width: 22%;">지난주 업무</th>
-            <th style="width: 23%;">이번주 업무</th>
+            <th style="width: 19%;">이번주 업무</th>
           </tr>
         </thead>
         <tbody>
+          {# rowspan을 쓰면 page break 시 background가 깨지므로
+             매 row마다 emp cell을 두고 첫 row만 텍스트 표시 — page break 안전. #}
           {% for item in rows %}
             <tr>
-              {% if item.is_first %}
-                <td class="tw-emp" rowspan="{{ item.rowspan }}">
+              <td class="tw-emp">
+                {% if item.is_first %}
                   <div class="name">{{ item.row.employee_name }}</div>
                   {% if item.row.position %}<div class="pos">{{ item.row.position }}</div>{% endif %}
-                </td>
-              {% endif %}
+                {% endif %}
+              </td>
               <td>{{ item.row.project_code }}</td>
               <td>{{ item.row.project_name }}</td>
               <td>{{ item.row.client }}</td>
@@ -442,60 +451,76 @@
   {% else %}<div class="empty">(배정된 진행 프로젝트 없음)</div>{% endif %}
 </section>
 
-{# ─── [대기][보류] 2-col ─── #}
-<section>
-  <div class="grid-2">
-    <div>
-      <h2>■ 대기 프로젝트</h2>
-      {% if report.waiting_projects %}
-        <table>
-          <thead>
-            <tr>
-              <th style="width: 12%;">CODE</th>
-              <th style="width: 50%;">용역명</th>
-              <th style="width: 23%;">발주처</th>
-              <th style="width: 15%;">담당팀</th>
-            </tr>
-          </thead>
-          <tbody>
-            {% for p in report.waiting_projects %}
+{# ─── 대기 프로젝트 — 자체 2-col 분할 ─── #}
+<section class="stage-section">
+  <h2>■ 대기 프로젝트</h2>
+  {% if report.waiting_projects %}
+    {% set wait_half = (report.waiting_projects|length + 1) // 2 %}
+    <div class="stage-split">
+      {% for chunk in [report.waiting_projects[:wait_half], report.waiting_projects[wait_half:]] %}
+        {% if chunk %}
+          <table class="stage-table">
+            <thead>
               <tr>
-                <td>{{ p.code }}</td>
-                <td{% if p.is_long_stalled %} class="text-red" title="3개월 이상 대기"{% endif %}>{{ p.name }}</td>
-                <td>{{ p.client }}</td>
-                <td>{{ p.teams|join(', ') }}</td>
+                <th style="width: 12%;">CODE</th>
+                <th style="width: 50%;">용역명</th>
+                <th style="width: 23%;">발주처</th>
+                <th style="width: 15%;">담당팀</th>
               </tr>
-            {% endfor %}
-          </tbody>
-        </table>
-      {% else %}<div class="empty">(없음)</div>{% endif %}
+            </thead>
+            <tbody>
+              {% for p in chunk %}
+                <tr>
+                  <td>{{ p.code }}</td>
+                  <td{% if p.is_long_stalled %} class="text-red" title="3개월 이상 대기"{% endif %}>{{ p.name }}</td>
+                  <td>{{ p.client }}</td>
+                  <td>{{ p.teams|join(', ') }}</td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        {% else %}
+          <div></div>
+        {% endif %}
+      {% endfor %}
     </div>
-    <div>
-      <h2>■ 보류 프로젝트</h2>
-      {% if report.on_hold_projects %}
-        <table>
-          <thead>
-            <tr>
-              <th style="width: 12%;">CODE</th>
-              <th style="width: 50%;">용역명</th>
-              <th style="width: 23%;">발주처</th>
-              <th style="width: 15%;">담당팀</th>
-            </tr>
-          </thead>
-          <tbody>
-            {% for p in report.on_hold_projects %}
+  {% else %}<div class="empty">(없음)</div>{% endif %}
+</section>
+
+{# ─── 보류 프로젝트 — 자체 2-col 분할 ─── #}
+<section class="stage-section">
+  <h2>■ 보류 프로젝트</h2>
+  {% if report.on_hold_projects %}
+    {% set hold_half = (report.on_hold_projects|length + 1) // 2 %}
+    <div class="stage-split">
+      {% for chunk in [report.on_hold_projects[:hold_half], report.on_hold_projects[hold_half:]] %}
+        {% if chunk %}
+          <table class="stage-table">
+            <thead>
               <tr>
-                <td>{{ p.code }}</td>
-                <td>{{ p.name }}</td>
-                <td>{{ p.client }}</td>
-                <td>{{ p.teams|join(', ') }}</td>
+                <th style="width: 12%;">CODE</th>
+                <th style="width: 50%;">용역명</th>
+                <th style="width: 23%;">발주처</th>
+                <th style="width: 15%;">담당팀</th>
               </tr>
-            {% endfor %}
-          </tbody>
-        </table>
-      {% else %}<div class="empty">(없음)</div>{% endif %}
+            </thead>
+            <tbody>
+              {% for p in chunk %}
+                <tr>
+                  <td>{{ p.code }}</td>
+                  <td>{{ p.name }}</td>
+                  <td>{{ p.client }}</td>
+                  <td>{{ p.teams|join(', ') }}</td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        {% else %}
+          <div></div>
+        {% endif %}
+      {% endfor %}
     </div>
-  </div>
+  {% else %}<div class="empty">(없음)</div>{% endif %}
 </section>
 
 </body>
