@@ -604,6 +604,8 @@ export default function MyPage() {
   );
 }
 
+type TodayTasksSubTab = "todo" | "schedule";
+
 function TodayTasks({
   tasks,
   projects,
@@ -618,6 +620,7 @@ function TodayTasks({
   /** 휴가 카드 + 버튼 클릭. 부모가 setTaskCreate({ category: '휴가(연차)' }) 처리. */
   onAddVacation?: () => void;
 }) {
+  const [subTab, setSubTab] = useState<TodayTasksSubTab>("todo");
   const open = tasks.filter((t) => t.status !== "완료");
   open.sort((a, b) => {
     if (!a.end_date && !b.end_date) return 0;
@@ -701,60 +704,112 @@ function TodayTasks({
     }
   }
 
+  // 사용자 요청 — 「해야할 일」 안에서 "할 일"(프로젝트+미분류)과 "일정"(외근·출장·휴가) sub-tab 분리.
+  const scheduleCount =
+    (scheduleByBucket.get("외근")?.length ?? 0) +
+    (scheduleByBucket.get("출장")?.length ?? 0) +
+    (scheduleByBucket.get("휴가")?.length ?? 0);
+  const todoCount = projectTasks.length + unclassified.length;
+
   return (
-    <div className="space-y-5">
-      {projectTasks.length > 0 && (
-        <ProjectTaskList
-          items={projectTasks}
-          findProject={findProject}
-          onClickTask={onClickTask}
-          onDeleteTask={onDeleteTask}
+    <div className="space-y-3">
+      <div className="flex items-center gap-1 border-b border-zinc-200 dark:border-zinc-800">
+        <SubTabBtn
+          active={subTab === "todo"}
+          label={`할 일 (${todoCount})`}
+          onClick={() => setSubTab("todo")}
         />
+        <SubTabBtn
+          active={subTab === "schedule"}
+          label={`일정 (${scheduleCount})`}
+          onClick={() => setSubTab("schedule")}
+        />
+      </div>
+
+      {subTab === "todo" && (
+        <div className="space-y-5">
+          {projectTasks.length > 0 && (
+            <ProjectTaskList
+              items={projectTasks}
+              findProject={findProject}
+              onClickTask={onClickTask}
+              onDeleteTask={onDeleteTask}
+            />
+          )}
+
+          {unclassified.length > 0 && (
+            <div>
+              <h3 className="mb-1.5 flex items-center gap-2 text-xs font-medium text-amber-600 dark:text-amber-400">
+                <span>미분류 — 분류를 지정해 주세요</span>
+                <span className="text-zinc-400">({unclassified.length})</span>
+              </h3>
+              <ul className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                {unclassified.map((t) => (
+                  <TaskCard
+                    key={t.id}
+                    task={t}
+                    project={findProject(t.project_ids[0])}
+                    onClick={() => onClickTask(t)}
+                    onDelete={() => onDeleteTask(t)}
+                    warn
+                  />
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {todoCount === 0 && (
+            <p className="rounded-md border border-zinc-200 bg-white p-4 text-center text-sm text-zinc-500 dark:border-zinc-800 dark:bg-zinc-900">
+              할 일이 없습니다.
+            </p>
+          )}
+        </div>
       )}
 
-      {unclassified.length > 0 && (
+      {subTab === "schedule" && (
         <div>
-          <h3 className="mb-1.5 flex items-center gap-2 text-xs font-medium text-amber-600 dark:text-amber-400">
-            <span>미분류 — 분류를 지정해 주세요</span>
-            <span className="text-zinc-400">({unclassified.length})</span>
-          </h3>
-          <ul className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-            {unclassified.map((t) => (
-              <TaskCard
-                key={t.id}
-                task={t}
-                project={findProject(t.project_ids[0])}
-                onClick={() => onClickTask(t)}
-                onDelete={() => onDeleteTask(t)}
-                warn
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+            {(["외근", "출장", "휴가"] as const).map((c) => (
+              <CategoryCard
+                key={c}
+                label={c}
+                items={scheduleByBucket.get(c) ?? []}
+                onClickTask={onClickTask}
+                showTime
+                showProjectBadge
+                findProject={findProject}
+                onAdd={c === "휴가" ? onAddVacation : undefined}
+                addLabel={c === "휴가" ? "+ 새 휴가" : undefined}
               />
             ))}
-          </ul>
+          </div>
         </div>
       )}
-
-      {/* 일정 — 외근/출장/휴가 3열 카드 (시간 표시). 분류=일정 OR 활동=일정 모두. */}
-      <div>
-        <h3 className="mb-1.5 text-xs font-medium text-zinc-600 dark:text-zinc-400">
-          일정
-        </h3>
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-          {(["외근", "출장", "휴가"] as const).map((c) => (
-            <CategoryCard
-              key={c}
-              label={c}
-              items={scheduleByBucket.get(c) ?? []}
-              onClickTask={onClickTask}
-              showTime
-              showProjectBadge
-              findProject={findProject}
-              onAdd={c === "휴가" ? onAddVacation : undefined}
-              addLabel={c === "휴가" ? "+ 새 휴가" : undefined}
-            />
-          ))}
-        </div>
-      </div>
     </div>
+  );
+}
+
+function SubTabBtn({
+  active,
+  label,
+  onClick,
+}: {
+  active: boolean;
+  label: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={
+        active
+          ? "-mb-px border-b-2 border-zinc-900 px-3 py-1.5 text-xs font-semibold text-zinc-900 dark:border-zinc-100 dark:text-zinc-100"
+          : "px-3 py-1.5 text-xs font-medium text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300"
+      }
+    >
+      {label}
+    </button>
   );
 }
 
