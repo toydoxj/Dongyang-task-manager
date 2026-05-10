@@ -1,6 +1,6 @@
 "use client";
 
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
 
 import SalesEditModal from "@/components/sales/SalesEditModal";
@@ -16,6 +16,7 @@ const KIND_FILTERS = [
 ] as const;
 
 export default function SalesPage() {
+  const router = useRouter();
   const searchParams = useSearchParams();
   const [kindFilter, setKindFilter] = useState<string>("");
   const [stageFilter, setStageFilter] = useState<string>("");
@@ -119,6 +120,11 @@ export default function SalesPage() {
         onClose={() => {
           setEditing(null);
           setCreating(false);
+          // ?sale=... query를 제거 — 그대로 두면 데이터 refresh 후 useEffect가
+          // 다시 트리거되어 모달이 재오픈됨.
+          if (queriedSaleId) {
+            router.replace("/sales", { scroll: false });
+          }
         }}
       />
     </div>
