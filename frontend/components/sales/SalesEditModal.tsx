@@ -568,8 +568,8 @@ export default function SalesEditModal({
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
-      onClick={onClose}
     >
+      {/* backdrop click으로 닫지 않음 — 작업 중 실수로 입력 손실 방지 (X 버튼/ESC만). */}
       <div
         className="w-full max-w-4xl rounded-lg border border-zinc-200 bg-white shadow-xl dark:border-zinc-700 dark:bg-zinc-900"
         onClick={(e) => e.stopPropagation()}
@@ -1510,8 +1510,8 @@ function ProjectLinkPicker({
   return (
     <div
       className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4"
-      onClick={onClose}
     >
+      {/* backdrop click으로 닫지 않음 — X 버튼만 사용. */}
       <div
         className="w-full max-w-lg rounded-lg border border-zinc-200 bg-white shadow-xl dark:border-zinc-700 dark:bg-zinc-900"
         onClick={(e) => e.stopPropagation()}

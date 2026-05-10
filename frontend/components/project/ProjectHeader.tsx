@@ -225,6 +225,7 @@ export default function ProjectHeader({
         />
         <Field label="담당자" value={project.assignees.join(", ") || "—"} />
         <Field label="업무내용" value={project.work_types.join(", ") || "—"} />
+        <Field label="작업단계" value={project.phase || "—"} />
         <Field label="계약" value={project.contract_signed ? "✓" : "미체결"} />
         <Field label="수주일" value={formatDate(project.start_date)} />
         <Field
