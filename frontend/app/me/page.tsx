@@ -17,7 +17,12 @@ import ProjectTaskRow from "@/components/me/ProjectTaskRow";
 import TaskCreateModal from "@/components/project/TaskCreateModal";
 import TaskEditModal from "@/components/project/TaskEditModal";
 import LoadingState from "@/components/ui/LoadingState";
-import { archiveTask, getEmployeeTeamsMap, listEmployees } from "@/lib/api";
+import {
+  archiveTask,
+  getEmployeeTeamsMap,
+  listEmployees,
+  updateTask,
+} from "@/lib/api";
 import type { Project, ProjectListResponse, Task } from "@/lib/domain";
 import { dDayLabel, formatDate } from "@/lib/format";
 import { keys, useProjects, useSealRequests, useTasks } from "@/lib/hooks";
@@ -151,6 +156,15 @@ export default function MyPage() {
       refreshTasks();
     } catch (e) {
       alert(e instanceof Error ? e.message : "삭제 실패");
+    }
+  };
+
+  const handleCompleteTask = async (t: Task): Promise<void> => {
+    try {
+      await updateTask(t.id, { status: "완료" });
+      refreshTasks();
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "완료 처리 실패");
     }
   };
 
@@ -340,6 +354,7 @@ export default function MyPage() {
                 projects={projects ?? []}
                 onClickTask={setEditing}
                 onDeleteTask={handleDeleteTask}
+                onCompleteTask={handleCompleteTask}
               />
             ) : (
               <TodayTasks

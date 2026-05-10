@@ -1,5 +1,7 @@
 "use client";
 
+import Link from "next/link";
+
 import type { Project, Task } from "@/lib/domain";
 import { dDayLabel, formatDate } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -9,6 +11,8 @@ interface Props {
   projects: Project[];
   onClickTask: (t: Task) => void;
   onDeleteTask: (t: Task) => void;
+  /** MY-003 — task를 즉시 완료 처리. undefined면 quick action ✓ 비활성. */
+  onCompleteTask?: (t: Task) => void;
 }
 
 function ymd(d: Date): string {
@@ -63,6 +67,7 @@ export default function TasksByTimeView({
   projects,
   onClickTask,
   onDeleteTask,
+  onCompleteTask,
 }: Props) {
   const today = new Date();
   const todayStr = ymd(today);
@@ -152,6 +157,11 @@ export default function TasksByTimeView({
                     project={projectByNorm.get(norm(t.project_ids[0] ?? ""))}
                     onClick={() => onClickTask(t)}
                     onDelete={() => onDeleteTask(t)}
+                    onComplete={
+                      onCompleteTask && key !== "recentDone"
+                        ? () => onCompleteTask(t)
+                        : undefined
+                    }
                     showDDay={key !== "recentDone"}
                   />
                 ))}
@@ -169,12 +179,14 @@ function TaskRow({
   project,
   onClick,
   onDelete,
+  onComplete,
   showDDay,
 }: {
   task: Task;
   project: Project | undefined;
   onClick: () => void;
   onDelete: () => void;
+  onComplete?: () => void;
   showDDay: boolean;
 }) {
   const dateStr = task.end_date
@@ -182,6 +194,7 @@ function TaskRow({
     : task.actual_end_date
       ? formatDate(task.actual_end_date)
       : "—";
+  const projectId = task.project_ids[0];
   return (
     <li className="flex items-center gap-2 py-1.5 text-xs">
       <button
@@ -206,6 +219,35 @@ function TaskRow({
         <span className="shrink-0 rounded bg-zinc-100 px-1 text-[10px] text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300">
           {dDayLabel(task.end_date)}
         </span>
+      )}
+      {/* MY-003 quick action — 완료 처리 / 프로젝트 / 날인 */}
+      {onComplete && (
+        <button
+          type="button"
+          onClick={onComplete}
+          title="완료 처리"
+          className="shrink-0 rounded px-1.5 text-emerald-600 hover:bg-emerald-100 dark:text-emerald-400 dark:hover:bg-emerald-900/30"
+        >
+          ✓
+        </button>
+      )}
+      {projectId && (
+        <Link
+          href={`/projects/${projectId}`}
+          title="프로젝트 열기"
+          className="shrink-0 rounded px-1.5 text-zinc-500 hover:bg-zinc-100 hover:text-zinc-700 dark:hover:bg-zinc-800"
+        >
+          📁
+        </Link>
+      )}
+      {projectId && (
+        <Link
+          href={`/seal-requests?project_id=${projectId}`}
+          title="관련 날인"
+          className="shrink-0 rounded px-1.5 text-zinc-500 hover:bg-zinc-100 hover:text-zinc-700 dark:hover:bg-zinc-800"
+        >
+          🔖
+        </Link>
       )}
       <button
         type="button"
