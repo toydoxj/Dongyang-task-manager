@@ -15,6 +15,7 @@ import {
   archiveSale,
   attachExternalQuotePdf,
   convertSale,
+  createClient,
   createSale,
   deleteSaleQuote,
   downloadQuoteBundlePdf,
@@ -30,6 +31,7 @@ import {
 } from "@/lib/api";
 import {
   BID_STAGES,
+  type ClientListResponse,
   CONVERTIBLE_STAGES,
   type Project,
   type QuoteFormResponse,
@@ -39,7 +41,7 @@ import {
   type Sale,
   type SaleCreateRequest,
 } from "@/lib/domain";
-import { useClients, useProjects } from "@/lib/hooks";
+import { keys, useClients, useProjects } from "@/lib/hooks";
 import { cn } from "@/lib/utils";
 
 interface Props {
@@ -120,6 +122,7 @@ export default function SalesEditModal({
   // (clientsData에 기존 client_id가 빠져 있어도 무심코 relation이 해제되는 회귀 차단)
   const [client, setClient] = useState("");
   const [clientUserEdited, setClientUserEdited] = useState(false);
+  const [clientAdding, setClientAdding] = useState(false);
   // 탭 시스템 — 수정 모드도 quote_form_data가 있으면 견적서 탭 활성 (수정/재제출)
   const [activeTab, setActiveTab] = useState<"info" | "quote">("info");
   const [quoteInput, setQuoteInput] = useState<QuoteInput>({
@@ -164,6 +167,39 @@ export default function SalesEditModal({
     client.trim() === ""
       ? undefined
       : clientsData?.items.find((c) => normName(c.name) === normName(client));
+  const showAddClient =
+    !clientMatch && client.trim() !== "" && !clientAdding;
+
+  /** 미등록 발주처를 노션 발주처 DB에 즉시 등록 + SWR 캐시 주입.
+   * (ProjectEditModal 패턴과 동일.) */
+  const addClientToDb = async (): Promise<void> => {
+    const trimmed = client.trim();
+    if (!trimmed) return;
+    setClientAdding(true);
+    setErr(null);
+    try {
+      const created = await createClient({ name: trimmed });
+      // race 회피: SWR 캐시에 즉시 주입 → 다음 렌더에서 clientMatch 잡힘.
+      await mutate(
+        keys.clients(),
+        (current: ClientListResponse | undefined) => {
+          if (!current) return current;
+          if (current.items.some((c) => c.id === created.id)) return current;
+          return {
+            items: [...current.items, created],
+            count: current.count + 1,
+          };
+        },
+        { revalidate: false },
+      );
+      setClient(created.name);
+      setClientUserEdited(true);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "발주처 등록 실패");
+    } finally {
+      setClientAdding(false);
+    }
+  };
 
   // TODO(Phase 4-B): form prefill 거대 effect — modal 분리 시 useReducer 또는 key prop
   //   reset 패턴으로 이관. open prop 외부 동기화라 현재는 useState lazy로 표현 어려움.
@@ -1109,10 +1145,20 @@ export default function SalesEditModal({
                 </option>
               ))}
             </datalist>
-            {client.trim() !== "" && !clientMatch && (
-              <p className="mt-1 text-[10px] text-zinc-500">
-                미등록 발주처 — /admin/incomes/clients 에서 먼저 등록 후 선택하세요. (현재 입력은 저장되지 않습니다)
-              </p>
+            {showAddClient && (
+              <div className="mt-1 flex items-center gap-2">
+                <p className="text-[10px] text-zinc-500">
+                  미등록 발주처입니다 — 추가하지 않으면 저장 시 누락됩니다.
+                </p>
+                <button
+                  type="button"
+                  onClick={addClientToDb}
+                  disabled={clientAdding}
+                  className="rounded-md border border-zinc-300 px-2 py-0.5 text-[10px] hover:bg-zinc-50 disabled:opacity-50 dark:border-zinc-700 dark:hover:bg-zinc-800"
+                >
+                  {clientAdding ? "추가 중..." : "발주처 DB에 추가"}
+                </button>
+              </div>
             )}
             {clientMatch && (
               <p className="mt-1 text-[10px] text-emerald-500">
