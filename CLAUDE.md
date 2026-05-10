@@ -105,15 +105,18 @@
 - 대기 정의: 팀별업무에 안 올라온 [진행중+대기] 프로젝트. `aggregate_stage_projects(stages, exclude_ids)`. 3개월 이상 대기는 `is_long_stalled=True`.
 - task source 식별: `mirror_tasks.sales_ids` (영업) vs `project_ids` (프로젝트). EmployeeWorkRow.kind / PersonalScheduleEntry.kind에 노출.
 - 작업단계(phase) — `Project.phase` 노션 "작업단계" select 자동 보강. 운영 stage(진행중/대기/보류)와 별개. UI는 phase 표시.
-- 휴가 라벨: 노션 task.category="휴가(연차)" + 기간 시:분 → `_vacation_label` 4시간 분기 (≥4h 연차 / <4h 반차).
-- 날인대장: status='승인' + admin_handled_at이 저번주 범위 안. 제출처 = real_source_id 우선 → 발주처 fallback.
+- 휴가 라벨 (`_vacation_label`): task.title 키워드(`반차`/`연차`) 우선 매칭 — '오전반차'/'오후반차'도 모두 '반차'로 단일화. 키워드 없으면 duration ≥4h 연차 / <4h 반차 fallback.
+- 날인대장: status='승인' + admin_handled_at이 저번주 범위 안. 제출처 = real_source_id 우선 → 발주처 fallback. 응답은 approved_at 오름차순.
 - 견적서 첫 추가 시 노션 task 자동 생성 (`_create_quote_task_for_sale`, idempotent).
+- 주간일지 발행 (PR-W publish): `POST /api/weekly-report/publish` (admin only) → WORKS Drive `[주간업무일지]/{YYYYMMDD}_주간업무일지.pdf` 업로드 + 전직원 Bot 알림 + `weekly_report_publish_log` row. `GET /weekly-report/last-published(.pdf)` — 다음 일지 default lastWeekStart 셋팅 + 비admin용 다운로드.
+- role enum: `admin / team_lead / manager / member`. manager(관리팀)는 운영 관리(프로젝트/영업/발주처/수금/지출/계약서) 위주 9개 메뉴만 노출 — backend API 권한은 추후 확장.
 
 **운영자 1회 수동 단계 (노션)**
 - 메인 프로젝트 DB: "작업단계" select 컬럼 (자동 보강 — 부팅 시 옵션 union)
 - 영업 DB: "영업시작일" date 컬럼 (자동 보강), "전환된 프로젝트" relation (수동)
 - task DB: "영업" relation 컬럼 (relation은 자동 생성 미지원 — 운영자가 직접 추가). 부재 시 부팅 로그 warn.
 - notices 테이블 kind enum: 공지|교육|휴일
+- WORKS Drive 루트의 `[주간업무일지]` 폴더는 첫 발행 시 자동 생성 (create_folder 409 fallback로 idempotent).
 
 **Quirks**
 - frontend: Next.js 16 / React 19 (학습 데이터와 차이) — `node_modules/next/dist/docs/` 참조
@@ -136,4 +139,7 @@
 - `frontend/app/admin/notices/page.tsx` — 공지/교육/휴일 관리 (admin)
 - `frontend/components/sales/SalesEditModal.tsx` — 영업 모달 (견적 list view + form view)
 - `frontend/components/sales/QuoteForm.tsx` — 견적 입력 form
+- `frontend/components/me/SaleTaskRow.tsx` — /me 영업 task row (ProjectTaskRow 동등 패턴)
+- `backend/app/models/weekly_publish.py` — 발행 로그 모델 (alembic `d9b0c1d05011`)
+- `backend/app/services/sso_drive.py` / `sso_works_bot.py` — Drive 업로드 / Bot send_text
 - `docs/quote_formulas/*.md` — xlsx 산출식 dump (PR-Q0 산출물)
