@@ -330,14 +330,13 @@
     <table>
       <thead>
         <tr>
-          <th style="width: 7%;">영업번호</th>
-          <th style="width: 11%;">내용</th>
-          <th style="width: 24%;">PROJECT</th>
-          <th style="width: 13%;">발주처</th>
-          <th style="width: 14%;">규모</th>
-          <th style="width: 11%;">견적가</th>
-          <th style="width: 8%;">단계</th>
-          <th style="width: 12%;">영업시작일</th>
+          <th style="width: 8%;">영업번호</th>
+          <th style="width: 13%;">내용</th>
+          <th style="width: 30%;">PROJECT</th>
+          <th style="width: 16%;">발주처</th>
+          <th style="width: 16%;">규모</th>
+          <th style="width: 12%;">견적가</th>
+          <th style="width: 5%;">비고</th>
         </tr>
       </thead>
       <tbody>
@@ -345,12 +344,11 @@
           <tr>
             <td class="center">{{ s.code }}</td>
             <td>{{ s.category|join('/') }}</td>
-            <td>{{ s.name }}{% if s.is_bid %}<span class="badge badge-bid">입찰</span>{% endif %}</td>
+            <td>{{ s.name }}</td>
             <td>{{ s.client }}</td>
             <td>{{ s.scale }}</td>
             <td class="num">{{ s.estimated_amount|krw }}</td>
-            <td class="center">{{ s.stage }}</td>
-            <td class="center">{{ s.sales_start_date or '' }}</td>
+            <td class="center">{% if s.is_bid %}(입찰){% endif %}</td>
           </tr>
         {% endfor %}
       </tbody>
