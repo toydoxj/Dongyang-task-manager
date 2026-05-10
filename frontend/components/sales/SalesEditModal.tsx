@@ -1,4 +1,8 @@
 "use client";
+// TODO(Phase 4-B): 1500+줄 SalesEditModal을 헤더/폼/견적 list/견적 폼 sub-component로
+// 분리하면서 8개 useEffect의 set-state-in-effect 룰을 본격 fix. 현재는 props/state
+// 동기화 + form prefill + quote API echo 등 깊은 결합으로 한 번에 redesign 어려움.
+/* eslint-disable react-hooks/set-state-in-effect */
 
 import { useEffect, useRef, useState } from "react";
 import { useSWRConfig } from "swr";
@@ -99,6 +103,7 @@ export default function SalesEditModal({
   // internal sale state — createSale 후 신규 sale을 모달 안에 mirror하여
   // 창이 닫히지 않고 즉시 견적 추가 가능. props.sale이 외부에서 변경되면
   // useEffect로 sync (모달 다시 열림 시 또는 다른 영업 선택 시).
+  // TODO(Phase 4-B): SalesEditModal 분리 시 sale lifecycle을 부모로 끌어올려 internal mirror 제거.
   const [sale, setSale] = useState<Sale | null>(propSale);
   useEffect(() => {
     setSale(propSale);
@@ -161,6 +166,8 @@ export default function SalesEditModal({
       ? undefined
       : clientsData?.items.find((c) => normName(c.name) === normName(client));
 
+  // TODO(Phase 4-B): form prefill 거대 effect — modal 분리 시 useReducer 또는 key prop
+  //   reset 패턴으로 이관. open prop 외부 동기화라 현재는 useState lazy로 표현 어려움.
   useEffect(() => {
     if (!open) return;
     setErr(null);
@@ -246,6 +253,7 @@ export default function SalesEditModal({
 
   // 수정 모드: clientsData 도착 시 sale.client_id로 name lookup → 발주처 input 채움.
   // sale 로딩 useEffect와 분리한 이유 — clientsData가 늦게 도착해도 form 전체가 reset되지 않게.
+  // TODO(Phase 4-B): client는 derived useMemo + override 패턴으로 통합.
   useEffect(() => {
     if (!open || !sale || clientsData == null) return;
     if (!sale.client_id) {
