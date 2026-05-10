@@ -51,12 +51,12 @@
       padding-bottom: 4px;
     }
     .header .title-line {
-      font-size: 16pt;
+      font-size: 15pt;
       font-weight: 700;
       letter-spacing: 0.02em;
     }
     .header .title-line .period {
-      font-size: 11pt;
+      font-size: 10pt;
       font-weight: 500;
       color: #555;
       margin-left: 8px;
@@ -116,19 +116,21 @@
     td.num { text-align: right; font-variant-numeric: tabular-nums; }
     /* 영업/신규 표 규모 cell — 본문 폰트 -2pt (긴 텍스트 가독성 + 공간 절약) */
     td.scale-cell { font-size: 5pt; }
-    /* 용역명/발주처 cell — 텍스트 길이 따라 단계 축소 (em 기반 → 모든 표 호환).
+    /* 용역명/발주처 cell — 텍스트 길이 따라 단계 축소.
      * Jinja `fit_cell` 매크로가 길이 보고 class 부여.
-     * 발주처(좁은 cell, 회사명 한 단어) 전용 단계는 더 공격적: shrink-3 추가. */
-    td.cell-shrink-1 { font-size: 0.85em; }
-    td.cell-shrink-2 { font-size: 0.75em; }
-    td.cell-shrink-3 { font-size: 0.65em; }
-    td.cell-shrink-4 { font-size: 0.55em; }
+     * 절대 pt로 정의 (base 7pt 일반 표 기준, floor 5pt).
+     * 발주처(좁은 cell, 회사명 한 단어) 전용 단계는 더 공격적: shrink-4까지.
+     * `.tw-table`(base 6.5pt)은 아래에서 한 단계 더 작게 override. */
+    td.cell-shrink-1 { font-size: 6.5pt; }
+    td.cell-shrink-2 { font-size: 6pt; }
+    td.cell-shrink-3 { font-size: 5.5pt; }
+    td.cell-shrink-4 { font-size: 5pt; }
     .empty {
       padding: 5px;
       text-align: center;
       color: #aaa;
       font-style: italic;
-      font-size: 7pt;
+      font-size: 5pt;
       border: 0.5px dashed #ccc;
     }
 
@@ -138,7 +140,7 @@
     .grid-5 { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr 1fr; gap: 4px; }
 
     .summary-line {
-      font-size: 8pt;
+      font-size: 7pt;
       padding: 3px 6px;
       background: #f7f7f5;
       border: 0.5px solid #ccc;
@@ -219,6 +221,12 @@
       border: 0;
     }
     .tw-table td { padding: 2px 3px; }
+    /* .tw-table 안 cell-shrink는 base 6.5pt 기준으로 한 단계 더 작게.
+     * shrink-3/4는 5pt floor에서 클램프. */
+    .tw-table td.cell-shrink-1 { font-size: 6pt; }
+    .tw-table td.cell-shrink-2 { font-size: 5.5pt; }
+    .tw-table td.cell-shrink-3 { font-size: 5pt; }
+    .tw-table td.cell-shrink-4 { font-size: 5pt; }
     .tw-emp {
       background: #f7f7f5;
       border-right: 0.5px solid #999;
@@ -259,12 +267,12 @@
       box-decoration-break: clone;
       -webkit-box-decoration-break: clone;
     }
-    .stage-table { font-size: 5pt; border: 0; }
+    .stage-table { font-size: 5.5pt; border: 0; }
     .stage-table th, .stage-table td {
       padding: 1px 2px;
       line-height: 1.15;
     }
-    .stage-table th { font-size: 5pt; }
+    .stage-table th { font-size: 5.5pt; }
 
     .footer-note {
       margin-top: 6px;
