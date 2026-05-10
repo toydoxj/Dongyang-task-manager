@@ -45,7 +45,9 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
         setWorksEnabled(worksOn);
         setDriveLocalRoot(status.works_drive_local_root || "");
       } catch {
-        // 백엔드가 응답 안 하면 일단 진입은 허용 (네트워크 에러 대비)
+        // 백엔드가 응답 안 하면 일단 진입은 허용 (네트워크 에러 대비).
+        // user는 localStorage에서 채워야 페이지 권한 가드가 정상 동작 (PR Phase 0).
+        setUser(getUser());
         setPhase("ready");
         return;
       }

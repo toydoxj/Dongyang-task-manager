@@ -41,7 +41,7 @@ export default function HelpPage() {
       </Section>
 
       <Section title="3. 주요 화면">
-        <H3>3.1 대시보드 (관리자 / 팀장)</H3>
+        <H3>3.1 대시보드 (관리자 / 팀장 / 관리팀)</H3>
         <Ul>
           <li>월별 추이 차트: 수주액·수금액·지출액 막대 + 12개월 선형회귀 추세선</li>
           <li>
@@ -294,6 +294,7 @@ export default function HelpPage() {
             <Tr l="1차 승인" r="관리자 전원 (본인 포함)" />
             <Tr l="최종 승인" r="요청자" />
             <Tr l="반려" r="요청자 (사유 포함)" />
+            <Tr l="주간업무일지 발행" r="전 직원" />
           </tbody>
         </table>
       </Section>
@@ -314,6 +315,10 @@ export default function HelpPage() {
         <Faq
           q="날인요청 등록 후 알림을 못 받았어요"
           a="받는 사람의 NAVER WORKS 계정이 시스템에 연결되지 않은 경우 발송이 skip됩니다. 관리자에게 본인 NAVER WORKS ID 등록을 요청하세요."
+        />
+        <Faq
+          q="자동 생성된 TASK가 보이지 않아요"
+          a="이전 schema mismatch 버그(2026-05-02 수정)입니다. 새로 등록하시면 즉시 칸반에 표시됩니다."
         />
         <Faq
           q="프로젝트가 노션에는 있는데 화면에서는 안 보여요"
