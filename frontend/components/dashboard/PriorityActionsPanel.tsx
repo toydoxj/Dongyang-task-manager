@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 
+import { CTA } from "@/lib/cta";
 import type { Project, Task } from "@/lib/domain";
 import type { SealRequestItem } from "@/lib/api";
 
@@ -102,7 +103,7 @@ export default function PriorityActionsPanel({
       title: `장기 정체 프로젝트 (${STALE_PROJECT_DAYS}일 이상)`,
       count: stalledProjects.length,
       preview: stalledProjects[0]?.name,
-      ctaLabel: "프로젝트 보기",
+      ctaLabel: CTA.openProject,
       ctaHref:
         stalledProjects.length === 1
           ? `/project?id=${stalledProjects[0].id}`
@@ -113,7 +114,7 @@ export default function PriorityActionsPanel({
       title: "승인 지연 날인 (제출예정일 경과)",
       count: overdueSeals.length,
       preview: overdueSeals[0]?.title,
-      ctaLabel: "날인 상세",
+      ctaLabel: CTA.viewSeals,
       ctaHref: "/seal-requests",
     },
     {
@@ -121,7 +122,7 @@ export default function PriorityActionsPanel({
       title: `마감 가까운 업무 (오늘 ~ +${ACTION_DUE_SOON_DAYS}일)`,
       count: dueSoonTasks.length,
       preview: dueSoonTasks[0]?.title,
-      ctaLabel: "내업무에서 처리",
+      ctaLabel: CTA.viewMyTasks,
       ctaHref: "/me",
     },
     {
@@ -129,7 +130,7 @@ export default function PriorityActionsPanel({
       title: "담당 편중 팀",
       count: topTeam ? topTeam[1] : 0,
       preview: topTeam ? `${topTeam[0]} — 진행중 ${topTeam[1]}건` : undefined,
-      ctaLabel: "팀별 부하",
+      ctaLabel: CTA.viewLoad,
       ctaHref: "/admin/employee-work",
     },
     {
@@ -137,7 +138,7 @@ export default function PriorityActionsPanel({
       title: `오래 멈춘 TASK (시작 전 ${STALE_TASK_DAYS}일 이상)`,
       count: stuckTasks.length,
       preview: stuckTasks[0]?.title,
-      ctaLabel: "내업무에서 처리",
+      ctaLabel: CTA.viewMyTasks,
       ctaHref: "/me",
     },
   ];
