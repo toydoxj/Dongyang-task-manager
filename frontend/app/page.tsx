@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect } from "react";
 
@@ -53,11 +54,19 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-6">
-      <header>
-        <h1 className="text-2xl font-semibold">대시보드</h1>
-        <p className="mt-1 text-sm text-zinc-500">
-          {user?.name || user?.username} 님 환영합니다.
-        </p>
+      <header className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-semibold">대시보드</h1>
+          <p className="mt-1 text-sm text-zinc-500">
+            {user?.name || user?.username} 님 환영합니다.
+          </p>
+        </div>
+        <Link
+          href="/weekly-report"
+          className="rounded-md bg-emerald-600 px-3 py-2 text-sm font-medium text-white hover:bg-emerald-700"
+        >
+          주간업무일지 보기
+        </Link>
       </header>
 
       {error && (

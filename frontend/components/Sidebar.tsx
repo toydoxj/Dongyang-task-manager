@@ -31,7 +31,7 @@ const NAV: NavItem[] = [
   { href: "/schedule", label: "직원 일정" },
   { href: "/suggestions", label: "건의사항" },
   { href: "/seal-requests", label: "날인요청" },
-  { href: "/weekly-report", label: "주간업무일지" },
+  // 주간업무일지는 대시보드 우상단 '주간업무일지 보기' 버튼에서 진입.
   { href: "/utilities", label: "유틸 런처" },
   { href: "/admin/notices", label: "공지/교육 관리", roles: ["admin"] },
   { href: "/admin/incomes", label: "수금 관리", roles: ["admin"] },
