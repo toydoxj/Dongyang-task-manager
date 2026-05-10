@@ -1,9 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useMemo, useState } from "react";
-import { useSWRConfig } from "swr";
+import useSWR, { useSWRConfig } from "swr";
 
 import { useAuth } from "@/components/AuthGuard";
 import MyProjectSnapshots from "@/components/me/MyProjectSnapshots";
@@ -16,7 +16,7 @@ import ProjectTaskRow from "@/components/me/ProjectTaskRow";
 import TaskCreateModal from "@/components/project/TaskCreateModal";
 import TaskEditModal from "@/components/project/TaskEditModal";
 import LoadingState from "@/components/ui/LoadingState";
-import { archiveTask } from "@/lib/api";
+import { archiveTask, getEmployeeTeamsMap, listEmployees } from "@/lib/api";
 import type { Project, ProjectListResponse, Task } from "@/lib/domain";
 import { dDayLabel, formatDate } from "@/lib/format";
 import { keys, useProjects, useSealRequests, useTasks } from "@/lib/hooks";
@@ -24,6 +24,7 @@ import { cn } from "@/lib/utils";
 
 export default function MyPage() {
   const { user } = useAuth();
+  const router = useRouter();
   const sp = useSearchParams();
   // ?as=직원이름 으로 다른 직원 업무 보기 (admin/team_lead 만)
   const overrideName = sp.get("as");
@@ -31,6 +32,9 @@ export default function MyPage() {
   const allowedToView =
     !isViewingOther || user?.role === "admin" || user?.role === "team_lead";
   const effectiveName = isViewingOther ? overrideName : user?.name;
+  // MY-005 — 팀장(team_lead)·관리자(admin)는 헤더에서 본인/팀원 토글 가능.
+  const canSwitchView =
+    user?.role === "admin" || user?.role === "team_lead";
 
   const { mutate } = useSWRConfig();
   const [editing, setEditing] = useState<Task | null>(null);
@@ -57,6 +61,38 @@ export default function MyPage() {
   const { data: tasksData, error: tasksErr } = useTasks(fetchFilters);
   // MY-001 카드 — 본인 검토자(lead/admin) 매칭에 사용. backend는 status 필터 없음 → 전체 fetch.
   const { data: sealData } = useSealRequests();
+  // MY-005 — 팀장/관리자가 토글로 팀원 진입 시 사용할 직원 list (admin/team_lead만 fetch).
+  const { data: empListData } = useSWR(
+    canSwitchView ? ["employees-active"] : null,
+    () => listEmployees(undefined, "active"),
+  );
+  const { data: empTeamsMap } = useSWR(
+    canSwitchView ? ["employee-teams-map"] : null,
+    () => getEmployeeTeamsMap(),
+  );
+
+  // team_lead는 본인 팀 직원만, admin은 전체.
+  const switchTargets = useMemo<string[]>(() => {
+    if (!canSwitchView || !empListData) return [];
+    const all = empListData.items
+      .map((e) => e.name)
+      .filter((n): n is string => !!n && n !== user?.name);
+    if (user?.role === "admin") return all.sort((a, b) => a.localeCompare(b));
+    // team_lead — teamsMap 기준 본인 팀과 같은 직원만
+    const myTeam = user?.name ? empTeamsMap?.[user.name] : undefined;
+    if (!myTeam) return [];
+    return all
+      .filter((n) => empTeamsMap?.[n] === myTeam)
+      .sort((a, b) => a.localeCompare(b));
+  }, [canSwitchView, empListData, empTeamsMap, user]);
+
+  const onSwitchView = (target: string): void => {
+    if (target === "__self__" || target === user?.name) {
+      router.push("/me");
+    } else {
+      router.push(`/me?as=${encodeURIComponent(target)}`);
+    }
+  };
 
   const error = projectErr ?? tasksErr;
   const allTasks = tasksData?.items;
@@ -188,21 +224,44 @@ export default function MyPage() {
             {isViewingOther ? (
               <>
                 {effectiveName} 님이 담당자로 지정된 진행중 프로젝트와 업무 TASK
-                입니다. <Link href="/admin/employee-work" className="underline">
-                  ← 직원 변경
-                </Link>
+                입니다.
               </>
             ) : (
               `${effectiveName} 님이 담당자로 지정된 진행중 프로젝트와 업무 TASK 입니다.`
             )}
           </p>
         </div>
-        <Link
-          href="/weekly-report"
-          className="rounded-md bg-emerald-600 px-3 py-2 text-sm font-medium text-white hover:bg-emerald-700"
-        >
-          주간업무일지 보기
-        </Link>
+        <div className="flex flex-wrap items-center gap-2">
+          {canSwitchView && switchTargets.length > 0 && (
+            <select
+              value={isViewingOther ? (effectiveName ?? "") : "__self__"}
+              onChange={(e) => onSwitchView(e.target.value)}
+              className="rounded-md border border-zinc-300 bg-white px-2.5 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+              title={
+                user?.role === "team_lead"
+                  ? "본인 팀 직원의 업무로 전환"
+                  : "직원 업무 전환"
+              }
+            >
+              <option value="__self__">내 업무</option>
+              <optgroup
+                label={user?.role === "team_lead" ? "팀원" : "전체 직원"}
+              >
+                {switchTargets.map((n) => (
+                  <option key={n} value={n}>
+                    {n}
+                  </option>
+                ))}
+              </optgroup>
+            </select>
+          )}
+          <Link
+            href="/weekly-report"
+            className="rounded-md bg-emerald-600 px-3 py-2 text-sm font-medium text-white hover:bg-emerald-700"
+          >
+            주간업무일지 보기
+          </Link>
+        </div>
       </header>
 
       {error && (
