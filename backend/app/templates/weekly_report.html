@@ -83,8 +83,9 @@
     }
     .header .brand-text .ko { font-weight: 700; }
     .header .brand-text .en {
-      font-size: 5pt;
-      color: #666;
+      font-size: 4pt;
+      font-weight: 700;
+      color: #555;
       white-space: nowrap;
       letter-spacing: -0.1em;  /* 자간 ≈ 90% */
     }
@@ -243,7 +244,13 @@
     /* 대기/보류 — 폰트 -2pt + 행높이 최소 + 자체 2-col 분할 */
     .stage-section { page-break-inside: avoid; }
     .stage-split { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
-    .stage-table { font-size: 5pt; }
+    /* 분할 fragment에도 외곽 박스 — table wrap pattern과 동일 */
+    .stage-table-wrap {
+      border: 1px solid #000;
+      box-decoration-break: clone;
+      -webkit-box-decoration-break: clone;
+    }
+    .stage-table { font-size: 5pt; border: 0; }
     .stage-table th, .stage-table td {
       padding: 1px 2px;
       line-height: 1.15;
@@ -335,64 +342,65 @@
   </div>
 </section>
 
-{# ─── [날인대장][완료] 2-col ─── #}
+{# ─── 완료(위) → 날인대장(아래) 세로 배치 ─── #}
 <section>
-  <div class="grid-2">
-    <div>
-      <h2>날인대장</h2>
-      {% if report.seal_log %}
-        <table>
-          <thead>
-            <tr>
-              <th style="width: 9%;">승인일</th>
-              <th style="width: 11%;">CODE</th>
-              <th style="width: 32%;">용역명</th>
-              <th style="width: 19%;">제출처</th>
-              <th style="width: 18%;">유형</th>
-              <th style="width: 11%;">담당자</th>
-            </tr>
-          </thead>
-          <tbody>
-            {% for s in report.seal_log %}
-              <tr>
-                <td class="center">{{ s.approved_at|mmdd }}</td>
-                <td class="center">{{ s.code }}</td>
-                <td>{{ s.name }}</td>
-                <td>{{ s.submission_target }}</td>
-                <td class="center">{{ s.seal_type }}</td>
-                <td class="center">{{ s.requester }}</td>
-              </tr>
-            {% endfor %}
-          </tbody>
-        </table>
-      {% else %}<div class="empty">(저번주 승인된 날인 없음)</div>{% endif %}
-    </div>
-    <div>
-      <h2>완료 프로젝트</h2>
-      {% if report.completed %}
-        <table>
-          <thead>
-            <tr>
-              <th style="width: 9%;">상태</th>
-              <th style="width: 12%;">CODE</th>
-              <th style="width: 49%;">프로젝트명</th>
-              <th style="width: 30%;">발주처</th>
-            </tr>
-          </thead>
-          <tbody>
-            {% for c in report.completed %}
-              <tr>
-                <td class="center">{{ c.status_label }}</td>
-                <td class="center">{{ c.code }}</td>
-                <td>{{ c.name }}</td>
-                <td>{{ c.client }}</td>
-              </tr>
-            {% endfor %}
-          </tbody>
-        </table>
-      {% else %}<div class="empty">(완료 없음)</div>{% endif %}
-    </div>
-  </div>
+  <h2>완료 프로젝트</h2>
+  {% if report.completed %}
+    <table>
+      <thead>
+        <tr>
+          <th style="width: 8%;">상태</th>
+          <th style="width: 9%;">CODE</th>
+          <th style="width: 38%;">프로젝트명</th>
+          <th style="width: 22%;">발주처</th>
+          <th style="width: 13%;">담당팀</th>
+          <th style="width: 10%;">소요기간(개월)</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for c in report.completed %}
+          <tr>
+            <td class="center">{{ c.status_label }}</td>
+            <td class="center">{{ c.code }}</td>
+            <td>{{ c.name }}</td>
+            <td>{{ c.client }}</td>
+            <td class="center">{{ c.teams|join(', ') }}</td>
+            <td class="center">{% if c.duration_months is not none %}{{ '%.1f'|format(c.duration_months) }}{% endif %}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}<div class="empty">(완료 없음)</div>{% endif %}
+</section>
+
+<section>
+  <h2>날인대장</h2>
+  {% if report.seal_log %}
+    <table>
+      <thead>
+        <tr>
+          <th style="width: 9%;">승인일</th>
+          <th style="width: 11%;">CODE</th>
+          <th style="width: 32%;">용역명</th>
+          <th style="width: 19%;">제출처</th>
+          <th style="width: 18%;">유형</th>
+          <th style="width: 11%;">담당자</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for s in report.seal_log %}
+          <tr>
+            <td class="center">{{ s.approved_at|mmdd }}</td>
+            <td class="center">{{ s.code }}</td>
+            <td>{{ s.name }}</td>
+            <td>{{ s.submission_target }}</td>
+            <td class="center">{{ s.seal_type }}</td>
+            <td class="center">{{ s.requester }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}<div class="empty">(저번주 승인된 날인 없음)</div>{% endif %}
 </section>
 
 {# ─── 영업 ─── #}
@@ -545,6 +553,7 @@
     <div class="stage-split">
       {% for chunk in [report.waiting_projects[:wait_half], report.waiting_projects[wait_half:]] %}
         {% if chunk %}
+          <div class="stage-table-wrap">
           <table class="stage-table">
             <thead>
               <tr>
@@ -565,6 +574,7 @@
               {% endfor %}
             </tbody>
           </table>
+          </div>
         {% else %}
           <div></div>
         {% endif %}
@@ -581,6 +591,7 @@
     <div class="stage-split">
       {% for chunk in [report.on_hold_projects[:hold_half], report.on_hold_projects[hold_half:]] %}
         {% if chunk %}
+          <div class="stage-table-wrap">
           <table class="stage-table">
             <thead>
               <tr>
@@ -601,6 +612,7 @@
               {% endfor %}
             </tbody>
           </table>
+          </div>
         {% else %}
           <div></div>
         {% endif %}

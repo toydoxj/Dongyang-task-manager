@@ -170,6 +170,7 @@ async def _build_seal_log(
                 approved_at=approved,
             )
         )
+    items.sort(key=lambda it: it.approved_at or "")
     return items
 
 

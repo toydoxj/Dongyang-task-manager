@@ -1331,6 +1331,10 @@ export interface WeeklyCompletedItem {
   client: string;
   status_label: string;
   completed_at: string | null;
+  /** 수주확정일. 소요기간 산정 기준. */
+  started_at: string | null;
+  /** 소요기간(개월) — (end - start)/30, 소수 1자리. */
+  duration_months: number | null;
 }
 
 export interface WeeklyNewProject {

@@ -98,6 +98,8 @@ class CompletedProjectItem(BaseModel):
     client: str = ""  # 발주처
     status_label: str = "완료"  # 완료 | 타절 | 종결 — UI 구분 표시용
     completed_at: str | None = None  # last_edited_time iso
+    started_at: str | None = None  # 수주확정일 (Project.start_date) — 소요기간 산정 기준
+    duration_months: float | None = None  # (end - start)/30, 소수 1자리
 
 
 class NewProjectItem(BaseModel):
@@ -675,6 +677,16 @@ def aggregate_completed(
         if not ed or not (range_start_iso <= ed <= range_end_iso):
             continue
         label = r.stage if r.stage in _TERMINATED_STAGES else "완료"
+        # 소요기간(개월) — 시작일 ~ 완료일 (start, end 모두 있을 때만 계산)
+        duration_months: float | None = None
+        sd = (proj.start_date or "")[:10]
+        if sd and ed:
+            try:
+                d_sd = date.fromisoformat(sd)
+                d_ed = date.fromisoformat(ed)
+                duration_months = round((d_ed - d_sd).days / 30.0, 1)
+            except ValueError:
+                duration_months = None
         items.append(
             CompletedProjectItem(
                 page_id=r.page_id,
@@ -685,6 +697,8 @@ def aggregate_completed(
                 client=_resolve_client_label(proj, client_name_by_id),
                 status_label=label,
                 completed_at=proj.end_date,
+                started_at=proj.start_date,
+                duration_months=duration_months,
             )
         )
     return items
@@ -854,9 +868,11 @@ def _vacation_label(task: M.MirrorTask) -> str:
     제목에 키워드가 없으면 duration ≥ 4h '연차', < 4h '반차'로 fallback.
     """
     title = (task.title or "").strip()
-    for kw in ("오전반차", "오후반차", "반차", "연차"):
-        if kw in title:
-            return kw
+    # '반차' 통합 표기 — '오전반차' / '오후반차' 모두 '반차'로 단일화
+    if "반차" in title:
+        return "반차"
+    if "연차" in title:
+        return "연차"
     period = (task.properties or {}).get("기간", {}).get("date") or {}
     start_iso = period.get("start") or ""
     end_iso = period.get("end") or ""
@@ -872,7 +888,7 @@ def _vacation_label(task: M.MirrorTask) -> str:
 
 
 _SCHEDULE_TEXT_CATEGORIES = frozenset(
-    {"외근", "출장", "교육", "연차", "반차", "오전반차", "오후반차", "파견", "동행"}
+    {"외근", "출장", "교육", "연차", "반차", "파견", "동행"}
 )
 
 
