@@ -28,11 +28,12 @@ import { dDayLabel, formatDate } from "@/lib/format";
 import { keys, useProjects, useSealRequests, useTasks } from "@/lib/hooks";
 import { cn } from "@/lib/utils";
 
-// PR-T — 4탭 navigation key/label 상수.
-type TabKey = "todo" | "projects" | "sales" | "other";
+// PR-T — 5탭 navigation key/label 상수.
+type TabKey = "todo" | "schedule" | "projects" | "sales" | "other";
 
 const TABS: { key: TabKey; label: string }[] = [
-  { key: "todo", label: "해야할 일" },
+  { key: "todo", label: "할 일" },
+  { key: "schedule", label: "일정" },
   { key: "projects", label: "담당 프로젝트" },
   { key: "sales", label: "내 영업" },
   { key: "other", label: "기타 업무" },
@@ -63,17 +64,19 @@ export default function MyPage() {
     /** 분류 prefill (휴가 카드 + 버튼 등). */
     category?: string;
   } | null>(null);
-  // '해야할 일' 섹션 접기 (사용자가 자주 보는 영역이라 default 펼침)
-  const [todoCollapsed, setTodoCollapsed] = useState(false);
   // MY-002 — 분류(category) 기준 vs 시간(timeline) 기준 view 토글. default category.
   const [todoViewMode, setTodoViewMode] = useState<"category" | "time">(
     "category",
   );
-  // PR-T — 4탭 구분 (해야할일 / 담당프로젝트 / 내영업 / 기타업무).
+  // PR-T — 5탭 구분 (할일 / 일정 / 담당프로젝트 / 내영업 / 기타업무).
   // URL `?tab=` 우선, 없으면 default "todo".
   const tabFromUrl = sp.get("tab");
   const isValidTab = (s: string | null): s is TabKey =>
-    s === "todo" || s === "projects" || s === "sales" || s === "other";
+    s === "todo" ||
+    s === "schedule" ||
+    s === "projects" ||
+    s === "sales" ||
+    s === "other";
   const [activeTab, setActiveTab] = useState<TabKey>(
     isValidTab(tabFromUrl) ? tabFromUrl : "todo",
   );
@@ -350,20 +353,8 @@ export default function MyPage() {
       </nav>
 
       {activeTab === "todo" && (
-      <section className="rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
-        <div className="flex items-center justify-between gap-3">
-          <button
-            type="button"
-            onClick={() => setTodoCollapsed((v) => !v)}
-            className="flex flex-1 items-center gap-2 text-left"
-            aria-expanded={!todoCollapsed}
-          >
-            <h2 className="flex items-center gap-2 text-sm font-medium text-zinc-700 dark:text-zinc-300">
-              <span className="text-zinc-400">{todoCollapsed ? "▶" : "▼"}</span>
-              해야할 일
-            </h2>
-          </button>
-          {!todoCollapsed && (
+        <section className="rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
+          <div className="mb-3 flex items-center justify-end gap-2">
             <div className="flex items-center gap-1 rounded-md border border-zinc-300 p-0.5 text-[11px] dark:border-zinc-700">
               <button
                 type="button"
@@ -388,37 +379,46 @@ export default function MyPage() {
                 시간
               </button>
             </div>
-          )}
-          <span className="text-[10px] text-zinc-500">
-            {todoCollapsed ? "펼치기" : "접기"}
-          </span>
-        </div>
-        {!todoCollapsed && (
-          <div className="mt-3">
-            {tasks == null ? (
-              <LoadingState message="내 업무 TASK 불러오는 중" height="h-32" />
-            ) : todoViewMode === "time" ? (
-              <TasksByTimeView
-                tasks={tasks}
-                projects={projects ?? []}
-                onClickTask={setEditing}
-                onDeleteTask={handleDeleteTask}
-                onCompleteTask={handleCompleteTask}
-              />
-            ) : (
-              <TodayTasks
-                tasks={tasks}
-                projects={projects ?? []}
-                onClickTask={setEditing}
-                onDeleteTask={handleDeleteTask}
-                onAddVacation={() =>
-                  setTaskCreate({ projectId: "", category: "휴가(연차)" })
-                }
-              />
-            )}
           </div>
-        )}
-      </section>
+          {tasks == null ? (
+            <LoadingState message="내 업무 TASK 불러오는 중" height="h-32" />
+          ) : todoViewMode === "time" ? (
+            <TasksByTimeView
+              tasks={tasks}
+              projects={projects ?? []}
+              onClickTask={setEditing}
+              onDeleteTask={handleDeleteTask}
+              onCompleteTask={handleCompleteTask}
+            />
+          ) : (
+            <TodayTasks
+              tasks={tasks}
+              projects={projects ?? []}
+              onClickTask={setEditing}
+              onDeleteTask={handleDeleteTask}
+              scope="todo"
+            />
+          )}
+        </section>
+      )}
+
+      {activeTab === "schedule" && (
+        <section className="rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
+          {tasks == null ? (
+            <LoadingState message="일정 불러오는 중" height="h-32" />
+          ) : (
+            <TodayTasks
+              tasks={tasks}
+              projects={projects ?? []}
+              onClickTask={setEditing}
+              onDeleteTask={handleDeleteTask}
+              onAddVacation={() =>
+                setTaskCreate({ projectId: "", category: "휴가(연차)" })
+              }
+              scope="schedule"
+            />
+          )}
+        </section>
       )}
 
       {activeTab === "projects" && (
@@ -604,7 +604,7 @@ export default function MyPage() {
   );
 }
 
-type TodayTasksSubTab = "todo" | "schedule";
+type TodayTasksScope = "todo" | "schedule";
 
 function TodayTasks({
   tasks,
@@ -612,6 +612,7 @@ function TodayTasks({
   onClickTask,
   onDeleteTask,
   onAddVacation,
+  scope,
 }: {
   tasks: Task[];
   projects: Project[];
@@ -619,8 +620,9 @@ function TodayTasks({
   onDeleteTask: (t: Task) => void;
   /** 휴가 카드 + 버튼 클릭. 부모가 setTaskCreate({ category: '휴가(연차)' }) 처리. */
   onAddVacation?: () => void;
+  /** "todo"=프로젝트+미분류, "schedule"=외근/출장/휴가 카드만. */
+  scope: TodayTasksScope;
 }) {
-  const [subTab, setSubTab] = useState<TodayTasksSubTab>("todo");
   const open = tasks.filter((t) => t.status !== "완료");
   open.sort((a, b) => {
     if (!a.end_date && !b.end_date) return 0;
@@ -704,112 +706,67 @@ function TodayTasks({
     }
   }
 
-  // 사용자 요청 — 「해야할 일」 안에서 "할 일"(프로젝트+미분류)과 "일정"(외근·출장·휴가) sub-tab 분리.
-  const scheduleCount =
-    (scheduleByBucket.get("외근")?.length ?? 0) +
-    (scheduleByBucket.get("출장")?.length ?? 0) +
-    (scheduleByBucket.get("휴가")?.length ?? 0);
   const todoCount = projectTasks.length + unclassified.length;
 
-  return (
-    <div className="space-y-3">
-      <div className="flex items-center gap-1 border-b border-zinc-200 dark:border-zinc-800">
-        <SubTabBtn
-          active={subTab === "todo"}
-          label={`할 일 (${todoCount})`}
-          onClick={() => setSubTab("todo")}
-        />
-        <SubTabBtn
-          active={subTab === "schedule"}
-          label={`일정 (${scheduleCount})`}
-          onClick={() => setSubTab("schedule")}
-        />
-      </div>
+  if (scope === "todo") {
+    return (
+      <div className="space-y-5">
+        {projectTasks.length > 0 && (
+          <ProjectTaskList
+            items={projectTasks}
+            findProject={findProject}
+            onClickTask={onClickTask}
+            onDeleteTask={onDeleteTask}
+          />
+        )}
 
-      {subTab === "todo" && (
-        <div className="space-y-5">
-          {projectTasks.length > 0 && (
-            <ProjectTaskList
-              items={projectTasks}
-              findProject={findProject}
-              onClickTask={onClickTask}
-              onDeleteTask={onDeleteTask}
-            />
-          )}
-
-          {unclassified.length > 0 && (
-            <div>
-              <h3 className="mb-1.5 flex items-center gap-2 text-xs font-medium text-amber-600 dark:text-amber-400">
-                <span>미분류 — 분류를 지정해 주세요</span>
-                <span className="text-zinc-400">({unclassified.length})</span>
-              </h3>
-              <ul className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                {unclassified.map((t) => (
-                  <TaskCard
-                    key={t.id}
-                    task={t}
-                    project={findProject(t.project_ids[0])}
-                    onClick={() => onClickTask(t)}
-                    onDelete={() => onDeleteTask(t)}
-                    warn
-                  />
-                ))}
-              </ul>
-            </div>
-          )}
-
-          {todoCount === 0 && (
-            <p className="rounded-md border border-zinc-200 bg-white p-4 text-center text-sm text-zinc-500 dark:border-zinc-800 dark:bg-zinc-900">
-              할 일이 없습니다.
-            </p>
-          )}
-        </div>
-      )}
-
-      {subTab === "schedule" && (
-        <div>
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-            {(["외근", "출장", "휴가"] as const).map((c) => (
-              <CategoryCard
-                key={c}
-                label={c}
-                items={scheduleByBucket.get(c) ?? []}
-                onClickTask={onClickTask}
-                showTime
-                showProjectBadge
-                findProject={findProject}
-                onAdd={c === "휴가" ? onAddVacation : undefined}
-                addLabel={c === "휴가" ? "+ 새 휴가" : undefined}
-              />
-            ))}
+        {unclassified.length > 0 && (
+          <div>
+            <h3 className="mb-1.5 flex items-center gap-2 text-xs font-medium text-amber-600 dark:text-amber-400">
+              <span>미분류 — 분류를 지정해 주세요</span>
+              <span className="text-zinc-400">({unclassified.length})</span>
+            </h3>
+            <ul className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+              {unclassified.map((t) => (
+                <TaskCard
+                  key={t.id}
+                  task={t}
+                  project={findProject(t.project_ids[0])}
+                  onClick={() => onClickTask(t)}
+                  onDelete={() => onDeleteTask(t)}
+                  warn
+                />
+              ))}
+            </ul>
           </div>
-        </div>
-      )}
-    </div>
-  );
-}
+        )}
 
-function SubTabBtn({
-  active,
-  label,
-  onClick,
-}: {
-  active: boolean;
-  label: string;
-  onClick: () => void;
-}) {
+        {todoCount === 0 && (
+          <p className="rounded-md border border-zinc-200 bg-white p-4 text-center text-sm text-zinc-500 dark:border-zinc-800 dark:bg-zinc-900">
+            할 일이 없습니다.
+          </p>
+        )}
+      </div>
+    );
+  }
+
+  // scope === "schedule"
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={
-        active
-          ? "-mb-px border-b-2 border-zinc-900 px-3 py-1.5 text-xs font-semibold text-zinc-900 dark:border-zinc-100 dark:text-zinc-100"
-          : "px-3 py-1.5 text-xs font-medium text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300"
-      }
-    >
-      {label}
-    </button>
+    <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+      {(["외근", "출장", "휴가"] as const).map((c) => (
+        <CategoryCard
+          key={c}
+          label={c}
+          items={scheduleByBucket.get(c) ?? []}
+          onClickTask={onClickTask}
+          showTime
+          showProjectBadge
+          findProject={findProject}
+          onAdd={c === "휴가" ? onAddVacation : undefined}
+          addLabel={c === "휴가" ? "+ 새 휴가" : undefined}
+        />
+      ))}
+    </div>
   );
 }
 
