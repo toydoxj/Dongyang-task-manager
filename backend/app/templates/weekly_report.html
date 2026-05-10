@@ -6,7 +6,11 @@
   <style>
     @page {
       size: A4 landscape;
-      margin: 10mm 12mm 12mm 12mm;
+      margin: 22mm 12mm 12mm 12mm;
+      @top-left {
+        content: element(weekly-header);
+        width: 100%;
+      }
       @bottom-right {
         content: "p. " counter(page) " / " counter(pages);
         font-family: 'NanumGothic', 'Nanum Gothic', sans-serif;
@@ -39,12 +43,12 @@
     }
 
     .header {
+      position: running(weekly-header);
       display: flex;
       justify-content: space-between;
       align-items: center;
       border-bottom: 2px solid #7baa3c;
-      padding-bottom: 6px;
-      margin-bottom: 10px;
+      padding-bottom: 4px;
     }
     .header .title-line {
       font-size: 16pt;
@@ -78,7 +82,11 @@
       color: #333;
     }
     .header .brand-text .ko { font-weight: 700; }
-    .header .brand-text .en { font-size: 7pt; color: #666; }
+    .header .brand-text .en {
+      font-size: 5pt;
+      color: #666;
+      white-space: nowrap;
+    }
 
     /* table 공통 */
     table {
@@ -374,7 +382,7 @@
             <td class="center">{{ s.code }}</td>
             <td>{{ s.name }}</td>
             <td>{{ s.client }}</td>
-            <td>{{ s.scale }}</td>
+            <td class="center">{{ s.scale }}</td>
             <td class="num">{{ s.estimated_amount|krw }}</td>
             <td class="center">{% if s.is_bid %}(입찰){% endif %}</td>
           </tr>
@@ -402,7 +410,7 @@
       <tbody>
         {% for n in report.new_projects %}
           <tr>
-            <td>{{ n.work_types|join('/') }}</td>
+            <td class="center">{{ n.work_types|join('/') }}</td>
             <td>{{ n.code }}</td>
             <td>{{ n.name }}</td>
             <td>{{ n.client }}</td>
