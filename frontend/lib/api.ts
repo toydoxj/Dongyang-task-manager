@@ -1558,6 +1558,34 @@ export async function fetchLastPublishedWeeklyReport(): Promise<LastPublishedWee
   return (await res.json()) as LastPublishedWeeklyReport;
 }
 
+/** 가장 최근 발행된 PDF 다운로드 (비admin용). 브라우저 다운로드 trigger. */
+export async function downloadLastPublishedWeeklyReportPdf(): Promise<void> {
+  const res = await authFetch(`/api/weekly-report/last-published.pdf`);
+  if (!res.ok) {
+    const detail = await res.json().catch(() => null);
+    throw new Error(
+      (detail as { detail?: string } | null)?.detail ??
+        `${res.status} ${res.statusText}`,
+    );
+  }
+  const blob = await res.blob();
+  const cd = res.headers.get("Content-Disposition") ?? "";
+  // filename*=UTF-8''<quoted> 또는 filename="..."
+  let filename = "주간업무일지.pdf";
+  const m1 = cd.match(/filename\*=UTF-8''([^;]+)/);
+  const m2 = cd.match(/filename="?([^";]+)"?/);
+  if (m1) filename = decodeURIComponent(m1[1]);
+  else if (m2) filename = m2[1];
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
 // ── 사내 공지 / 교육 일정 (PR-W Phase 2.4) ──
 
 export type NoticeKind = "공지" | "교육" | "휴일";

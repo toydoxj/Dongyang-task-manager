@@ -405,3 +405,48 @@ def get_last_published(
         week_end=log.week_end,
         published_at=log.published_at.isoformat() if log.published_at else None,
     )
+
+
+@router.get("/last-published.pdf")
+async def download_last_published_pdf(
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    notion: NotionService = Depends(get_notion),
+) -> Response:
+    """가장 최근 발행된 일지의 PDF — 비admin이 다운로드.
+
+    publish 시점의 week_start/week_end로 다시 빌드한다 (WORKS Drive에 저장된
+    PDF를 backend가 다시 fetch하지 않음). 데이터는 publish 이후 변할 수 있지만
+    구간이 같으므로 발행본과 사실상 동일.
+    """
+    log = (
+        db.query(WeeklyReportPublishLog)
+        .order_by(WeeklyReportPublishLog.published_at.desc())
+        .first()
+    )
+    if not log:
+        raise HTTPException(status_code=404, detail="발행된 주간업무일지가 없습니다")
+    try:
+        report = build_weekly_report(
+            db,
+            log.week_start,
+            week_end=log.week_end,
+            last_week_start=log.last_week_start,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    lws = log.last_week_start or (log.week_start - timedelta(days=7))
+    lwe = log.last_week_end or (log.week_start - timedelta(days=1))
+    report.seal_log = await _build_seal_log(user, notion, db, lws, lwe)
+    report.suggestions = await _build_suggestions(user, notion, lws, lwe)
+    pdf_bytes = build_weekly_report_pdf(report)
+    fname = log.file_name or f"{log.week_start.strftime('%Y%m%d')}_주간업무일지.pdf"
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": (
+                f"attachment; filename*=UTF-8''{url_quote(fname)}"
+            ),
+        },
+    )

@@ -7,6 +7,7 @@ import useSWR from "swr";
 import { useAuth } from "@/components/AuthGuard";
 import LoadingState from "@/components/ui/LoadingState";
 import {
+  downloadLastPublishedWeeklyReportPdf,
   downloadWeeklyReportPdf,
   fetchLastPublishedWeeklyReport,
   fetchWeeklyReport,
@@ -216,9 +217,15 @@ export default function WeeklyReportPage() {
   const handleDownload = async (): Promise<void> => {
     setDownloading(true);
     try {
-      await downloadWeeklyReportPdf(range);
+      if (isAdmin) {
+        // admin: 현재 입력된 기간 기준으로 PDF 미리 확인
+        await downloadWeeklyReportPdf(range);
+      } else {
+        // 일반 직원: 최근 발행된 PDF만 다운로드
+        await downloadLastPublishedWeeklyReportPdf();
+      }
     } catch (e) {
-      alert(e instanceof Error ? e.message : "PDF 확인 실패");
+      alert(e instanceof Error ? e.message : "PDF 처리 실패");
     } finally {
       setDownloading(false);
     }
@@ -315,10 +322,21 @@ export default function WeeklyReportPage() {
           </label>
           <button
             onClick={handleDownload}
-            disabled={downloading || !data}
+            disabled={downloading || (isAdmin && !data)}
             className="rounded bg-emerald-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-50"
+            title={
+              isAdmin
+                ? "현재 기간으로 PDF 미리보기 (다운로드)"
+                : "최근 발행된 주간업무일지 PDF 다운로드"
+            }
           >
-            {downloading ? "확인 중..." : "PDF 확인"}
+            {downloading
+              ? isAdmin
+                ? "확인 중..."
+                : "다운로드 중..."
+              : isAdmin
+                ? "PDF 확인"
+                : "PDF 다운로드"}
           </button>
           {isAdmin && (
             <button
