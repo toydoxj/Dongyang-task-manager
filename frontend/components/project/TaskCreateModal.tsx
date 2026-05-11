@@ -23,6 +23,8 @@ interface Props {
   open: boolean;
   /** 프로젝트 컨텍스트가 정해진 호출(프로젝트 상세 등). 없으면 선택 dropdown 노출. */
   projectId?: string;
+  /** 영업 컨텍스트가 정해진 호출(/me 영업 row → + 추가). 분류 자동 '영업(서비스)'. */
+  saleId?: string;
   /** 비프로젝트 모드일 때 사용자가 고를 수 있는 프로젝트 목록 (담당 프로젝트 등). */
   projects?: Project[];
   /** 담당자 default. 미지정 시 현재 로그인 사용자. (직원 업무 모드에서 직원 이름 전달) */
@@ -39,6 +41,7 @@ interface Props {
 export default function TaskCreateModal({
   open,
   projectId = "",
+  saleId = "",
   projects,
   defaultAssignee,
   initialStatus,
@@ -50,8 +53,9 @@ export default function TaskCreateModal({
   if (!open) return null;
   return (
     <Form
-      key={`${projectId}:${initialStatus ?? ""}:${initialStartDate ?? ""}:${initialCategory ?? ""}`}
+      key={`${projectId}:${saleId}:${initialStatus ?? ""}:${initialStartDate ?? ""}:${initialCategory ?? ""}`}
       projectId={projectId}
+      saleId={saleId}
       projects={projects}
       defaultAssignee={defaultAssignee}
       initialStatus={initialStatus}
@@ -65,6 +69,7 @@ export default function TaskCreateModal({
 
 function Form({
   projectId,
+  saleId,
   projects,
   defaultAssignee,
   initialStatus,
@@ -74,6 +79,7 @@ function Form({
   onCreated,
 }: {
   projectId: string;
+  saleId: string;
   projects?: Project[];
   defaultAssignee?: string;
   initialStatus?: string;
@@ -88,7 +94,12 @@ function Form({
   const [status, setStatus] = useState(initialStatus || "시작 전");
   // 첫 mount 시 prefill 형식을 분류와 일치 — time-based(외근/출장)면 T09:00,
   // date-based(휴가/프로젝트 등)면 date only. input type과 일치해야 표시됨.
-  const initialCat = projectId ? "프로젝트" : initialCategory || "";
+  // saleId 있으면 분류 자동 '영업(서비스)' (initialCategory 미지정 시).
+  const initialCat = projectId
+    ? "프로젝트"
+    : saleId
+      ? "영업(서비스)"
+      : initialCategory || "";
   const initialIsTime = isTimeBasedTask(initialCat, "");
   const baseDate = initialStartDate || today;
   const startDefault =
@@ -106,8 +117,8 @@ function Form({
   const [activity, setActivity] = useState("");
   // 분류=프로젝트 + projectId 미지정인 경우(=/me에서 새 업무) 사용자가 dropdown으로 선택
   const [pickedProjectId, setPickedProjectId] = useState(projectId);
-  // 영업(서비스) picker
-  const [pickedSaleId, setPickedSaleId] = useState("");
+  // 영업(서비스) picker — saleId prop 있으면 prefill (외부 호출 컨텍스트)
+  const [pickedSaleId, setPickedSaleId] = useState(saleId);
   const [saleQuery, setSaleQuery] = useState("");
   // 담당자 default: defaultAssignee(직원 업무 모드의 직원 이름) > 본인
   const [assignees, setAssignees] = useState(defaultAssignee ?? user?.name ?? "");

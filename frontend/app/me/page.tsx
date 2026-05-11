@@ -57,9 +57,11 @@ export default function MyPage() {
   const [editing, setEditing] = useState<Task | null>(null);
   const [importOpen, setImportOpen] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
-  // 프로젝트별 신규 TASK 모달
+  // 프로젝트/영업별 신규 TASK 모달
   const [taskCreate, setTaskCreate] = useState<{
     projectId: string;
+    /** 영업별 task 생성 시 — 분류 자동 '영업(서비스)'. */
+    saleId?: string;
     status?: string;
     /** 분류 prefill (휴가 카드 + 버튼 등). */
     category?: string;
@@ -526,6 +528,14 @@ export default function MyPage() {
         <MySalesSection
           effectiveName={effectiveName}
           isViewingOther={isViewingOther}
+          onCreateTask={(saleId, status) =>
+            setTaskCreate({
+              projectId: "",
+              saleId,
+              status,
+              category: "영업(서비스)",
+            })
+          }
         />
       )}
 
@@ -593,6 +603,7 @@ export default function MyPage() {
       <TaskCreateModal
         open={!!taskCreate}
         projectId={taskCreate?.projectId ?? ""}
+        saleId={taskCreate?.saleId}
         projects={projects ?? []}
         defaultAssignee={effectiveName}
         initialStatus={taskCreate?.status}

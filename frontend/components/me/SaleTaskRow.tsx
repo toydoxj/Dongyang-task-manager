@@ -14,6 +14,8 @@ interface Props {
   onChanged: () => void;
   /** 우리 앱 분류: 금주 TASK 활동 있으면 true (배지 표시 우선) */
   effectiveActive?: boolean;
+  /** 영업별 task 추가 — ProjectTaskRow와 동일 패턴. 부모가 setTaskCreate({ saleId, status, category }) 처리. */
+  onCreate?: (saleId: string, initialStatus?: string) => void;
 }
 
 const STAGE_BADGE: Record<string, string> = {
@@ -26,6 +28,7 @@ export default function SaleTaskRow({
   onClickHeader,
   onChanged,
   effectiveActive,
+  onCreate,
 }: Props) {
   // 영업 전체 task (sales_ids @> [sale.id]).
   const { data: saleTasksData } = useTasks({ sale_id: sale.id });
@@ -109,8 +112,15 @@ export default function SaleTaskRow({
 
       {!collapsed && (
         <div className="border-t border-emerald-200/70 p-3 dark:border-emerald-900/40">
-          {/* 새 task 생성은 영업 모달(SalesEditModal)에서 — onCreate 미전달 */}
-          <TaskKanban tasks={tasks} onChanged={onChanged} />
+          <TaskKanban
+            tasks={tasks}
+            onChanged={onChanged}
+            onCreate={
+              onCreate
+                ? (initialStatus) => onCreate(sale.id, initialStatus)
+                : undefined
+            }
+          />
         </div>
       )}
     </section>

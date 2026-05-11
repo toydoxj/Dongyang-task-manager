@@ -14,11 +14,14 @@ interface Props {
   effectiveName: string;
   /** 다른 직원 보기 모드 (=mine 사용 X, assignee 명시) */
   isViewingOther: boolean;
+  /** 영업 task 추가 — 부모가 setTaskCreate({ saleId, status, category: '영업(서비스)' }) */
+  onCreateTask?: (saleId: string, initialStatus?: string) => void;
 }
 
 export default function MySalesSection({
   effectiveName,
   isViewingOther,
+  onCreateTask,
 }: Props) {
   const filters = isViewingOther
     ? { assignee: effectiveName }
@@ -81,6 +84,7 @@ export default function MySalesSection({
                     sale={s}
                     onClickHeader={setEditing}
                     onChanged={() => mutate((k) => Array.isArray(k) && k[0] === "tasks")}
+                    onCreate={onCreateTask}
                   />
                 ))}
               </div>
@@ -95,6 +99,7 @@ export default function MySalesSection({
                     sale={s}
                     onClickHeader={setEditing}
                     onChanged={() => mutate((k) => Array.isArray(k) && k[0] === "tasks")}
+                    onCreate={onCreateTask}
                   />
                 ))}
               </div>
@@ -109,6 +114,7 @@ export default function MySalesSection({
                     sale={s}
                     onClickHeader={setEditing}
                     onChanged={() => mutate((k) => Array.isArray(k) && k[0] === "tasks")}
+                    onCreate={onCreateTask}
                   />
                 ))}
               </div>
