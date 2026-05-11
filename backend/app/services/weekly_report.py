@@ -57,9 +57,9 @@ _NEW_STAGES = frozenset({"사업승인", "계획설계", "계획검토", "기본
 
 # 개인 일정 매트릭스에 표시할 task category.
 # "휴가(연차)"는 frontend의 통합 옵션 — 표시 시 duration 기반 연차/반차로 분기.
-# "외근/출장"은 task.activity로도 표현 가능하므로 두 source 모두 lookup.
+# "외근/출장/파견"은 task.activity로도 표현 가능하므로 두 source 모두 lookup.
 _SCHEDULE_CATEGORIES = frozenset(
-    {"외근", "출장", "휴가", "휴가(연차)", "교육"}
+    {"외근", "출장", "파견", "휴가", "휴가(연차)", "교육"}
 )
 
 
@@ -814,8 +814,8 @@ def aggregate_personal_schedule(
 ) -> list[PersonalScheduleEntry]:
     """직원×요일 매트릭스.
 
-    포함 조건: task.category가 일정성 카테고리 OR task.activity가 외근/출장.
-    (프로젝트 task가 분류='프로젝트'여도 활동이 외근/출장이면 일정에 표시)
+    포함 조건: task.category가 일정성 카테고리 OR task.activity가 외근/출장/파견.
+    (프로젝트 task가 분류='프로젝트'여도 활동이 외근/출장/파견이면 일정에 표시)
     """
     rows = (
         db.query(M.MirrorTask)
@@ -823,7 +823,7 @@ def aggregate_personal_schedule(
         .filter(
             or_(
                 M.MirrorTask.category.in_(_SCHEDULE_CATEGORIES),
-                M.MirrorTask.activity.in_({"외근", "출장"}),
+                M.MirrorTask.activity.in_({"외근", "출장", "파견"}),
             )
         )
         # 일정 구간 [start_date, end_date]가 [week_start, week_end]와 교집합

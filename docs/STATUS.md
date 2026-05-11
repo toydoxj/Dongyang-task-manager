@@ -37,7 +37,8 @@
 | **회수 PR-R** TasksByTimeView quick action (MY-003) | TaskRow에 quick action 3개 추가: ✓ 완료 처리(updateTask로 status='완료' 즉시 PATCH) / 📁 프로젝트 열기(/projects/{id}) / 🔖 관련 날인(/seal-requests?project_id={id}). 페이지에 `handleCompleteTask` callback. 기존 분류 view(TodayTasks)는 회귀 위험으로 그대로 유지 — quick action은 시간 view 전용 | 943bc4c |
 | **Phase 4-A PR-S1** lib/api.ts 도메인 분리 — 파일럿(clients) | `lib/api/_internal.ts` (jsonOrThrow + qs + authFetch re-export) + `lib/api/clients.ts` (listClients/createClient/updateClient/deleteClient). lib/api.ts에서 해당 함수 제거 + `export * from "./api/clients";` re-export. import "@/lib/api" 경로 모두 호환. 후속 PR-S2~S5에서 나머지 12 도메인 분리 예정 | cf6ee53 |
 | **Phase 4-A PR-S2** lib/api.ts 분리 — tasks + suggestions + notices | 작은 도메인 3개 분리. tasks(40 줄), suggestions(60 줄), notices(100 줄). 각 도메인별 파일 + lib/api.ts re-export. unused type import(Task*) 정리 | fcd6872 |
-| **PR-T** /me 4탭 구조 (사용자 요청) | 헤더+요약 카드+스냅샷 다음에 4탭 nav([해야할 일]/[담당 프로젝트]/[내 영업]/[기타 업무]). 각 탭 click 시 해당 섹션만 conditional render. 기존 hr 구분선 제거. URL `?tab=` 동기화. 「해야할 일」 안의 [분류/시간] toggle은 todo 탭 내부에서 그대로 유지 | 신규 |
+| **PR-T** /me 4탭 구조 (사용자 요청) | 헤더+요약 카드+스냅샷 다음에 4탭 nav([해야할 일]/[담당 프로젝트]/[내 영업]/[기타 업무]). 각 탭 click 시 해당 섹션만 conditional render. 기존 hr 구분선 제거. URL `?tab=` 동기화. 「해야할 일」 안의 [분류/시간] toggle은 todo 탭 내부에서 그대로 유지. 후속 commit으로 5탭 재구조(할 일/일정/담당 프로젝트/내 영업/기타 업무) + 「일정」 탭에 파견 카드 추가 + 활동 옵션에 "파견" 동기화 | 1fce89a / 78e8d78 / eafdfcd |
+| **PR-U** 주간업무일지 섹션 재배치 + 개인일정 파견 포함 (사용자 요청) | 새 순서: 1.공지 / 2.개인일정 / 3.신규 / 4.완료 / 5.인원 / 6.교육+7.건의(grid-2) / 8.날인 / 9.영업 / 10.팀별 / 11.대기 / 12.보류. frontend ReportPreview + backend weekly_report.html 동시 적용. backend `_SCHEDULE_CATEGORIES`와 activity 매칭 set에 "파견" 추가 — 파견 task가 개인일정 표에 표시되도록 | 신규 |
 
 ## 미완료 / 보류
 

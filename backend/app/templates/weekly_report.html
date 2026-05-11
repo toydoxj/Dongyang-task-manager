@@ -322,163 +322,50 @@
   </div>
 </div>
 
-{# ─── 인원현황 ─── #}
+{# 새 순서 (사용자 결정 2026-05-11): 1.공지 → 2.개인일정 → 3.신규 → 4.완료 → 5.인원 → 6/7.교육·건의 → 8.날인 → 9.영업 #}
+
+{# ─── 1. 주요 공지사항 ─── #}
 <section>
-  <h2>인원현황</h2>
-  <div class="summary-line">
-    {# 인원 표시(사용자 결정 2026-05-11): 구조설계/안전진단/관리만 명시 노출.
-       구조설계 = 노션 '구조설계' 인원 + 1, 관리 = 노션 '관리세무' + 1, 안전진단은 그대로.
-       총원은 위 3개 합계(by_occupation total + 2 보정 - 기타).
-       기타 직군은 skip. #}
-    {% set s_design = (report.headcount.by_occupation.get('구조설계', 0)) + 1 %}
-    {% set s_inspect = report.headcount.by_occupation.get('안전진단', 0) %}
-    {% set s_office = (report.headcount.by_occupation.get('관리세무', 0)) + 1 %}
-    {% set total_display = s_design + s_inspect + s_office %}
-    총원 <strong>{{ total_display }}인</strong>
-    &nbsp;│&nbsp; 구조설계 {{ s_design }}
-    &nbsp;│&nbsp; 안전진단 {{ s_inspect }}
-    &nbsp;│&nbsp; 관리 {{ s_office }}
-    {% if report.headcount.new_this_week or report.headcount.resigned_this_week %}
-      &nbsp;│&nbsp; <span class="badge">변동</span>
-      신규 {{ report.headcount.new_this_week }}
-      {% if report.headcount.resigned_this_week %}
-        / 퇴사 {{ report.headcount.resigned_this_week|length }} ({{ report.headcount.resigned_this_week|join(', ') }})
-      {% endif %}
-    {% endif %}
-    {% if report.holidays %}
-      &nbsp;│&nbsp; <span class="badge">공휴일</span>
-      {% for h in report.holidays %}{{ h.date.strftime('%m/%d') }} {{ h.name }}{% if h.source == 'company' %}(사내){% endif %}{% if not loop.last %} · {% endif %}{% endfor %}
-    {% endif %}
+  <h2>주요 공지사항</h2>
+  {% if report.notices %}
+    <ul style="list-style: disc inside; font-size: 8pt;">
+      {% for n in report.notices %}<li>{{ n }}</li>{% endfor %}
+    </ul>
+  {% else %}<div class="empty">(없음)</div>{% endif %}
+</section>
+
+{# ─── 2. 개인 주간 일정 — 5팀 horizontal grid ─── #}
+<section style="page-break-inside: auto;">
+  <h2>개인 주간 일정</h2>
+  <div class="grid-5">
+    {% for team in schedule_grid_teams %}
+      {% set members = report.team_members.get(team, []) %}
+      <div class="schedule-card">
+        <div class="schedule-card-header">
+          {{ team }} <span class="count">({{ members|length }}명)</span>
+        </div>
+        {% if members %}
+          {% include "_schedule_mini.html" %}
+        {% else %}
+          <div class="empty">(팀원 없음)</div>
+        {% endif %}
+        {% if loop.last %}
+          {# 진단팀 카드 끝에 본부 stack #}
+          {% set extra_members = report.team_members.get(schedule_extra_team, []) %}
+          {% if extra_members %}
+            <div class="schedule-card-header" style="border-top: 0.5px solid #999;">
+              {{ schedule_extra_team }} <span class="count">({{ extra_members|length }}명)</span>
+            </div>
+            {% set members = extra_members %}
+            {% include "_schedule_mini.html" %}
+          {% endif %}
+        {% endif %}
+      </div>
+    {% endfor %}
   </div>
 </section>
 
-{# ─── [공지][교육][건의] 3-col ─── #}
-<section>
-  <div class="grid-3">
-    <div>
-      <h2>주요 공지사항</h2>
-      {% if report.notices %}
-        <ul style="list-style: disc inside; font-size: 8pt;">
-          {% for n in report.notices %}<li>{{ n }}</li>{% endfor %}
-        </ul>
-      {% else %}<div class="empty">(없음)</div>{% endif %}
-    </div>
-    <div>
-      <h2>교육 일정</h2>
-      {% if report.education %}
-        <ul style="list-style: disc inside; font-size: 8pt;">
-          {% for e in report.education %}<li>{{ e }}</li>{% endfor %}
-        </ul>
-      {% else %}<div class="empty">(없음)</div>{% endif %}
-    </div>
-    <div>
-      <h2>건의사항</h2>
-      {% if report.suggestions %}
-        <ul style="list-style: disc inside; font-size: 8pt;">
-          {% for s in report.suggestions %}
-            <li>{{ s.title }} <span style="font-size: 7pt; color: #888;">· {{ s.author }} · {{ s.status }}</span></li>
-          {% endfor %}
-        </ul>
-      {% else %}<div class="empty">(없음)</div>{% endif %}
-    </div>
-  </div>
-</section>
-
-{# ─── 완료(위) → 날인대장(아래) 세로 배치 ─── #}
-<section>
-  <h2>완료 프로젝트</h2>
-  {% if report.completed %}
-    <table>
-      <thead>
-        <tr>
-          <th style="width: 8%;">상태</th>
-          <th style="width: 9%;">CODE</th>
-          <th style="width: 38%;">프로젝트명</th>
-          <th style="width: 22%;">발주처</th>
-          <th style="width: 13%;">담당팀</th>
-          <th style="width: 10%;">소요기간(개월)</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for c in report.completed %}
-          <tr>
-            <td class="center">{{ c.status_label }}</td>
-            <td class="center">{{ c.code }}</td>
-            {{ fit_cell(c.name) }}
-            {{ fit_client_cell(c.client) }}
-            <td class="center">{{ c.teams|join(', ') }}</td>
-            <td class="center">{% if c.duration_months is not none %}{{ '%.1f'|format(c.duration_months) }}{% endif %}</td>
-          </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  {% else %}<div class="empty">(완료 없음)</div>{% endif %}
-</section>
-
-<section>
-  <h2>날인대장</h2>
-  {% if report.seal_log %}
-    <table>
-      <thead>
-        <tr>
-          <th style="width: 9%;">승인일</th>
-          <th style="width: 11%;">CODE</th>
-          <th style="width: 32%;">용역명</th>
-          <th style="width: 19%;">제출처</th>
-          <th style="width: 18%;">유형</th>
-          <th style="width: 11%;">담당자</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for s in report.seal_log %}
-          <tr>
-            <td class="center">{{ s.approved_at|mmdd }}</td>
-            <td class="center">{{ s.code }}</td>
-            {{ fit_cell(s.name) }}
-            {{ fit_client_cell(s.submission_target) }}
-            <td class="center">{{ s.seal_type }}</td>
-            <td class="center">{{ s.requester }}</td>
-          </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  {% else %}<div class="empty">(저번주 승인된 날인 없음)</div>{% endif %}
-</section>
-
-{# ─── 영업 ─── #}
-<section>
-  <h2>영업</h2>
-  {% if report.sales %}
-    <table>
-      <thead>
-        <tr>
-          <th style="width: 9%;">영업번호</th>
-          <th style="width: 33%;">PROJECT</th>
-          <th style="width: 17%;">발주처</th>
-          <th style="width: 16%;">규모</th>
-          <th style="width: 12%;">견적가</th>
-          <th style="width: 7%;">수주확률</th>
-          <th style="width: 6%;">비고</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for s in report.sales %}
-          <tr>
-            <td class="center">{{ s.code }}</td>
-            {{ fit_cell(s.name) }}
-            {{ fit_client_cell(s.client) }}
-            <td class="center scale-cell">{{ s.scale }}</td>
-            <td class="num">{{ s.estimated_amount|krw }}</td>
-            <td class="center">{% if s.probability is not none %}{{ s.probability|int }}%{% endif %}</td>
-            <td class="center">{% if s.is_bid %}(입찰){% endif %}</td>
-          </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  {% else %}<div class="empty">(저번주 시작 영업건 없음)</div>{% endif %}
-</section>
-
-{# ─── 신규 프로젝트 ─── #}
+{# ─── 3. 신규 프로젝트 ─── #}
 <section>
   <h2>신규 프로젝트</h2>
   {% if report.new_projects %}
@@ -509,35 +396,153 @@
   {% else %}<div class="empty">(신규 없음)</div>{% endif %}
 </section>
 
-{# ─── 개인 주간 일정 — 5팀 horizontal grid ─── #}
-<section style="page-break-inside: auto;">
-  <h2>개인 주간 일정</h2>
-  <div class="grid-5">
-    {% for team in schedule_grid_teams %}
-      {% set members = report.team_members.get(team, []) %}
-      <div class="schedule-card">
-        <div class="schedule-card-header">
-          {{ team }} <span class="count">({{ members|length }}명)</span>
-        </div>
-        {% if members %}
-          {% include "_schedule_mini.html" %}
-        {% else %}
-          <div class="empty">(팀원 없음)</div>
-        {% endif %}
-        {% if loop.last %}
-          {# 진단팀 카드 끝에 본부 stack #}
-          {% set extra_members = report.team_members.get(schedule_extra_team, []) %}
-          {% if extra_members %}
-            <div class="schedule-card-header" style="border-top: 0.5px solid #999;">
-              {{ schedule_extra_team }} <span class="count">({{ extra_members|length }}명)</span>
-            </div>
-            {% set members = extra_members %}
-            {% include "_schedule_mini.html" %}
-          {% endif %}
-        {% endif %}
-      </div>
-    {% endfor %}
+{# ─── 4. 완료 프로젝트 ─── #}
+<section>
+  <h2>완료 프로젝트</h2>
+  {% if report.completed %}
+    <table>
+      <thead>
+        <tr>
+          <th style="width: 8%;">상태</th>
+          <th style="width: 9%;">CODE</th>
+          <th style="width: 38%;">프로젝트명</th>
+          <th style="width: 22%;">발주처</th>
+          <th style="width: 13%;">담당팀</th>
+          <th style="width: 10%;">소요기간(개월)</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for c in report.completed %}
+          <tr>
+            <td class="center">{{ c.status_label }}</td>
+            <td class="center">{{ c.code }}</td>
+            {{ fit_cell(c.name) }}
+            {{ fit_client_cell(c.client) }}
+            <td class="center">{{ c.teams|join(', ') }}</td>
+            <td class="center">{% if c.duration_months is not none %}{{ '%.1f'|format(c.duration_months) }}{% endif %}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}<div class="empty">(완료 없음)</div>{% endif %}
+</section>
+
+{# ─── 5. 인원현황 ─── #}
+<section>
+  <h2>인원현황</h2>
+  <div class="summary-line">
+    {# 인원 표시(사용자 결정 2026-05-11): 구조설계/안전진단/관리만 명시 노출.
+       구조설계 = 노션 '구조설계' 인원 + 1, 관리 = 노션 '관리세무' + 1, 안전진단은 그대로.
+       총원은 위 3개 합계(by_occupation total + 2 보정 - 기타).
+       기타 직군은 skip. #}
+    {% set s_design = (report.headcount.by_occupation.get('구조설계', 0)) + 1 %}
+    {% set s_inspect = report.headcount.by_occupation.get('안전진단', 0) %}
+    {% set s_office = (report.headcount.by_occupation.get('관리세무', 0)) + 1 %}
+    {% set total_display = s_design + s_inspect + s_office %}
+    총원 <strong>{{ total_display }}인</strong>
+    &nbsp;│&nbsp; 구조설계 {{ s_design }}
+    &nbsp;│&nbsp; 안전진단 {{ s_inspect }}
+    &nbsp;│&nbsp; 관리 {{ s_office }}
+    {% if report.headcount.new_this_week or report.headcount.resigned_this_week %}
+      &nbsp;│&nbsp; <span class="badge">변동</span>
+      신규 {{ report.headcount.new_this_week }}
+      {% if report.headcount.resigned_this_week %}
+        / 퇴사 {{ report.headcount.resigned_this_week|length }} ({{ report.headcount.resigned_this_week|join(', ') }})
+      {% endif %}
+    {% endif %}
+    {% if report.holidays %}
+      &nbsp;│&nbsp; <span class="badge">공휴일</span>
+      {% for h in report.holidays %}{{ h.date.strftime('%m/%d') }} {{ h.name }}{% if h.source == 'company' %}(사내){% endif %}{% if not loop.last %} · {% endif %}{% endfor %}
+    {% endif %}
   </div>
+</section>
+
+{# ─── 6, 7. 교육 / 건의 — grid-2 ─── #}
+<section>
+  <div class="grid-2">
+    <div>
+      <h2>교육 일정</h2>
+      {% if report.education %}
+        <ul style="list-style: disc inside; font-size: 8pt;">
+          {% for e in report.education %}<li>{{ e }}</li>{% endfor %}
+        </ul>
+      {% else %}<div class="empty">(없음)</div>{% endif %}
+    </div>
+    <div>
+      <h2>건의사항</h2>
+      {% if report.suggestions %}
+        <ul style="list-style: disc inside; font-size: 8pt;">
+          {% for s in report.suggestions %}
+            <li>{{ s.title }} <span style="font-size: 7pt; color: #888;">· {{ s.author }} · {{ s.status }}</span></li>
+          {% endfor %}
+        </ul>
+      {% else %}<div class="empty">(없음)</div>{% endif %}
+    </div>
+  </div>
+</section>
+
+{# ─── 8. 날인대장 ─── #}
+<section>
+  <h2>날인대장</h2>
+  {% if report.seal_log %}
+    <table>
+      <thead>
+        <tr>
+          <th style="width: 9%;">승인일</th>
+          <th style="width: 11%;">CODE</th>
+          <th style="width: 32%;">용역명</th>
+          <th style="width: 19%;">제출처</th>
+          <th style="width: 18%;">유형</th>
+          <th style="width: 11%;">담당자</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for s in report.seal_log %}
+          <tr>
+            <td class="center">{{ s.approved_at|mmdd }}</td>
+            <td class="center">{{ s.code }}</td>
+            {{ fit_cell(s.name) }}
+            {{ fit_client_cell(s.submission_target) }}
+            <td class="center">{{ s.seal_type }}</td>
+            <td class="center">{{ s.requester }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}<div class="empty">(저번주 승인된 날인 없음)</div>{% endif %}
+</section>
+
+{# ─── 9. 영업 ─── #}
+<section>
+  <h2>영업</h2>
+  {% if report.sales %}
+    <table>
+      <thead>
+        <tr>
+          <th style="width: 9%;">영업번호</th>
+          <th style="width: 33%;">PROJECT</th>
+          <th style="width: 17%;">발주처</th>
+          <th style="width: 16%;">규모</th>
+          <th style="width: 12%;">견적가</th>
+          <th style="width: 7%;">수주확률</th>
+          <th style="width: 6%;">비고</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for s in report.sales %}
+          <tr>
+            <td class="center">{{ s.code }}</td>
+            {{ fit_cell(s.name) }}
+            {{ fit_client_cell(s.client) }}
+            <td class="center scale-cell">{{ s.scale }}</td>
+            <td class="num">{{ s.estimated_amount|krw }}</td>
+            <td class="center">{% if s.probability is not none %}{{ s.probability|int }}%{% endif %}</td>
+            <td class="center">{% if s.is_bid %}(입찰){% endif %}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}<div class="empty">(저번주 시작 영업건 없음)</div>{% endif %}
 </section>
 
 {# ─── 팀별 업무 현황 ─── #}
