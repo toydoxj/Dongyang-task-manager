@@ -74,3 +74,39 @@ BMA 운영 단가는 `backend/app/services/bma_table.py` 상단 (책임자 456,2
 - `docs/건축물관리점검지침...doc` — 건축물관리법 본문
 - `docs/건축물 정기점검 대가 산정표.xlsx` — 사장 운영 산정표
 - 견적서 xls/xlsx 8개 — 종류별 실 사례
+
+## 환경 / 배포 노트
+
+| 영역 | 호스팅 | 자동 트리거 |
+|---|---|---|
+| **frontend** | Vercel project `dongyang-task-manager` (team `fsjh35-8127s-projects`) | `main` push마다 자동 배포 |
+| **backend** | Render Docker service `dy-task-backend` (region: `ap-northeast-2`, Singapore equivalent) | backend 디렉터리 변경 시 Docker 재빌드 5–8분 |
+| **database** | Supabase Pro project `hxhdqjbzfuddinoejoyo` (DY-Task, region: `ap-northeast-2`) | — |
+
+### DATABASE_URL 주의 — IPv4 호환 필수
+
+Supabase는 두 종류 pooler를 제공:
+
+| pooler | host | IP | Render 호환 |
+|---|---|---|---|
+| **SHARED** (권장) | `aws-0-ap-northeast-2.pooler.supabase.com` | IPv4 + IPv6 | ✅ |
+| **DEDICATED** (기본 노출) | `aws-1-ap-northeast-2.pooler.supabase.com` | **IPv6 only** | ❌ Render outbound는 IPv4 only |
+
+**Render `DATABASE_URL`은 반드시 SHARED pooler URL을 사용** (Session 모드 port `5432` 권장).
+Dedicated pooler를 쓰면 startup 시 `(EDBHANDLEREXITED) connection to database closed` 에러로 instance restart 무한 루프 (2026-05-11 발생 사례).
+Pro plan에서 IPv4 add-on(약 $4/월) 활성화 시 dedicated pooler도 사용 가능.
+
+URL 형식:
+```
+postgresql://postgres.hxhdqjbzfuddinoejoyo:<PASSWORD>@aws-0-ap-northeast-2.pooler.supabase.com:5432/postgres
+```
+
+### Transaction (port 6543) vs Session (port 5432)
+
+- Session pooler (5432) = SQLAlchemy + psycopg 표준 호환. **이 프로젝트는 Session 사용**.
+- Transaction pooler (6543) = prepared statement / LISTEN-NOTIFY 미지원. SQLAlchemy 일부 기능 깨짐.
+
+### Supabase 진단 도구
+
+`mcp__plugin_supabase_supabase__get_logs(project_id="hxhdqjbzfuddinoejoyo", service="postgres")` —
+정상 backend connection은 `application_name=Supavisor`로 노출. `supabase/dashboard`만 보이고 `Supavisor`가 없으면 backend connect 실패 신호.
