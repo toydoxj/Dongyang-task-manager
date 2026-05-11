@@ -1,4 +1,4 @@
-"""/api/cashflow — 수금 + 지출 통합 시계열 (mirror 조회) + 수금 CRUD (admin)."""
+"""/api/cashflow — 수금 + 지출 통합 시계열 (mirror 조회) + 수금 CRUD (admin/manager)."""
 from __future__ import annotations
 
 import asyncio
@@ -14,7 +14,7 @@ from app.db import get_db
 from app.models import mirror as M
 from app.models.auth import User
 from app.models.cashflow import CashflowEntry, CashflowResponse
-from app.security import get_current_user, require_admin
+from app.security import get_current_user, require_admin_or_manager
 from app.services.mirror_dto import cashflow_from_mirror
 from app.services.notion import NotionService, get_notion
 from app.services.sync import get_sync
@@ -186,7 +186,7 @@ def _income_update_props(req: IncomeUpdateRequest) -> dict[str, Any]:
 @router.post("/incomes", response_model=CashflowEntry)
 async def create_income(
     body: IncomeCreateRequest,
-    _admin: User = Depends(require_admin),
+    _user: User = Depends(require_admin_or_manager),
     db: Session = Depends(get_db),
     notion: NotionService = Depends(get_notion),
 ) -> CashflowEntry:
@@ -212,7 +212,7 @@ async def create_income(
 async def update_income(
     page_id: str,
     body: IncomeUpdateRequest,
-    _admin: User = Depends(require_admin),
+    _user: User = Depends(require_admin_or_manager),
     db: Session = Depends(get_db),
     notion: NotionService = Depends(get_notion),
 ) -> CashflowEntry:
@@ -232,7 +232,7 @@ async def update_income(
 @router.delete("/incomes/{page_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_income(
     page_id: str,
-    _admin: User = Depends(require_admin),
+    _user: User = Depends(require_admin_or_manager),
     db: Session = Depends(get_db),
     notion: NotionService = Depends(get_notion),
 ) -> None:
