@@ -168,10 +168,17 @@ export default function WeeklyReportPage() {
     toIsoDate(addDays(defaultWeekStart(), -7)),
   );
   const [downloading, setDownloading] = useState(false);
+  const [downloadingLast, setDownloadingLast] = useState(false);
   const [publishing, setPublishing] = useState(false);
   const [publishOpen, setPublishOpen] = useState(false);
   // 사용자가 lastWeekStart를 한 번이라도 직접 수정했으면 last-published 자동 셋팅 차단
   const [lastWeekStartAuto, setLastWeekStartAuto] = useState(true);
+  // 마지막 발행 정보 — admin "[최근 발행 PDF]" 버튼 활성/툴팁용
+  const [lastPublishedInfo, setLastPublishedInfo] = useState<{
+    weekStart: string;
+    weekEnd: string;
+    publishedAt: string | null;
+  } | null>(null);
 
   const range: WeeklyReportRange = {
     weekStart,
@@ -179,13 +186,19 @@ export default function WeeklyReportPage() {
     lastWeekStart: lastWeekStart || undefined,
   };
 
-  // 마지막 발행 로그 기반 자동 lastWeekStart 셋팅 (mount 1회).
+  // 마지막 발행 로그 기반 자동 lastWeekStart 셋팅 + 최근 발행 정보 보관 (mount 1회).
   // 발행된 일지의 week_end + 1일 = 다음 일지의 last_week_start (저번주 시작 기준).
   useEffect(() => {
-    if (!user || !lastWeekStartAuto) return;
+    if (!user) return;
     void fetchLastPublishedWeeklyReport()
       .then((info) => {
-        if (!info.week_end) return;
+        if (!info.week_end || !info.week_start) return;
+        setLastPublishedInfo({
+          weekStart: info.week_start,
+          weekEnd: info.week_end,
+          publishedAt: info.published_at ?? null,
+        });
+        if (!lastWeekStartAuto) return;
         const nextLws = new Date(`${info.week_end}T00:00:00`);
         nextLws.setDate(nextLws.getDate() + 1);
         setLastWeekStart(toIsoDate(nextLws));
@@ -194,7 +207,7 @@ export default function WeeklyReportPage() {
         /* 발행 이력 없거나 실패 — 무시 */
       });
     // user/auto flag만 의존성. lastWeekStart 자체는 사용자 수정 차단 위해 제외.
-     
+
   }, [user, lastWeekStartAuto]);
 
   const isAdmin = user?.role === "admin";
@@ -234,6 +247,17 @@ export default function WeeklyReportPage() {
     }
   };
 
+  const handleDownloadLastPublished = async (): Promise<void> => {
+    setDownloadingLast(true);
+    try {
+      await downloadLastPublishedWeeklyReportPdf();
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "최근 발행 PDF 다운로드 실패");
+    } finally {
+      setDownloadingLast(false);
+    }
+  };
+
   const openPublishChecklist = (): void => {
     if (!data) return;
     setPublishOpen(true);
@@ -250,6 +274,20 @@ export default function WeeklyReportPage() {
         `발행 완료\n파일: ${res.file_name}\n전송 ${res.recipient_count}명${failNote}`,
       );
       setPublishOpen(false);
+      // 발행 직후 [최근 발행 PDF] 버튼 즉시 활성화
+      void fetchLastPublishedWeeklyReport()
+        .then((info) => {
+          if (info.week_start && info.week_end) {
+            setLastPublishedInfo({
+              weekStart: info.week_start,
+              weekEnd: info.week_end,
+              publishedAt: info.published_at ?? null,
+            });
+          }
+        })
+        .catch(() => {
+          /* 무시 */
+        });
     } catch (e) {
       alert(e instanceof Error ? e.message : "발행 실패");
     } finally {
@@ -343,6 +381,20 @@ export default function WeeklyReportPage() {
                 ? "PDF 확인"
                 : "PDF 다운로드"}
           </button>
+          {isAdmin && (
+            <button
+              onClick={handleDownloadLastPublished}
+              disabled={downloadingLast || !lastPublishedInfo}
+              className="rounded border border-emerald-600 bg-white px-3 py-1.5 text-sm font-medium text-emerald-700 hover:bg-emerald-50 disabled:opacity-50 dark:bg-zinc-900 dark:text-emerald-400 dark:hover:bg-emerald-950/40"
+              title={
+                lastPublishedInfo
+                  ? `최근 발행본 (${lastPublishedInfo.weekStart} ~ ${lastPublishedInfo.weekEnd}${lastPublishedInfo.publishedAt ? ` · ${lastPublishedInfo.publishedAt.slice(0, 10)} 발행` : ""})`
+                  : "발행 이력 없음"
+              }
+            >
+              {downloadingLast ? "다운로드 중..." : "최근 발행 PDF"}
+            </button>
+          )}
           {isAdmin && (
             <button
               onClick={openPublishChecklist}
