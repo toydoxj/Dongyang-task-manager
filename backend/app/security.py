@@ -123,3 +123,13 @@ def require_admin_or_lead(user: User = Depends(get_current_user)) -> User:
             detail="관리자 또는 팀장 권한이 필요합니다",
         )
     return user
+
+
+def require_admin_or_manager(user: User = Depends(get_current_user)) -> User:
+    """admin 또는 manager(관리팀) 만 접근 가능 — 운영 관리(계약분담 등)용."""
+    if user.role not in {"admin", "manager"}:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="관리자 또는 관리팀 권한이 필요합니다",
+        )
+    return user
