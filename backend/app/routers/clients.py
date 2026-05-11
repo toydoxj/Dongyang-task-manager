@@ -124,7 +124,7 @@ class ClientUpdateRequest(BaseModel):
 async def update_client(
     page_id: str,
     body: ClientUpdateRequest,
-    _admin: User = Depends(require_admin),
+    _user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
     notion: NotionService = Depends(get_notion),
 ) -> Client:
