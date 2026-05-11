@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import useSWR from "swr";
 
@@ -16,6 +15,9 @@ import {
   buildScheduleByEmployee,
   buildWeekDays,
 } from "@/components/weekly-report/ScheduleMini";
+import { ProjectLink, SaleLink } from "@/components/weekly-report/links";
+import { SplitStageGrid } from "@/components/weekly-report/StageTables";
+import { TeamWorkTable } from "@/components/weekly-report/TeamWorkTable";
 import PublishChecklist from "@/components/weekly-report/PublishChecklist";
 import SectionNav from "@/components/weekly-report/SectionNav";
 import StatusBar from "@/components/weekly-report/StatusBar";
@@ -25,14 +27,11 @@ import {
   fetchLastPublishedWeeklyReport,
   fetchWeeklyReport,
   publishWeeklyReport,
-  type WeeklyEmployeeWorkRow,
   type WeeklyHoliday,
   type WeeklyPersonalScheduleEntry,
   type WeeklyReport,
   type WeeklyReportRange,
-  type WeeklyStageProject,
 } from "@/lib/api";
-import { cn } from "@/lib/utils";
 
 /** 주어진 날짜가 속한 주의 월요일 (KST 가정). */
 function mondayOf(d: Date): Date {
@@ -82,35 +81,6 @@ const teamSort = (a: string, b: string): number =>
 const SCHEDULE_GRID_TEAMS = ["구조1팀", "구조2팀", "구조3팀", "구조4팀", "진단팀"] as const;
 const SCHEDULE_EXTRA_TEAM = "본부";
 
-/** 개인일정 cell 색상 — task source 기준 (사용자 결정 2026-05-09):
- * project=파랑, sale=초록, other=회색 (개인 휴가/연차 등). */
-/** 프로젝트 상세 link — admin만 활성화. 비admin은 plain text (사용자 결정 2026-05-11). */
-function ProjectLink({ id, children }: { id: string; children: React.ReactNode }) {
-  const { user } = useAuth();
-  if (!id || user?.role !== "admin") return <>{children}</>;
-  return (
-    <Link
-      href={`/projects/${encodeURIComponent(id)}`}
-      className="text-blue-700 underline-offset-2 hover:underline dark:text-blue-400"
-    >
-      {children}
-    </Link>
-  );
-}
-
-/** 영업 상세 link — admin만 활성화. 비admin은 plain text. */
-function SaleLink({ id, children }: { id: string; children: React.ReactNode }) {
-  const { user } = useAuth();
-  if (!id || user?.role !== "admin") return <>{children}</>;
-  return (
-    <Link
-      href={`/sales?sale=${encodeURIComponent(id)}&from=${encodeURIComponent("/weekly-report")}`}
-      className="text-emerald-700 underline-offset-2 hover:underline dark:text-emerald-400"
-    >
-      {children}
-    </Link>
-  );
-}
 
 
 export default function WeeklyReportPage() {
@@ -693,209 +663,5 @@ function ReportPreview({
   );
 }
 
-/** 대기/보류 프로젝트를 절반씩 자체 2-col grid로 분할. */
-function SplitStageGrid({
-  rows,
-  highlightStalled,
-}: {
-  rows: WeeklyStageProject[];
-  highlightStalled?: boolean;
-}) {
-  if (rows.length === 0) {
-    return (
-      <div className="rounded border border-dashed border-zinc-300 px-3 py-2 text-center text-xs italic text-zinc-400 dark:border-zinc-700">
-        (없음)
-      </div>
-    );
-  }
-  const half = Math.ceil(rows.length / 2);
-  const left = rows.slice(0, half);
-  const right = rows.slice(half);
-  return (
-    <div className="grid gap-3 md:grid-cols-2">
-      <StageProjectsTable rows={left} highlightStalled={highlightStalled} />
-      {right.length > 0 && (
-        <StageProjectsTable rows={right} highlightStalled={highlightStalled} />
-      )}
-    </div>
-  );
-}
-
-/** 대기/보류 프로젝트 표 — 4컬럼 단순화 + 3개월 이상 대기는 용역명 짙은 빨강. */
-function StageProjectsTable({
-  rows,
-  highlightStalled,
-}: {
-  rows: WeeklyStageProject[];
-  highlightStalled?: boolean;
-}) {
-  if (rows.length === 0) {
-    return (
-      <div className="rounded border border-dashed border-zinc-300 px-3 py-2 text-center text-xs italic text-zinc-400 dark:border-zinc-700">
-        (없음)
-      </div>
-    );
-  }
-  return (
-    <div className="overflow-x-auto rounded border border-zinc-200 dark:border-zinc-800">
-      <table className="w-full border-collapse text-xs">
-        <thead className="bg-zinc-100 dark:bg-zinc-900">
-          <tr>
-            {["CODE", "용역명", "발주처", "담당팀"].map((c) => (
-              <th
-                key={c}
-                className="border-b border-zinc-200 px-2 py-1.5 text-left font-medium dark:border-zinc-800"
-              >
-                {c}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((r, i) => (
-            <tr
-              key={i}
-              className="border-b border-zinc-100 last:border-0 dark:border-zinc-800"
-            >
-              <td className="px-2 py-1 align-top">{r.code}</td>
-              <td
-                className={cn(
-                  "px-2 py-1 align-top",
-                  highlightStalled &&
-                    r.is_long_stalled &&
-                    "font-semibold text-red-700 dark:text-red-400",
-                )}
-                title={
-                  highlightStalled && r.is_long_stalled
-                    ? "3개월 이상 대기 — 활동 점검 필요"
-                    : undefined
-                }
-              >
-                <ProjectLink id={r.page_id}>{r.name}</ProjectLink>
-              </td>
-              <td className="px-2 py-1 align-top">{r.client}</td>
-              <td className="px-2 py-1 align-top">{r.teams.join(", ")}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  );
-}
-
-/** 같은 직원의 첫 row만 이름/직책 표시 (rowspan 효과). */
-function TeamWorkTable({
-  team,
-  rows,
-}: {
-  team: string;
-  rows: WeeklyEmployeeWorkRow[];
-}) {
-  // 같은 직원 연속 row를 찾아 첫 번째에만 이름 표시 + rowspan 카운트
-  const renderRows = rows.map((r, i) => {
-    const prev = i > 0 ? rows[i - 1] : null;
-    const isFirst = !prev || prev.employee_name !== r.employee_name;
-    let rowspan = 1;
-    if (isFirst) {
-      for (let j = i + 1; j < rows.length; j++) {
-        if (rows[j].employee_name === r.employee_name) rowspan++;
-        else break;
-      }
-    }
-    return { row: r, isFirst, rowspan };
-  });
-
-  return (
-    <div>
-      <h3 className="mb-1 text-sm font-semibold">
-        {team}{" "}
-        <span className="text-xs font-normal text-zinc-500">
-          ({rows.length}건)
-        </span>
-      </h3>
-      <div className="overflow-x-auto rounded border border-zinc-200 dark:border-zinc-800">
-        <table className="w-full border-collapse text-xs">
-          <thead className="bg-zinc-100 dark:bg-zinc-900">
-            <tr>
-              <th className="border-b border-r border-zinc-200 px-2 py-1.5 text-left font-medium dark:border-zinc-800">
-                담당자
-              </th>
-              <th className="border-b border-r border-zinc-200 px-2 py-1.5 text-left font-medium dark:border-zinc-800">
-                CODE
-              </th>
-              <th className="border-b border-r border-zinc-200 px-2 py-1.5 text-left font-medium dark:border-zinc-800">
-                PROJECT
-              </th>
-              <th className="border-b border-r border-zinc-200 px-2 py-1.5 text-left font-medium dark:border-zinc-800">
-                발주처
-              </th>
-              <th className="border-b border-r border-zinc-200 px-2 py-1.5 text-left font-medium dark:border-zinc-800">
-                진행단계
-              </th>
-              <th className="border-b border-r border-zinc-200 px-2 py-1.5 text-left font-medium dark:border-zinc-800">
-                지난주 업무
-              </th>
-              <th className="border-b border-zinc-200 px-2 py-1.5 text-left font-medium dark:border-zinc-800">
-                이번주 업무
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            {renderRows.map(({ row, isFirst, rowspan }, i) => {
-              const isLastOfGroup =
-                i === renderRows.length - 1 ||
-                renderRows[i + 1].isFirst;
-              const rowBorder = isLastOfGroup
-                ? "border-b border-zinc-300 dark:border-zinc-700"
-                : "border-b border-zinc-100 dark:border-zinc-800/60";
-              return (
-                <tr key={i} className={rowBorder}>
-                  {isFirst && (
-                    <td
-                      rowSpan={rowspan}
-                      className="border-r border-zinc-200 bg-zinc-50 px-2 py-1 align-top font-medium dark:border-zinc-800 dark:bg-zinc-900/40"
-                    >
-                      {row.employee_name}
-                      {row.position && (
-                        <>
-                          <br />
-                          <span className="text-[10px] font-normal text-zinc-500">
-                            {row.position}
-                          </span>
-                        </>
-                      )}
-                    </td>
-                  )}
-                  <td className="border-r border-zinc-200 px-2 py-1 align-top dark:border-zinc-800">
-                    {row.project_code}
-                  </td>
-                  <td className="border-r border-zinc-200 px-2 py-1 align-top dark:border-zinc-800">
-                    {row.kind === "sale" ? (
-                      <SaleLink id={row.source_id}>{row.project_name}</SaleLink>
-                    ) : (
-                      <ProjectLink id={row.source_id}>{row.project_name}</ProjectLink>
-                    )}
-                  </td>
-                  <td className="border-r border-zinc-200 px-2 py-1 align-top dark:border-zinc-800">
-                    {row.client}
-                  </td>
-                  <td className="border-r border-zinc-200 px-2 py-1 align-top dark:border-zinc-800">
-                    {row.phase || row.stage}
-                  </td>
-                  <td className="border-r border-zinc-200 px-2 py-1 align-top text-zinc-600 dark:border-zinc-800 dark:text-zinc-400">
-                    {row.last_week_summary || "—"}
-                  </td>
-                  <td className="px-2 py-1 align-top">
-                    {row.this_week_plan || "—"}
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  );
-}
 
 
