@@ -63,6 +63,8 @@ interface Props {
    * 부모가 createClient + SWR 캐시 invalidate를 처리한다.
    */
   onAddClientToDb?: (name: string) => Promise<string>;
+  /** false면 read-only — input/버튼 비활성. 기본 true. */
+  canEdit?: boolean;
 }
 
 export default function ContractItemsEditor({
@@ -73,6 +75,7 @@ export default function ContractItemsEditor({
   vat,
   onSyncTotalsFromItems,
   onAddClientToDb,
+  canEdit = true,
 }: Props) {
   const totals = useMemo(() => {
     let amount = 0;
@@ -142,13 +145,15 @@ export default function ContractItemsEditor({
             미수금이 항목 단위로 계산됩니다.
           </p>
         </div>
-        <button
-          type="button"
-          onClick={add}
-          className="rounded-md border border-zinc-300 px-2 py-0.5 text-[11px] hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800"
-        >
-          + 항목 추가
-        </button>
+        {canEdit && (
+          <button
+            type="button"
+            onClick={add}
+            className="rounded-md border border-zinc-300 px-2 py-0.5 text-[11px] hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800"
+          >
+            + 항목 추가
+          </button>
+        )}
       </div>
 
       {value.length === 0 ? (
@@ -166,6 +171,7 @@ export default function ContractItemsEditor({
                 type="text"
                 value={it.label}
                 onChange={(e) => update(idx, { label: e.target.value })}
+                readOnly={!canEdit}
                 placeholder="라벨 (본 계약 / 변경설계 1차 …)"
                 className={`col-span-3 ${cellCls}`}
               />
@@ -183,6 +189,7 @@ export default function ContractItemsEditor({
                     client_id: matched?.id ?? "",
                   });
                 }}
+                readOnly={!canEdit}
                 placeholder="발주처"
                 className={`col-span-3 ${cellCls}`}
               />
@@ -196,6 +203,7 @@ export default function ContractItemsEditor({
                   const digits = e.target.value.replace(/[^\d]/g, "");
                   update(idx, { amount: digits ? Number(digits) : 0 });
                 }}
+                readOnly={!canEdit}
                 placeholder="금액"
                 className={`col-span-2 text-right ${cellCls}`}
               />
@@ -209,11 +217,12 @@ export default function ContractItemsEditor({
                   const digits = e.target.value.replace(/[^\d]/g, "");
                   update(idx, { vat: digits ? Number(digits) : 0 });
                 }}
+                readOnly={!canEdit}
                 placeholder="VAT"
                 className={`col-span-2 text-right ${cellCls}`}
               />
               <div className="col-span-2 flex items-center gap-1 justify-end">
-                {it.client_name.trim() && !it.client_id && (
+                {canEdit && it.client_name.trim() && !it.client_id && (
                   onAddClientToDb ? (
                     <button
                       type="button"
@@ -241,14 +250,16 @@ export default function ContractItemsEditor({
                     </span>
                   )
                 )}
-                <button
-                  type="button"
-                  onClick={() => remove(idx)}
-                  className="rounded p-1 text-red-500 hover:bg-red-500/10"
-                  title="삭제"
-                >
-                  ✕
-                </button>
+                {canEdit && (
+                  <button
+                    type="button"
+                    onClick={() => remove(idx)}
+                    className="rounded p-1 text-red-500 hover:bg-red-500/10"
+                    title="삭제"
+                  >
+                    ✕
+                  </button>
+                )}
               </div>
             </li>
           ))}
@@ -276,7 +287,7 @@ export default function ContractItemsEditor({
                 ⚠ 프로젝트 contract_amount / VAT와 불일치
               </span>
             )}
-            {onSyncTotalsFromItems && hasMismatch && (
+            {canEdit && onSyncTotalsFromItems && hasMismatch && (
               <button
                 type="button"
                 onClick={onSyncTotalsFromItems}

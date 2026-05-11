@@ -37,7 +37,7 @@ from app.models.project import (
     project_create_to_props,
     project_update_to_props,
 )
-from app.security import get_current_user, require_admin
+from app.security import get_current_user, require_admin, require_editor
 from app.services import notion_props as P
 from app.services import sso_drive
 from app.services.mirror_dto import project_from_mirror
@@ -431,10 +431,10 @@ async def assign_me(
 async def update_project(
     page_id: str,
     body: ProjectUpdateRequest,
-    _user: User = Depends(get_current_user),
+    _user: User = Depends(require_editor),
     notion: NotionService = Depends(get_notion),
 ) -> Project:
-    """프로젝트 부분 갱신 (편집 모달용)."""
+    """프로젝트 부분 갱신 (편집 모달용). admin/team_lead/manager."""
     props = project_update_to_props(body)
     if not props:
         raise HTTPException(

@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { useSWRConfig } from "swr";
 
+import { useAuth } from "@/components/AuthGuard";
 import AssigneeTimeline from "@/components/project/AssigneeTimeline";
 import LifecycleTimeline from "@/components/project/LifecycleTimeline";
 import ProjectCashflowChart from "@/components/project/ProjectCashflowChart";
@@ -48,6 +49,10 @@ function BackButton({ onClick }: { onClick: () => void }) {
 export default function ProjectClient({ id }: { id: string }) {
   const router = useRouter();
   const { mutate } = useSWRConfig();
+  const { user } = useAuth();
+  // 편집 권한: admin / team_lead / manager (member는 read-only)
+  const canEdit =
+    user?.role === "admin" || user?.role === "team_lead" || user?.role === "manager";
   const [createOpen, setCreateOpen] = useState(false);
   const [createStatus, setCreateStatus] = useState<string | undefined>(undefined);
   const [editOpen, setEditOpen] = useState(false);
@@ -152,13 +157,15 @@ export default function ProjectClient({ id }: { id: string }) {
 
   const headerActions = (
     <>
-      <button
-        type="button"
-        onClick={() => setEditOpen(true)}
-        className="rounded-md border border-zinc-300 px-2.5 py-1 text-xs hover:bg-zinc-50 dark:border-zinc-700 dark:hover:bg-zinc-800"
-      >
-        편집
-      </button>
+      {canEdit && (
+        <button
+          type="button"
+          onClick={() => setEditOpen(true)}
+          className="rounded-md border border-zinc-300 px-2.5 py-1 text-xs hover:bg-zinc-50 dark:border-zinc-700 dark:hover:bg-zinc-800"
+        >
+          편집
+        </button>
+      )}
       {linkedSale && (
         <button
           type="button"

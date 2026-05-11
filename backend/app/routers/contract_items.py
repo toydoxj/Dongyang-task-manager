@@ -1,7 +1,7 @@
-"""/api/contract-items — 프로젝트 계약 항목 CRUD (admin/manager write).
+"""/api/contract-items — 프로젝트 계약 항목 CRUD (editor write).
 
 공동수급/추가용역 — 1 프로젝트 N (발주처, 금액, 라벨) 항목.
-read는 인증된 사용자 모두, 생성/수정/삭제는 admin 또는 manager(관리팀).
+read는 인증된 사용자 모두, 생성/수정/삭제는 admin/team_lead/manager(member 제외).
 """
 from __future__ import annotations
 
@@ -22,7 +22,7 @@ from app.models.contract_item import (
     contract_item_create_props,
     contract_item_update_props,
 )
-from app.security import get_current_user, require_admin_or_manager
+from app.security import get_current_user, require_editor
 from app.services.mirror_dto import contract_item_from_mirror
 from app.services.notion import NotionService, get_notion
 from app.services.sync import get_sync
@@ -70,7 +70,7 @@ def list_contract_items(
 @router.post("", response_model=ContractItem, status_code=status.HTTP_201_CREATED)
 async def create_contract_item(
     body: ContractItemCreateRequest,
-    _user: User = Depends(require_admin_or_manager),
+    _user: User = Depends(require_editor),
     db: Session = Depends(get_db),
     notion: NotionService = Depends(get_notion),
 ) -> ContractItem:
@@ -96,7 +96,7 @@ async def create_contract_item(
 async def update_contract_item(
     page_id: str,
     body: ContractItemUpdateRequest,
-    _user: User = Depends(require_admin_or_manager),
+    _user: User = Depends(require_editor),
     db: Session = Depends(get_db),
     notion: NotionService = Depends(get_notion),
 ) -> ContractItem:
@@ -115,7 +115,7 @@ async def update_contract_item(
 @router.delete("/{page_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_contract_item(
     page_id: str,
-    _user: User = Depends(require_admin_or_manager),
+    _user: User = Depends(require_editor),
     db: Session = Depends(get_db),
     notion: NotionService = Depends(get_notion),
 ) -> None:
