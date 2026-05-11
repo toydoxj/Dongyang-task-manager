@@ -8,6 +8,9 @@ import { useEffect, useRef, useState } from "react";
 import { useSWRConfig } from "swr";
 
 import { useAuth } from "@/components/AuthGuard";
+import ExternalQuoteForm, {
+  type ExternalQuoteDraft,
+} from "@/components/sales/ExternalQuoteForm";
 import ProjectLinkPicker from "@/components/sales/ProjectLinkPicker";
 import QuoteForm from "@/components/sales/QuoteForm";
 import { Field, TabButton, inputCls } from "@/components/sales/_shared";
@@ -143,7 +146,7 @@ export default function SalesEditModal({
   const [editingQuoteId, setEditingQuoteId] = useState<string | null>(null);
   // 외부 견적 inline form (PR-EXT) — 산출 X, service + amount만.
   const [externalFormOpen, setExternalFormOpen] = useState(false);
-  const [externalDraft, setExternalDraft] = useState({
+  const [externalDraft, setExternalDraft] = useState<ExternalQuoteDraft>({
     service: "",
     amount: 0,
     vat_included: false,
@@ -711,93 +714,41 @@ export default function SalesEditModal({
                 </div>
 
                 {externalFormOpen && (
-                  <div className="space-y-2 rounded-md border border-amber-300 bg-amber-50/40 p-3 dark:border-amber-600/40 dark:bg-amber-900/10">
-                    <div className="text-xs font-medium text-amber-700 dark:text-amber-400">
-                      외부 견적 {editingExternalId ? "수정" : "추가"}
-                    </div>
-                    <input
-                      type="text"
-                      placeholder="업무내용 (예: 구조진단 외주 (B사))"
-                      value={externalDraft.service}
-                      onChange={(e) =>
-                        setExternalDraft({
-                          ...externalDraft,
-                          service: e.target.value,
-                        })
-                      }
-                      className={inputCls}
-                    />
-                    <input
-                      type="number"
-                      min={0}
-                      placeholder="금액 (원)"
-                      value={externalDraft.amount || ""}
-                      onChange={(e) =>
-                        setExternalDraft({
-                          ...externalDraft,
-                          amount: e.target.value ? Number(e.target.value) : 0,
-                        })
-                      }
-                      className={inputCls}
-                    />
-                    <label className="flex items-center gap-2 text-[11px] text-amber-700 dark:text-amber-400">
-                      <input
-                        type="checkbox"
-                        checked={externalDraft.vat_included}
-                        onChange={(e) =>
-                          setExternalDraft({
-                            ...externalDraft,
-                            vat_included: e.target.checked,
-                          })
+                  <ExternalQuoteForm
+                    draft={externalDraft}
+                    isEdit={!!editingExternalId}
+                    saving={busy}
+                    onChange={setExternalDraft}
+                    onCancel={() => {
+                      setExternalFormOpen(false);
+                      setEditingExternalId(null);
+                      setExternalDraft({ service: "", amount: 0, vat_included: false });
+                    }}
+                    onSubmit={async () => {
+                      if (!sale) return;
+                      setBusy(true);
+                      setErr(null);
+                      try {
+                        if (editingExternalId) {
+                          await updateSaleExternalQuote(
+                            sale.id,
+                            editingExternalId,
+                            externalDraft,
+                          );
+                        } else {
+                          await addSaleExternalQuote(sale.id, externalDraft);
                         }
-                      />
-                      VAT 포함 (체크 해제 시 VAT 별도)
-                    </label>
-                    <div className="flex justify-end gap-2">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setExternalFormOpen(false);
-                          setEditingExternalId(null);
-                          setExternalDraft({ service: "", amount: 0, vat_included: false });
-                        }}
-                        className="rounded border border-zinc-300 px-2 py-1 text-[11px] hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800"
-                      >
-                        취소
-                      </button>
-                      <button
-                        type="button"
-                        disabled={busy || !externalDraft.service.trim()}
-                        onClick={async () => {
-                          if (!sale) return;
-                          setBusy(true);
-                          setErr(null);
-                          try {
-                            if (editingExternalId) {
-                              await updateSaleExternalQuote(
-                                sale.id,
-                                editingExternalId,
-                                externalDraft,
-                              );
-                            } else {
-                              await addSaleExternalQuote(sale.id, externalDraft);
-                            }
-                            await refreshQuoteList();
-                            setExternalFormOpen(false);
-                            setEditingExternalId(null);
-                            setExternalDraft({ service: "", amount: 0, vat_included: false });
-                          } catch (e) {
-                            setErr(e instanceof Error ? e.message : "외부 견적 저장 실패");
-                          } finally {
-                            setBusy(false);
-                          }
-                        }}
-                        className="rounded border border-amber-600/40 bg-amber-500/20 px-2 py-1 text-[11px] font-medium text-amber-700 hover:bg-amber-500/30 disabled:opacity-50 dark:text-amber-400"
-                      >
-                        {editingExternalId ? "수정" : "추가"}
-                      </button>
-                    </div>
-                  </div>
+                        await refreshQuoteList();
+                        setExternalFormOpen(false);
+                        setEditingExternalId(null);
+                        setExternalDraft({ service: "", amount: 0, vat_included: false });
+                      } catch (e) {
+                        setErr(e instanceof Error ? e.message : "외부 견적 저장 실패");
+                      } finally {
+                        setBusy(false);
+                      }
+                    }}
+                  />
                 )}
 
                 {quoteList.length === 0 ? (
