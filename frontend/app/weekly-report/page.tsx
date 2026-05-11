@@ -171,6 +171,9 @@ export default function WeeklyReportPage() {
   const [downloadingLast, setDownloadingLast] = useState(false);
   const [publishing, setPublishing] = useState(false);
   const [publishOpen, setPublishOpen] = useState(false);
+  // 새로고침 카운터 — 증가 시 SWR 키 변경 + force_refresh=true로 fetch (PR-AD)
+  const [refreshTick, setRefreshTick] = useState(0);
+  const [refreshing, setRefreshing] = useState(false);
   // 사용자가 lastWeekStart를 한 번이라도 직접 수정했으면 last-published 자동 셋팅 차단
   const [lastWeekStartAuto, setLastWeekStartAuto] = useState(true);
   // 마지막 발행 정보 — admin "[최근 발행 PDF]" 버튼 활성/툴팁용
@@ -212,9 +215,11 @@ export default function WeeklyReportPage() {
 
   const isAdmin = user?.role === "admin";
 
-  const { data, error, isLoading } = useSWR(
-    user && weekStart ? ["weekly-report", weekStart, weekEnd, lastWeekStart] : null,
-    () => fetchWeeklyReport(range),
+  const { data, error, isLoading, mutate } = useSWR(
+    user && weekStart
+      ? ["weekly-report", weekStart, weekEnd, lastWeekStart, refreshTick]
+      : null,
+    () => fetchWeeklyReport(range, { forceRefresh: refreshTick > 0 }),
   );
 
   /** 이번주 시작일 변경 → 종료일/지난주 시작일 자동 동기화. 사용자가 그 후
@@ -244,6 +249,20 @@ export default function WeeklyReportPage() {
       alert(e instanceof Error ? e.message : "PDF 처리 실패");
     } finally {
       setDownloading(false);
+    }
+  };
+
+  const handleRefresh = async (): Promise<void> => {
+    setRefreshing(true);
+    try {
+      // refreshTick 증가 → SWR key 변경 → force_refresh=true로 새 fetch
+      setRefreshTick((t) => t + 1);
+      // mutate로 다음 tick에 fetch 보장 (key 변경만으로도 트리거되지만 명시).
+      await mutate();
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "새로고침 실패");
+    } finally {
+      setRefreshing(false);
     }
   };
 
@@ -363,6 +382,14 @@ export default function WeeklyReportPage() {
               className="mt-1 rounded border border-zinc-300 bg-white px-2 py-1 text-sm dark:border-zinc-700 dark:bg-zinc-900"
             />
           </label>
+          <button
+            onClick={handleRefresh}
+            disabled={refreshing || isLoading}
+            className="rounded border border-zinc-300 bg-white px-3 py-1.5 text-sm font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800"
+            title="cache 무시하고 최신 데이터로 다시 집계 (5분 TTL 적용 중)"
+          >
+            {refreshing || isLoading ? "갱신 중..." : "새로고침"}
+          </button>
           <button
             onClick={handleDownload}
             disabled={downloading || (isAdmin && !data)}

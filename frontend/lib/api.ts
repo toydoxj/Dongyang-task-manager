@@ -1312,17 +1312,24 @@ export interface WeeklyReportRange {
   lastWeekStart?: string;       // optional — default: weekStart - 7일
 }
 
-function buildWeeklyReportQuery(range: WeeklyReportRange): string {
+function buildWeeklyReportQuery(
+  range: WeeklyReportRange,
+  forceRefresh = false,
+): string {
   const qs = new URLSearchParams({ week_start: range.weekStart });
   if (range.weekEnd) qs.set("week_end", range.weekEnd);
   if (range.lastWeekStart) qs.set("last_week_start", range.lastWeekStart);
+  if (forceRefresh) qs.set("force_refresh", "true");
   return qs.toString();
 }
 
 export async function fetchWeeklyReport(
   range: WeeklyReportRange,
+  options: { forceRefresh?: boolean } = {},
 ): Promise<WeeklyReport> {
-  const res = await authFetch(`/api/weekly-report?${buildWeeklyReportQuery(range)}`);
+  const res = await authFetch(
+    `/api/weekly-report?${buildWeeklyReportQuery(range, options.forceRefresh)}`,
+  );
   if (!res.ok) {
     const detail = await res.json().catch(() => null);
     throw new Error(
@@ -1335,9 +1342,10 @@ export async function fetchWeeklyReport(
 
 export async function downloadWeeklyReportPdf(
   range: WeeklyReportRange,
+  options: { forceRefresh?: boolean } = {},
 ): Promise<void> {
   await downloadPdfBlob(
-    `/api/weekly-report.pdf?${buildWeeklyReportQuery(range)}`,
+    `/api/weekly-report.pdf?${buildWeeklyReportQuery(range, options.forceRefresh)}`,
     `${range.weekStart}_업무일지.pdf`,
   );
 }
@@ -1346,9 +1354,10 @@ export async function downloadWeeklyReportPdf(
  * 호출자가 URL.createObjectURL로 변환해 사용하고, 사용 후 revokeObjectURL 책임. */
 export async function fetchWeeklyReportPdfBlob(
   range: WeeklyReportRange,
+  options: { forceRefresh?: boolean } = {},
 ): Promise<Blob> {
   const res = await authFetch(
-    `/api/weekly-report.pdf?${buildWeeklyReportQuery(range)}`,
+    `/api/weekly-report.pdf?${buildWeeklyReportQuery(range, options.forceRefresh)}`,
   );
   if (!res.ok) {
     const detail = await res.json().catch(() => null);

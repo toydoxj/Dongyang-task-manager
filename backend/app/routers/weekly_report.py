@@ -13,6 +13,8 @@ role을 임시 swap해 전체 결과를 받아 모든 직원에게 동일 콘텐
 from __future__ import annotations
 
 import logging
+import time
+from collections import OrderedDict
 from datetime import date, timedelta
 from urllib.parse import quote as url_quote
 
@@ -40,6 +42,37 @@ from pydantic import BaseModel
 logger = logging.getLogger("weekly_report")
 
 router = APIRouter(prefix="/weekly-report", tags=["weekly_report"])
+
+
+# ── in-memory cache (PR-AD) ─────────────────────────────────────────────
+# build_weekly_report + seal_log + suggestions 까지 채운 결과 보관.
+# key = (week_start, week_end, last_week_start) — 일반·발행 모두 동일 콘텐츠
+# 가 나오므로 user 무관. force_refresh=True 또는 TTL 초과 시 재빌드.
+_CACHE_TTL_SEC = 300
+_CACHE_MAX = 16
+_report_cache: OrderedDict[
+    tuple[date, date | None, date | None],
+    tuple[float, "WeeklyReport"],
+] = OrderedDict()
+
+
+def _cache_get(key: tuple) -> "WeeklyReport | None":
+    entry = _report_cache.get(key)
+    if entry is None:
+        return None
+    ts, report = entry
+    if time.monotonic() - ts > _CACHE_TTL_SEC:
+        _report_cache.pop(key, None)
+        return None
+    _report_cache.move_to_end(key)
+    return report
+
+
+def _cache_set(key: tuple, report: "WeeklyReport") -> None:
+    _report_cache[key] = (time.monotonic(), report)
+    _report_cache.move_to_end(key)
+    while len(_report_cache) > _CACHE_MAX:
+        _report_cache.popitem(last=False)
 
 
 def _validate_week_start(week_start: date) -> date:
@@ -187,6 +220,41 @@ async def _build_seal_log(
     return items
 
 
+async def _build_full_report(
+    db: Session,
+    notion: NotionService,
+    user: User,
+    week_start: date,
+    week_end: date | None,
+    last_week_start: date | None,
+    *,
+    force_refresh: bool = False,
+) -> WeeklyReport:
+    """build_weekly_report + seal_log + suggestions 일괄. cache layer 포함.
+
+    cache key = (week_start_validated, week_end, last_week_start).
+    force_refresh=True면 cache bypass + 재빌드 후 cache 갱신.
+    """
+    ws = _validate_week_start(week_start)
+    key = (ws, week_end, last_week_start)
+    if not force_refresh:
+        cached = _cache_get(key)
+        if cached is not None:
+            return cached
+    try:
+        report = build_weekly_report(
+            db, ws, week_end=week_end, last_week_start=last_week_start
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    lws = last_week_start or (ws - timedelta(days=7))
+    lwe = ws - timedelta(days=1)
+    report.seal_log = await _build_seal_log(user, notion, db, lws, lwe)
+    report.suggestions = await _build_suggestions(user, notion, lws, lwe)
+    _cache_set(key, report)
+    return report
+
+
 @router.get("", response_model=WeeklyReport)
 async def get_weekly_report(
     week_start: date = Query(..., description="이번주 시작일 — 월요일 (YYYY-MM-DD)"),
@@ -197,6 +265,7 @@ async def get_weekly_report(
         None,
         description="지난주 시작일 (YYYY-MM-DD). default: week_start - 7일",
     ),
+    force_refresh: bool = Query(False, description="cache bypass 후 재빌드"),
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
     notion: NotionService = Depends(get_notion),
@@ -205,20 +274,12 @@ async def get_weekly_report(
 
     week_start가 월요일이 아니면 같은 주의 월요일로 자동 조정.
     날인대장은 모든 직원에게 동일하게 채워짐 (PR-AA, 보고용 회사 전체 공유).
+    in-memory cache TTL 5분 (PR-AD). force_refresh=true 면 bypass.
     """
-    ws = _validate_week_start(week_start)
-    try:
-        report = build_weekly_report(
-            db, ws, week_end=week_end, last_week_start=last_week_start
-        )
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    # 저번주 범위 (build_weekly_report와 동일 로직):
-    lws = last_week_start or (ws - timedelta(days=7))
-    lwe = ws - timedelta(days=1)
-    report.seal_log = await _build_seal_log(user, notion, db, lws, lwe)
-    report.suggestions = await _build_suggestions(user, notion, lws, lwe)
-    return report
+    return await _build_full_report(
+        db, notion, user, week_start, week_end, last_week_start,
+        force_refresh=force_refresh,
+    )
 
 
 @router.get(".pdf")
@@ -226,23 +287,17 @@ async def get_weekly_report_pdf(
     week_start: date = Query(..., description="이번주 시작일 — 월요일 (YYYY-MM-DD)"),
     week_end: date | None = Query(None),
     last_week_start: date | None = Query(None),
+    force_refresh: bool = Query(False, description="cache bypass 후 재빌드"),
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
     notion: NotionService = Depends(get_notion),
 ) -> Response:
     """주간 업무일지 PDF (WeasyPrint)."""
+    report = await _build_full_report(
+        db, notion, user, week_start, week_end, last_week_start,
+        force_refresh=force_refresh,
+    )
     ws = _validate_week_start(week_start)
-    try:
-        report = build_weekly_report(
-            db, ws, week_end=week_end, last_week_start=last_week_start
-        )
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    # 저번주 범위 (build_weekly_report와 동일 로직):
-    lws = last_week_start or (ws - timedelta(days=7))
-    lwe = ws - timedelta(days=1)
-    report.seal_log = await _build_seal_log(user, notion, db, lws, lwe)
-    report.suggestions = await _build_suggestions(user, notion, lws, lwe)
     pdf_bytes = build_weekly_report_pdf(report)
     fname = f"{ws.strftime('%Y_%m_%d')}_업무일지.pdf"
     return Response(
@@ -317,17 +372,13 @@ async def publish_weekly_report(
     4. publish log 저장 (다음 일지의 last_week_start 자동 셋팅 기준)
     """
     ws = _validate_week_start(body.week_start)
-    try:
-        report = build_weekly_report(
-            db, ws, week_end=body.week_end, last_week_start=body.last_week_start
-        )
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-
+    # 발행은 항상 최신 데이터로 — cache bypass.
+    report = await _build_full_report(
+        db, notion, user, ws, body.week_end, body.last_week_start,
+        force_refresh=True,
+    )
     lws = body.last_week_start or (ws - timedelta(days=7))
     lwe = ws - timedelta(days=1)
-    report.seal_log = await _build_seal_log(user, notion, db, lws, lwe)
-    report.suggestions = await _build_suggestions(user, notion, lws, lwe)
 
     pdf_bytes = build_weekly_report_pdf(report)
     file_name = f"{ws.strftime('%Y%m%d')}_주간업무일지.pdf"
@@ -435,19 +486,10 @@ async def download_last_published_pdf(
     )
     if not log:
         raise HTTPException(status_code=404, detail="발행된 주간업무일지가 없습니다")
-    try:
-        report = build_weekly_report(
-            db,
-            log.week_start,
-            week_end=log.week_end,
-            last_week_start=log.last_week_start,
-        )
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    lws = log.last_week_start or (log.week_start - timedelta(days=7))
-    lwe = log.last_week_end or (log.week_start - timedelta(days=1))
-    report.seal_log = await _build_seal_log(user, notion, db, lws, lwe)
-    report.suggestions = await _build_suggestions(user, notion, lws, lwe)
+    # publish log의 같은 (ws, we, lws) → cache hit 자연스럽게 활용.
+    report = await _build_full_report(
+        db, notion, user, log.week_start, log.week_end, log.last_week_start,
+    )
     pdf_bytes = build_weekly_report_pdf(report)
     fname = log.file_name or f"{log.week_start.strftime('%Y%m%d')}_주간업무일지.pdf"
     return Response(
