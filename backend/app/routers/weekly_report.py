@@ -6,8 +6,9 @@ GET /api/weekly-report.pdf — WeasyPrint PDF
 권한: 로그인 사용자 누구나 (member 이상). 자기 팀만 보는 필터는 1차에서는 미적용
 — 모든 직원이 회사 전체 일지를 보는 현행 정책 유지.
 
-날인대장은 admin/team_lead만 조회 가능 (기존 list_seal_requests 권한 정책 따름).
-일반 직원이 보면 seal_log는 빈 list.
+날인대장도 보고용으로는 회사 전체 공유 (PR-AA, 2026-05-11).
+list_seal_requests 자체는 admin/team_lead 전용이지만, 일지 집계에서는
+role을 임시 swap해 전체 결과를 받아 모든 직원에게 동일 콘텐츠를 노출한다.
 """
 from __future__ import annotations
 
@@ -104,19 +105,27 @@ async def _build_seal_log(
     - submission_target: real_source_id가 있으면 거래처명, 없으면 발주처
     - requester: 담당자(요청자)
 
-    admin/team_lead만 회사 전체 조회 (list_seal_requests의 기존 권한 따름).
+    PR-AA: 보고용 콘텐츠로는 모든 직원에게 회사 전체 동일하게 노출.
+    list_seal_requests는 비admin/팀장 호출을 reject하므로 role을 일시 swap해
+    호출 후 즉시 원복한다 (DB commit 없으므로 영향 없음).
     """
-    if user.role not in {"admin", "team_lead"}:
-        return []
     from app.routers.seal_requests import list_seal_requests
 
+    need_swap = user.role not in {"admin", "team_lead"}
+    original_role = user.role
+    if need_swap:
+        user.role = "admin"
     try:
-        res = await list_seal_requests(
-            project_id=None, user=user, notion=notion, db=db
-        )
-    except HTTPException as e:
-        logger.warning("날인대장 조회 실패: %s", e.detail)
-        return []
+        try:
+            res = await list_seal_requests(
+                project_id=None, user=user, notion=notion, db=db
+            )
+        except HTTPException as e:
+            logger.warning("날인대장 조회 실패: %s", e.detail)
+            return []
+    finally:
+        if need_swap:
+            user.role = original_role
 
     range_start_iso = last_week_start.isoformat()
     range_end_iso = last_week_end.isoformat()
@@ -195,7 +204,7 @@ async def get_weekly_report(
     """주간 업무일지 JSON.
 
     week_start가 월요일이 아니면 같은 주의 월요일로 자동 조정.
-    날인대장은 admin/team_lead만 채워짐 (일반직원은 빈 list).
+    날인대장은 모든 직원에게 동일하게 채워짐 (PR-AA, 보고용 회사 전체 공유).
     """
     ws = _validate_week_start(week_start)
     try:
