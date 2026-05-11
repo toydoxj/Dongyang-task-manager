@@ -5,6 +5,14 @@ import { useEffect, useMemo, useState } from "react";
 import BmaInspectionForm from "@/components/sales/BmaInspectionForm";
 import InspectionLegalForm from "@/components/sales/InspectionLegalForm";
 import QuoteResultPanel from "@/components/sales/QuoteResultPanel";
+import { Field, Section, inputCls } from "@/components/sales/_shared";
+import {
+  COEFFICIENTS,
+  STRUCTURE_FORMS,
+  STRUCTURE_RATES,
+  TYPE_RATES,
+  defaultGradeFor,
+} from "@/components/sales/quoteFormConstants";
 import { previewQuote } from "@/lib/api";
 import {
   ENGINEER_GRADES,
@@ -18,34 +26,6 @@ import {
 } from "@/lib/domain";
 import { useClients } from "@/lib/hooks";
 import { cn } from "@/lib/utils";
-
-// 견적서 종류별 default 단가 등급 — backend _resolve_rate의 default_grade와 일치.
-// 사용자가 등급 select에서 미선택(null) 시 표시 안내값.
-const DEFAULT_ENGINEER_GRADE: Record<string, EngineerGrade> = {
-  구조감리: "기술사",
-  "3자검토": "특급기술자",
-  // 그 외 모든 종류는 고급기술자
-};
-const defaultGradeFor = (qt: string): EngineerGrade =>
-  DEFAULT_ENGINEER_GRADE[qt] ?? "고급기술자";
-
-// 견적서 양식의 N/O열 옵션 — xlsx 실제 옵션과 일치
-const STRUCTURE_FORMS = [
-  "철근콘크리트구조",
-  "철근콘크리트조(벽식구조)",
-  "철근콘크리트구조 + 철골구조",
-  "강구조(철골구조)",
-  "하중전이구조",
-  "PC구조, 복합구조",
-  "플랜트구조",
-  "특수구조",
-];
-const TYPE_RATES = [0.8, 0.9, 1.0, 1.1, 1.2];
-const STRUCTURE_RATES = [0.5, 1.0, 1.2, 1.25, 1.5];
-const COEFFICIENTS = [
-  { value: 0.5, label: "0.5 (구조계산서만)" },
-  { value: 1.0, label: "1.0 (계산서+도면)" },
-];
 
 interface Props {
   value: QuoteInput;
@@ -944,39 +924,3 @@ export default function QuoteForm({
   );
 }
 
-const inputCls =
-  "w-full rounded-md border border-zinc-300 bg-white px-2 py-1.5 text-sm focus:border-zinc-500 focus:outline-none disabled:bg-zinc-100 disabled:text-zinc-500 disabled:border-zinc-200 disabled:cursor-not-allowed dark:border-zinc-700 dark:bg-zinc-900 dark:disabled:bg-zinc-800/50 dark:disabled:text-zinc-500";
-
-function Section({
-  title,
-  children,
-}: {
-  title: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="space-y-2 rounded-md border border-zinc-200 bg-white p-3 dark:border-zinc-800 dark:bg-zinc-900">
-      <h4 className="text-[11px] font-semibold uppercase tracking-wide text-zinc-500">
-        {title}
-      </h4>
-      {children}
-    </div>
-  );
-}
-
-function Field({
-  label,
-  children,
-}: {
-  label: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="space-y-1">
-      <label className="block text-[11px] font-medium text-zinc-600 dark:text-zinc-400">
-        {label}
-      </label>
-      {children}
-    </div>
-  );
-}
