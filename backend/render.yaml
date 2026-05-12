@@ -98,7 +98,10 @@ services:
     region: singapore
     plan: starter
     rootDir: backend
-    schedule: "*/5 * * * *"          # 매 5분 :00
+    # 업무시간(KST 06~20시) 회피 — UTC 11~21시만 실행 (KST 20~06시).
+    # cron 부담 줄임 + 업무 중 노션 미러 read 자원 최우선.
+    # 필요 시 admin /admin/sync 페이지에서 즉시 트리거 가능.
+    schedule: "*/5 11-21 * * *"      # 매 5분 :00 (UTC 11~21시 = KST 20~06시)
     buildCommand: |
       pip install --upgrade pip uv
       env -u VIRTUAL_ENV uv sync --frozen --no-dev
@@ -131,7 +134,7 @@ services:
     region: singapore
     plan: starter
     rootDir: backend
-    schedule: "2-59/5 * * * *"        # 매 5분 :02 (projects와 2분 오프셋)
+    schedule: "2-59/5 11-21 * * *"   # 매 5분 :02 (UTC 11~21시 = KST 20~06시)
     buildCommand: |
       pip install --upgrade pip uv
       env -u VIRTUAL_ENV uv sync --frozen --no-dev
@@ -164,7 +167,7 @@ services:
     region: singapore
     plan: starter
     rootDir: backend
-    schedule: "3,33 * * * *"          # 30분마다 :03/:33 — projects(:00,:05..)·tasks(:02,:07..)·others(:15/:45)와 충돌 회피
+    schedule: "3,33 11-21 * * *"     # 30분 :03/:33 (UTC 11~21시 = KST 20~06시)
     buildCommand: |
       pip install --upgrade pip uv
       env -u VIRTUAL_ENV uv sync --frozen --no-dev
@@ -197,7 +200,7 @@ services:
     region: singapore
     plan: starter
     rootDir: backend
-    schedule: "15,45 * * * *"         # 30분마다 :15/:45 — clients+cashflow+expense 순차
+    schedule: "15,45 11-21 * * *"    # 30분 :15/:45 (UTC 11~21시 = KST 20~06시)
     buildCommand: |
       pip install --upgrade pip uv
       env -u VIRTUAL_ENV uv sync --frozen --no-dev

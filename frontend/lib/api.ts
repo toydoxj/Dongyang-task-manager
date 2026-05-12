@@ -1450,3 +1450,6 @@ export async function downloadLastPublishedWeeklyReportPdf(): Promise<void> {
 
 // ── 사내 공지 / 교육 일정 / 휴일 (PR-W Phase 2.4) ── (Phase 4-A — lib/api/notices.ts로 이동)
 export * from "./api/notices";
+
+// ── admin sync 트리거 + 상태 (PR-AR) ──
+export * from "./api/adminSync";

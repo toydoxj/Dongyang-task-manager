@@ -18,6 +18,7 @@ from app.exceptions import AppError
 from app.routers import admin_bot as admin_bot_router
 from app.routers import admin_calendar as admin_calendar_router
 from app.routers import admin_drive as admin_drive_router
+from app.routers import admin_sync as admin_sync_router
 from app.routers import auth as auth_router
 from app.routers import cashflow as cashflow_router
 from app.routers import clients as clients_router
@@ -138,6 +139,7 @@ app.include_router(seal_requests_router.router, prefix="/api")
 app.include_router(admin_drive_router.router, prefix="/api")
 app.include_router(admin_calendar_router.router, prefix="/api")
 app.include_router(admin_bot_router.router, prefix="/api")
+app.include_router(admin_sync_router.router, prefix="/api")
 app.include_router(weekly_report_router.router, prefix="/api")
 app.include_router(notices_router.router, prefix="/api")
 

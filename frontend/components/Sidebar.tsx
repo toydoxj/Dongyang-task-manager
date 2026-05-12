@@ -71,6 +71,7 @@ const NAV_GROUPS: NavGroup[] = [
       { href: "/admin/notices", label: "공지/교육 관리", roles: ["admin"] },
       { href: "/admin/employees", label: "직원 관리", roles: ["admin"] },
       { href: "/admin/users", label: "사용자 관리", roles: ["admin"] },
+      { href: "/admin/sync", label: "Sync 관리", roles: ["admin"] },
       { href: "/admin/drive", label: "Drive 연결", roles: ["admin"] },
     ],
   },
