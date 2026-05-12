@@ -34,6 +34,7 @@
 | `/api/admin-bot/*` | bot 테스트 메시지 | |
 | `/api/admin-calendar/*` | 공유 캘린더·sync·backfill | |
 | `/api/admin-drive/*` | Drive 연결·status | |
+| `/api/admin/sync/status` `/api/admin/sync/run` | 노션 미러 sync 상태 조회·강제 트리거 | PR-AR |
 | `/api/employees POST/PATCH/DELETE/resign/restore/reorder/upload` | 직원 명부 관리 | |
 | `/api/notices POST/PATCH/DELETE` | 공지/교육/휴일 등록·수정·삭제 | 사용자 결정 2026-05-11: admin only 유지 |
 | `/api/projects/{id}/stage` | 프로젝트 단계 변경 | 진행중/대기/보류/완료/타절/종결/이관 |
@@ -93,9 +94,9 @@
 
 | 그룹 | 노출 역할 | 메뉴 |
 |---|---|---|
-| 공통 | 모두 | 대시보드 / 내 업무 / 프로젝트 / 영업 / 날인 / 건의 / 직원 일정 / 사용 매뉴얼 |
+| 공통 | 모두 | 대시보드 / 내 업무 / 프로젝트 / 영업 / 날인 / **건의사항 (manager 포함 PR-AS)** / 직원 일정 / 사용 매뉴얼 |
 | 운영 관리 | admin + team_lead + manager | 발주처 / 수금 / 지출 / 계약서 / 공지 / 직원 명부 |
-| 시스템 관리 | admin only | 사용자 관리 / sync 관리 / 캘린더 / 봇 / 드라이브 |
+| 시스템 관리 | admin only | 사용자 관리 / **Sync 관리 (PR-AR)** / 캘린더 / 봇 / 드라이브 |
 
 `NavItem.hiddenForRoles`로 manager에 일부 메뉴 비노출 (member 작업 영역).
 
@@ -127,6 +128,8 @@
 | PR-AA | 2026-05-11 | weekly_report 날인대장 가드 제거 — 모든 직원에게 보고용 콘텐츠 동일 노출 |
 | PR-AB | 2026-05-11 | cashflow incomes CUD: admin → admin+manager |
 | PR-AC | 2026-05-11 | clients PATCH: admin → 전 직원. DELETE는 admin 유지 |
+| PR-AR | 2026-05-12 | `/api/admin/sync/*` 신규 라우터 (require_admin). 업무시간(KST 06~20) cron 회피 + admin 강제 트리거 페이지 `/admin/sync` |
+| PR-AS | 2026-05-12 | Sidebar 「건의사항」 manager 노출 (backend는 이미 모든 직원 허용 — UI gap 해소) |
 
 ## 미결정 / 향후 검토 항목
 
