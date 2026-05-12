@@ -39,14 +39,21 @@
 | **Phase 4-A PR-S2** lib/api.ts 분리 — tasks + suggestions + notices | 작은 도메인 3개 분리. tasks(40 줄), suggestions(60 줄), notices(100 줄). 각 도메인별 파일 + lib/api.ts re-export. unused type import(Task*) 정리 | fcd6872 |
 | **PR-T** /me 4탭 구조 (사용자 요청) | 헤더+요약 카드+스냅샷 다음에 4탭 nav([해야할 일]/[담당 프로젝트]/[내 영업]/[기타 업무]). 각 탭 click 시 해당 섹션만 conditional render. 기존 hr 구분선 제거. URL `?tab=` 동기화. 「해야할 일」 안의 [분류/시간] toggle은 todo 탭 내부에서 그대로 유지. 후속 commit으로 5탭 재구조(할 일/일정/담당 프로젝트/내 영업/기타 업무) + 「일정」 탭에 파견 카드 추가 + 활동 옵션에 "파견" 동기화 | 1fce89a / 78e8d78 / eafdfcd |
 | **PR-U** 주간업무일지 섹션 재배치 + 개인일정 파견 포함 (사용자 요청) | 새 순서: 1.공지 / 2.개인일정 / 3.신규 / 4.완료 / 5.인원 / 6.교육+7.건의(grid-2) / 8.날인 / 9.영업 / 10.팀별 / 11.대기 / 12.보류. frontend ReportPreview + backend weekly_report.html 동시 적용. backend `_SCHEDULE_CATEGORIES`와 activity 매칭 set에 "파견" 추가 — 파견 task가 개인일정 표에 표시되도록 | 신규 |
+| **PR-V** SaleTaskRow에 영업별 task 추가 버튼 | /me 「내 영업」 탭의 각 영업 row에 + TASK 버튼 추가. TaskCreateModal에 `saleId` prop 신설 — saleId 전달 시 카테고리=영업(서비스) + 영업 link prefill. ProjectTaskRow와 동등 패턴 | 신규 |
+| **PR-W** 주간업무일지 섹션 순서 v2 (사용자 요청) | 1.인원 / 2.공지·교육·건의(grid-3) / 3.개인일정 / 4.신규 / 5.완료 / 6.날인 / 7.영업 / 8.팀별 / 9.대기 / 10.보류. frontend + backend html 동시. | 98e52fc |
+| **PR-X ~ AC 권한 정리** | 계약 분담 admin+manager → admin+team_lead+manager(PR-Y) + cashflow incomes admin+manager(PR-AB) + clients PATCH 전 직원(PR-AC) + 주간업무일지 admin 「최근 발행 PDF」 버튼(PR-Z) + 일반직원도 날인대장 노출(PR-AA). 자세한 매트릭스 [PERMISSIONS.md](PERMISSIONS.md) | a490430 / 948824b / 699be57 / e17ae61 / 913eed0 / 862b09c |
+| **PR-AD** WeeklyReport in-memory cache + 새로고침 버튼 | backend module-level OrderedDict LRU cache (key=(ws,we,lws), TTL 300s, max 16). publish는 force_refresh=True. last-published.pdf는 cache hit 활용. frontend [새로고침] 버튼 추가 — refreshTick 증가 → SWR key 변경 + force_refresh=true | f293aa5 |
+| **PR-AE ~ AN Phase 4-A 컴포넌트 분리** | SalesEditModal 1670→1480(-190), weekly-report/page 1213→384(-829, **-68%**), me/page 1117→618(-499, -45%), QuoteForm 982→926(-56). 신규 컴포넌트 14개 파일 추출. lint·tsc 통과, 동작 영향 0 | 82853c4 ~ 1de0ae2 |
+| **2026-05-12 연결 풀 사고 + 방어** | SQLAlchemy 풀 leak으로 Supavisor 50 도달 → 전사 접속 불가. 즉시 복구 (Supabase pg_terminate_backend + Render restart). 임시 보강: pool_size 10→5 / overflow 20→10 / recycle 300→120s(PR-AO). 근본 방어: pool_reset_on_return=rollback + get_db rollback + /api/health/db 라우트 + Render Health Check Path 교체(PR-AQ). 매뉴얼은 [INCIDENT.md](INCIDENT.md) | c4de851 / b57d525 / 4f95017 |
 
 ## 미완료 / 보류
 
 | 항목 | 상태 | 비고 |
 |---|---|---|
-| **Phase 1 UX 1차** | 계획만 | DASH/PROJ/MY/WEEK 상단 KPI·액션 패널·프리셋·요약 — `.claude/plans/federated-stirring-hedgehog.md` |
-| **Phase 4-B SalesEditModal 본격 분해** | 보류 | 1500+ 줄 단일 컴포넌트 — set-state-in-effect 8건 file-level disable + TODO 표시 (`SalesEditModal.tsx`) |
+| **Phase 1 UX 1차** | 일부 진행 (PR-A~D) | DASH/PROJ/MY/WEEK 상단 KPI·액션 패널·프리셋·요약 — `.claude/plans/federated-stirring-hedgehog.md` |
+| **Phase 4-A 추가 분리** | SalesEditModal/TaskEditModal/MasterProjectModal 등 잔여 | 외과적 한계까지 분리 완료. 본격은 design refactor 필요 |
 | **Backend atomicity·페이징·silent except** | 보류 | `sales.py:1038~`, `seal_requests.py:862~` Drive↔Notion atomicity / `query_all` 페이징 / silent except 정리 |
+| **권한 audit 미결정 2건** | 결정 대기 | `master_projects.PATCH` (현재 누구나), `employees.GET ""` (현재 admin+팀장) — 정책 좁힐지 판단 필요. [PERMISSIONS.md 미결정 항목](PERMISSIONS.md#미결정--향후-검토-항목) |
 
 ## 핵심 helper / 모듈 위치
 
