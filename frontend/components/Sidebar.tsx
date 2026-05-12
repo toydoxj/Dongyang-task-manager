@@ -41,7 +41,7 @@ const NAV_GROUPS: NavGroup[] = [
       // 직원 일정은 task.dyce.kr 내부 FullCalendar에서 보기. NAVER WORKS Calendar에는 backend가 단방향 동기화.
       { href: "/schedule", label: "직원 일정" },
       { href: "/seal-requests", label: "날인요청", hiddenForRoles: ["manager"] },
-      { href: "/suggestions", label: "건의사항", hiddenForRoles: ["manager"] },
+      { href: "/suggestions", label: "건의사항" },
       // 주간업무일지는 /me 또는 대시보드 우상단 '주간업무일지 보기' 버튼에서 진입.
       { href: "/utilities", label: "유틸 런처", hiddenForRoles: ["manager"] },
       { href: "/help", label: "사용 매뉴얼" },
