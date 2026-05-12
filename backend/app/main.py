@@ -147,6 +147,25 @@ async def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
+@app.get("/api/health/db")
+async def health_db() -> dict[str, str]:
+    """DB까지 거치는 health check — Render의 Health Check Path를 이쪽으로 교체하면
+    connection pool 고갈 시 자동 restart가 트리거된다 (PR-AQ).
+
+    가벼운 ping query — pool에서 1개 connection 빌려 즉시 release.
+    """
+    from sqlalchemy import text
+
+    from app.db import SessionLocal
+
+    try:
+        with SessionLocal() as db:
+            db.execute(text("SELECT 1"))
+        return {"status": "ok"}
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(status_code=503, detail=f"db unhealthy: {e}")
+
+
 def _verify_cron(authorization: str | None = Header(default=None)) -> None:
     secret = settings.cron_secret
     if not secret:

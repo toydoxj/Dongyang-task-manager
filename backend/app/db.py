@@ -55,6 +55,10 @@ engine = create_engine(
     max_overflow=10 if not _is_sqlite else 10,
     pool_timeout=20,    # 대기 20초 후 fail → SWR retry로 폭주 방지
     pool_recycle=120,   # 2분 후 강제 재사용 reset — idle leak 빠른 회수
+    # PR-AQ: connection이 풀에 반환될 때 rollback 강제. read-only 라우트가
+    # commit 안 하고 끝나도 "idle in transaction" 상태로 Supavisor가 점유
+    # 유지하는 leak을 차단. SQLAlchemy 기본값이지만 명시적으로 표기.
+    pool_reset_on_return="rollback",
 )
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
@@ -64,10 +68,17 @@ class Base(DeclarativeBase):
 
 
 def get_db() -> Generator[Session, None, None]:
-    """FastAPI Depends용 DB 세션."""
+    """FastAPI Depends용 DB 세션.
+
+    PR-AQ: 예외 전파 시 명시 rollback. 라우트가 commit 안 하고 raise해도
+    session이 "idle in transaction"으로 풀에 반환되지 않게 보장.
+    """
     db = SessionLocal()
     try:
         yield db
+    except Exception:
+        db.rollback()
+        raise
     finally:
         db.close()
 
