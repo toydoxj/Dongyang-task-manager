@@ -49,6 +49,7 @@
 |---|---|---|
 | `/api/projects/{id} PATCH` | 프로젝트 일반 편집 (이름·발주처·금액·phase 등) | PR-Y |
 | `/api/contract-items POST/PATCH/DELETE` | 계약 분담 (공동수급·추가용역) | PR-Y |
+| `/api/admin/employees GET ""` | 직원 명부 조회 | PR-AT (manager 휴가·연락처 등 운영 참조 필요) |
 
 ### admin + manager (관리팀 운영)
 
@@ -62,7 +63,6 @@
 
 | 라우터 | 작업 | 비고 |
 |---|---|---|
-| `/api/employees GET ""` | 직원 명부 조회 | manager 추가 검토 항목 (audit 미결정) |
 | `/api/seal-requests/{id}/approve-lead` | 날인 1차 승인 | |
 | `/api/seal-requests/{id}/reject` | 날인 반려 | |
 | `/api/seal-requests/{id}/approve-admin` | 날인 최종 승인 | admin only (위계상 admin 단독) |
@@ -130,9 +130,11 @@
 | PR-AC | 2026-05-11 | clients PATCH: admin → 전 직원. DELETE는 admin 유지 |
 | PR-AR | 2026-05-12 | `/api/admin/sync/*` 신규 라우터 (require_admin). 업무시간(KST 06~20) cron 회피 + admin 강제 트리거 페이지 `/admin/sync` |
 | PR-AS | 2026-05-12 | Sidebar 「건의사항」 manager 노출 (backend는 이미 모든 직원 허용 — UI gap 해소) |
+| PR-AT | 2026-05-12 | employees.GET "" 직원 명부: admin+팀장 → admin+팀장+manager (require_editor). master_projects는 현재 유지(전 직원) 결정 |
 
-## 미결정 / 향후 검토 항목
+## audit 결과 (모든 결정 항목)
 
-- `master_projects PATCH/이미지 CRUD` — 현재 누구나. 정책 좁힐지 결정 필요.
-- `employees GET ""` (직원 명부 조회) — 현재 admin+팀장. manager 추가 여부.
+- 모든 운영/시스템 라우터 권한 매트릭스 완료
+- master_projects = 전 직원 read/PATCH/이미지 CRUD (포트폴리오 운영 흐름상 의도된 개방)
+- 미결정 항목 없음 (PR-AT 시점)
 - `seal_requests` 내부 status 가드 통일 (현재 라우트별 분산 — 점검 필요).
