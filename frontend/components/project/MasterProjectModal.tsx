@@ -4,6 +4,13 @@ import Link from "next/link";
 import { useRef, useState } from "react";
 import { mutate } from "swr";
 
+import {
+  CheckBox,
+  Input,
+  NumInput,
+  Tag,
+  ValueRow,
+} from "@/components/project/MasterProjectControls";
 import Modal from "@/components/ui/Modal";
 import MultiSelectChips from "@/components/ui/MultiSelectChips";
 import {
@@ -18,7 +25,6 @@ import {
   useMasterOptions,
   useMasterProject,
 } from "@/lib/hooks";
-import { cn } from "@/lib/utils";
 
 interface Props {
   open: boolean;
@@ -306,9 +312,9 @@ function ViewBlock({
           건축 정보
         </h3>
         <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-xs md:grid-cols-3">
-          <Field label="용도" value={mp.usage.join(", ")} />
-          <Field label="구조형식" value={mp.structure.join(", ")} />
-          <Field
+          <ValueRow label="용도" value={mp.usage.join(", ")} />
+          <ValueRow label="구조형식" value={mp.structure.join(", ")} />
+          <ValueRow
             label="규모"
             value={
               [
@@ -320,11 +326,11 @@ function ViewBlock({
                 .join(" / ") || "—"
             }
           />
-          <Field
+          <ValueRow
             label="높이"
             value={mp.height != null ? `${mp.height} m` : "—"}
           />
-          <Field
+          <ValueRow
             label="연면적"
             value={
               mp.area != null
@@ -506,103 +512,3 @@ function EditForm({
   );
 }
 
-function Input({
-  label,
-  value,
-  onChange,
-  full,
-}: {
-  label: string;
-  value: string;
-  onChange: (v: string) => void;
-  full?: boolean;
-}) {
-  return (
-    <label className={cn("block text-xs", full && "sm:col-span-2")}>
-      <span className="text-zinc-500">{label}</span>
-      <input
-        type="text"
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        className="mt-0.5 w-full rounded border border-zinc-300 bg-white px-2 py-1 text-xs text-zinc-900 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100"
-      />
-    </label>
-  );
-}
-
-function NumInput({
-  label,
-  value,
-  onChange,
-}: {
-  label: string;
-  value: number | null;
-  onChange: (v: number | null) => void;
-}) {
-  return (
-    <label className="block text-xs">
-      <span className="text-zinc-500">{label}</span>
-      <input
-        type="number"
-        value={value ?? ""}
-        onChange={(e) => {
-          const s = e.target.value;
-          onChange(s === "" ? null : Number(s));
-        }}
-        className="mt-0.5 w-full rounded border border-zinc-300 bg-white px-2 py-1 text-xs text-zinc-900 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100"
-      />
-    </label>
-  );
-}
-
-function CheckBox({
-  label,
-  value,
-  onChange,
-}: {
-  label: string;
-  value: boolean;
-  onChange: (v: boolean) => void;
-}) {
-  return (
-    <label className="flex items-center gap-1.5">
-      <input
-        type="checkbox"
-        checked={value}
-        onChange={(e) => onChange(e.target.checked)}
-        className="h-3.5 w-3.5"
-      />
-      <span>{label}</span>
-    </label>
-  );
-}
-
-function Tag({
-  children,
-  className,
-}: {
-  children: React.ReactNode;
-  className?: string;
-}) {
-  return (
-    <span
-      className={cn(
-        "rounded-md border px-1.5 py-0.5 text-[10px] font-medium",
-        className,
-      )}
-    >
-      {children}
-    </span>
-  );
-}
-
-function Field({ label, value }: { label: string; value: string }) {
-  return (
-    <div>
-      <dt className="text-zinc-500">{label}</dt>
-      <dd className="mt-0.5 text-zinc-800 dark:text-zinc-200">
-        {value || "—"}
-      </dd>
-    </div>
-  );
-}
