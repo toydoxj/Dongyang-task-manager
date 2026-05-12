@@ -36,16 +36,14 @@ export default function Modal({
 
   if (!open) return null;
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
-      onClick={onClose}
-    >
+    // PR-AV: backdrop 클릭으로 닫지 않음 — 입력 중 실수 클릭으로 인한 작업 손실
+    // 방지. ESC 또는 X 버튼만 닫기 트리거.
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
       <div
         className={cn(
           "w-full overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-xl dark:border-zinc-800 dark:bg-zinc-900",
           SIZE[size],
         )}
-        onClick={(e) => e.stopPropagation()}
       >
         <header className="flex items-center justify-between border-b border-zinc-200 px-5 py-3 dark:border-zinc-800">
           <h2 className="text-sm font-semibold">{title}</h2>
