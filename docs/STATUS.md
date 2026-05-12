@@ -1,6 +1,6 @@
 # 작업 Status
 
-> 마지막 업데이트: 2026-05-10 (Phase 0 검증 fix 포함)
+> 마지막 업데이트: 2026-05-12 (connection pool 사고 + Phase 4-A 컴포넌트 분리 4개 파일)
 
 ## 완료된 PR
 
@@ -105,8 +105,24 @@ postgresql://postgres.hxhdqjbzfuddinoejoyo:<PASSWORD>@aws-0-ap-northeast-2.poole
 
 - Session pooler (5432) = SQLAlchemy + psycopg 표준 호환. **이 프로젝트는 Session 사용**.
 - Transaction pooler (6543) = prepared statement / LISTEN-NOTIFY 미지원. SQLAlchemy 일부 기능 깨짐.
+  - 추가로 Render IPv4-only outbound와 비호환(IPv6 endpoint만 노출, 2026-05-12 사고).
+
+### SQLAlchemy connection pool
+
+`backend/app/db.py` (PR-AO, 2026-05-12 사고 후 축소):
+- `pool_size=5`
+- `max_overflow=10` (워커당 최대 15)
+- `pool_recycle=120s` (idle leak 빠른 회수)
+- Supavisor 50까지 여유 35
+
+근본 leak source 추적은 별도 cycle 진행 중. 자세한 내역은 [INCIDENT.md](INCIDENT.md#2026-05-12--sqlalchemy-connection-leak--supavisor-pool-고갈--전사-접속-불가) 참조.
 
 ### Supabase 진단 도구
 
 `mcp__plugin_supabase_supabase__get_logs(project_id="hxhdqjbzfuddinoejoyo", service="postgres")` —
 정상 backend connection은 `application_name=Supavisor`로 노출. `supabase/dashboard`만 보이고 `Supavisor`가 없으면 backend connect 실패 신호.
+
+### 사고 대응 매뉴얼
+
+운영 사고 발생 시 [INCIDENT.md](INCIDENT.md#사고-대응-체크리스트-재발-시) 의 체크리스트 참조.
+주요 매핑: `QueuePool limit` → SQLAlchemy 풀 고갈 / `EMAXCONNSESSION` → Supavisor 풀 고갈 / `Network is unreachable` (`2406:...`) → IPv6 endpoint 시도.
