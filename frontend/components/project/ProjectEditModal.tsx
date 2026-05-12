@@ -7,6 +7,7 @@ import ContractItemsEditor, {
   type DraftContractItem,
   toDraft,
 } from "@/components/project/ContractItemsEditor";
+import { Field, inputCls } from "@/components/project/_shared";
 import Modal from "@/components/ui/Modal";
 import MultiSelectChips from "@/components/ui/MultiSelectChips";
 import {
@@ -457,31 +458,8 @@ function Form({
   );
 }
 
-const inputCls =
-  "w-full rounded-md border border-zinc-300 bg-white px-2.5 py-1.5 text-sm outline-none focus:border-zinc-500 dark:border-zinc-700 dark:bg-zinc-950";
-
 function arraysEqual(a: string[], b: string[]): boolean {
   if (a.length !== b.length) return false;
   for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
   return true;
-}
-
-function Field({
-  label,
-  required,
-  children,
-}: {
-  label: string;
-  required?: boolean;
-  children: React.ReactNode;
-}) {
-  return (
-    <label className="block">
-      <span className="mb-1 block text-xs text-zinc-500">
-        {label}
-        {required && <span className="ml-1 text-red-500">*</span>}
-      </span>
-      {children}
-    </label>
-  );
 }

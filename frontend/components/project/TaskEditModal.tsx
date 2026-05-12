@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 
 import { useAuth } from "@/components/AuthGuard";
+import { Field, inputCls } from "@/components/project/_shared";
 import Modal from "@/components/ui/Modal";
 import { archiveTask, assignMe, updateProject, updateTask } from "@/lib/api";
 import type { Project, Task } from "@/lib/domain";
@@ -672,20 +673,3 @@ function Form({
   );
 }
 
-const inputCls =
-  "w-full rounded-md border border-zinc-300 bg-white px-2.5 py-1.5 text-sm outline-none focus:border-zinc-500 dark:border-zinc-700 dark:bg-zinc-950";
-
-function Field({
-  label,
-  children,
-}: {
-  label: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <label className="block">
-      <span className="mb-1 block text-xs text-zinc-500">{label}</span>
-      {children}
-    </label>
-  );
-}

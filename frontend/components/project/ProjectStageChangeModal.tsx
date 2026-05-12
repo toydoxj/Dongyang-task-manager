@@ -11,6 +11,7 @@
 import { useMemo, useState } from "react";
 import useSWR from "swr";
 
+import { Field, inputCls } from "@/components/project/_shared";
 import Modal from "@/components/ui/Modal";
 import { getProjectLog, updateProject } from "@/lib/api";
 import type { Project } from "@/lib/domain";
@@ -215,23 +216,6 @@ export default function ProjectStageChangeModal({
   );
 }
 
-function Field({
-  label,
-  children,
-}: {
-  label: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <label className="block text-xs">
-      <span className="mb-1 block text-zinc-500">{label}</span>
-      {children}
-    </label>
-  );
-}
-
-const inputCls =
-  "w-full rounded-md border border-zinc-300 bg-white px-2.5 py-1.5 text-sm outline-none focus:border-zinc-500 dark:border-zinc-700 dark:bg-zinc-950";
 
 /** "1,234,567" 형태 그대로 표시 */
 function formatComma(raw: string): string {
