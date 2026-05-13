@@ -1,6 +1,6 @@
 # 작업 Status
 
-> 마지막 업데이트: 2026-05-13 (Phase 1·2·3 완료 확정 + Phase 4 잔여 정리)
+> 마지막 업데이트: 2026-05-13 (Phase 4-A 100% 완료 — lib/api.ts 1450→49줄 / 컴포넌트 분리 13 cycle)
 
 ## 완료된 PR
 
@@ -50,6 +50,8 @@
 | **PR-AU ~ BC Phase 4-A 컴포넌트 분리 2차** | project/_shared.tsx 신설로 Field/inputCls 5+ 파일 통합. MasterProjectModal 608→514(-94), admin/employees/page 604→339(-265, -44%), seal-requests/page 543→154(**-389, -72%**), StageBoard 528→289(-239, -45%), TaskCreateModal 490→469(-21), IncomeFormModal 436→415(-21). 누적 9 파일 -2701줄 (-26%) / 신규 분리 파일 18개 | a73363f ~ c89c905 |
 | **PR-AV Modal backdrop 차단** | components/ui/Modal — outer backdrop click → onClose 제거. 모달 입력 중 외곽 클릭 실수로 작업 손실 방지. ESC + X 버튼만 닫기 | 6cffb1d |
 | **PR-AY /sales 가드 확장** | admin+manager → admin+team_lead+manager. 프로젝트 상세에서 「📋 영업 상세」 클릭 시 team_lead가 toast → /dashboard로 튕기던 dead-end 해소. backend는 이미 전 직원 허용 | c709d19 |
+| **PR-BD/BE/BG lib/api.ts 100% 분리** | 1450 → 49줄 (-1401, -97%). 9 도메인 추가 추출 (cashflow/contractItems/master/users/employees/drive/projects/seals/sales/weekly). _internal에 downloadPdfBlob helper. 신규 분리 파일 12개 | 5367573 / d14befb / c0d6aff |
+| **PR-BF 「새 영업」 form state remount fix** | SalesEditModal이 open=false에 return null만 호출 → React state 잔존. 부모에서 conditional mount + creatingKey로 force remount. 두 번째 「새 영업」 시 직전 입력 잔존 버그 해소 | 2b57196 |
 
 ## 미완료 / 보류
 
@@ -60,7 +62,7 @@ DASH-001~004 / PROJ-001~005 / MY-001~005 / WEEK-001~005 / COMMON-001~003 항목 
 
 | 항목 | 상태 | 비고 |
 |---|---|---|
-| **4-A** lib/api.ts 도메인 분리 | 부분 (PR-S/S2) | clients/notices/suggestions/tasks/adminSync 분리. 나머지 9 도메인 (cashflow/contractItems/projects/master/users/employees/seals/sales/weekly) 잔여 |
+| **4-A** lib/api.ts 도메인 분리 | ✅ 완료 (PR-S/S2/AR/BD/BE/BG, 100%) | 15/15 도메인 lib/api/*.ts. lib/api.ts는 49줄 re-export hub만 남음 |
 | **4-B** 대형 컴포넌트 외과적 분리 | ✅ 완료 (PR-AE~BC, 13 cycle) | -2701줄/-26%, 신규 분리 18개. 본격 design refactor는 별도 cycle |
 | **4-C** 리스트 서버 필터링·페이지네이션 | 미진행 | backend list_projects/tasks/sales — offset/limit + push-down filter |
 | **4-D** 메뉴 그룹 URL 재구성 | 미진행 | `/workspace`, `/operations`, `/admin` 통합 |
