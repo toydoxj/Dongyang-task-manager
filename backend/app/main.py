@@ -78,8 +78,10 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins_list,
-    # localStorage + Authorization 헤더 사용 → cookie 기반 credential 불필요
-    allow_credentials=False,
+    # PR-BH (Phase 4-G 1단계): JWT cookie 점진 마이그레이션 — 브라우저가 cookie를
+    # cross-origin fetch에 첨부하려면 credentials=True 필수. allow_origins는 *
+    # 사용 안 하고 정확한 도메인 list만 (보안 + 사양 요구).
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )

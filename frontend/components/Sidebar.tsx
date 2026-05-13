@@ -7,7 +7,7 @@ import useSWR from "swr";
 
 import { useAuth } from "./AuthGuard";
 import { getSealPendingCount } from "@/lib/api";
-import { clearAuth } from "@/lib/auth";
+import { backendLogout, clearAuth } from "@/lib/auth";
 import type { UserRole } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
@@ -98,7 +98,9 @@ export default function Sidebar({ mobileOpen, onCloseMobile }: Props) {
   );
   const sealCount = sealPending?.count ?? 0;
 
-  const handleLogout = (): void => {
+  const handleLogout = async (): Promise<void> => {
+    // PR-BH: backend cookie 제거 + DB session 무효화. 실패해도 로컬 clearAuth 진행.
+    await backendLogout();
     clearAuth();
     window.location.href = "/login";
   };

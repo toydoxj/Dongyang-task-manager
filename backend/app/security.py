@@ -5,7 +5,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 import bcrypt
-from fastapi import Depends, HTTPException, status
+from fastapi import Cookie, Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError, jwt
 from sqlalchemy.orm import Session
@@ -15,6 +15,9 @@ from app.models.auth import User, UserSession
 from app.settings import get_settings
 
 _bearer = HTTPBearer(auto_error=False)
+
+# PR-BH: JWT cookie 이름. backend가 set/delete + frontend가 credentials:include로 자동 첨부.
+JWT_COOKIE_NAME = "dy_jwt"
 
 
 def hash_password(password: str) -> str:
@@ -54,13 +57,17 @@ def decode_token(token: str) -> dict[str, Any]:
 def get_current_user(
     cred: HTTPAuthorizationCredentials | None = Depends(_bearer),
     db: Session = Depends(get_db),
+    dy_jwt: str | None = Cookie(default=None),
 ) -> User:
-    if cred is None:
+    # PR-BH (Phase 4-G 1단계): Authorization header 우선 + 없으면 dy_jwt cookie fallback.
+    # 점진 마이그레이션 동안 두 인증 채널 모두 허용. 2단계에서 header 비활성 가능.
+    raw_token = cred.credentials if cred is not None else dy_jwt
+    if not raw_token:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="로그인이 필요합니다"
         )
     try:
-        payload = decode_token(cred.credentials)
+        payload = decode_token(raw_token)
         username: str = payload.get("sub", "")
         if not username:
             raise HTTPException(

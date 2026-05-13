@@ -9,15 +9,18 @@ from typing import Literal
 from urllib.parse import urlencode
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Cookie, Depends, HTTPException, Query, Response, status
 from fastapi.responses import RedirectResponse
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.db import get_db
 from app.models.auth import User, UserInfo, UserSession, UserUpdateRequest
 from app.security import (
+    JWT_COOKIE_NAME,
     create_token,
+    decode_token,
     get_current_user,
     hash_password,
     require_admin,
@@ -41,6 +44,40 @@ def _ensure_company_email(email: str) -> None:
             status_code=400,
             detail=f"이메일은 회사 계정({ALLOWED_EMAIL_DOMAIN})만 사용 가능합니다",
         )
+
+
+def _set_jwt_cookie(response: Response, token: str) -> None:
+    """PR-BH (Phase 4-G 1단계): JWT를 httpOnly cookie로 굽기.
+
+    점진 마이그레이션 — Authorization Bearer header 인증과 병행. 운영(HTTPS +
+    .dyce.kr 공유) 환경변수: COOKIE_DOMAIN=.dyce.kr / COOKIE_SECURE=true /
+    COOKIE_SAMESITE=strict. dev(localhost http)는 default(빈 도메인 / secure=False
+    / samesite=lax)로 동작.
+    """
+    s = get_settings()
+    samesite = s.cookie_samesite.lower()
+    if samesite not in {"lax", "strict", "none"}:
+        samesite = "lax"
+    response.set_cookie(
+        key=JWT_COOKIE_NAME,
+        value=token,
+        max_age=s.jwt_expire_minutes * 60,
+        path="/",
+        domain=s.cookie_domain or None,
+        secure=s.cookie_secure,
+        httponly=True,
+        samesite=samesite,
+    )
+
+
+def _clear_jwt_cookie(response: Response) -> None:
+    """logout — set 시점과 동일한 (name, domain, path)로 delete해야 브라우저가 제거."""
+    s = get_settings()
+    response.delete_cookie(
+        key=JWT_COOKIE_NAME,
+        path="/",
+        domain=s.cookie_domain or None,
+    )
 
 logger = logging.getLogger("auth")
 
@@ -276,7 +313,7 @@ async def works_callback(
     # Drive 위임 흐름: drive_connected=1 query를 next 페이지에 붙여 알림
     if is_drive_flow:
         sep = "&" if "?" in safe_next else "?"
-        return RedirectResponse(
+        redirect = RedirectResponse(
             url=(
                 f"{base}/auth/works/callback"
                 f"#token={token}&user={user_b64}&next={safe_next}{sep}drive_connected=1"
@@ -284,11 +321,58 @@ async def works_callback(
             ),
             status_code=302,
         )
+        _set_jwt_cookie(redirect, token)
+        return redirect
     target = (
         f"{base}/auth/works/callback#token={token}"
         f"&user={user_b64}&next={safe_next}{silent_flag}"
     )
-    return RedirectResponse(url=target, status_code=302)
+    redirect = RedirectResponse(url=target, status_code=302)
+    _set_jwt_cookie(redirect, token)
+    return redirect
+
+
+_logout_bearer = HTTPBearer(auto_error=False)
+
+
+@router.post("/logout")
+def logout(
+    response: Response,
+    cred: HTTPAuthorizationCredentials | None = Depends(_logout_bearer),
+    dy_jwt: str | None = Cookie(default=None),
+    db: Session = Depends(get_db),
+) -> dict[str, str]:
+    """PR-BH: JWT cookie 제거 + 활성 session 무효화. idempotent — 토큰이 만료/누락이어도
+    cookie clear는 항상 시도. 토큰의 `cli` claim에서 client를 추출해 그 client만
+    UserSession 삭제 (다른 client(dy-midas) 강제 로그아웃 회피).
+    """
+    _clear_jwt_cookie(response)
+
+    raw_token = cred.credentials if cred is not None else dy_jwt
+    if not raw_token:
+        return {"status": "logged_out"}
+
+    try:
+        payload = decode_token(raw_token)
+    except Exception:  # noqa: BLE001 — 만료·서명 오류여도 cookie clear는 OK
+        return {"status": "logged_out"}
+
+    username = payload.get("sub", "")
+    cli = payload.get("cli", "") or "task"  # 레거시 토큰은 task로 간주
+    if not username:
+        return {"status": "logged_out"}
+
+    user = db.query(User).filter(User.username == username).first()
+    if user is None:
+        return {"status": "logged_out"}
+
+    db.query(UserSession).filter(
+        UserSession.user_id == user.id, UserSession.client == cli
+    ).delete()
+    if cli == "task":
+        user.session_id = ""
+    db.commit()
+    return {"status": "logged_out"}
 
 
 @router.get("/me", response_model=UserInfo)

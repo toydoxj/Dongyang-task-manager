@@ -41,7 +41,12 @@ export function isLoggedIn(): boolean {
   return !!getToken();
 }
 
-/** 인증 헤더가 자동 포함된 fetch 래퍼 — 401 시 자동 로그아웃. */
+/** 인증 헤더가 자동 포함된 fetch 래퍼 — 401 시 자동 로그아웃.
+ *
+ * PR-BH (Phase 4-G 1단계): credentials:"include" 추가 — 운영(.dyce.kr 공유 cookie)에서
+ * httpOnly JWT cookie가 cross-origin 요청에 자동 첨부되도록. localStorage token도
+ * 그대로 유지(점진 마이그레이션 — 두 채널 모두 지원). 2단계에서 header 제거 예정.
+ */
 export async function authFetch(
   path: string,
   init?: RequestInit,
@@ -50,12 +55,29 @@ export async function authFetch(
   const headers = new Headers(init?.headers);
   if (token) headers.set("Authorization", `Bearer ${token}`);
   const url = path.startsWith("http") ? path : `${API_BASE}${path}`;
-  const res = await fetch(url, { ...init, headers });
+  const res = await fetch(url, { ...init, credentials: "include", headers });
   if (res.status === 401) {
     clearAuth();
     if (typeof window !== "undefined") window.location.href = "/login";
   }
   return res;
+}
+
+/** PR-BH: backend logout — httpOnly cookie 제거 + DB UserSession 삭제. 실패해도
+ * 로컬 clearAuth는 호출자가 별도로 진행하므로 본 함수는 best-effort. */
+export async function backendLogout(): Promise<void> {
+  try {
+    const headers = new Headers();
+    const t = getToken();
+    if (t) headers.set("Authorization", `Bearer ${t}`);
+    await fetch(`${API_BASE}/api/auth/logout`, {
+      method: "POST",
+      credentials: "include",
+      headers,
+    });
+  } catch {
+    /* network down 등은 무시 — 사용자 인지 logout flow는 차단 안 함 */
+  }
 }
 
 export async function checkAuthStatus(): Promise<AuthStatus> {
