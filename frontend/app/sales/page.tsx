@@ -36,6 +36,10 @@ export default function SalesPage() {
   // useMemo로 derived — effect 내 setState 제거.
   const [clickedSale, setClickedSale] = useState<Sale | null>(null);
   const [creating, setCreating] = useState(false);
+  // PR-BF: 「새 영업」 클릭마다 SalesEditModal을 force remount해 form state 초기화.
+  // SalesEditModal 내부는 open=false에 return null만 하고 React state는 유지하므로
+  // 두 번째 「새 영업」에서 직전 입력값이 잔존하는 문제 해소.
+  const [creatingKey, setCreatingKey] = useState(0);
 
   const filters = {
     ...(kindFilter ? { kind: kindFilter } : {}),
@@ -72,7 +76,10 @@ export default function SalesPage() {
         </div>
         <button
           type="button"
-          onClick={() => setCreating(true)}
+          onClick={() => {
+            setCreatingKey((k) => k + 1);
+            setCreating(true);
+          }}
           className="rounded-md bg-zinc-900 px-3 py-1.5 text-xs text-white hover:bg-zinc-700 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300"
         >
           + 새 영업
@@ -136,7 +143,9 @@ export default function SalesPage() {
         <SalesTable sales={data.items} onClickRow={setClickedSale} />
       )}
 
+      {(editing != null || creating) && (
       <SalesEditModal
+        key={editing?.id ?? `new-${creatingKey}`}
         sale={editing}
         openNew={creating}
         onClose={() => {
@@ -152,6 +161,7 @@ export default function SalesPage() {
           }
         }}
       />
+      )}
     </div>
   );
 }
