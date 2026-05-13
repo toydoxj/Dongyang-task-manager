@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 
-import { useAuth } from "@/components/AuthGuard";
+import { useRoleGuard } from "@/lib/useRoleGuard";
 import UnauthorizedRedirect from "@/components/UnauthorizedRedirect";
 import IncomeFormModal from "@/components/admin/IncomeFormModal";
 import LoadingState from "@/components/ui/LoadingState";
@@ -25,9 +25,8 @@ interface IncomeRow {
 }
 
 export default function IncomesAdminPage() {
-  const { user } = useAuth();
   // 운영(수금) — admin + manager. 사이드바 노출과 정합 맞춤.
-  const allowed = user?.role === "admin" || user?.role === "manager";
+  const { user, allowed } = useRoleGuard(["admin", "manager"]);
   const { data: projectsData } = useProjects(undefined, allowed);
   const { data: cashflowData, mutate } = useCashflow(
     { flow: "income" },

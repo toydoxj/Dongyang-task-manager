@@ -70,7 +70,8 @@
 | **PR-BO authFetch 401 silent SSO 재시도 (INCIDENT 체크리스트 #3)** | authFetch에 retry flag → 401 발생 시 silent SSO 1회 재시도(만료 cookie/token 갱신) 후 성공이면 fetch 재시도, 실패면 clearAuth + redirect. dy_logged_out / dy_silent_failed flag 시 재시도 skip. PR-BI 사고 원인 가설 #3(401 즉시 redirect → loop) 회피 + 현 운영에서도 silent SSO 후 cookie 회복 시나리오 자동 처리. 누적 vitest 24 | ce6f264 |
 | **PR-BP/BQ 시도 → revert** | PR-BP `/me hydration` + PR-BQ Authorization header 제거 deploy 후 callback page에서 "로그인 처리 중..." 무한 반복 사고. 원인: `hydrateUserFromMe`가 `authFetch`를 사용 → 401 → PR-BO silent SSO → callback page iframe 재load → 재귀. 즉시 revert(b51fd72 + 5ae788e) 후 안정 복귀. INCIDENT.md에 재설계 체크리스트 4항목 추가(raw fetch 사용 / callback에서 호출 X / PR-BO silent retry에 인증 endpoint 제외 / PR-BP 재설계 후 PR-BQ 재시도) | b51fd72 / 5ae788e |
 | **PR-BR INCIDENT.md PR-BP/BQ 사고 entry 추가** | callback hydration 무한 재귀 사고 메모(증상/원인/조치/교훈/체크리스트 4항목). STATUS 4-G 행 갱신 — 3회 시도 회귀 명시 | 58014eb |
-| **PR-BS Phase 4-E 권한 가드 hook 추출 1차** | `lib/useRoleGuard.ts` 신설 — `useAuth + allowed 평가` 패턴을 `useRoleGuard(allowedRoles)`로 통합. /sales + /admin/expenses 2 page 시범 적용(useAuth import 제거). 권한 매트릭스가 다양해 layout 통합은 회피, hook 패턴이 page별 권한 차이 유연하게 처리. 나머지 page 점진 마이그레이션은 별도 cycle | (pending push) |
+| **PR-BS Phase 4-E 권한 가드 hook 추출 1차** | `lib/useRoleGuard.ts` 신설 — `useAuth + allowed 평가` 패턴을 `useRoleGuard(allowedRoles)`로 통합. /sales + /admin/expenses 2 page 시범 적용(useAuth import 제거). 권한 매트릭스가 다양해 layout 통합은 회피, hook 패턴이 page별 권한 차이 유연하게 처리. 나머지 page 점진 마이그레이션은 별도 cycle | 3d3594d |
+| **PR-BT Phase 4-E 2차 — 5 page 마이그레이션** | `useRoleGuard` 추가 적용: `/`(dashboard, admin/team_lead/manager) + `/projects` + `/admin/contracts` + `/admin/incomes` + `/admin/incomes/clients`(모두 admin/manager). 누적 7 page. seal-requests/employee-work/notices/sync/users 등 isAdmin/isAdminOrLead 변수 derive 패턴은 별도 cycle | (pending push) |
 
 ## 미완료 / 보류
 
@@ -90,7 +91,7 @@ DASH-001~004 / PROJ-001~005 / MY-001~005 / WEEK-001~005 / COMMON-001~003 항목 
 | **4-G** JWT localStorage → httpOnly cookie | 1단계 완료(PR-BH) / 2단계(PR-BI/BP/BQ 3회 시도 모두 운영 회귀로 revert). 안전망(PR-BN saveAuth backward-compat / PR-BO 401 silent retry / PR-BL-5 e2e)은 살아있음. 다음 재시도 전 INCIDENT.md PR-BP/BQ entry 체크리스트 4항목(hydrate raw fetch / callback에서 호출 X / silent retry 인증 endpoint 제외 / PR-BP 후 PR-BQ) 충족 필요 | XSS 방어 강화 |
 | **4-F** 대시보드/주간보고 집계 API | KPI/액션/RecentUpdates/Warnings 모두 backend 집계 + TTL cache 완료(PR-BJ-1~5 + PR-BK) / 잔여(role 스코프 차등) | dashboard N+1 → 1 fetch |
 | **4-I** 테스트 framework | Vitest(PR-BL-1/2, 18 단위 테스트) + Playwright(PR-BL-3 smoke + PR-BL-5 4 role 시나리오, 누적 5 e2e) + GitHub Actions CI(PR-BL-4) 완료 / 잔여(backend full mock e2e — 미정밀) | PR-BI 같은 회귀 자동 검출 |
-| **4-E** 권한 layout 통합 | `useRoleGuard` hook 1차 도입(PR-BS, 2 page 시범) / 잔여(나머지 10+ page 점진 마이그레이션) | 권한 가드 코드 일관성 |
+| **4-E** 권한 layout 통합 | `useRoleGuard` hook 도입(PR-BS/BT, 누적 7 page) / 잔여(seal-requests/employee-work/notices/sync/users 등 isAdmin 변수 derive 패턴 5+ page) | 권한 가드 코드 일관성 |
 | **4-H** 문서 자동 동기화 체계 | 미진행 | USER_MANUAL/STATUS/PERMISSIONS auto-sync |
 | **4-I** Frontend 테스트 framework | 미진행 | Vitest + Playwright |
 | **4-J** Backend 라우터/서비스 분할 | 미진행 | seal_requests / sales / projects / quote_calculator / weekly_report 큰 파일들 |

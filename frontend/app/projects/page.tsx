@@ -4,7 +4,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import useSWR from "swr";
 
-import { useAuth } from "@/components/AuthGuard";
+import { useRoleGuard } from "@/lib/useRoleGuard";
 import ProjectCard, {
   type ProjectTag,
 } from "@/components/projects/ProjectCard";
@@ -133,12 +133,11 @@ function cmpDateDesc(a: string | null, b: string | null): number {
 }
 
 export default function ProjectsPage() {
-  const { user } = useAuth();
   const router = useRouter();
   const searchParams = useSearchParams();
   // admin과 manager만 프로젝트 목록 접근 가능 (사용자 결정 2026-05-11)
   // — team_lead/일반직원은 /me로 redirect
-  const allowed = user?.role === "admin" || user?.role === "manager";
+  const { user, allowed } = useRoleGuard(["admin", "manager"]);
   useEffect(() => {
     if (user && !allowed) router.replace("/me");
   }, [user, allowed, router]);

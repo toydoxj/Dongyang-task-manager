@@ -4,7 +4,6 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect } from "react";
 
-import { useAuth } from "@/components/AuthGuard";
 import ChartsTabs from "@/components/dashboard/ChartsTabs";
 import KPICards from "@/components/dashboard/KPICards";
 import PriorityActionsPanel from "@/components/dashboard/PriorityActionsPanel";
@@ -16,16 +15,12 @@ import {
   useProjects,
   useTasks,
 } from "@/lib/hooks";
+import { useRoleGuard } from "@/lib/useRoleGuard";
 
 export default function DashboardPage() {
-  const { user } = useAuth();
   const router = useRouter();
-
   // 대시보드는 관리자/팀장/관리팀 — 일반 직원이 URL로 들어오면 내 업무로 redirect
-  const allowed =
-    user?.role === "admin" ||
-    user?.role === "team_lead" ||
-    user?.role === "manager";
+  const { user, allowed } = useRoleGuard(["admin", "team_lead", "manager"]);
   useEffect(() => {
     if (user && !allowed) router.replace("/me");
   }, [user, allowed, router]);

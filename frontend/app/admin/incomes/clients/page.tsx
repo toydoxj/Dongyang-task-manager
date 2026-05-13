@@ -2,12 +2,12 @@
 
 import { useMemo, useState } from "react";
 
-import { useAuth } from "@/components/AuthGuard";
 import UnauthorizedRedirect from "@/components/UnauthorizedRedirect";
 import ClientFormModal from "@/components/admin/ClientFormModal";
 import LoadingState from "@/components/ui/LoadingState";
 import type { Client } from "@/lib/domain";
 import { useCashflow, useClients, useProjects } from "@/lib/hooks";
+import { useRoleGuard } from "@/lib/useRoleGuard";
 
 interface ClientRow {
   client: Client;
@@ -16,9 +16,8 @@ interface ClientRow {
 }
 
 export default function ClientsAdminPage() {
-  const { user } = useAuth();
   // 운영(발주처) — admin + manager. 사이드바 노출과 정합 맞춤.
-  const allowed = user?.role === "admin" || user?.role === "manager";
+  const { user, allowed } = useRoleGuard(["admin", "manager"]);
   const { data: clientData, mutate } = useClients(allowed);
   const { data: projectsData } = useProjects(undefined, allowed);
   const { data: incomeData } = useCashflow({ flow: "income" }, allowed);
