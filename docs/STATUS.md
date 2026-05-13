@@ -52,7 +52,9 @@
 | **PR-AY /sales 가드 확장** | admin+manager → admin+team_lead+manager. 프로젝트 상세에서 「📋 영업 상세」 클릭 시 team_lead가 toast → /dashboard로 튕기던 dead-end 해소. backend는 이미 전 직원 허용 | c709d19 |
 | **PR-BD/BE/BG lib/api.ts 100% 분리** | 1450 → 49줄 (-1401, -97%). 9 도메인 추가 추출 (cashflow/contractItems/master/users/employees/drive/projects/seals/sales/weekly). _internal에 downloadPdfBlob helper. 신규 분리 파일 12개 | 5367573 / d14befb / c0d6aff |
 | **PR-BF 「새 영업」 form state remount fix** | SalesEditModal이 open=false에 return null만 호출 → React state 잔존. 부모에서 conditional mount + creatingKey로 force remount. 두 번째 「새 영업」 시 직전 입력 잔존 버그 해소 | 2b57196 |
-| **PR-BH Phase 4-G 1단계 — JWT cookie 점진 마이그레이션** | backend `get_current_user`가 Authorization header 우선 + `dy_jwt` cookie fallback. `works_callback`이 fragment redirect와 함께 httpOnly+SameSite cookie 발급. `/api/auth/logout` 신설(cookie clear + UserSession 삭제). CORS `allow_credentials=True`. frontend `authFetch`에 `credentials: include`, Sidebar logout이 backend logout 선행. 운영 env: `COOKIE_DOMAIN=.dyce.kr / COOKIE_SECURE=true / COOKIE_SAMESITE=strict` 추가 필요. localStorage token도 그대로 유지(2단계에서 제거) | (pending push) |
+| **PR-BH Phase 4-G 1단계 — JWT cookie 점진 마이그레이션** | backend `get_current_user`가 Authorization header 우선 + `dy_jwt` cookie fallback. `works_callback`이 fragment redirect와 함께 httpOnly+SameSite cookie 발급. `/api/auth/logout` 신설(idempotent + cli claim 기반 client별 UserSession 삭제). CORS `allow_credentials=True`. frontend `authFetch`에 `credentials: include`, Sidebar logout이 backend logout 선행. 운영 env `COOKIE_DOMAIN=.dyce.kr` 만 입력 필요(나머지는 default true/strict). 운영 검증 — Domain `.dyce.kr` / Secure / SameSite Strict / HttpOnly | 5db883a / 6b929a7 / db75dcf |
+| **PR-BI 시도 → revert** | Phase 4-G 2단계(localStorage token 제거 + Authorization header 첨부 제거) 후 운영에서 일부 사용자(eul22)가 로그인 화면 반복 → 1단계로 즉시 롤백. 원인 가설: silent SSO iframe 안에서 cookie 발급/저장이 의도대로 안 되어 cookie 단독 인증으로 전환 시 fetch 401 loop. 다음 시도 시 silent SSO 흐름 + saveAuth signature 호환성 + 401 자동 silent 재시도 설계 보강 필요 | 0a427b0 / e340068 |
+| **PR-BJ-1 Phase 4-F 집계 API 1차** | `/api/dashboard/summary` 신설 — KPI 6개(진행중/장기 정체/마감 임박/승인 대기 날인/이번주 수금·지출/최다 부하 팀) backend 집계. KST 경계 표준화(`_KST` + `_week_bounds`). 응답에 today/week_start/week_end 동봉(검증용). 승인 대기 날인은 일단 0(PR-BJ-3에서 추가). frontend는 별도 cycle에서 호출 전환 | (pending push) |
 
 ## 미완료 / 보류
 
@@ -69,7 +71,8 @@ DASH-001~004 / PROJ-001~005 / MY-001~005 / WEEK-001~005 / COMMON-001~003 항목 
 | **4-D** 메뉴 그룹 URL 재구성 | 미진행 | `/workspace`, `/operations`, `/admin` 통합 |
 | **4-E** 권한 로직 layout 통합 | 미진행 | 페이지마다 분산된 가드를 layout 레벨로 |
 | **4-F** 대시보드/주간보고 집계 API 별도 | 미진행 | client-side aggregation을 backend로 push |
-| **4-G** JWT localStorage → httpOnly cookie | 1단계 완료(PR-BH, 점진 — header+cookie 병행) / 2단계 보류(localStorage token 제거 + Authorization 단일 채널 폐기) | XSS 방어 강화 |
+| **4-G** JWT localStorage → httpOnly cookie | 1단계 완료(PR-BH) / 2단계(PR-BI) 시도 후 운영 회귀로 revert — silent SSO + saveAuth signature 보강 후 재시도 예정 | XSS 방어 강화 |
+| **4-F** 대시보드/주간보고 집계 API | 1차 부분 완료(PR-BJ-1, /summary KPI 6개 backend 집계 — frontend 전환은 다음 cycle) / 2~5차 보류(/actions + frontend 전환 + role 스코프 + TTL cache) | dashboard N+1 → 1 fetch |
 | **4-H** 문서 자동 동기화 체계 | 미진행 | USER_MANUAL/STATUS/PERMISSIONS auto-sync |
 | **4-I** Frontend 테스트 framework | 미진행 | Vitest + Playwright |
 | **4-J** Backend 라우터/서비스 분할 | 미진행 | seal_requests / sales / projects / quote_calculator / weekly_report 큰 파일들 |

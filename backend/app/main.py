@@ -23,6 +23,7 @@ from app.routers import auth as auth_router
 from app.routers import cashflow as cashflow_router
 from app.routers import clients as clients_router
 from app.routers import contract_items as contract_items_router
+from app.routers import dashboard as dashboard_router
 from app.routers import employees as employees_router
 from app.routers import master_projects as master_projects_router
 from app.routers import projects as projects_router
@@ -144,6 +145,7 @@ app.include_router(admin_bot_router.router, prefix="/api")
 app.include_router(admin_sync_router.router, prefix="/api")
 app.include_router(weekly_report_router.router, prefix="/api")
 app.include_router(notices_router.router, prefix="/api")
+app.include_router(dashboard_router.router, prefix="/api")
 
 
 @app.get("/health")
