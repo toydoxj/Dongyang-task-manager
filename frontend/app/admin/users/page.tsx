@@ -3,7 +3,7 @@
 import { useState } from "react";
 import useSWR from "swr";
 
-import { useAuth } from "@/components/AuthGuard";
+import { useRoleGuard } from "@/lib/useRoleGuard";
 import Modal from "@/components/ui/Modal";
 import {
   approveUser,
@@ -22,16 +22,16 @@ const COMPANY_EMAIL_DOMAIN = "@dyce.kr";
 type UserView = "pending" | "active" | "all";
 
 export default function UsersAdminPage() {
-  const { user } = useAuth();
+  const { user, allowed: isAdmin } = useRoleGuard(["admin"]);
   const [view, setView] = useState<UserView>("pending");
   const [errMsg, setErrMsg] = useState<string | null>(null);
   const [editing, setEditing] = useState<UserInfo | null>(null);
   const { data, mutate, error, isLoading } = useSWR(
-    user?.role === "admin" ? ["users"] : null,
+    isAdmin ? ["users"] : null,
     () => listUsers(),
   );
 
-  if (user && user.role !== "admin") {
+  if (user && !isAdmin) {
     return (
       <main className="p-6">
         <p className="text-sm text-red-500">관리자 권한이 필요합니다.</p>

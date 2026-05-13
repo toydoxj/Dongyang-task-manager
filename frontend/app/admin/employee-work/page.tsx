@@ -5,17 +5,16 @@ import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import useSWR from "swr";
 
-import { useAuth } from "@/components/AuthGuard";
+import { useRoleGuard } from "@/lib/useRoleGuard";
 import LoadingState from "@/components/ui/LoadingState";
 import { listEmployees } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 export default function EmployeeWorkSelectorPage() {
-  const { user } = useAuth();
+  const { user, allowed } = useRoleGuard(["admin", "team_lead"]);
   const router = useRouter();
   const [q, setQ] = useState("");
 
-  const allowed = user?.role === "admin" || user?.role === "team_lead";
   useEffect(() => {
     if (user && !allowed) router.replace("/me");
   }, [user, allowed, router]);

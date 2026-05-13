@@ -12,7 +12,7 @@
 import { useState } from "react";
 import useSWR from "swr";
 
-import { useAuth } from "@/components/AuthGuard";
+import { useRoleGuard } from "@/lib/useRoleGuard";
 import UnauthorizedRedirect from "@/components/UnauthorizedRedirect";
 import LoadingState from "@/components/ui/LoadingState";
 import {
@@ -64,8 +64,7 @@ function relativeTime(iso: string | null): string {
 }
 
 export default function AdminSyncPage() {
-  const { user } = useAuth();
-  const isAdmin = user?.role === "admin";
+  const { allowed: isAdmin } = useRoleGuard(["admin"]);
 
   const { data, error, isLoading, mutate } = useSWR(
     isAdmin ? ["admin-sync-status"] : null,
