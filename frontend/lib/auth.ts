@@ -128,25 +128,6 @@ export async function checkAuthStatus(): Promise<AuthStatus> {
   return (await res.json()) as AuthStatus;
 }
 
-/** PR-BP (INCIDENT 체크리스트 #4): backend가 검증한 user 정보로 localStorage 갱신.
- *
- * SSO callback fragment의 user_b64는 서버 검증 없이 신뢰하면 위조/손상 위험. cookie
- * 또는 token이 backend에서 인정되는지(/me 200 응답) 동시에 검증하면서 user JSON도
- * 신뢰 가능한 source(backend)로 교체. 실패해도 throw 안 함 — 호출자가 분기 결정.
- */
-export async function hydrateUserFromMe(): Promise<UserInfo | null> {
-  try {
-    const res = await authFetch("/api/auth/me");
-    if (!res.ok) return null;
-    const user = (await res.json()) as UserInfo;
-    if (!user || typeof user !== "object" || !user.role) return null;
-    saveAuth(user);
-    return user;
-  } catch {
-    return null;
-  }
-}
-
 // ── NAVER WORKS OIDC SSO ──
 
 export function worksLoginUrl(next: string = "/"): string {
