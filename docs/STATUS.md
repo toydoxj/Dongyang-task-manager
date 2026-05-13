@@ -62,7 +62,8 @@
 | **PR-BK Phase 4-F 마감 — /insights endpoint** | RecentUpdatesPanel + WarningItemsPanel을 backend 집계로 통합. `/api/dashboard/insights` 신설 — recent_updates(7일 이내 last_edited Top 10) + warnings(미종결 + flag(stalled/noAssignee/incomeIssue/overdue) Top 12). frontend 두 panel을 props 시그니처(items/rows)로 단순화. ChartsTabs에서 useDashboardInsights 호출 + 30초 TTL cache 적용. Phase 4-F는 role 스코프만 남음 | 9481f6c |
 | **PR-BL-1 Phase 4-I 1차 — Vitest 도입** | frontend 테스트 framework. vitest + jsdom + @vitejs/plugin-react 설치. vitest.config.ts(jsdom 환경 + @/* alias). lib/format / lib/cta 단위 테스트 (8개) — `npm run test` / `npm run test:watch`. PR-BI 같은 회귀 사전 검출 인프라 1차. Playwright는 별도 cycle, CI 통합도 별도 | eb18426 |
 | **PR-BL-2 lib/* 테스트 확장** | lib/api/_internal qs (5 케이스: empty/skip/falsy/encoding/coercion) + lib/types ROLE_LABEL (4 role 한글 표기 회귀 방지) + lib/format formatDateTime (KST 변환) — 누적 18 테스트 | b6efd5c |
-| **PR-BL-3 Phase 4-I 2차 — Playwright e2e 도입** | @playwright/test + chromium 설치(92MB binary). playwright.config.ts(webServer로 next dev 자동 실행 + chromium-only 1차) + e2e/login.spec.ts (`/login?error=test` 진입 시 h1 + 분기 텍스트 노출 검증). `npm run test:e2e` / `test:e2e:ui` script. .gitignore에 test-results/playwright-report 추가. PR-BI 같은 redirect loop 회귀 1차 검출 | (pending push) |
+| **PR-BL-3 Phase 4-I 2차 — Playwright e2e 도입** | @playwright/test + chromium 설치(92MB binary). playwright.config.ts(webServer로 next dev 자동 실행 + chromium-only 1차) + e2e/login.spec.ts (`/login?error=test` 진입 시 h1 + 분기 텍스트 노출 검증). `npm run test:e2e` / `test:e2e:ui` script. .gitignore에 test-results/playwright-report 추가. PR-BI 같은 redirect loop 회귀 1차 검출 | ca1d3ec |
+| **PR-BL-4 Phase 4-I 3차 — GitHub Actions CI** | `.github/workflows/ci.yml` 신설 — push to main + pull_request 트리거. concurrency cancel-in-progress(연속 push 비용 절약). 2 job: frontend(npm ci → lint → tsc → vitest → playwright install --with-deps chromium → e2e + 실패 시 report artifact 업로드) / backend(uv sync --frozen → pytest, WORKS_*=false env). PR마다 자동 회귀 검증 — PR-BI 같은 사고 사전 차단 | (pending push) |
 
 ## 미완료 / 보류
 
@@ -81,7 +82,7 @@ DASH-001~004 / PROJ-001~005 / MY-001~005 / WEEK-001~005 / COMMON-001~003 항목 
 | **4-F** 대시보드/주간보고 집계 API 별도 | 미진행 | client-side aggregation을 backend로 push |
 | **4-G** JWT localStorage → httpOnly cookie | 1단계 완료(PR-BH) / 2단계(PR-BI) 시도 후 운영 회귀로 revert — silent SSO + saveAuth signature 보강 후 재시도 예정 | XSS 방어 강화 |
 | **4-F** 대시보드/주간보고 집계 API | KPI/액션/RecentUpdates/Warnings 모두 backend 집계 + TTL cache 완료(PR-BJ-1~5 + PR-BK) / 잔여(role 스코프 차등) | dashboard N+1 → 1 fetch |
-| **4-I** 테스트 framework | Vitest(PR-BL-1/2, 18 단위 테스트) + Playwright(PR-BL-3, e2e smoke 1) 도입 완료 / CI 통합 보류 | PR-BI 같은 회귀 자동 검출 |
+| **4-I** 테스트 framework | Vitest(PR-BL-1/2, 18 단위 테스트) + Playwright(PR-BL-3, e2e smoke 1) + GitHub Actions CI(PR-BL-4) 완료 / 잔여(backend mock + 4 role 정밀 e2e) | PR-BI 같은 회귀 자동 검출 |
 | **4-H** 문서 자동 동기화 체계 | 미진행 | USER_MANUAL/STATUS/PERMISSIONS auto-sync |
 | **4-I** Frontend 테스트 framework | 미진행 | Vitest + Playwright |
 | **4-J** Backend 라우터/서비스 분할 | 미진행 | seal_requests / sales / projects / quote_calculator / weekly_report 큰 파일들 |
