@@ -87,9 +87,8 @@ def get_current_user(
 
     # PR-BI: header 인증 telemetry. cookie 채널이 정상이면 web client(cli=task)는
     # 점진 0으로 수렴해야 한다. dy-midas는 한동안 header 유지 예정.
-    # 일시 진단용이라 WARNING 격상 — uvicorn/Render default가 INFO 차단해 누락 방지.
     if via_header:
-        _auth_logger.warning(
+        _auth_logger.info(
             "auth_via_header user=%s cli=%s",
             username,
             payload.get("cli", "") or "?",
