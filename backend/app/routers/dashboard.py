@@ -10,11 +10,12 @@ KST 경계: `_KST = timezone(+9)`. 모든 "오늘"·"이번 주"·"+N일" 계산
 from __future__ import annotations
 
 import logging
-from collections import Counter
+import time
+from collections import Counter, OrderedDict
 from datetime import date, datetime, timedelta, timezone
 from typing import Optional
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
 from sqlalchemy import and_, select
 from sqlalchemy.orm import Session
@@ -74,6 +75,36 @@ def _week_bounds(today: date) -> tuple[date, date]:
 _PENDING_SEAL_STATUSES = {"1차검토 중", "2차검토 중"}
 
 
+# ── PR-BJ-5: in-memory TTL cache ─────────────────────────────────────────────
+# WeeklyReport pattern과 동일. cache key는 KST 기준일(today) — 자정 넘어가면 자동
+# 무효화. 운영 user 액션(프로젝트/날인/cashflow 변경)이 30초 이내 반영되도록 짧게.
+# role 스코프 분리 시 key에 (role, team) 추가 예정.
+_CACHE_TTL_SEC = 30
+_CACHE_MAX = 16
+
+_summary_cache: OrderedDict[tuple, tuple[float, "DashboardSummary"]] = OrderedDict()
+_actions_cache: OrderedDict[tuple, tuple[float, "DashboardActions"]] = OrderedDict()
+
+
+def _cache_get(cache: OrderedDict, key: tuple):
+    entry = cache.get(key)
+    if entry is None:
+        return None
+    ts, value = entry
+    if time.monotonic() - ts > _CACHE_TTL_SEC:
+        cache.pop(key, None)
+        return None
+    cache.move_to_end(key)
+    return value
+
+
+def _cache_set(cache: OrderedDict, key: tuple, value) -> None:
+    cache[key] = (time.monotonic(), value)
+    cache.move_to_end(key)
+    while len(cache) > _CACHE_MAX:
+        cache.popitem(last=False)
+
+
 async def _count_pending_seals(notion: NotionService) -> int:
     """1차/2차 검토중 status인 날인 페이지 수.
 
@@ -112,7 +143,8 @@ async def _count_pending_seals(notion: NotionService) -> int:
 
 @router.get("/summary", response_model=DashboardSummary)
 async def get_dashboard_summary(
-    user: User = Depends(get_current_user),  # noqa: ARG001 — 권한 차등은 PR-BJ-5
+    force_refresh: bool = Query(default=False, description="cache 우회 (사용자 새로고침)"),
+    user: User = Depends(get_current_user),  # noqa: ARG001 — 권한 차등은 별도 cycle
     db: Session = Depends(get_db),
     notion: NotionService = Depends(get_notion),
 ) -> DashboardSummary:
@@ -127,6 +159,12 @@ async def get_dashboard_summary(
     6) 최다 부하 팀 — 진행중 프로젝트의 teams[] 카운트 1위
     """
     today = _kst_today()
+    cache_key = ("summary", today.isoformat())
+    if not force_refresh:
+        cached = _cache_get(_summary_cache, cache_key)
+        if cached is not None:
+            return cached
+
     stale_cutoff = today - timedelta(days=_STALE_DAYS)
     due_soon_end = today + timedelta(days=_DUE_SOON_DAYS)
     week_start, week_end = _week_bounds(today)
@@ -206,7 +244,7 @@ async def get_dashboard_summary(
     # 또는 mirror_seal 신설로 개선 여지.
     pending_seal_count = await _count_pending_seals(notion)
 
-    return DashboardSummary(
+    summary = DashboardSummary(
         in_progress_count=in_progress_count,
         stalled_count=stalled_count,
         due_soon_tasks=due_soon_tasks_count,
@@ -218,6 +256,8 @@ async def get_dashboard_summary(
         week_start=week_start.isoformat(),
         week_end=week_end.isoformat(),
     )
+    _cache_set(_summary_cache, cache_key, summary)
+    return summary
 
 
 def _extract_date(props: dict, key: str) -> Optional[date]:
@@ -318,7 +358,8 @@ def _extract_title(props: dict) -> str:
 
 @router.get("/actions", response_model=DashboardActions)
 async def get_dashboard_actions(
-    user: User = Depends(get_current_user),  # noqa: ARG001 — 권한 차등은 PR-BJ-5
+    force_refresh: bool = Query(default=False, description="cache 우회 (사용자 새로고침)"),
+    user: User = Depends(get_current_user),  # noqa: ARG001 — 권한 차등은 별도 cycle
     db: Session = Depends(get_db),
     notion: NotionService = Depends(get_notion),
 ) -> DashboardActions:
@@ -332,6 +373,12 @@ async def get_dashboard_actions(
     5) 오래 멈춘 TASK — status='시작 전' AND created_time ≤ today-60d
     """
     today = _kst_today()
+    cache_key = ("actions", today.isoformat())
+    if not force_refresh:
+        cached = _cache_get(_actions_cache, cache_key)
+        if cached is not None:
+            return cached
+
     stale_cutoff = today - timedelta(days=_STALE_DAYS)
     action_due_end = today + timedelta(days=_ACTION_DUE_SOON_DAYS)
     stuck_cutoff = today - timedelta(days=_STALE_TASK_DAYS)
@@ -412,10 +459,12 @@ async def get_dashboard_actions(
     # 2 — 승인 지연 날인 (notion 호출 — 무거움. BJ-5에서 cache)
     overdue_seal_item = await _collect_overdue_seals(notion, today)
 
-    return DashboardActions(
+    actions = DashboardActions(
         stalled_projects=stalled_item,
         overdue_seals=overdue_seal_item,
         due_soon_tasks=due_soon_item,
         overloaded_team=overloaded_team,
         stuck_tasks=stuck_item,
     )
+    _cache_set(_actions_cache, cache_key, actions)
+    return actions
