@@ -1,6 +1,6 @@
 # 작업 Status
 
-> 마지막 업데이트: 2026-05-12 (connection pool 사고 + Phase 4-A 컴포넌트 분리 4개 파일)
+> 마지막 업데이트: 2026-05-13 (Phase 4-A 13 cycle 완료 + Sync 관리 + 권한 audit 마무리 + Modal backdrop 차단)
 
 ## 완료된 PR
 
@@ -43,17 +43,24 @@
 | **PR-W** 주간업무일지 섹션 순서 v2 (사용자 요청) | 1.인원 / 2.공지·교육·건의(grid-3) / 3.개인일정 / 4.신규 / 5.완료 / 6.날인 / 7.영업 / 8.팀별 / 9.대기 / 10.보류. frontend + backend html 동시. | 98e52fc |
 | **PR-X ~ AC 권한 정리** | 계약 분담 admin+manager → admin+team_lead+manager(PR-Y) + cashflow incomes admin+manager(PR-AB) + clients PATCH 전 직원(PR-AC) + 주간업무일지 admin 「최근 발행 PDF」 버튼(PR-Z) + 일반직원도 날인대장 노출(PR-AA). 자세한 매트릭스 [PERMISSIONS.md](PERMISSIONS.md) | a490430 / 948824b / 699be57 / e17ae61 / 913eed0 / 862b09c |
 | **PR-AD** WeeklyReport in-memory cache + 새로고침 버튼 | backend module-level OrderedDict LRU cache (key=(ws,we,lws), TTL 300s, max 16). publish는 force_refresh=True. last-published.pdf는 cache hit 활용. frontend [새로고침] 버튼 추가 — refreshTick 증가 → SWR key 변경 + force_refresh=true | f293aa5 |
-| **PR-AE ~ AN Phase 4-A 컴포넌트 분리** | SalesEditModal 1670→1480(-190), weekly-report/page 1213→384(-829, **-68%**), me/page 1117→618(-499, -45%), QuoteForm 982→926(-56). 신규 컴포넌트 14개 파일 추출. lint·tsc 통과, 동작 영향 0 | 82853c4 ~ 1de0ae2 |
+| **PR-AE ~ AN Phase 4-A 컴포넌트 분리 1차** | SalesEditModal 1670→1480(-190), weekly-report/page 1213→384(-829, **-68%**), me/page 1117→618(-499, -45%), QuoteForm 982→926(-56). 신규 컴포넌트 14개 파일 추출. lint·tsc 통과, 동작 영향 0 | 82853c4 ~ 1de0ae2 |
 | **2026-05-12 연결 풀 사고 + 방어** | SQLAlchemy 풀 leak으로 Supavisor 50 도달 → 전사 접속 불가. 즉시 복구 (Supabase pg_terminate_backend + Render restart). 임시 보강: pool_size 10→5 / overflow 20→10 / recycle 300→120s(PR-AO). 근본 방어: pool_reset_on_return=rollback + get_db rollback + /api/health/db 라우트 + Render Health Check Path 교체(PR-AQ). 매뉴얼은 [INCIDENT.md](INCIDENT.md) | c4de851 / b57d525 / 4f95017 |
+| **PR-AR Sync 관리** | render.yaml cron 5개 schedule 업무시간(KST 06~20) 회피 → UTC 11-21시(KST 20~06)만 실행. backend `/api/admin/sync/{status,run}` 신규 라우터 + frontend `/admin/sync` 페이지 (admin only, 10초 자동 refresh, kind별 강제 트리거) | 6bc3ede |
+| **PR-AS / AT 권한 audit 마무리** | 「건의사항」 사이드바 manager 노출 + employees.GET "" 직원 명부 admin+팀장+manager(`require_editor`). master_projects는 현 정책(전 직원) 유지 결정 — audit 미결정 항목 모두 해소 | f70885a / 119dbf8 |
+| **PR-AU ~ BC Phase 4-A 컴포넌트 분리 2차** | project/_shared.tsx 신설로 Field/inputCls 5+ 파일 통합. MasterProjectModal 608→514(-94), admin/employees/page 604→339(-265, -44%), seal-requests/page 543→154(**-389, -72%**), StageBoard 528→289(-239, -45%), TaskCreateModal 490→469(-21), IncomeFormModal 436→415(-21). 누적 9 파일 -2701줄 (-26%) / 신규 분리 파일 18개 | a73363f ~ c89c905 |
+| **PR-AV Modal backdrop 차단** | components/ui/Modal — outer backdrop click → onClose 제거. 모달 입력 중 외곽 클릭 실수로 작업 손실 방지. ESC + X 버튼만 닫기 | 6cffb1d |
+| **PR-AY /sales 가드 확장** | admin+manager → admin+team_lead+manager. 프로젝트 상세에서 「📋 영업 상세」 클릭 시 team_lead가 toast → /dashboard로 튕기던 dead-end 해소. backend는 이미 전 직원 허용 | c709d19 |
 
 ## 미완료 / 보류
 
 | 항목 | 상태 | 비고 |
 |---|---|---|
 | **Phase 1 UX 1차** | 일부 진행 (PR-A~D) | DASH/PROJ/MY/WEEK 상단 KPI·액션 패널·프리셋·요약 — `.claude/plans/federated-stirring-hedgehog.md` |
-| **Phase 4-A 추가 분리** | SalesEditModal/TaskEditModal/MasterProjectModal 등 잔여 | 외과적 한계까지 분리 완료. 본격은 design refactor 필요 |
+| **Phase 4-A 본격 분해** | 외과적 한계 도달 | SalesEditModal Form / TaskEditModal Form / QuoteForm Form / MasterProjectModal Body 등 단일 함수에 모든 state 결합. 본격은 design refactor (props lift / state machine) 필요 — 별도 cycle |
 | **Backend atomicity·페이징·silent except** | 보류 | `sales.py:1038~`, `seal_requests.py:862~` Drive↔Notion atomicity / `query_all` 페이징 / silent except 정리 |
-| **권한 audit 미결정 2건** | 결정 대기 | `master_projects.PATCH` (현재 누구나), `employees.GET ""` (현재 admin+팀장) — 정책 좁힐지 판단 필요. [PERMISSIONS.md 미결정 항목](PERMISSIONS.md#미결정--향후-검토-항목) |
+| **#113** /sales — onClose 시 ?sale= query 정리 | pending | TaskList #113. 사소함 — 현재 SaleLink referrer 보존 패턴(PR-114)으로 우회 |
+| **#116** /weekly-report 페이지 PDF와 양식 통일 | pending | TaskList #116. 데이터 구조는 이미 통일(PR-W). 남은 차이는 시각 디테일(컬럼폭/구분선/색상)뿐 |
+| **SQLAlchemy leak 근본 source 추적** | 보류 | PR-AO/AQ 임시 방어 + 자동 health check 동작 중. 잘 동작 시 추가 추적 불필요 |
 
 ## 핵심 helper / 모듈 위치
 
