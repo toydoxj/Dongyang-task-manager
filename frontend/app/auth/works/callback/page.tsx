@@ -10,11 +10,10 @@ const SSO_SILENT_FAILED = "sso_silent_failed";
 interface CallbackResolution {
   /** 본문에 표시할 사용자 친화 에러 (null이면 "로그인 처리 중" 노출) */
   displayError: string | null;
-  /** iframe 부모로 보낼 메시지 (silent 흐름).
-   * PR-BI: 인증은 cookie라 token은 더 이상 전달하지 않음. */
+  /** iframe 부모로 보낼 메시지 (silent 흐름) */
   silentMessage:
     | { type: string; reason: string }
-    | { type: string; user?: unknown; next?: string }
+    | { type: string; token?: string; user?: unknown; next?: string }
     | null;
   /** non-iframe normal SSO 성공 시 redirect 경로 */
   redirect: string | null;
@@ -65,12 +64,13 @@ function resolveCallback(): CallbackResolution {
     };
   }
 
-  // silent SSO 성공 — parent에 user 전달 (PR-BI: 인증은 cookie라 token 미전달)
+  // silent SSO 성공 — parent에 token/user 전달
   if (inIframe) {
     return {
       displayError: null,
       silentMessage: {
         type: SSO_SILENT_SUCCESS,
+        token: result.token,
         user: result.user,
         next: result.next,
       },

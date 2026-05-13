@@ -1,7 +1,6 @@
 """JWT 토큰 + 패스워드 해싱 + 인증 의존성."""
 from __future__ import annotations
 
-import logging
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
@@ -19,10 +18,6 @@ _bearer = HTTPBearer(auto_error=False)
 
 # PR-BH: JWT cookie 이름. backend가 set/delete + frontend가 credentials:include로 자동 첨부.
 JWT_COOKIE_NAME = "dy_jwt"
-
-# PR-BI: header 인증 사용 telemetry. web은 cookie 단독으로 전환 후 header 사용량이
-# 0(또는 dy-midas만)으로 수렴해야 한다. Render Logs에서 "auth_via_header" 검색.
-_auth_logger = logging.getLogger("app.auth")
 
 
 def hash_password(password: str) -> str:
@@ -66,8 +61,7 @@ def get_current_user(
 ) -> User:
     # PR-BH (Phase 4-G 1단계): Authorization header 우선 + 없으면 dy_jwt cookie fallback.
     # 점진 마이그레이션 동안 두 인증 채널 모두 허용. 2단계에서 header 비활성 가능.
-    via_header = cred is not None
-    raw_token = cred.credentials if via_header else dy_jwt
+    raw_token = cred.credentials if cred is not None else dy_jwt
     if not raw_token:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="로그인이 필요합니다"
@@ -84,15 +78,6 @@ def get_current_user(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="토큰이 만료되었거나 유효하지 않습니다",
         ) from exc
-
-    # PR-BI: header 인증 telemetry. cookie 채널이 정상이면 web client(cli=task)는
-    # 점진 0으로 수렴해야 한다. dy-midas는 한동안 header 유지 예정.
-    if via_header:
-        _auth_logger.info(
-            "auth_via_header user=%s cli=%s",
-            username,
-            payload.get("cli", "") or "?",
-        )
 
     user = db.query(User).filter(User.username == username).first()
     if user is None:
