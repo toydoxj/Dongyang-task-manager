@@ -69,26 +69,43 @@ def _week_bounds(today: date) -> tuple[date, date]:
     return week_start, week_end
 
 
+_PENDING_SEAL_STATUSES = {"1차검토 중", "2차검토 중"}
+
+
 async def _count_pending_seals(notion: NotionService) -> int:
-    """1차/2차 검토중 status인 날인 페이지 수. notion 직접 query (status filter)."""
+    """1차/2차 검토중 status인 날인 페이지 수.
+
+    notion `상태` column type(select vs status)이나 enum값 변경에 영향 안 받도록
+    server-side filter는 쓰지 않고 in-memory에서 매칭. WeeklyReport pattern과 동일.
+    """
     s = get_settings()
     db_id = s.notion_db_seal_requests
     if not db_id:
+        logger.warning("seal pending count: NOTION_DB_SEAL_REQUESTS 미설정")
         return 0
     try:
-        pages = await notion.query_all(
-            db_id,
-            filter={
-                "or": [
-                    {"property": "상태", "select": {"equals": "1차검토 중"}},
-                    {"property": "상태", "select": {"equals": "2차검토 중"}},
-                ]
-            },
-        )
-        return len(pages)
-    except Exception:  # noqa: BLE001 — notion API 일시 장애에 dashboard 전체 실패 회피
+        pages = await notion.query_all(db_id)
+    except Exception:  # noqa: BLE001
         logger.exception("seal pending count 조회 실패")
         return 0
+
+    count = 0
+    for p in pages:
+        props = p.get("properties", {})
+        if not isinstance(props, dict):
+            continue
+        status_obj = props.get("상태")
+        if not isinstance(status_obj, dict):
+            continue
+        # select 또는 status 둘 다 호환 — 노션은 두 type을 비슷한 shape으로 직렬화
+        inner = status_obj.get("select") or status_obj.get("status")
+        if not isinstance(inner, dict):
+            continue
+        name = inner.get("name") or ""
+        if name in _PENDING_SEAL_STATUSES:
+            count += 1
+    logger.info("seal pending count = %d (of %d pages)", count, len(pages))
+    return count
 
 
 @router.get("/summary", response_model=DashboardSummary)
