@@ -20,18 +20,21 @@ fallback** 케이스. logger 없이 OK.
 - `routers/auth.py:365` — JWT decode 실패 시 logout idempotent (의도)
 - `routers/seal_requests.py:212/318/452/534/596/629` — query string 파싱 fallback / bg task loop 부재 시 skip
 
-### 2. 외부 API 호출 silent — **위험. logger 추가 필요** (12 case)
+### 2. 외부 API 호출 silent — **위험. logger 추가 완료**
 
 **완료 (PR-BV):**
 - ✅ `routers/projects.py:117` — 프로젝트 담당 변경 이력 page 생성 실패 → `logger.warning`
 - ✅ `routers/master_projects.py:395` — `sync_master_blocks` write-through 실패 → `logger.warning`
 
-**잔여 (별도 cycle):**
-- `routers/seal_requests.py:643/645/876/1460/1489` — Drive 업로드 / Notion update 실패 시 `failed.append`만, logger 없음. 일부는 partial_errors 응답 schema와 함께 정리.
-- `services/quote_code.py:60` — quote type fallback (default `STRUCT_DESIGN`) — 이건 의도일 수 있음, 검토 필요
-- `services/weekly_report.py:691/888` — 주간 일지 집계 fallback (휴가 라벨 / duration_months) — 의도, OK 가능성 큼
-- `routers/cashflow.py:31` — payer 이름 resolution fallback — 검토 필요
-- `routers/projects.py:670` — review folder state count 실패 fallback — 검토 필요
+**완료 (PR-BW):**
+- ✅ `routers/projects.py:670` — review folder list_children 실패 → `logger.warning`
+
+**점검 결과 — 추가 fix 불요 (audit script 오탐 정정):**
+- `routers/seal_requests.py:643/645` — 이미 `logger.warning` 있음 (audit script가 같은 line 위 5줄 windows 안에 logger 못 잡음).
+- `routers/seal_requests.py:876/1460/1489` — `failed.append` 응답 schema에 partial 실패 명시 중. 사용자가 응답에서 확인 가능 → silent 아님.
+- `services/quote_code.py:60` — quote type fallback (default `STRUCT_DESIGN`). 코드 분류 휴리스틱이라 의도. OK.
+- `services/weekly_report.py:691/888` — 주간 일지 집계 (휴가 라벨 / duration_months). 의도적 fallback. OK.
+- `routers/cashflow.py:31` — date parse fallback (`None` 반환). 의도. OK.
 
 ### 3. 정상 fallback (Optional 함수) — 약 4 case
 
@@ -40,13 +43,17 @@ fallback** 케이스. logger 없이 OK.
 
 ## 다음 작업 권장
 
-1. **2차 — 잔여 외부 API silent (5 case)**: Drive/Notion 호출 silent를 모두
-   `logger.warning` + 가능 시 `failed.append` 통합.
-2. **3차 — partial_errors 응답 schema** (외부 리뷰 12.x #1 본격): API 응답에
-   `partial_errors: [{code, target, retryable, message}]` 필드 추가. 호출처
-   frontend에서 toast로 노출.
-3. **4차 — Drive·Notion atomicity** (외부 리뷰 12.x #2): `try/except + 보상 트랜잭션`
+silent except logger 1차 마감 — 외부 API silent 모두 `logger.warning` 또는
+`failed.append` 처리됨. 다음 단계는:
+
+1. **partial_errors 응답 schema** (외부 리뷰 12.x #1 본격): seal_requests의
+   `failed[]`를 정형화 — `partial_errors: [{code, target, retryable, message}]` 필드.
+   호출처 frontend에서 toast로 노출. seal_requests 외 다른 곳에도 적용.
+2. **Drive·Notion atomicity** (외부 리뷰 12.x #2): `try/except + 보상 트랜잭션`
    1차, `outbox + saga` 2차.
+3. **`_sync_sale_estimated_amount` race** (12.x #3): row-level lock 또는 transactional
+   집계 update.
+4. **`query_all` 페이징** (12.x #4): 우선순위 낮음 — mirror sync로 완화 중.
 
 ## audit 명령
 

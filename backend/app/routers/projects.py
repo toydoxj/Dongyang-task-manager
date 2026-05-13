@@ -668,7 +668,10 @@ async def _review_folder_state(
         files = body.get("files") or []
         real = [f for f in files if f.get("fileType") != "FOLDER"]
         count = len(real)
-    except sso_drive.DriveError:
+    except sso_drive.DriveError as e:
+        # PR-BW (silent except 가시화): Drive list 실패 시 count=0 fallback (의도) +
+        # 운영 추적용 warning. 폴더 자체는 존재하므로 사용자에 0건으로 보여도 OK.
+        logger.warning("review folder list_children 실패 (ymd=%s): %s", ymd, e)
         count = 0
     return ReviewFolderState(
         ymd=ymd,
