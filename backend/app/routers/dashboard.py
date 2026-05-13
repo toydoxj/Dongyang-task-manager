@@ -24,6 +24,7 @@ from app.db import get_db
 from app.models.auth import User
 from app.models.mirror import MirrorCashflow, MirrorProject, MirrorTask
 from app.security import get_current_user
+from app.services import notion_props as P
 from app.services.notion import NotionService, get_notion
 from app.settings import get_settings
 
@@ -38,6 +39,11 @@ _STALE_DAYS = 90  # 장기 정체 프로젝트 (진행중·대기)
 _DUE_SOON_DAYS = 7  # KPI '마감 임박 TASK'
 _ACTION_DUE_SOON_DAYS = 3  # 액션 '마감 가까운 업무' (KPI보다 짧음)
 _STALE_TASK_DAYS = 60  # 액션 '오래 멈춘 TASK' (시작 전)
+_RECENT_DAYS = 7  # 최근 변경 프로젝트
+_RECENT_TOP_N = 10
+_WARNING_TOP_N = 12
+_INCOME_ISSUE_RATIO = 0.3  # 수금 지연 (수금합 < 용역비 * ratio)
+_CLOSED_STAGES = {"완료", "타절", "종결", "이관"}
 _PENDING_SEAL_STATUSES = {"1차검토 중", "2차검토 중"}
 
 
@@ -84,6 +90,7 @@ _CACHE_MAX = 16
 
 _summary_cache: OrderedDict[tuple, tuple[float, "DashboardSummary"]] = OrderedDict()
 _actions_cache: OrderedDict[tuple, tuple[float, "DashboardActions"]] = OrderedDict()
+_insights_cache: OrderedDict[tuple, tuple[float, "DashboardInsights"]] = OrderedDict()
 
 
 def _cache_get(cache: OrderedDict, key: tuple):
@@ -468,3 +475,128 @@ async def get_dashboard_actions(
     )
     _cache_set(_actions_cache, cache_key, actions)
     return actions
+
+
+# ── PR-BJ Phase 4-F 마감: /insights — RecentUpdates + Warnings 두 panel ─────
+
+
+class RecentUpdate(BaseModel):
+    id: str
+    code: str
+    name: str
+    last_edited_time: str  # ISO datetime
+
+
+class WarningRow(BaseModel):
+    id: str
+    name: str
+    flags: list[str]  # stalled / noAssignee / incomeIssue / overdue
+
+
+class DashboardInsights(BaseModel):
+    recent_updates: list[RecentUpdate]
+    warnings: list[WarningRow]
+
+
+@router.get("/insights", response_model=DashboardInsights)
+async def get_dashboard_insights(
+    force_refresh: bool = Query(default=False, description="cache 우회"),
+    user: User = Depends(get_current_user),  # noqa: ARG001
+    db: Session = Depends(get_db),
+) -> DashboardInsights:
+    """RecentUpdatesPanel + WarningItemsPanel을 single fetch로 통합.
+
+    frontend 컴포넌트와 동일 로직:
+    - recent: last_edited_time 7일 이내, 내림차순 Top 10
+    - warnings: 미종결 프로젝트 중 stalled/noAssignee/incomeIssue/overdue flag 합산,
+      flag 수 많은 순 Top 12
+    """
+    today = _kst_today()
+    cache_key = ("insights", today.isoformat())
+    if not force_refresh:
+        cached = _cache_get(_insights_cache, cache_key)
+        if cached is not None:
+            return cached
+
+    stale_cutoff = today - timedelta(days=_STALE_DAYS)
+    today_iso = today.isoformat()
+    recent_cutoff_dt = datetime.now(_KST) - timedelta(days=_RECENT_DAYS)
+
+    rows = db.execute(
+        select(
+            MirrorProject.page_id,
+            MirrorProject.code,
+            MirrorProject.name,
+            MirrorProject.stage,
+            MirrorProject.assignees,
+            MirrorProject.last_edited_time,
+            MirrorProject.properties,
+        ).where(MirrorProject.archived.is_(False))
+    ).all()
+
+    recent_pool: list[tuple[datetime, str, str, str]] = []  # (dt, id, code, name)
+    warning_pool: list[tuple[str, str, list[str]]] = []  # (id, name, flags)
+
+    for pid, code, name, stage, assignees, last_edited, props in rows:
+        # recent
+        if last_edited is not None:
+            le = last_edited
+            if le.tzinfo is None:
+                le = le.replace(tzinfo=timezone.utc)
+            if le >= recent_cutoff_dt:
+                recent_pool.append((le, pid, code or "", name or ""))
+
+        # warnings (종결류 제외)
+        if stage in _CLOSED_STAGES:
+            continue
+        flags: list[str] = []
+        # stalled: 진행중·대기 + 시작일 ≥ 90일 이상
+        if stage in ("진행중", "대기"):
+            sd = _extract_date(props, "수주일") or _extract_date(props, "시작일")
+            if sd is not None and sd <= stale_cutoff:
+                flags.append("stalled")
+        # noAssignee
+        if not (assignees or []):
+            flags.append("noAssignee")
+        # incomeIssue: 계약체결 + 용역비 > 0 + 수금합 < 용역비 * 0.3
+        if isinstance(props, dict):
+            contract_signed = P.checkbox(props, "계약")
+            contract_amount = P.number(props, "용역비(VAT제외)") or 0.0
+            collection_total_raw = P.rollup_value(props, "수금합")
+            collection_total = (
+                float(collection_total_raw)
+                if isinstance(collection_total_raw, (int, float))
+                else 0.0
+            )
+            if (
+                contract_signed
+                and contract_amount > 0
+                and collection_total < contract_amount * _INCOME_ISSUE_RATIO
+            ):
+                flags.append("incomeIssue")
+            # overdue: 계약기간 end < today AND 진행중
+            _cs, ce = P.date_range(props, "계약기간")
+            if ce and ce[:10] < today_iso and stage == "진행중":
+                flags.append("overdue")
+
+        if flags:
+            warning_pool.append((pid, name or "", flags))
+
+    recent_pool.sort(key=lambda x: x[0], reverse=True)
+    recent_updates = [
+        RecentUpdate(id=pid, code=c, name=n, last_edited_time=dt.isoformat())
+        for dt, pid, c, n in recent_pool[:_RECENT_TOP_N]
+    ]
+
+    warning_pool.sort(key=lambda x: len(x[2]), reverse=True)
+    warnings = [
+        WarningRow(id=pid, name=n, flags=fl)
+        for pid, n, fl in warning_pool[:_WARNING_TOP_N]
+    ]
+
+    insights = DashboardInsights(
+        recent_updates=recent_updates,
+        warnings=warnings,
+    )
+    _cache_set(_insights_cache, cache_key, insights)
+    return insights

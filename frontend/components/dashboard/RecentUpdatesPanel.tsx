@@ -2,36 +2,17 @@
 
 import Link from "next/link";
 
-import type { Project } from "@/lib/domain";
-
-interface Props {
-  projects: Project[];
-}
+import type { RecentUpdate } from "@/lib/api";
 
 const RECENT_DAYS = 7;
 const TOP_N = 10;
 
-function ymd(d: Date): string {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+interface Props {
+  items: RecentUpdate[];
 }
 
-/** DASH-004 — 최근 7일 안에 변경된 프로젝트 Top N. last_edited_time 내림차순. */
-export default function RecentUpdatesPanel({ projects }: Props) {
-  const cutoff = new Date();
-  cutoff.setDate(cutoff.getDate() - RECENT_DAYS);
-  const cutoffStr = ymd(cutoff);
-
-  const recent = projects
-    .filter(
-      (p) =>
-        p.last_edited_time != null &&
-        p.last_edited_time.slice(0, 10) >= cutoffStr,
-    )
-    .sort((a, b) =>
-      (b.last_edited_time ?? "").localeCompare(a.last_edited_time ?? ""),
-    )
-    .slice(0, TOP_N);
-
+/** DASH-004 — 최근 7일 안에 변경된 프로젝트 Top N. backend 집계(/api/dashboard/insights). */
+export default function RecentUpdatesPanel({ items }: Props) {
   return (
     <section className="rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
       <header className="mb-3">
@@ -40,13 +21,13 @@ export default function RecentUpdatesPanel({ projects }: Props) {
           지난 {RECENT_DAYS}일 이내 노션 변경 — Top {TOP_N}
         </p>
       </header>
-      {recent.length === 0 ? (
+      {items.length === 0 ? (
         <p className="py-6 text-center text-xs text-zinc-500">
           최근 {RECENT_DAYS}일 동안 변경된 프로젝트가 없습니다.
         </p>
       ) : (
         <ul className="divide-y divide-zinc-100 dark:divide-zinc-800">
-          {recent.map((p) => (
+          {items.map((p) => (
             <li key={p.id}>
               <Link
                 href={`/projects/${p.id}`}
@@ -62,7 +43,7 @@ export default function RecentUpdatesPanel({ projects }: Props) {
                   {p.name || "(제목 없음)"}
                 </span>
                 <span className="font-mono text-[10px] text-zinc-500">
-                  {(p.last_edited_time ?? "").slice(5, 10).replace("-", "/")}
+                  {p.last_edited_time.slice(5, 10).replace("-", "/")}
                 </span>
               </Link>
             </li>

@@ -42,3 +42,26 @@ export async function fetchDashboardActions(): Promise<DashboardActions> {
   const res = await authFetch("/api/dashboard/actions");
   return jsonOrThrow<DashboardActions>(res);
 }
+
+export interface RecentUpdate {
+  id: string;
+  code: string;
+  name: string;
+  last_edited_time: string;
+}
+
+export interface WarningRow {
+  id: string;
+  name: string;
+  flags: string[]; // stalled / noAssignee / incomeIssue / overdue
+}
+
+export interface DashboardInsights {
+  recent_updates: RecentUpdate[];
+  warnings: WarningRow[];
+}
+
+export async function fetchDashboardInsights(): Promise<DashboardInsights> {
+  const res = await authFetch("/api/dashboard/insights");
+  return jsonOrThrow<DashboardInsights>(res);
+}

@@ -58,7 +58,8 @@
 | **PR-BJ-2 frontend KPICards 전환** | `lib/api/dashboard.ts` 신설 + `useDashboardSummary()` SWR hook + dashboard page에서 호출. KPICards props 시그니처 변경(`projects/tasks/incomes/expenses` 제거, `summary` 추가). 승인 대기 날인은 PR-BJ-1 backend가 0이라 frontend가 임시로 sealRequests prop으로 카운트 | 03bb96e |
 | **PR-BJ-3a backend seal pending count** | dashboard router에 `_count_pending_seals` async helper — notion `상태` filter(1차/2차 검토중)로 페이지 수 카운트. summary 응답에 `pending_seal_count` 정상 채움. KPICards에서 임시 sealRequests prop 제거 | e6acbb4 / 245bc6e |
 | **PR-BJ-3b/4 /actions endpoint + PriorityActionsPanel 전환** | `/api/dashboard/actions` 신설 — 5 액션 항목(장기 정체/승인 지연/마감 임박/편중 팀/멈춘 TASK) backend 집계. ActionItem `{count, preview}` schema. notion seal `제출예정일` 경과 + pending status filter for 승인 지연. mirror_tasks 기반 마감/멈춘 query. frontend PriorityActionsPanel을 list-based 제거 + actions prop으로 단순화. dashboard page에서 useSealRequests 제거 (seal 정보는 backend가 처리) | bd9468f |
-| **PR-BJ-5 dashboard TTL cache** | summary / actions 두 endpoint에 30초 TTL in-memory cache (WeeklyReport pattern — `OrderedDict[(name, today), (ts, value)]` + LRU max 16). `force_refresh=true` query로 우회 (사용자 새로고침). notion query_all 부하 감소 + 응답속도 개선 | (pending push) |
+| **PR-BJ-5 dashboard TTL cache** | summary / actions 두 endpoint에 30초 TTL in-memory cache (WeeklyReport pattern — `OrderedDict[(name, today), (ts, value)]` + LRU max 16). `force_refresh=true` query로 우회 (사용자 새로고침). notion query_all 부하 감소 + 응답속도 개선 | 572aecc |
+| **PR-BK Phase 4-F 마감 — /insights endpoint** | RecentUpdatesPanel + WarningItemsPanel을 backend 집계로 통합. `/api/dashboard/insights` 신설 — recent_updates(7일 이내 last_edited Top 10) + warnings(미종결 + flag(stalled/noAssignee/incomeIssue/overdue) Top 12). frontend 두 panel을 props 시그니처(items/rows)로 단순화. ChartsTabs에서 useDashboardInsights 호출 + 30초 TTL cache 적용. Phase 4-F는 role 스코프만 남음 | (pending push) |
 
 ## 미완료 / 보류
 
@@ -76,7 +77,7 @@ DASH-001~004 / PROJ-001~005 / MY-001~005 / WEEK-001~005 / COMMON-001~003 항목 
 | **4-E** 권한 로직 layout 통합 | 미진행 | 페이지마다 분산된 가드를 layout 레벨로 |
 | **4-F** 대시보드/주간보고 집계 API 별도 | 미진행 | client-side aggregation을 backend로 push |
 | **4-G** JWT localStorage → httpOnly cookie | 1단계 완료(PR-BH) / 2단계(PR-BI) 시도 후 운영 회귀로 revert — silent SSO + saveAuth signature 보강 후 재시도 예정 | XSS 방어 강화 |
-| **4-F** 대시보드/주간보고 집계 API | KPI/액션 backend 집계 + TTL cache 완료(PR-BJ-1/2/3a/3b/4/5) / 잔여(role 스코프 차등 / RecentUpdates·Warnings backend 전환) | dashboard N+1 → 1 fetch |
+| **4-F** 대시보드/주간보고 집계 API | KPI/액션/RecentUpdates/Warnings 모두 backend 집계 + TTL cache 완료(PR-BJ-1~5 + PR-BK) / 잔여(role 스코프 차등) | dashboard N+1 → 1 fetch |
 | **4-H** 문서 자동 동기화 체계 | 미진행 | USER_MANUAL/STATUS/PERMISSIONS auto-sync |
 | **4-I** Frontend 테스트 framework | 미진행 | Vitest + Playwright |
 | **4-J** Backend 라우터/서비스 분할 | 미진행 | seal_requests / sales / projects / quote_calculator / weekly_report 큰 파일들 |

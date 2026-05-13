@@ -15,6 +15,7 @@ import WarningItemsPanel from "@/components/dashboard/WarningItemsPanel";
 import WorkTypeTreemap from "@/components/dashboard/WorkTypeTreemap";
 import LoadingState from "@/components/ui/LoadingState";
 import type { CashflowEntry, Project, Task } from "@/lib/domain";
+import { useDashboardInsights } from "@/lib/hooks";
 
 type TabKey = "risk" | "load" | "revenue" | "stage";
 
@@ -42,6 +43,8 @@ export default function ChartsTabs({
   recentYearProjects,
 }: Props) {
   const [active, setActive] = useState<TabKey>("risk");
+  // PR-BJ Phase 4-F 마감: RecentUpdates/WarningItems backend 집계.
+  const { data: insights } = useDashboardInsights();
 
   return (
     <section className="space-y-3">
@@ -73,8 +76,8 @@ export default function ChartsTabs({
         <div className="space-y-4">
           <RecentAndStaleProjects projects={projects} />
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-            <WarningItemsPanel projects={projects} />
-            <RecentUpdatesPanel projects={projects} />
+            <WarningItemsPanel rows={insights?.warnings ?? []} />
+            <RecentUpdatesPanel items={insights?.recent_updates ?? []} />
           </div>
           {allTasks && allTasks.length > 0 && <StaleTaskAlert tasks={allTasks} />}
         </div>
