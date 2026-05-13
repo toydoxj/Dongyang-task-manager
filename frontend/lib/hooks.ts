@@ -3,6 +3,7 @@
 import useSWR, { type SWRResponse } from "swr";
 
 import {
+  fetchDashboardSummary,
   getCashflow,
   getMasterOptions,
   getMasterProject,
@@ -17,7 +18,7 @@ import {
   listSealRequests,
   listTasks,
 } from "./api";
-import type { SealListResponse } from "./api";
+import type { DashboardSummary, SealListResponse } from "./api";
 import type {
   CashflowResponse,
   ClientListResponse,
@@ -50,7 +51,17 @@ export const keys = {
   sale: (id: string) => ["sale", id] as const,
   sealRequests: (filters?: Parameters<typeof listSealRequests>[0]) =>
     ["seal-requests", filters ?? null] as const,
+  dashboardSummary: () => ["dashboard-summary"] as const,
 };
+
+export function useDashboardSummary(
+  enabled: boolean = true,
+): SWRResponse<DashboardSummary> {
+  return useSWR(
+    enabled ? keys.dashboardSummary() : null,
+    () => fetchDashboardSummary(),
+  );
+}
 
 export function useProjects(
   filters?: Parameters<typeof listProjects>[0],

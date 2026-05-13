@@ -47,3 +47,6 @@ export * from "./api/notices";
 
 // ── admin sync 트리거 + 상태 ── (PR-AR — lib/api/adminSync.ts)
 export * from "./api/adminSync";
+
+// ── 대시보드 집계 (PR-BJ Phase 4-F — lib/api/dashboard.ts)
+export * from "./api/dashboard";
