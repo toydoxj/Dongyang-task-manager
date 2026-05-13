@@ -3,6 +3,7 @@
 import useSWR, { type SWRResponse } from "swr";
 
 import {
+  fetchDashboardActions,
   fetchDashboardSummary,
   getCashflow,
   getMasterOptions,
@@ -18,7 +19,7 @@ import {
   listSealRequests,
   listTasks,
 } from "./api";
-import type { DashboardSummary, SealListResponse } from "./api";
+import type { DashboardActions, DashboardSummary, SealListResponse } from "./api";
 import type {
   CashflowResponse,
   ClientListResponse,
@@ -60,6 +61,15 @@ export function useDashboardSummary(
   return useSWR(
     enabled ? keys.dashboardSummary() : null,
     () => fetchDashboardSummary(),
+  );
+}
+
+export function useDashboardActions(
+  enabled: boolean = true,
+): SWRResponse<DashboardActions> {
+  return useSWR(
+    enabled ? ["dashboard-actions"] : null,
+    () => fetchDashboardActions(),
   );
 }
 

@@ -24,3 +24,21 @@ export async function fetchDashboardSummary(): Promise<DashboardSummary> {
   const res = await authFetch("/api/dashboard/summary");
   return jsonOrThrow<DashboardSummary>(res);
 }
+
+export interface ActionItem {
+  count: number;
+  preview: string;
+}
+
+export interface DashboardActions {
+  stalled_projects: ActionItem;
+  overdue_seals: ActionItem;
+  due_soon_tasks: ActionItem;
+  overloaded_team: ActionItem;
+  stuck_tasks: ActionItem;
+}
+
+export async function fetchDashboardActions(): Promise<DashboardActions> {
+  const res = await authFetch("/api/dashboard/actions");
+  return jsonOrThrow<DashboardActions>(res);
+}

@@ -11,9 +11,9 @@ import PriorityActionsPanel from "@/components/dashboard/PriorityActionsPanel";
 import LoadingState from "@/components/ui/LoadingState";
 import {
   useCashflow,
+  useDashboardActions,
   useDashboardSummary,
   useProjects,
-  useSealRequests,
   useTasks,
 } from "@/lib/hooks";
 
@@ -37,10 +37,11 @@ export default function DashboardPage() {
   );
   const { data: expenseData } = useCashflow({ flow: "expense" }, allowed);
   const { data: tasksData } = useTasks(undefined, allowed);
-  const { data: sealData } = useSealRequests(undefined, allowed);
-  // PR-BJ-2: KPI는 backend 집계 endpoint 사용. ChartsTabs/PriorityActionsPanel 등
-  // 다른 컴포넌트는 PR-BJ-3~5에서 점진 전환 — 그 동안 list endpoint도 유지.
+  // PR-BJ-2/3b: KPI와 액션 패널 backend 집계 endpoint 사용. seal pending/overdue도
+  // backend에서 처리해 useSealRequests는 dashboard에서 제거. ChartsTabs/
+  // RecentUpdates/Warnings는 여전히 list endpoint — PR-BJ-5에서 검토.
   const { data: summary } = useDashboardSummary(allowed);
+  const { data: actions } = useDashboardActions(allowed);
 
   if (!user || !allowed) return null;
 
@@ -49,7 +50,6 @@ export default function DashboardPage() {
   const incomes = cashflowData?.items;
   const expenses = expenseData?.items;
   const allTasks = tasksData?.items;
-  const sealRequests = sealData?.items;
   const loading = !projects || !incomes;
 
   // 최근 1년 (시작일 기준)
@@ -94,11 +94,7 @@ export default function DashboardPage() {
         <>
           {summary && <KPICards summary={summary} />}
 
-          <PriorityActionsPanel
-            projects={projects}
-            tasks={allTasks ?? []}
-            sealRequests={sealRequests ?? []}
-          />
+          {actions && <PriorityActionsPanel actions={actions} />}
 
           <ChartsTabs
             projects={projects}

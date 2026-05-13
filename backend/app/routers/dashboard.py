@@ -32,9 +32,11 @@ router = APIRouter(prefix="/dashboard", tags=["dashboard"])
 
 _KST = timezone(timedelta(hours=9))
 
-# 임계값 — frontend KPICards.tsx와 동일 (USER_MANUAL 컨벤션)
-_STALE_DAYS = 90
-_DUE_SOON_DAYS = 7
+# 임계값 — frontend KPICards.tsx / PriorityActionsPanel.tsx와 동일 (USER_MANUAL 컨벤션)
+_STALE_DAYS = 90  # 장기 정체 프로젝트 (진행중·대기)
+_DUE_SOON_DAYS = 7  # KPI '마감 임박 TASK'
+_ACTION_DUE_SOON_DAYS = 3  # 액션 '마감 가까운 업무' (KPI보다 짧음)
+_STALE_TASK_DAYS = 60  # 액션 '오래 멈춘 TASK' (시작 전)
 _PENDING_SEAL_STATUSES = {"1차검토 중", "2차검토 중"}
 
 
@@ -235,3 +237,185 @@ def _extract_date(props: dict, key: str) -> Optional[date]:
         return date.fromisoformat(s[:10])
     except ValueError:
         return None
+
+
+# ── PR-BJ-3b /actions ─────────────────────────────────────────────────────────
+
+
+class ActionItem(BaseModel):
+    """대시보드 '지금 처리할 것' 패널 단일 항목."""
+
+    count: int
+    preview: str = ""  # 가장 시급한 한 건 요약 (이름·제목·팀명 등)
+
+
+class DashboardActions(BaseModel):
+    stalled_projects: ActionItem  # 장기 정체 (90일+)
+    overdue_seals: ActionItem  # 제출예정일 경과 + 1차/2차 검토중
+    due_soon_tasks: ActionItem  # 오늘 ~ +3일 마감
+    overloaded_team: ActionItem  # 진행중 프로젝트 수 1위 팀
+    stuck_tasks: ActionItem  # 시작 전 + 60일 이상
+
+
+async def _collect_overdue_seals(notion: NotionService, today: date) -> ActionItem:
+    """1차/2차 검토중 + 제출예정일(due_date)이 today보다 이전. 가장 오래된 것 preview."""
+    s = get_settings()
+    db_id = s.notion_db_seal_requests
+    if not db_id:
+        return ActionItem(count=0)
+    try:
+        pages = await notion.query_all(db_id)
+    except Exception:  # noqa: BLE001
+        logger.exception("overdue seals 조회 실패")
+        return ActionItem(count=0)
+
+    overdue: list[tuple[str, str]] = []  # (due_date, title)
+    today_iso = today.isoformat()
+    for p in pages:
+        props = p.get("properties", {})
+        if not isinstance(props, dict):
+            continue
+        status_obj = props.get("상태")
+        if not isinstance(status_obj, dict):
+            continue
+        inner = status_obj.get("select") or status_obj.get("status")
+        if not isinstance(inner, dict):
+            continue
+        if inner.get("name") not in _PENDING_SEAL_STATUSES:
+            continue
+        # due_date 노션 property는 "제출예정일" date.start
+        due = _extract_date(props, "제출예정일")
+        if due is None or due.isoformat() >= today_iso:
+            continue
+        # title 추출 (날인요청 DB의 첫 title property)
+        title = _extract_title(props)
+        overdue.append((due.isoformat(), title))
+    overdue.sort(key=lambda x: x[0])
+    return ActionItem(
+        count=len(overdue),
+        preview=overdue[0][1] if overdue else "",
+    )
+
+
+def _extract_title(props: dict) -> str:
+    """노션 properties에서 첫 title type property를 찾아 plain text 반환."""
+    if not isinstance(props, dict):
+        return ""
+    for v in props.values():
+        if not isinstance(v, dict):
+            continue
+        if v.get("type") != "title":
+            continue
+        arr = v.get("title") or []
+        if isinstance(arr, list) and arr:
+            first = arr[0]
+            if isinstance(first, dict):
+                txt = first.get("plain_text") or ""
+                if isinstance(txt, str) and txt:
+                    return txt
+    return ""
+
+
+@router.get("/actions", response_model=DashboardActions)
+async def get_dashboard_actions(
+    user: User = Depends(get_current_user),  # noqa: ARG001 — 권한 차등은 PR-BJ-5
+    db: Session = Depends(get_db),
+    notion: NotionService = Depends(get_notion),
+) -> DashboardActions:
+    """'지금 처리할 것' 패널 5개 항목 집계.
+
+    frontend PriorityActionsPanel.tsx와 동일 로직:
+    1) 장기 정체 프로젝트 — (진행중|대기) AND start_date ≤ today-90d
+    2) 승인 지연 날인 — seal status ∈ pending AND due_date < today
+    3) 마감 가까운 업무 — task status≠완료 AND today ≤ end_date ≤ today+3d
+    4) 담당 편중 팀 — 진행중 프로젝트 teams[] 카운트 1위 (count = 그 팀의 진행 건수)
+    5) 오래 멈춘 TASK — status='시작 전' AND created_time ≤ today-60d
+    """
+    today = _kst_today()
+    stale_cutoff = today - timedelta(days=_STALE_DAYS)
+    action_due_end = today + timedelta(days=_ACTION_DUE_SOON_DAYS)
+    stuck_cutoff = today - timedelta(days=_STALE_TASK_DAYS)
+
+    # 1·4 — projects (한 번 조회)
+    proj_rows = db.execute(
+        select(
+            MirrorProject.page_id,
+            MirrorProject.stage,
+            MirrorProject.teams,
+            MirrorProject.properties,
+            MirrorProject.name,
+        ).where(MirrorProject.archived.is_(False))
+    ).all()
+
+    stalled_list: list[tuple[str, str]] = []  # (start_date_iso, name)
+    team_load: Counter[str] = Counter()
+    for _pid, stage, teams, props, name in proj_rows:
+        if stage == "진행중":
+            for t in (teams or []):
+                if t:
+                    team_load[t] += 1
+        if stage in ("진행중", "대기"):
+            sd = _extract_date(props, "수주일") or _extract_date(props, "시작일")
+            if sd and sd <= stale_cutoff:
+                stalled_list.append((sd.isoformat(), name or ""))
+    stalled_list.sort(key=lambda x: x[0])
+    stalled_item = ActionItem(
+        count=len(stalled_list),
+        preview=stalled_list[0][1] if stalled_list else "",
+    )
+
+    top_team_entry = team_load.most_common(1)
+    overloaded_team = (
+        ActionItem(
+            count=top_team_entry[0][1],
+            preview=f"{top_team_entry[0][0]} — 진행중 {top_team_entry[0][1]}건",
+        )
+        if top_team_entry
+        else ActionItem(count=0)
+    )
+
+    # 3 — 마감 임박 TASK (3일 cutoff). end_date 인덱스 활용
+    due_soon_rows = db.execute(
+        select(MirrorTask.title, MirrorTask.end_date).where(
+            and_(
+                MirrorTask.archived.is_(False),
+                MirrorTask.status != "완료",
+                MirrorTask.end_date.is_not(None),
+                MirrorTask.end_date >= today,
+                MirrorTask.end_date <= action_due_end,
+            )
+        ).order_by(MirrorTask.end_date.asc())
+    ).all()
+    due_soon_item = ActionItem(
+        count=len(due_soon_rows),
+        preview=(due_soon_rows[0][0] or "") if due_soon_rows else "",
+    )
+
+    # 5 — 오래 멈춘 TASK
+    stuck_rows = db.execute(
+        select(MirrorTask.title, MirrorTask.created_time).where(
+            and_(
+                MirrorTask.archived.is_(False),
+                MirrorTask.status == "시작 전",
+                MirrorTask.created_time.is_not(None),
+                MirrorTask.created_time <= datetime.combine(
+                    stuck_cutoff, datetime.max.time(), tzinfo=_KST
+                ),
+            )
+        ).order_by(MirrorTask.created_time.asc())
+    ).all()
+    stuck_item = ActionItem(
+        count=len(stuck_rows),
+        preview=(stuck_rows[0][0] or "") if stuck_rows else "",
+    )
+
+    # 2 — 승인 지연 날인 (notion 호출 — 무거움. BJ-5에서 cache)
+    overdue_seal_item = await _collect_overdue_seals(notion, today)
+
+    return DashboardActions(
+        stalled_projects=stalled_item,
+        overdue_seals=overdue_seal_item,
+        due_soon_tasks=due_soon_item,
+        overloaded_team=overloaded_team,
+        stuck_tasks=stuck_item,
+    )

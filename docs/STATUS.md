@@ -56,7 +56,8 @@
 | **PR-BI 시도 → revert** | Phase 4-G 2단계(localStorage token 제거 + Authorization header 첨부 제거) 후 운영에서 일부 사용자(eul22)가 로그인 화면 반복 → 1단계로 즉시 롤백. 원인 가설: silent SSO iframe 안에서 cookie 발급/저장이 의도대로 안 되어 cookie 단독 인증으로 전환 시 fetch 401 loop. 다음 시도 시 silent SSO 흐름 + saveAuth signature 호환성 + 401 자동 silent 재시도 설계 보강 필요 | 0a427b0 / e340068 |
 | **PR-BJ-1 Phase 4-F 집계 API 1차** | `/api/dashboard/summary` 신설 — KPI 6개(진행중/장기 정체/마감 임박/승인 대기 날인/이번주 수금·지출/최다 부하 팀) backend 집계. KST 경계 표준화(`_KST` + `_week_bounds`). 응답에 today/week_start/week_end 동봉(검증용). 승인 대기 날인은 일단 0(PR-BJ-3에서 추가). frontend는 별도 cycle에서 호출 전환 | 8239a00 |
 | **PR-BJ-2 frontend KPICards 전환** | `lib/api/dashboard.ts` 신설 + `useDashboardSummary()` SWR hook + dashboard page에서 호출. KPICards props 시그니처 변경(`projects/tasks/incomes/expenses` 제거, `summary` 추가). 승인 대기 날인은 PR-BJ-1 backend가 0이라 frontend가 임시로 sealRequests prop으로 카운트 | 03bb96e |
-| **PR-BJ-3a backend seal pending count** | dashboard router에 `_count_pending_seals` async helper — notion `상태` filter(1차/2차 검토중)로 페이지 수 카운트. summary 응답에 `pending_seal_count` 정상 채움. KPICards에서 임시 sealRequests prop 제거 | (pending push) |
+| **PR-BJ-3a backend seal pending count** | dashboard router에 `_count_pending_seals` async helper — notion `상태` filter(1차/2차 검토중)로 페이지 수 카운트. summary 응답에 `pending_seal_count` 정상 채움. KPICards에서 임시 sealRequests prop 제거 | e6acbb4 / 245bc6e |
+| **PR-BJ-3b/4 /actions endpoint + PriorityActionsPanel 전환** | `/api/dashboard/actions` 신설 — 5 액션 항목(장기 정체/승인 지연/마감 임박/편중 팀/멈춘 TASK) backend 집계. ActionItem `{count, preview}` schema. notion seal `제출예정일` 경과 + pending status filter for 승인 지연. mirror_tasks 기반 마감/멈춘 query. frontend PriorityActionsPanel을 list-based 제거 + actions prop으로 단순화. dashboard page에서 useSealRequests 제거 (seal 정보는 backend가 처리) | (pending push) |
 
 ## 미완료 / 보류
 
