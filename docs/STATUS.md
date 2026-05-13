@@ -60,7 +60,8 @@
 | **PR-BJ-3b/4 /actions endpoint + PriorityActionsPanel 전환** | `/api/dashboard/actions` 신설 — 5 액션 항목(장기 정체/승인 지연/마감 임박/편중 팀/멈춘 TASK) backend 집계. ActionItem `{count, preview}` schema. notion seal `제출예정일` 경과 + pending status filter for 승인 지연. mirror_tasks 기반 마감/멈춘 query. frontend PriorityActionsPanel을 list-based 제거 + actions prop으로 단순화. dashboard page에서 useSealRequests 제거 (seal 정보는 backend가 처리) | bd9468f |
 | **PR-BJ-5 dashboard TTL cache** | summary / actions 두 endpoint에 30초 TTL in-memory cache (WeeklyReport pattern — `OrderedDict[(name, today), (ts, value)]` + LRU max 16). `force_refresh=true` query로 우회 (사용자 새로고침). notion query_all 부하 감소 + 응답속도 개선 | 572aecc |
 | **PR-BK Phase 4-F 마감 — /insights endpoint** | RecentUpdatesPanel + WarningItemsPanel을 backend 집계로 통합. `/api/dashboard/insights` 신설 — recent_updates(7일 이내 last_edited Top 10) + warnings(미종결 + flag(stalled/noAssignee/incomeIssue/overdue) Top 12). frontend 두 panel을 props 시그니처(items/rows)로 단순화. ChartsTabs에서 useDashboardInsights 호출 + 30초 TTL cache 적용. Phase 4-F는 role 스코프만 남음 | 9481f6c |
-| **PR-BL-1 Phase 4-I 1차 — Vitest 도입** | frontend 테스트 framework. vitest + jsdom + @vitejs/plugin-react 설치. vitest.config.ts(jsdom 환경 + @/* alias). lib/format / lib/cta 단위 테스트 (8개) — `npm run test` / `npm run test:watch`. PR-BI 같은 회귀 사전 검출 인프라 1차. Playwright는 별도 cycle, CI 통합도 별도 | (pending push) |
+| **PR-BL-1 Phase 4-I 1차 — Vitest 도입** | frontend 테스트 framework. vitest + jsdom + @vitejs/plugin-react 설치. vitest.config.ts(jsdom 환경 + @/* alias). lib/format / lib/cta 단위 테스트 (8개) — `npm run test` / `npm run test:watch`. PR-BI 같은 회귀 사전 검출 인프라 1차. Playwright는 별도 cycle, CI 통합도 별도 | eb18426 |
+| **PR-BL-2 lib/* 테스트 확장** | lib/api/_internal qs (5 케이스: empty/skip/falsy/encoding/coercion) + lib/types ROLE_LABEL (4 role 한글 표기 회귀 방지) + lib/format formatDateTime (KST 변환) — 누적 18 테스트 | (pending push) |
 
 ## 미완료 / 보류
 

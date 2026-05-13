@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { formatDate, formatWon } from "./format";
+import { formatDate, formatDateTime, formatWon } from "./format";
 
 describe("formatWon", () => {
   it("null/undefined는 dash", () => {
@@ -34,5 +34,26 @@ describe("formatDate", () => {
   it("ISO datetime의 YYYY-MM-DD만 점으로 변환", () => {
     expect(formatDate("2026-05-13T10:30:00+09:00")).toBe("2026.05.13");
     expect(formatDate("2026-05-13")).toBe("2026.05.13");
+  });
+});
+
+describe("formatDateTime", () => {
+  it("null/undefined/빈문자열은 dash", () => {
+    expect(formatDateTime(null)).toBe("—");
+    expect(formatDateTime(undefined)).toBe("—");
+    expect(formatDateTime("")).toBe("—");
+  });
+
+  it("invalid ISO도 안전하게 dash 반환", () => {
+    expect(formatDateTime("not-a-date")).toBe("—");
+  });
+
+  it("UTC datetime을 KST로 변환해 표기 (+9시간)", () => {
+    // 2026-05-13 01:30 UTC = 2026-05-13 10:30 KST
+    const result = formatDateTime("2026-05-13T01:30:00Z");
+    expect(result).toContain("2026");
+    expect(result).toContain("05");
+    expect(result).toContain("13");
+    expect(result).toContain("10:30");
   });
 });
