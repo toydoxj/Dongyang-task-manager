@@ -16,13 +16,15 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
-from sqlalchemy import and_, or_, select
+from sqlalchemy import and_, select
 from sqlalchemy.orm import Session
 
 from app.db import get_db
 from app.models.auth import User
 from app.models.mirror import MirrorCashflow, MirrorProject, MirrorTask
 from app.security import get_current_user
+from app.services.notion import NotionService, get_notion
+from app.settings import get_settings
 
 logger = logging.getLogger("dashboard")
 
@@ -67,10 +69,33 @@ def _week_bounds(today: date) -> tuple[date, date]:
     return week_start, week_end
 
 
+async def _count_pending_seals(notion: NotionService) -> int:
+    """1차/2차 검토중 status인 날인 페이지 수. notion 직접 query (status filter)."""
+    s = get_settings()
+    db_id = s.notion_db_seal_requests
+    if not db_id:
+        return 0
+    try:
+        pages = await notion.query_all(
+            db_id,
+            filter={
+                "or": [
+                    {"property": "상태", "select": {"equals": "1차검토 중"}},
+                    {"property": "상태", "select": {"equals": "2차검토 중"}},
+                ]
+            },
+        )
+        return len(pages)
+    except Exception:  # noqa: BLE001 — notion API 일시 장애에 dashboard 전체 실패 회피
+        logger.exception("seal pending count 조회 실패")
+        return 0
+
+
 @router.get("/summary", response_model=DashboardSummary)
 async def get_dashboard_summary(
     user: User = Depends(get_current_user),  # noqa: ARG001 — 권한 차등은 PR-BJ-5
     db: Session = Depends(get_db),
+    notion: NotionService = Depends(get_notion),
 ) -> DashboardSummary:
     """KPI 6개 집계.
 
@@ -157,10 +182,10 @@ async def get_dashboard_summary(
     week_income = int(sum(r[0] or 0 for r in week_income_row))
     week_expense = int(sum(r[0] or 0 for r in week_expense_row))
 
-    # 4 — seal pending count. seal request는 mirror가 없어 별도 service 호출 필요.
-    # 1차 PR-BJ-1는 단순화: list_seal_requests 호출 회피하고 0으로 둔다.
-    # PR-BJ-3에서 적절한 helper 추가 후 채울 예정 (cache 포함).
-    pending_seal_count = 0
+    # 4 — seal pending count (PR-BJ-3a). notion status filter로 페이지 수만 카운트.
+    # 운영 시 매 호출 notion API hit이라 미세하게 비용. 추후 짧은 TTL cache(BJ-5)
+    # 또는 mirror_seal 신설로 개선 여지.
+    pending_seal_count = await _count_pending_seals(notion)
 
     return DashboardSummary(
         in_progress_count=in_progress_count,

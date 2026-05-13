@@ -92,12 +92,7 @@ export default function DashboardPage() {
 
       {projects && incomes && (
         <>
-          {summary && (
-            <KPICards
-              summary={summary}
-              sealRequests={sealRequests ?? []}
-            />
-          )}
+          {summary && <KPICards summary={summary} />}
 
           <PriorityActionsPanel
             projects={projects}

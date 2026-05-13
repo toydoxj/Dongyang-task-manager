@@ -4,24 +4,15 @@ import Link from "next/link";
 
 import type { DashboardSummary } from "@/lib/api";
 import { formatWon } from "@/lib/format";
-import type { SealRequestItem } from "@/lib/api";
 
 const STALE_DAYS = 90;
 const DUE_SOON_DAYS = 7;
-const PENDING_SEAL_STATUSES = new Set(["1차검토 중", "2차검토 중"]);
 
 interface Props {
   summary: DashboardSummary;
-  /** PR-BJ-1는 backend가 0 반환 — frontend가 임시로 list 기반 카운트.
-   * PR-BJ-3에서 backend가 채우면 이 prop 제거 예정. */
-  sealRequests: SealRequestItem[];
 }
 
-export default function KPICards({ summary, sealRequests }: Props) {
-  const pendingSealCount = sealRequests.filter((s) =>
-    PENDING_SEAL_STATUSES.has(s.status),
-  ).length;
-
+export default function KPICards({ summary }: Props) {
   const weekNet = summary.week_income - summary.week_expense;
 
   return (
@@ -48,10 +39,10 @@ export default function KPICards({ summary, sealRequests }: Props) {
       />
       <KpiCard
         label="승인 대기 날인"
-        value={pendingSealCount}
+        value={summary.pending_seal_count}
         hint="1차 / 2차 검토중"
         href="/seal-requests"
-        tone={pendingSealCount > 0 ? "warn" : "neutral"}
+        tone={summary.pending_seal_count > 0 ? "warn" : "neutral"}
       />
       <KpiCard
         label="이번 주 순현금"
