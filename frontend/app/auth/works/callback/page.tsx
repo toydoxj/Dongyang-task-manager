@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 
-import { consumeCallbackFragment } from "@/lib/auth";
+import { consumeCallbackFragment, hydrateUserFromMe } from "@/lib/auth";
 
 const SSO_SILENT_SUCCESS = "sso_silent_success";
 const SSO_SILENT_FAILED = "sso_silent_failed";
@@ -91,6 +91,9 @@ export default function WorksCallbackPage() {
   const [resolution] = useState<CallbackResolution>(resolveCallback);
 
   // 외부 시스템 동기화 (postMessage / window.location)만 effect에 둠. setState 없음.
+  // PR-BP (INCIDENT #4): redirect 직전에 /me hydration — backend가 검증한 user로
+  // localStorage 갱신. cookie/token validity 동시 검증. 실패해도 fragment user로
+  // fallback (graceful — 다음 fetch 401 시 PR-BO silent 재시도가 회복 시도).
   useEffect(() => {
     if (resolution.silentMessage) {
       try {
@@ -98,8 +101,13 @@ export default function WorksCallbackPage() {
       } catch {
         // 무시
       }
-    } else if (resolution.redirect) {
-      window.location.replace(resolution.redirect);
+      return;
+    }
+    if (resolution.redirect) {
+      const target = resolution.redirect;
+      void hydrateUserFromMe().finally(() => {
+        window.location.replace(target);
+      });
     }
   }, [resolution]);
 
