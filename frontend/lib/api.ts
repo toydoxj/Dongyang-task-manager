@@ -1,25 +1,7 @@
 // 백엔드 호출 헬퍼 — 인증 토큰 자동 주입 + JSON 파싱 + 에러 메시지 통일.
 
 import { authFetch } from "./auth";
-import { API_BASE } from "./types";
 import type {
-  CashflowEntry,
-  CashflowResponse,
-  ContractItem,
-  ContractItemListResponse,
-  DriveChildrenResponse,
-  DriveUploadResponse,
-  Employee,
-  EmployeeCreate,
-  EmployeeImportResult,
-  EmployeeListResponse,
-  EmployeeUpdate,
-  EmployeeView,
-  MasterImage,
-  MasterImageList,
-  MasterOptions,
-  MasterProject,
-  MasterProjectUpdate,
   Project,
   ProjectCreateRequest,
   ProjectListResponse,
@@ -168,361 +150,31 @@ export async function setProjectStage(
   return jsonOrThrow<Project>(res);
 }
 
-// ── 업무TASK ──
-
-// ── 업무 TASK ── (Phase 4-A — lib/api/tasks.ts로 이동)
+// ── 업무 TASK ── (Phase 4-A — lib/api/tasks.ts)
 export * from "./api/tasks";
 
-// ── Cashflow ──
+// ── Cashflow + 수금 CRUD ── (PR-BD — lib/api/cashflow.ts)
+export * from "./api/cashflow";
 
-export async function getCashflow(filters: {
-  project_id?: string;
-  date_from?: string;
-  date_to?: string;
-  flow?: "income" | "expense" | "all";
-} = {}): Promise<CashflowResponse> {
-  const res = await authFetch(`/api/cashflow${qs(filters)}`);
-  return jsonOrThrow<CashflowResponse>(res);
-}
-
-// ── 수금 CRUD (admin) ──
-
-export interface IncomeCreateRequest {
-  date: string;
-  amount: number;
-  round_no?: number | null;
-  project_ids?: string[];
-  payer_relation_ids?: string[];
-  contract_item_id?: string | null;
-  note?: string;
-}
-
-export interface IncomeUpdateRequest {
-  date?: string | null;
-  amount?: number | null;
-  round_no?: number | null;
-  project_ids?: string[] | null;
-  payer_relation_ids?: string[] | null;
-  contract_item_id?: string | null;
-  note?: string | null;
-}
-
-export async function createIncome(
-  body: IncomeCreateRequest,
-): Promise<CashflowEntry> {
-  const res = await authFetch(`/api/cashflow/incomes`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
-  return jsonOrThrow<CashflowEntry>(res);
-}
-
-export async function updateIncome(
-  pageId: string,
-  body: IncomeUpdateRequest,
-): Promise<CashflowEntry> {
-  const res = await authFetch(`/api/cashflow/incomes/${pageId}`, {
-    method: "PATCH",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
-  return jsonOrThrow<CashflowEntry>(res);
-}
-
-export async function deleteIncome(pageId: string): Promise<void> {
-  const res = await authFetch(`/api/cashflow/incomes/${pageId}`, {
-    method: "DELETE",
-  });
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(text || `삭제 실패 (${res.status})`);
-  }
-}
-
-// ── 협력업체(발주처) ── (Phase 4-A — lib/api/clients.ts로 이동)
+// ── 협력업체(발주처) ── (PR-S — lib/api/clients.ts)
 export * from "./api/clients";
 
-// ── 계약 항목 (공동수급/추가용역) ──
+// ── 계약 항목 ── (PR-BD — lib/api/contractItems.ts)
+export * from "./api/contractItems";
 
-export interface ContractItemCreateRequest {
-  project_id: string;
-  client_id: string;
-  label?: string;
-  amount?: number;
-  vat?: number;
-  sort_order?: number;
-}
+// ── 마스터 프로젝트 + 이미지 CRUD ── (PR-BD — lib/api/masterProjects.ts)
+export * from "./api/masterProjects";
 
-export interface ContractItemUpdateRequest {
-  project_id?: string | null;
-  client_id?: string | null;
-  label?: string | null;
-  amount?: number | null;
-  vat?: number | null;
-  sort_order?: number | null;
-}
+// ── 사용자 관리 (admin) ── (PR-BD — lib/api/users.ts)
+export * from "./api/users";
 
-export async function listContractItems(
-  projectId?: string,
-): Promise<ContractItemListResponse> {
-  const path = projectId
-    ? `/api/contract-items?project_id=${encodeURIComponent(projectId)}`
-    : `/api/contract-items`;
-  const res = await authFetch(path);
-  return jsonOrThrow<ContractItemListResponse>(res);
-}
+// ── 직원 명부 ── (PR-BD — lib/api/employees.ts)
+export * from "./api/employees";
 
-export async function createContractItem(
-  body: ContractItemCreateRequest,
-): Promise<ContractItem> {
-  const res = await authFetch(`/api/contract-items`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
-  return jsonOrThrow<ContractItem>(res);
-}
+// ── WORKS Drive 임베디드 탐색기 ── (PR-BD — lib/api/drive.ts)
+export * from "./api/drive";
 
-export async function updateContractItem(
-  pageId: string,
-  body: ContractItemUpdateRequest,
-): Promise<ContractItem> {
-  const res = await authFetch(`/api/contract-items/${pageId}`, {
-    method: "PATCH",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
-  return jsonOrThrow<ContractItem>(res);
-}
-
-export async function deleteContractItem(pageId: string): Promise<void> {
-  const res = await authFetch(`/api/contract-items/${pageId}`, {
-    method: "DELETE",
-  });
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(text || `삭제 실패 (${res.status})`);
-  }
-}
-
-// ── 마스터 프로젝트 ──
-
-export async function getMasterProject(pageId: string): Promise<MasterProject> {
-  const res = await authFetch(`/api/master-projects/${pageId}`);
-  return jsonOrThrow<MasterProject>(res);
-}
-
-export async function getMasterOptions(): Promise<MasterOptions> {
-  const res = await authFetch(`/api/master-projects/options`);
-  return jsonOrThrow<MasterOptions>(res);
-}
-
-export async function updateMasterProject(
-  pageId: string,
-  body: MasterProjectUpdate,
-): Promise<MasterProject> {
-  const res = await authFetch(`/api/master-projects/${pageId}`, {
-    method: "PATCH",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
-  return jsonOrThrow<MasterProject>(res);
-}
-
-export async function listMasterImages(
-  pageId: string,
-): Promise<MasterImageList> {
-  const res = await authFetch(`/api/master-projects/${pageId}/images`);
-  return jsonOrThrow<MasterImageList>(res);
-}
-
-export async function uploadMasterImage(
-  pageId: string,
-  file: File,
-  caption: string = "",
-): Promise<MasterImage> {
-  const fd = new FormData();
-  fd.append("file", file, file.name);
-  if (caption) fd.append("caption", caption);
-  // Content-Type은 FormData가 자동 설정 (boundary 포함). authFetch가 덮어쓰지 않도록 헤더 미지정.
-  const res = await authFetch(`/api/master-projects/${pageId}/images`, {
-    method: "POST",
-    body: fd,
-  });
-  return jsonOrThrow<MasterImage>(res);
-}
-
-// ── 사용자 관리 (admin) ──
-
-import type { UserInfo, UserRole } from "./types";
-
-export async function listUsers(): Promise<UserInfo[]> {
-  const res = await authFetch(`/api/auth/users`);
-  return jsonOrThrow<UserInfo[]>(res);
-}
-
-export async function approveUser(id: number): Promise<UserInfo> {
-  const res = await authFetch(`/api/auth/users/${id}/approve`, {
-    method: "POST",
-  });
-  return jsonOrThrow<UserInfo>(res);
-}
-
-export async function rejectUser(id: number): Promise<{ status: string }> {
-  const res = await authFetch(`/api/auth/users/${id}/reject`, {
-    method: "POST",
-  });
-  return jsonOrThrow<{ status: string }>(res);
-}
-
-export async function setUserRole(id: number, role: UserRole): Promise<UserInfo> {
-  const res = await authFetch(`/api/auth/users/${id}/role`, {
-    method: "PATCH",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ role }),
-  });
-  return jsonOrThrow<UserInfo>(res);
-}
-
-export interface AdminUserPatch {
-  name?: string;
-  email?: string;
-  notion_user_id?: string;
-}
-
-export async function updateUserAsAdmin(
-  id: number,
-  patch: AdminUserPatch,
-): Promise<UserInfo> {
-  const res = await authFetch(`/api/auth/users/${id}`, {
-    method: "PATCH",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(patch),
-  });
-  return jsonOrThrow<UserInfo>(res);
-}
-
-export async function deleteUser(id: number): Promise<void> {
-  const res = await authFetch(`/api/auth/users/${id}`, { method: "DELETE" });
-  if (!res.ok) {
-    const detail = await res
-      .json()
-      .then((d) => (d as { detail?: string }).detail)
-      .catch(() => undefined);
-    throw new Error(detail ?? `${res.status} ${res.statusText}`);
-  }
-}
-
-// ── 직원 (admin) ──
-
-/** 이름 → 팀 매핑 (재직중 직원만, 모든 사용자 호출 가능). */
-export async function getEmployeeTeamsMap(): Promise<Record<string, string>> {
-  const res = await authFetch(`/api/admin/employees/teams-map`);
-  return jsonOrThrow<Record<string, string>>(res);
-}
-
-export async function listEmployees(
-  q?: string,
-  view: EmployeeView = "active",
-): Promise<EmployeeListResponse> {
-  const res = await authFetch(`/api/admin/employees${qs({ q, view })}`);
-  return jsonOrThrow<EmployeeListResponse>(res);
-}
-
-export async function resignEmployee(
-  id: number,
-  on?: string,
-): Promise<Employee> {
-  const res = await authFetch(
-    `/api/admin/employees/${id}/resign${qs({ on })}`,
-    { method: "POST" },
-  );
-  return jsonOrThrow<Employee>(res);
-}
-
-export async function restoreEmployee(id: number): Promise<Employee> {
-  const res = await authFetch(`/api/admin/employees/${id}/restore`, {
-    method: "POST",
-  });
-  return jsonOrThrow<Employee>(res);
-}
-
-export async function createEmployee(body: EmployeeCreate): Promise<Employee> {
-  const res = await authFetch(`/api/admin/employees`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
-  return jsonOrThrow<Employee>(res);
-}
-
-export async function updateEmployee(
-  id: number,
-  body: EmployeeUpdate,
-): Promise<Employee> {
-  const res = await authFetch(`/api/admin/employees/${id}`, {
-    method: "PATCH",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
-  return jsonOrThrow<Employee>(res);
-}
-
-export async function deleteEmployee(id: number): Promise<void> {
-  const res = await authFetch(`/api/admin/employees/${id}`, {
-    method: "DELETE",
-  });
-  if (!res.ok) {
-    const detail = await res
-      .json()
-      .then((d) => (d as { detail?: string }).detail)
-      .catch(() => undefined);
-    throw new Error(detail ?? `${res.status} ${res.statusText}`);
-  }
-}
-
-export async function uploadEmployees(
-  file: File,
-): Promise<EmployeeImportResult> {
-  const fd = new FormData();
-  fd.append("file", file, file.name);
-  const res = await authFetch(`/api/admin/employees/upload`, {
-    method: "POST",
-    body: fd,
-  });
-  return jsonOrThrow<EmployeeImportResult>(res);
-}
-
-export async function reorderEmployees(
-  items: Array<{ id: number; sort_order: number }>,
-): Promise<{ updated: number }> {
-  const res = await authFetch(`/api/admin/employees/reorder`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ items }),
-  });
-  return jsonOrThrow<{ updated: number }>(res);
-}
-
-export async function deleteMasterImage(
-  pageId: string,
-  blockId: string,
-): Promise<void> {
-  const res = await authFetch(
-    `/api/master-projects/${pageId}/images/${blockId}`,
-    { method: "DELETE" },
-  );
-  if (!res.ok) {
-    const detail = await res
-      .json()
-      .then((d) => (d as { detail?: string }).detail)
-      .catch(() => undefined);
-    throw new Error(detail ?? `${res.status} ${res.statusText}`);
-  }
-}
-
-// ── 건의사항 ── (Phase 4-A — lib/api/suggestions.ts로 이동)
+// ── 건의사항 ── (PR-S2 — lib/api/suggestions.ts)
 export * from "./api/suggestions";
 
 // ── 날인요청 ──
@@ -755,62 +407,6 @@ export async function deleteSealRequest(id: string): Promise<void> {
   }
 }
 
-// ── WORKS Drive 임베디드 탐색기 ──
-
-export async function listDriveChildren(
-  projectId: string,
-  folderId?: string,
-  cursor?: string,
-): Promise<DriveChildrenResponse> {
-  const q = qs({ folder_id: folderId, cursor });
-  const res = await authFetch(
-    `/api/projects/${encodeURIComponent(projectId)}/drive/children${q}`,
-  );
-  return jsonOrThrow<DriveChildrenResponse>(res);
-}
-
-export async function getDriveDownloadUrl(
-  projectId: string,
-  fileId: string,
-): Promise<{ url: string; fileName: string }> {
-  const res = await authFetch(
-    `/api/projects/${encodeURIComponent(projectId)}/drive/download/${encodeURIComponent(fileId)}`,
-  );
-  return jsonOrThrow<{ url: string; fileName: string }>(res);
-}
-
-/** short-lived stream token 발급 + backend stream URL 조립.
- * 반환 URL은 GET 시 Content-Disposition: attachment로 강제 다운로드.
- */
-export async function getDriveStreamUrl(
-  projectId: string,
-  fileId: string,
-  fileName?: string,
-): Promise<string> {
-  const res = await authFetch(
-    `/api/projects/${encodeURIComponent(projectId)}/drive/issue-token/${encodeURIComponent(fileId)}`,
-  );
-  const { token } = await jsonOrThrow<{ token: string }>(res);
-  const params = new URLSearchParams({ token });
-  if (fileName) params.set("name", fileName);
-  return `${API_BASE}/api/projects/${encodeURIComponent(projectId)}/drive/stream/${encodeURIComponent(fileId)}?${params.toString()}`;
-}
-
-export async function uploadDriveFiles(
-  projectId: string,
-  folderId: string | undefined,
-  files: File[] | FileList,
-): Promise<DriveUploadResponse> {
-  const fd = new FormData();
-  const arr = Array.from(files as FileList);
-  for (const f of arr) fd.append("files", f, f.name);
-  const q = qs({ folder_id: folderId });
-  const res = await authFetch(
-    `/api/projects/${encodeURIComponent(projectId)}/drive/upload${q}`,
-    { method: "POST", body: fd },
-  );
-  return jsonOrThrow<DriveUploadResponse>(res);
-}
 
 // ── 영업(Sales) ──
 
