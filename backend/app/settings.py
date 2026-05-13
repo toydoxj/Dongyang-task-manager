@@ -117,13 +117,13 @@ class Settings(BaseSettings):
     frontend_base_url: str = ""  # callback 후 frontend로 302할 때 사용
 
     # ── JWT cookie (Phase 4-G 점진 마이그레이션 1단계) ──
-    # cookie_domain: 운영은 ".dyce.kr" (task.dyce.kr ↔ api.dyce.kr 공유). dev는 빈 문자열.
-    # cookie_secure: HTTPS 환경에서만 cookie 전송. dev(localhost http)는 false.
-    # 미설정 시 점진 단계에서 header(Bearer) 인증으로 fallback되어 영향 없음.
+    # default를 운영 환경(HTTPS + 같은 등록 도메인) 기준으로 둔다 — env 미설정 시 자동
+    # 보안 모드. dev(localhost http)는 .env에 다음 3개를 명시해 override:
+    #   COOKIE_DOMAIN= / COOKIE_SECURE=false / COOKIE_SAMESITE=lax
+    # cookie_domain 빈 문자열은 backend host 한정 (cross-subdomain 공유 안 함).
     cookie_domain: str = ""
-    cookie_secure: bool = False
-    # SameSite 정책. 운영(같은 등록 도메인) — "strict" 권장. dev — "lax" 무난.
-    cookie_samesite: str = "lax"
+    cookie_secure: bool = True
+    cookie_samesite: str = "strict"
 
     @property
     def works_blocked_emails_set(self) -> set[str]:
