@@ -72,7 +72,8 @@
 | **PR-BR INCIDENT.md PR-BP/BQ 사고 entry 추가** | callback hydration 무한 재귀 사고 메모(증상/원인/조치/교훈/체크리스트 4항목). STATUS 4-G 행 갱신 — 3회 시도 회귀 명시 | 58014eb |
 | **PR-BS Phase 4-E 권한 가드 hook 추출 1차** | `lib/useRoleGuard.ts` 신설 — `useAuth + allowed 평가` 패턴을 `useRoleGuard(allowedRoles)`로 통합. /sales + /admin/expenses 2 page 시범 적용(useAuth import 제거). 권한 매트릭스가 다양해 layout 통합은 회피, hook 패턴이 page별 권한 차이 유연하게 처리. 나머지 page 점진 마이그레이션은 별도 cycle | 3d3594d |
 | **PR-BT Phase 4-E 2차 — 5 page 마이그레이션** | `useRoleGuard` 추가 적용: `/`(dashboard, admin/team_lead/manager) + `/projects` + `/admin/contracts` + `/admin/incomes` + `/admin/incomes/clients`(모두 admin/manager). 누적 7 page. seal-requests/employee-work/notices/sync/users 등 isAdmin/isAdminOrLead 변수 derive 패턴은 별도 cycle | c704a51 |
-| **PR-BU Phase 4-E 3차 — admin only / employee-work 3 page** | `/admin/sync` + `/admin/users` (admin only — `useRoleGuard(["admin"])`) + `/admin/employee-work`(admin/team_lead, isAdmin/myTeam derive는 user 객체 그대로 사용). 누적 10 page. 잔여(weekly-report/seal-requests/notices — 모두 전 직원 진입 + isAdmin derive로 UI 분기, redirect 가드 없음 → useRoleGuard 적용 부적절, useAuth 유지) | (pending push) |
+| **PR-BU Phase 4-E 3차 — admin only / employee-work 3 page** | `/admin/sync` + `/admin/users` (admin only — `useRoleGuard(["admin"])`) + `/admin/employee-work`(admin/team_lead, isAdmin/myTeam derive는 user 객체 그대로 사용). 누적 10 page. 잔여(weekly-report/seal-requests/notices — 모두 전 직원 진입 + isAdmin derive로 UI 분기, redirect 가드 없음 → useRoleGuard 적용 부적절, useAuth 유지) | 8e75998 |
+| **PR-BV silent except audit + 2 case 시범 fix (외부 리뷰 12.x #1)** | `docs/audit/silent_except.md` 신설 — backend 41 case 분류(의도적 25 / 외부 API silent 12 / 정상 fallback 4). 위험한 외부 API silent 2개 시범 fix(`routers/projects.py:117` 변경 이력 page 생성 / `routers/master_projects.py:395` master blocks write-through). 본격 partial_errors schema + Drive/Notion atomicity는 별도 cycle | (pending push) |
 
 ## 미완료 / 보류
 
@@ -103,7 +104,7 @@ DASH-001~004 / PROJ-001~005 / MY-001~005 / WEEK-001~005 / COMMON-001~003 항목 
 | Drive↔Notion 업기 atomicity | 보류 | `sales.py:1038~`, `seal_requests.py:862~` |
 | `_sync_sale_estimated_amount` race | 보류 | |
 | `query_all` 페이징 | 보류 | 노션 100건 limit 안전성 |
-| silent except → partial-failure | 보류 | 응답 형식 통일 |
+| silent except → partial-failure | 1차 audit + 시범 fix(PR-BV, 2 case) / 잔여 5 case + partial_errors schema 별도 cycle. `docs/audit/silent_except.md` 참조 | 응답 형식 통일 |
 
 ### 작은 잔여 (낮은 우선순위)
 | 항목 | 비고 |

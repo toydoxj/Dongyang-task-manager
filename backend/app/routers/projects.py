@@ -114,8 +114,9 @@ async def _log_assign_change(
     }
     try:
         await notion.create_page(db_id, props)
-    except Exception:  # noqa: BLE001
-        pass
+    except Exception as e:  # noqa: BLE001 — 변경 이력 기록은 best-effort, 메인 흐름 차단 X
+        # PR-BV (silent except 가시화): 변경 이력 page 생성 실패 운영 추적용
+        logger.warning("프로젝트 담당 변경 이력 기록 실패: %s", e)
 
 
 # ── mirror 기반 이름 해결 ──

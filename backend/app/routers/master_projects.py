@@ -1,6 +1,7 @@
 """/api/master-projects — 조회/수정/이미지. read는 mirror, write는 노션 + write-through."""
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
@@ -21,6 +22,8 @@ from app.settings import get_settings
 # 노션이 업로드를 받는 MIME 화이트리스트 (이미지)
 _IMAGE_TYPES = {"image/png", "image/jpeg", "image/gif", "image/webp", "image/svg+xml"}
 _MAX_IMAGE_BYTES = 20 * 1024 * 1024  # single_part upload 한도
+
+logger = logging.getLogger("master_projects")
 
 router = APIRouter(prefix="/master-projects", tags=["master-projects"])
 
@@ -392,8 +395,9 @@ async def upload_master_image(
     # 정확한 position이 필요하면 sync_master_blocks 호출
     try:
         await get_sync().sync_master_blocks(page_id)
-    except Exception:  # noqa: BLE001
-        pass
+    except Exception as e:  # noqa: BLE001 — write-through 실패 시 5분 sync로 복구
+        # PR-BV (silent except 가시화): mirror_blocks write-through 실패 추적용
+        logger.warning("master blocks write-through 실패 (page=%s): %s", page_id, e)
     return MasterImage(
         block_id=blk.get("id", ""),
         url=url,
