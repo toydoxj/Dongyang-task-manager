@@ -79,11 +79,11 @@ async function _authFetchInternal(
   init: RequestInit | undefined,
   retried: boolean,
 ): Promise<Response> {
-  const token = getToken();
-  const headers = new Headers(init?.headers);
-  if (token) headers.set("Authorization", `Bearer ${token}`);
+  // PR-BQ (Phase 4-G 2단계 재시도): Authorization header 첨부 제거 — cookie 단독.
+  // localStorage token 저장은 그대로(saveAuth 변경 안 함). dy-midas는 별도 client라
+  // 영향 없음. 401 시 PR-BO silent SSO 재시도가 회복 시도.
   const url = path.startsWith("http") ? path : `${API_BASE}${path}`;
-  const res = await fetch(url, { ...init, credentials: "include", headers });
+  const res = await fetch(url, { ...init, credentials: "include" });
 
   if (res.status !== 401) return res;
 
