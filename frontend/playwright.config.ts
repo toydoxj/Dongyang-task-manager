@@ -31,6 +31,11 @@ export default defineConfig({
     command: "npm run dev",
     url: "http://localhost:3000",
     reuseExistingServer: !process.env.CI,
-    timeout: 60_000,
+    timeout: 120_000,
+    // e2e 동안 API_BASE를 frontend dev 서버 자체로 → same-origin /api/* fetch.
+    // playwright page.route 매칭 + CORS preflight 회피. 실제 backend 미가동 무관.
+    env: {
+      NEXT_PUBLIC_API_BASE: "http://localhost:3000",
+    },
   },
 });
