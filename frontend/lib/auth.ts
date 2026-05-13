@@ -19,9 +19,29 @@ export function getUser(): UserInfo | null {
   }
 }
 
-export function saveAuth(token: string, user: UserInfo): void {
-  localStorage.setItem(TOKEN_KEY, token);
-  localStorage.setItem(USER_KEY, JSON.stringify(user));
+// PR-BN (INCIDENT 체크리스트 #2): backward-compatible signature.
+// 1단계(현재): saveAuth(token, user) — token + user 모두 localStorage 저장.
+// 2단계(추후): saveAuth(user) — token 인자 없이 user만. cookie가 인증 source.
+// 두 호출 모두 안전 — Vercel chunk 부분 stale로 옛/새 chunk 혼재 시 type mismatch
+// 예방. PR-BI 사고(saveAuth signature 변경 + chunk stale → user 자리에 token 저장
+// → getUser()=null → 로그인 loop) 회피.
+export function saveAuth(token: string, user: UserInfo): void;
+export function saveAuth(user: UserInfo): void;
+export function saveAuth(arg1: string | UserInfo, user?: UserInfo): void {
+  let resolvedUser: UserInfo;
+  let token: string | null = null;
+  if (typeof arg1 === "string" && user !== undefined) {
+    token = arg1;
+    resolvedUser = user;
+  } else if (typeof arg1 === "object" && arg1 !== null) {
+    resolvedUser = arg1 as UserInfo;
+  } else {
+    return; // 잘못된 호출 — silent skip (e.g. arg1=undefined)
+  }
+  if (token !== null) {
+    localStorage.setItem(TOKEN_KEY, token);
+  }
+  localStorage.setItem(USER_KEY, JSON.stringify(resolvedUser));
   if (typeof window !== "undefined") {
     window.sessionStorage.removeItem("dy_logged_out");
     window.sessionStorage.removeItem(SILENT_FAILED_KEY);
