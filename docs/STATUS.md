@@ -67,7 +67,8 @@
 | **PR-BM INCIDENT.md PR-BI 사고 정리** | 2026-05-13 사고 entry 추가 — 증상(eul22 로그인 loop)/원인 가설 3가지(silent SSO + 3rd-party cookie / saveAuth chunk stale / 401 즉시 redirect)/조치(revert)/교훈/다음 시도 전 체크리스트 6개(silent SSO cookie 검증, saveAuth backward-compat, 401 silent 재시도, /me hydration, e2e 4 role, telemetry). PR-BI 재시도용 설계 보강 메모 | 94ed032 |
 | **PR-BL-5 4 role e2e (INCIDENT 체크리스트 #5)** | e2e/_helpers.ts(setupRoleAuth — addInitScript로 localStorage 인증 주입) + e2e/role-access.spec.ts(4 시나리오: admin/team_lead/manager → 루트 진입 시 대시보드 h1 노출 / member → /me redirect). AuthGuard catch fallback(Phase 0-B) 활용으로 backend mock 없이 self-contained. 누적 e2e 5 통과(5초). PR-BI 같은 redirect loop + role guard 회귀 자동 검출 | 725d459 |
 | **PR-BN saveAuth backward-compat (INCIDENT 체크리스트 #2)** | `saveAuth(token, user)` + `saveAuth(user)` 두 호출 시그니처 모두 지원하도록 overload + runtime branch. PR-BI 사고 원인 가설 #2(Vercel chunk 부분 stale로 옛/새 chunk 혼재 시 user 자리에 token 저장 → loop) 회피. 누적 vitest 21(saveAuth 3 시나리오 + clearAuth) | 3156584 |
-| **PR-BO authFetch 401 silent SSO 재시도 (INCIDENT 체크리스트 #3)** | authFetch에 retry flag → 401 발생 시 silent SSO 1회 재시도(만료 cookie/token 갱신) 후 성공이면 fetch 재시도, 실패면 clearAuth + redirect. dy_logged_out / dy_silent_failed flag 시 재시도 skip. PR-BI 사고 원인 가설 #3(401 즉시 redirect → loop) 회피 + 현 운영에서도 silent SSO 후 cookie 회복 시나리오 자동 처리. 누적 vitest 24 | (pending push) |
+| **PR-BO authFetch 401 silent SSO 재시도 (INCIDENT 체크리스트 #3)** | authFetch에 retry flag → 401 발생 시 silent SSO 1회 재시도(만료 cookie/token 갱신) 후 성공이면 fetch 재시도, 실패면 clearAuth + redirect. dy_logged_out / dy_silent_failed flag 시 재시도 skip. PR-BI 사고 원인 가설 #3(401 즉시 redirect → loop) 회피 + 현 운영에서도 silent SSO 후 cookie 회복 시나리오 자동 처리. 누적 vitest 24 | ce6f264 |
+| **PR-BP/BQ 시도 → revert** | PR-BP `/me hydration` + PR-BQ Authorization header 제거 deploy 후 callback page에서 "로그인 처리 중..." 무한 반복 사고. 원인: `hydrateUserFromMe`가 `authFetch`를 사용 → 401 → PR-BO silent SSO → callback page iframe 재load → 재귀. 즉시 revert(b51fd72 + 5ae788e) 후 안정 복귀. INCIDENT.md에 재설계 체크리스트 4항목 추가(raw fetch 사용 / callback에서 호출 X / PR-BO silent retry에 인증 endpoint 제외 / PR-BP 재설계 후 PR-BQ 재시도) | b51fd72 / 5ae788e |
 
 ## 미완료 / 보류
 
@@ -84,7 +85,7 @@ DASH-001~004 / PROJ-001~005 / MY-001~005 / WEEK-001~005 / COMMON-001~003 항목 
 | **4-D** 메뉴 그룹 URL 재구성 | 미진행 | `/workspace`, `/operations`, `/admin` 통합 |
 | **4-E** 권한 로직 layout 통합 | 미진행 | 페이지마다 분산된 가드를 layout 레벨로 |
 | **4-F** 대시보드/주간보고 집계 API 별도 | 미진행 | client-side aggregation을 backend로 push |
-| **4-G** JWT localStorage → httpOnly cookie | 1단계 완료(PR-BH) / 2단계(PR-BI) 시도 후 운영 회귀로 revert — silent SSO + saveAuth signature 보강 후 재시도 예정 | XSS 방어 강화 |
+| **4-G** JWT localStorage → httpOnly cookie | 1단계 완료(PR-BH) / 2단계(PR-BI/BP/BQ 3회 시도 모두 운영 회귀로 revert). 안전망(PR-BN saveAuth backward-compat / PR-BO 401 silent retry / PR-BL-5 e2e)은 살아있음. 다음 재시도 전 INCIDENT.md PR-BP/BQ entry 체크리스트 4항목(hydrate raw fetch / callback에서 호출 X / silent retry 인증 endpoint 제외 / PR-BP 후 PR-BQ) 충족 필요 | XSS 방어 강화 |
 | **4-F** 대시보드/주간보고 집계 API | KPI/액션/RecentUpdates/Warnings 모두 backend 집계 + TTL cache 완료(PR-BJ-1~5 + PR-BK) / 잔여(role 스코프 차등) | dashboard N+1 → 1 fetch |
 | **4-I** 테스트 framework | Vitest(PR-BL-1/2, 18 단위 테스트) + Playwright(PR-BL-3 smoke + PR-BL-5 4 role 시나리오, 누적 5 e2e) + GitHub Actions CI(PR-BL-4) 완료 / 잔여(backend full mock e2e — 미정밀) | PR-BI 같은 회귀 자동 검출 |
 | **4-H** 문서 자동 동기화 체계 | 미진행 | USER_MANUAL/STATUS/PERMISSIONS auto-sync |
