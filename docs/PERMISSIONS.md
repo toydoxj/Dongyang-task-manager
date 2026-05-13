@@ -107,7 +107,7 @@
 | 페이지 | 가드 | 비고 |
 |---|---|---|
 | `/projects` | admin + manager | (현 정책 — team_lead 검토 필요) |
-| `/sales` | admin + manager | |
+| `/sales` | admin + team_lead + manager | PR-AY (team_lead가 담당 프로젝트 영업 정보 조회 가능) |
 | `/admin/incomes` | admin + manager | backend cashflow와 일치 (PR-AB) |
 | `/admin/clients` | (확인 필요) | |
 | `/admin/notices` | admin only | backend notices와 일치 |
@@ -131,6 +131,7 @@
 | PR-AR | 2026-05-12 | `/api/admin/sync/*` 신규 라우터 (require_admin). 업무시간(KST 06~20) cron 회피 + admin 강제 트리거 페이지 `/admin/sync` |
 | PR-AS | 2026-05-12 | Sidebar 「건의사항」 manager 노출 (backend는 이미 모든 직원 허용 — UI gap 해소) |
 | PR-AT | 2026-05-12 | employees.GET "" 직원 명부: admin+팀장 → admin+팀장+manager (require_editor). master_projects는 현재 유지(전 직원) 결정 |
+| PR-AY | 2026-05-13 | /sales 페이지 가드 + Sidebar 「영업 관리」 메뉴: admin+manager → admin+team_lead+manager (프로젝트 상세 「영업 상세」 dead-end 해소) |
 
 ## audit 결과 (모든 결정 항목)
 

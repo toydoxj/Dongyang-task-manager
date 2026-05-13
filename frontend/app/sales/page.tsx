@@ -21,8 +21,13 @@ export default function SalesPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { user } = useAuth();
-  // 운영(영업) — admin + manager. 사이드바 노출과 정합 맞춤.
-  const allowed = user?.role === "admin" || user?.role === "manager";
+  // 운영(영업) — admin + team_lead + manager (PR-AY).
+  // team_lead가 담당 프로젝트의 영업 정보(견적·확률 등)를 조회·편집 가능.
+  // backend는 이미 전 직원 허용 — frontend 가드만 확장.
+  const allowed =
+    user?.role === "admin" ||
+    user?.role === "team_lead" ||
+    user?.role === "manager";
   const [kindFilter, setKindFilter] = useState<string>("");
   const [stageFilter, setStageFilter] = useState<string>("");
   // 두 source를 통합해 modal에 전달:

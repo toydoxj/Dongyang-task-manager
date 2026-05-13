@@ -52,7 +52,7 @@ const NAV_GROUPS: NavGroup[] = [
     label: "운영 관리",
     items: [
       { href: "/projects", label: "프로젝트", roles: ["admin", "manager"] },
-      { href: "/sales", label: "영업 관리", roles: ["admin", "manager"] },
+      { href: "/sales", label: "영업 관리", roles: ["admin", "team_lead", "manager"] },
       {
         href: "/admin/incomes/clients",
         label: "발주처 관리",
