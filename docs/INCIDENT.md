@@ -162,3 +162,51 @@ curl -s https://dy-task-backend.onrender.com/api/auth/status | head -3
 ### 5. 사고 기록
 
 본 문서에 신규 사고 entry 추가 (날짜 / 증상 / 원인 / 조치 / 교훈 / 추적 항목).
+
+---
+
+## 2026-05-13 — PR-BI 인증 채널 폐기 시도 후 일부 사용자 로그인 loop
+
+### 증상
+
+- 운영 사용자 `eul22` 브라우저에서 강제 새로고침 후 로그인 화면이 계속 반복.
+- DevTools Application → Cookies에 `dy_jwt`가 저장됐다가 곧 사라지거나, 페이지가 `/login` 으로 끊임없이 redirect되는 경우 발생.
+- 같은 시점에 다른 사용자(eul22 외)는 정상.
+
+### 원인 (가설)
+
+PR-BI(2단계 cookie 단독 인증)에서 `authFetch`의 Authorization header 첨부 + `localStorage` token 저장을 모두 제거. 인증을 cookie에만 의존하게 됐는데, 다음 흐름 중 하나에서 cookie가 의도대로 발급/저장되지 않은 것으로 추정:
+
+1. **silent SSO iframe context** — `trySilentSSO`가 iframe으로 NAVER WORKS authorize 호출 → backend callback redirect에 `Set-Cookie`가 포함되지만, 일부 브라우저(Chrome 3rd-party cookie 차단 강화)에서 iframe 안 응답의 cookie 저장이 차단되거나 partition됨.
+2. **saveAuth signature 변경 (`(token, user) → (user)`)이 캐시된 옛 build chunk와 어긋남** — Vercel deploy 직후 사용자 브라우저가 옛 callback chunk + 새 lib/auth.ts chunk를 동시에 load하면 token 위치에 user JSON이 저장되어 `getUser()=null` → `isLoggedIn=false` → /login redirect 반복.
+3. **AuthGuard fetch 401 자동 redirect** — silent SSO 후 첫 fetch가 401이면 즉시 `clearAuth + /login` → 사용자가 다시 로그인 → 다시 401 → loop.
+
+1단계(PR-BH)는 token도 살아있어 cookie 발급 실패해도 header로 우회됐지만, 2단계는 fallback이 없어 즉시 loop으로 발현.
+
+### 조치
+
+1. **즉시 revert** — `git revert` PR-BI 두 commit (47e6d06 + 0badaa6) → 1단계(`db75dcf`) 상태로 복구. push 후 5-8분 deploy → eul22 정상 진입 확인.
+2. INCIDENT 기록 (본 entry).
+3. 다음 시도 전 설계 보강 (재발 방지) — 아래 "다음 시도 전 체크리스트".
+
+### 교훈
+
+- **운영에서 cookie 단독 인증 전환은 silent SSO + cookie partition 동작 검증 후에만 안전하다.** Chrome의 third-party cookie 정책 변화로 iframe 안 응답의 Set-Cookie가 차단되거나 partition될 수 있다.
+- **saveAuth 같은 핵심 helper signature 변경은 backward-compatible 한동안 유지.** Vercel chunk 부분 stale로 인한 mismatch 회피.
+- **fetch 401 → 즉시 redirect /login** 정책은 cookie 채널이 살아있을 때 OK이지만, cookie 문제가 있으면 즉시 loop. 401 한 번에는 silent SSO 한 번 재시도 후 redirect로 보강 필요.
+- **dual-run 검증 부재.** 2단계 deploy 직전 staging에서 4 role 시나리오 + cookie 발급 흐름 verify 안 함 → 운영 즉시 회귀.
+
+### 다음 시도 (PR-BI 재시도) 전 체크리스트
+
+1. **silent SSO cookie 검증** — 운영 로그인된 상태에서 incognito 모드로 silent SSO 흐름 trace, callback 응답 Set-Cookie + Cookies storage에 저장 여부 확인.
+2. **saveAuth backward-compat** — `function saveAuth(arg1: string | UserInfo, user?: UserInfo)` 형태로 옛 호출 (token, user) + 새 호출 (user) 둘 다 처리. 옛 chunk가 깨지지 않도록.
+3. **401 자동 silent SSO 재시도** — `authFetch` 첫 401에 silent SSO 한 번 시도 후 재시도, 그래도 401이면 `clearAuth + /login`.
+4. **/api/auth/me 호출 hydration** — fragment user_b64 직접 신뢰 대신 cookie 기반 `/me` fetch 결과로 user 저장 (signature 안전성 + cookie validity 동시 검증).
+5. **CI playwright e2e에 4 role 인증 흐름 추가** (PR-BL-5) — backend mock 또는 staging 환경에서 `silent SSO 실패 → /login → 정상 SSO → cookie 발급 → 대시보드 진입` 시나리오 자동 검증.
+6. **운영 telemetry** — 1단계 PR-BI에서 추가한 `auth_via_header` log를 PR-BI 재시도 후 0으로 수렴하는지 확인 (이미 보유한 인프라).
+
+### 추적
+
+- PR-BI revert: 0a427b0 / e340068
+- 상태 → 1단계(PR-BH 5db883a / 6b929a7 / db75dcf) 안정 운영 중
+- 재시도 일정: 위 체크리스트 모두 충족 후 별도 cycle
