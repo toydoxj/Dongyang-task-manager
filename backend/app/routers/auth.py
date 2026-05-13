@@ -71,12 +71,20 @@ def _set_jwt_cookie(response: Response, token: str) -> None:
 
 
 def _clear_jwt_cookie(response: Response) -> None:
-    """logout — set 시점과 동일한 (name, domain, path)로 delete해야 브라우저가 제거."""
+    """logout — set 시점과 동일한 attribute(domain/path/secure/samesite/httponly)로
+    delete해야 브라우저가 정확히 cookie를 제거. Starlette `delete_cookie`는 default가
+    `secure=False, samesite=None`이라 명시 안 하면 set 시점과 attribute가 어긋난다."""
     s = get_settings()
+    samesite = s.cookie_samesite.lower()
+    if samesite not in {"lax", "strict", "none"}:
+        samesite = "lax"
     response.delete_cookie(
         key=JWT_COOKIE_NAME,
         path="/",
         domain=s.cookie_domain or None,
+        secure=s.cookie_secure,
+        httponly=True,
+        samesite=samesite,
     )
 
 logger = logging.getLogger("auth")
