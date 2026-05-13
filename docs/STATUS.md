@@ -1,6 +1,6 @@
 # 작업 Status
 
-> 마지막 업데이트: 2026-05-13 (Phase 4-A 13 cycle 완료 + Sync 관리 + 권한 audit 마무리 + Modal backdrop 차단)
+> 마지막 업데이트: 2026-05-13 (Phase 1·2·3 완료 확정 + Phase 4 잔여 정리)
 
 ## 완료된 PR
 
@@ -53,14 +53,38 @@
 
 ## 미완료 / 보류
 
+### ✅ Phase 1·2·3 — 모두 완료
+DASH-001~004 / PROJ-001~005 / MY-001~005 / WEEK-001~005 / COMMON-001~003 항목 모두 PR-A ~ PR-R로 완료.
+
+### Phase 4 잔여 (장기 인프라 — 외부 1번 리뷰 12.3, 12.4)
+
 | 항목 | 상태 | 비고 |
 |---|---|---|
-| **Phase 1 UX 1차** | 일부 진행 (PR-A~D) | DASH/PROJ/MY/WEEK 상단 KPI·액션 패널·프리셋·요약 — `.claude/plans/federated-stirring-hedgehog.md` |
-| **Phase 4-A 본격 분해** | 외과적 한계 도달 | SalesEditModal Form / TaskEditModal Form / QuoteForm Form / MasterProjectModal Body 등 단일 함수에 모든 state 결합. 본격은 design refactor (props lift / state machine) 필요 — 별도 cycle |
-| **Backend atomicity·페이징·silent except** | 보류 | `sales.py:1038~`, `seal_requests.py:862~` Drive↔Notion atomicity / `query_all` 페이징 / silent except 정리 |
-| **#113** /sales — onClose 시 ?sale= query 정리 | pending | TaskList #113. 사소함 — 현재 SaleLink referrer 보존 패턴(PR-114)으로 우회 |
-| **#116** /weekly-report 페이지 PDF와 양식 통일 | pending | TaskList #116. 데이터 구조는 이미 통일(PR-W). 남은 차이는 시각 디테일(컬럼폭/구분선/색상)뿐 |
-| **SQLAlchemy leak 근본 source 추적** | 보류 | PR-AO/AQ 임시 방어 + 자동 health check 동작 중. 잘 동작 시 추가 추적 불필요 |
+| **4-A** lib/api.ts 도메인 분리 | 부분 (PR-S/S2) | clients/notices/suggestions/tasks/adminSync 분리. 나머지 9 도메인 (cashflow/contractItems/projects/master/users/employees/seals/sales/weekly) 잔여 |
+| **4-B** 대형 컴포넌트 외과적 분리 | ✅ 완료 (PR-AE~BC, 13 cycle) | -2701줄/-26%, 신규 분리 18개. 본격 design refactor는 별도 cycle |
+| **4-C** 리스트 서버 필터링·페이지네이션 | 미진행 | backend list_projects/tasks/sales — offset/limit + push-down filter |
+| **4-D** 메뉴 그룹 URL 재구성 | 미진행 | `/workspace`, `/operations`, `/admin` 통합 |
+| **4-E** 권한 로직 layout 통합 | 미진행 | 페이지마다 분산된 가드를 layout 레벨로 |
+| **4-F** 대시보드/주간보고 집계 API 별도 | 미진행 | client-side aggregation을 backend로 push |
+| **4-G** JWT localStorage → httpOnly cookie | 미진행 | XSS 방어 강화 |
+| **4-H** 문서 자동 동기화 체계 | 미진행 | USER_MANUAL/STATUS/PERMISSIONS auto-sync |
+| **4-I** Frontend 테스트 framework | 미진행 | Vitest + Playwright |
+| **4-J** Backend 라우터/서비스 분할 | 미진행 | seal_requests / sales / projects / quote_calculator / weekly_report 큰 파일들 |
+
+### Backend atomicity·페이징·silent except (HIGH 위험 — 별도 cycle 권장)
+| 항목 | 상태 | 비고 |
+|---|---|---|
+| Drive↔Notion 업기 atomicity | 보류 | `sales.py:1038~`, `seal_requests.py:862~` |
+| `_sync_sale_estimated_amount` race | 보류 | |
+| `query_all` 페이징 | 보류 | 노션 100건 limit 안전성 |
+| silent except → partial-failure | 보류 | 응답 형식 통일 |
+
+### 작은 잔여 (낮은 우선순위)
+| 항목 | 비고 |
+|---|---|
+| **#113** /sales — onClose 시 ?sale= query 정리 | SaleLink referrer 보존(PR-114)으로 우회됨 |
+| **#116** /weekly-report 페이지 PDF와 양식 통일 | 데이터·구조 동일. 시각 디테일(컬럼폭·색상)만 잔여 |
+| **SQLAlchemy leak 근본 source 추적** | PR-AO/AQ 임시 방어 + auto restart 동작 중 |
 
 ## 핵심 helper / 모듈 위치
 
