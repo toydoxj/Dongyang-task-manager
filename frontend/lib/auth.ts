@@ -1,12 +1,7 @@
 import { API_BASE, AuthStatus, UserInfo } from "./types";
 
-const TOKEN_KEY = "dy_auth_token";
+const TOKEN_KEY = "dy_auth_token";  // PR-BI: legacy localStorage key — clearAuth에서만 정리용
 const USER_KEY = "dy_auth_user";
-
-export function getToken(): string | null {
-  if (typeof window === "undefined") return null;
-  return localStorage.getItem(TOKEN_KEY);
-}
 
 export function getUser(): UserInfo | null {
   if (typeof window === "undefined") return null;
@@ -19,8 +14,10 @@ export function getUser(): UserInfo | null {
   }
 }
 
-export function saveAuth(token: string, user: UserInfo): void {
-  localStorage.setItem(TOKEN_KEY, token);
+/** PR-BI (Phase 4-G 2단계): web은 cookie 단독 인증으로 전환 — token은 saveAuth에서
+ * 더 이상 저장하지 않는다. user info만 localStorage에 둠 (UI 표시용). 인증 자체는
+ * httpOnly cookie. dy-midas는 별도 client로 header(Bearer) 그대로 사용. */
+export function saveAuth(user: UserInfo): void {
   localStorage.setItem(USER_KEY, JSON.stringify(user));
   if (typeof window !== "undefined") {
     window.sessionStorage.removeItem("dy_logged_out");
@@ -29,7 +26,7 @@ export function saveAuth(token: string, user: UserInfo): void {
 }
 
 export function clearAuth(): void {
-  localStorage.removeItem(TOKEN_KEY);
+  localStorage.removeItem(TOKEN_KEY);  // 1단계 잔존 token 정리
   localStorage.removeItem(USER_KEY);
   // logout 직후 silent SSO 자동 재로그인 방지 (현재 탭 한정)
   if (typeof window !== "undefined") {
@@ -38,24 +35,22 @@ export function clearAuth(): void {
 }
 
 export function isLoggedIn(): boolean {
-  return !!getToken();
+  // PR-BI: cookie는 httpOnly라 JS에서 못 읽음 → user info 존재로 추정 판단.
+  // cookie가 만료/삭제됐어도 user는 남아있을 수 있으나, 첫 fetch에서 401 → clearAuth + redirect.
+  return !!getUser();
 }
 
-/** 인증 헤더가 자동 포함된 fetch 래퍼 — 401 시 자동 로그아웃.
+/** 인증된 fetch 래퍼 — 401 시 자동 로그아웃.
  *
- * PR-BH (Phase 4-G 1단계): credentials:"include" 추가 — 운영(.dyce.kr 공유 cookie)에서
- * httpOnly JWT cookie가 cross-origin 요청에 자동 첨부되도록. localStorage token도
- * 그대로 유지(점진 마이그레이션 — 두 채널 모두 지원). 2단계에서 header 제거 예정.
+ * PR-BI (Phase 4-G 2단계): credentials:"include"만으로 httpOnly cookie 자동 첨부.
+ * Authorization header 첨부는 제거 — web은 cookie 단독 인증.
  */
 export async function authFetch(
   path: string,
   init?: RequestInit,
 ): Promise<Response> {
-  const token = getToken();
-  const headers = new Headers(init?.headers);
-  if (token) headers.set("Authorization", `Bearer ${token}`);
   const url = path.startsWith("http") ? path : `${API_BASE}${path}`;
-  const res = await fetch(url, { ...init, credentials: "include", headers });
+  const res = await fetch(url, { ...init, credentials: "include" });
   if (res.status === 401) {
     clearAuth();
     if (typeof window !== "undefined") window.location.href = "/login";
@@ -63,17 +58,13 @@ export async function authFetch(
   return res;
 }
 
-/** PR-BH: backend logout — httpOnly cookie 제거 + DB UserSession 삭제. 실패해도
- * 로컬 clearAuth는 호출자가 별도로 진행하므로 본 함수는 best-effort. */
+/** PR-BH: backend logout — httpOnly cookie 제거 + DB UserSession 삭제. cookie가
+ * 자동 첨부되므로 별도 인증 헤더 불필요. */
 export async function backendLogout(): Promise<void> {
   try {
-    const headers = new Headers();
-    const t = getToken();
-    if (t) headers.set("Authorization", `Bearer ${t}`);
     await fetch(`${API_BASE}/api/auth/logout`, {
       method: "POST",
       credentials: "include",
-      headers,
     });
   } catch {
     /* network down 등은 무시 — 사용자 인지 logout flow는 차단 안 함 */
@@ -129,7 +120,8 @@ export function trySilentSSO(next: string = "/"): Promise<UserInfo | null> {
       if (!data || typeof data !== "object") return;
       if (data.type === "sso_silent_success") {
         settled = true;
-        saveAuth(data.token, data.user);
+        // PR-BI: token은 무시 — backend가 silent callback redirect에서 cookie도 set함.
+        saveAuth(data.user);
         cleanup();
         resolve(data.user);
       } else if (data.type === "sso_silent_failed") {
@@ -164,9 +156,12 @@ function decodeBase64UrlUtf8(s: string): string {
   return new TextDecoder("utf-8").decode(bytes);
 }
 
-/** fragment(`#token=...&user=<base64>`)에서 인증 정보를 꺼내 저장. 호출 후 fragment 정리. */
+/** fragment(`#token=...&user=<base64>`)에서 user 정보를 꺼내 저장. 호출 후 fragment 정리.
+ *
+ * PR-BI: token은 fragment에 여전히 포함되지만 frontend는 무시 (인증은 cookie). 호환을
+ * 위해 backend는 한동안 token도 fragment에 보낸다. 추후 backend에서 fragment token 제거.
+ */
 export function consumeCallbackFragment(): {
-  token: string;
   user: UserInfo;
   next: string;
 } | null {
@@ -176,16 +171,15 @@ export function consumeCallbackFragment(): {
     : window.location.hash;
   if (!hash) return null;
   const params = new URLSearchParams(hash);
-  const token = params.get("token");
   const userB64 = params.get("user");
   const next = params.get("next") || "/";
-  if (!token || !userB64) return null;
+  if (!userB64) return null;
   try {
     const user = JSON.parse(decodeBase64UrlUtf8(userB64)) as UserInfo;
-    saveAuth(token, user);
-    // fragment 즉시 제거 (브라우저 history 노출 회피)
+    saveAuth(user);
+    // fragment 즉시 제거 (브라우저 history 노출 회피 — token도 함께 제거)
     window.history.replaceState(null, "", window.location.pathname);
-    return { token, user, next };
+    return { user, next };
   } catch {
     return null;
   }

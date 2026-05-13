@@ -52,7 +52,8 @@
 | **PR-AY /sales 가드 확장** | admin+manager → admin+team_lead+manager. 프로젝트 상세에서 「📋 영업 상세」 클릭 시 team_lead가 toast → /dashboard로 튕기던 dead-end 해소. backend는 이미 전 직원 허용 | c709d19 |
 | **PR-BD/BE/BG lib/api.ts 100% 분리** | 1450 → 49줄 (-1401, -97%). 9 도메인 추가 추출 (cashflow/contractItems/master/users/employees/drive/projects/seals/sales/weekly). _internal에 downloadPdfBlob helper. 신규 분리 파일 12개 | 5367573 / d14befb / c0d6aff |
 | **PR-BF 「새 영업」 form state remount fix** | SalesEditModal이 open=false에 return null만 호출 → React state 잔존. 부모에서 conditional mount + creatingKey로 force remount. 두 번째 「새 영업」 시 직전 입력 잔존 버그 해소 | 2b57196 |
-| **PR-BH Phase 4-G 1단계 — JWT cookie 점진 마이그레이션** | backend `get_current_user`가 Authorization header 우선 + `dy_jwt` cookie fallback. `works_callback`이 fragment redirect와 함께 httpOnly+SameSite cookie 발급. `/api/auth/logout` 신설(cookie clear + UserSession 삭제). CORS `allow_credentials=True`. frontend `authFetch`에 `credentials: include`, Sidebar logout이 backend logout 선행. 운영 env: `COOKIE_DOMAIN=.dyce.kr / COOKIE_SECURE=true / COOKIE_SAMESITE=strict` 추가 필요. localStorage token도 그대로 유지(2단계에서 제거) | (pending push) |
+| **PR-BH Phase 4-G 1단계 — JWT cookie 점진 마이그레이션** | backend `get_current_user`가 Authorization header 우선 + `dy_jwt` cookie fallback. `works_callback`이 fragment redirect와 함께 httpOnly+SameSite cookie 발급. `/api/auth/logout` 신설(cookie clear + UserSession 삭제). CORS `allow_credentials=True`. frontend `authFetch`에 `credentials: include`, Sidebar logout이 backend logout 선행. 운영 env `COOKIE_DOMAIN=.dyce.kr` 만 입력 필요(나머지는 default true/strict). 운영 검증 — Domain `.dyce.kr` / Secure / SameSite Strict / HttpOnly | 5db883a / 6b929a7 / db75dcf |
+| **PR-BI Phase 4-G 2단계 — web cookie 단독** | frontend `authFetch`에서 Authorization header 첨부 제거 (credentials:include 단독). `saveAuth(user)` 시그니처에서 token 파라미터 제거 — localStorage `dy_auth_token` 저장 중단. `isLoggedIn = !!getUser()`. `consumeCallbackFragment` token 무시 (backend는 fragment에 한동안 호환성 위해 token 동봉). silent SSO postMessage에서도 token 제외. backend `get_current_user`에 header 인증 telemetry log 추가 — Render Logs `auth_via_header` 검색으로 web 잔존 추적, 0 수렴 후 채널 폐기. dy-midas(cli=dy-midas)는 한동안 header 유지 | (pending push) |
 
 ## 미완료 / 보류
 
@@ -69,7 +70,7 @@ DASH-001~004 / PROJ-001~005 / MY-001~005 / WEEK-001~005 / COMMON-001~003 항목 
 | **4-D** 메뉴 그룹 URL 재구성 | 미진행 | `/workspace`, `/operations`, `/admin` 통합 |
 | **4-E** 권한 로직 layout 통합 | 미진행 | 페이지마다 분산된 가드를 layout 레벨로 |
 | **4-F** 대시보드/주간보고 집계 API 별도 | 미진행 | client-side aggregation을 backend로 push |
-| **4-G** JWT localStorage → httpOnly cookie | 1단계 완료(PR-BH, 점진 — header+cookie 병행) / 2단계 보류(localStorage token 제거 + Authorization 단일 채널 폐기) | XSS 방어 강화 |
+| **4-G** JWT localStorage → httpOnly cookie | 1단계 완료(PR-BH) / 2단계 완료(PR-BI, web cookie 단독 + dy-midas header 유지) / 3단계 보류(backend telemetry로 web header 0 수렴 확인 후 cli=task header 채널 폐기 + fragment token 제거) | XSS 방어 강화 |
 | **4-H** 문서 자동 동기화 체계 | 미진행 | USER_MANUAL/STATUS/PERMISSIONS auto-sync |
 | **4-I** Frontend 테스트 framework | 미진행 | Vitest + Playwright |
 | **4-J** Backend 라우터/서비스 분할 | 미진행 | seal_requests / sales / projects / quote_calculator / weekly_report 큰 파일들 |
