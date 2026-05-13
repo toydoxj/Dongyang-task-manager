@@ -1,12 +1,11 @@
 "use client";
 
-import { useAuth } from "@/components/AuthGuard";
 import UnauthorizedRedirect from "@/components/UnauthorizedRedirect";
+import { useRoleGuard } from "@/lib/useRoleGuard";
 
 export default function ExpensesAdminPage() {
-  const { user } = useAuth();
   // 운영(지출) — admin + manager. 사이드바 노출과 정합 맞춤.
-  const allowed = user?.role === "admin" || user?.role === "manager";
+  const { user, allowed } = useRoleGuard(["admin", "manager"]);
 
   if (user && !allowed) {
     return (
