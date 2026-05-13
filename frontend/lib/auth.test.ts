@@ -1,6 +1,6 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { clearAuth, getUser, isLoggedIn, saveAuth } from "./auth";
+import { authFetch, clearAuth, getUser, isLoggedIn, saveAuth } from "./auth";
 import type { UserInfo } from "./types";
 
 const SAMPLE_USER: UserInfo = {
@@ -53,5 +53,51 @@ describe("saveAuth backward-compat", () => {
     expect(localStorage.getItem("dy_auth_token")).toBeNull();
     expect(localStorage.getItem("dy_auth_user")).toBeNull();
     expect(sessionStorage.getItem("dy_logged_out")).toBe("1");
+  });
+});
+
+/**
+ * PR-BO (INCIDENT 체크리스트 #3) — authFetch 401 응답 시 silent SSO 1회 재시도.
+ * 같은 탭에서 silent 이미 실패 / 명시 logout 직후엔 즉시 cleanup + redirect.
+ */
+describe("authFetch 401 handling", () => {
+  it("200은 그대로 반환 — 추가 처리 없음", async () => {
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(new Response("{}", { status: 200 }));
+    saveAuth("t", SAMPLE_USER);
+
+    const res = await authFetch("/api/test");
+    expect(res.status).toBe(200);
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    fetchSpy.mockRestore();
+  });
+
+  it("logged_out flag가 있으면 401 시 silent 재시도 안 하고 즉시 cleanup", async () => {
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(new Response("{}", { status: 401 }));
+    saveAuth("t", SAMPLE_USER);
+    sessionStorage.setItem("dy_logged_out", "1");
+    // jsdom location.href 할당은 noop이지만 에러 없이 통과해야
+    const res = await authFetch("/api/test");
+    expect(res.status).toBe(401);
+    expect(fetchSpy).toHaveBeenCalledTimes(1); // silent 재시도 X
+    expect(getUser()).toBeNull(); // clearAuth 호출됨
+    fetchSpy.mockRestore();
+  });
+
+  it("silent SSO 이미 실패 flag가 있으면 401 시 재시도 안 함", async () => {
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(new Response("{}", { status: 401 }));
+    saveAuth("t", SAMPLE_USER);
+    sessionStorage.setItem("dy_silent_failed", "1");
+
+    const res = await authFetch("/api/test");
+    expect(res.status).toBe(401);
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    expect(getUser()).toBeNull();
+    fetchSpy.mockRestore();
   });
 });

@@ -61,25 +61,48 @@ export function isLoggedIn(): boolean {
   return !!getToken();
 }
 
-/** 인증 헤더가 자동 포함된 fetch 래퍼 — 401 시 자동 로그아웃.
+/** 인증 헤더가 자동 포함된 fetch 래퍼 — 401 시 silent SSO 1회 재시도 후 로그아웃.
  *
- * PR-BH (Phase 4-G 1단계): credentials:"include" 추가 — 운영(.dyce.kr 공유 cookie)에서
- * httpOnly JWT cookie가 cross-origin 요청에 자동 첨부되도록. localStorage token도
- * 그대로 유지(점진 마이그레이션 — 두 채널 모두 지원). 2단계에서 header 제거 예정.
+ * PR-BH (Phase 4-G 1단계): credentials:"include" — httpOnly JWT cookie 자동 첨부.
+ * PR-BO (INCIDENT #3): 401 발생 시 silent SSO 1회 재시도. cookie/token 만료로
+ * 인한 일시 회복 가능. 실패 시 clearAuth + /login. 무한 재귀 방지 위해 retry flag.
  */
 export async function authFetch(
   path: string,
   init?: RequestInit,
+): Promise<Response> {
+  return _authFetchInternal(path, init, false);
+}
+
+async function _authFetchInternal(
+  path: string,
+  init: RequestInit | undefined,
+  retried: boolean,
 ): Promise<Response> {
   const token = getToken();
   const headers = new Headers(init?.headers);
   if (token) headers.set("Authorization", `Bearer ${token}`);
   const url = path.startsWith("http") ? path : `${API_BASE}${path}`;
   const res = await fetch(url, { ...init, credentials: "include", headers });
-  if (res.status === 401) {
-    clearAuth();
-    if (typeof window !== "undefined") window.location.href = "/login";
+
+  if (res.status !== 401) return res;
+
+  // 401. 첫 발생이면 silent SSO 한 번 시도해 cookie/token 갱신 후 재시도.
+  // 같은 탭에서 silent 이미 실패했거나 명시 logout 직후면 skip.
+  if (!retried && typeof window !== "undefined") {
+    const justLoggedOut = window.sessionStorage.getItem("dy_logged_out") === "1";
+    const silentFailed = window.sessionStorage.getItem(SILENT_FAILED_KEY) === "1";
+    if (!justLoggedOut && !silentFailed) {
+      const recoveredUser = await trySilentSSO(window.location.pathname || "/");
+      if (recoveredUser) {
+        return _authFetchInternal(path, init, true);
+      }
+    }
   }
+
+  // silent SSO 미시도 / 실패 / 재시도도 401 → 정리
+  clearAuth();
+  if (typeof window !== "undefined") window.location.href = "/login";
   return res;
 }
 
