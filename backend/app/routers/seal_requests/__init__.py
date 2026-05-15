@@ -628,38 +628,8 @@ async def _sync_linked_task(
 # ── endpoints ──
 
 
-@router.get("", response_model=SealListResponse)
-async def list_seal_requests(
-    project_id: str | None = None,
-    user: User = Depends(get_current_user),
-    notion: NotionService = Depends(get_notion),
-    db: Session = Depends(get_db),
-) -> SealListResponse:
-    """날인요청 목록.
-
-    docs/request.md: 일반직원은 날인요청 페이지 접근 불가. 단 프로젝트 상세에서
-    `project_id` 필터로 자신의 프로젝트 진행 상황은 확인 가능 — 이 경우는 허용.
-    """
-    if user.role not in {"admin", "team_lead"} and not project_id:
-        raise HTTPException(
-            status_code=403,
-            detail="일반직원은 날인요청 페이지를 직접 조회할 수 없습니다",
-        )
-    pages = await notion.query_all(
-        _db_id(),
-        sorts=[{"timestamp": "created_time", "direction": "descending"}],
-    )
-    if project_id:
-        pages = [
-            p
-            for p in pages
-            if project_id
-            in P.relation_ids(p.get("properties", {}), "프로젝트")
-        ]
-    pages = _filter_accessible(user, pages, db)
-    items = [_from_notion_page(p) for p in pages]
-    items = _sort_items_by_role(items, user.role or "member")
-    return SealListResponse(items=items, count=len(items))
+# GET / list_seal_requests — PR-CV에서 routers/seal_requests/list_endpoint.py로 이동
+# (weekly_report.py가 직접 import — 파일 끝에서 re-export로 호환)
 
 
 # /next-doc-number + /pending-count + 2 model — PR-CG에서 seal_requests/meta.py로 분리
@@ -929,15 +899,28 @@ def _failed_to_partial(msg: str) -> PartialError:
 # DELETE /:id — PR-CU에서 routers/seal_requests/delete.py로 이동
 
 
-# ── PR-CG/CH/CI/CJ/CU sub-router include (파일 끝 — 모든 helper 정의 후) ──
+# ── PR-CG/CH/CI/CJ/CU/CV sub-router include (파일 끝 — 모든 helper 정의 후) ──
 from app.routers.seal_requests import approval as _approval  # noqa: E402
 from app.routers.seal_requests import attachments as _attachments  # noqa: E402
 from app.routers.seal_requests import delete as _delete  # noqa: E402
+from app.routers.seal_requests import list_endpoint as _list  # noqa: E402
 from app.routers.seal_requests import meta as _meta  # noqa: E402
 from app.routers.seal_requests import update as _update  # noqa: E402
+
+# PR-CV: weekly_report.py가 `from app.routers.seal_requests import list_seal_requests`
+# 형태로 직접 import — re-export 유지.
+list_seal_requests = _list.list_seal_requests  # noqa: F401
 
 router.include_router(_meta.router)
 router.include_router(_attachments.router)
 router.include_router(_approval.router)
 router.include_router(_update.router)
 router.include_router(_delete.router)
+# PR-CV: list endpoint는 path "" — sub-router include 시 prefix+path 둘 다 빈
+# 문자열이라 FastAPI가 거부. root router에 직접 add (상위 prefix만 적용).
+router.add_api_route(
+    "",
+    _list.list_seal_requests,
+    methods=["GET"],
+    response_model=SealListResponse,
+)
