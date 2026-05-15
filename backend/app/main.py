@@ -159,6 +159,8 @@ async def health_db() -> dict[str, str]:
     connection pool 고갈 시 자동 restart가 트리거된다 (PR-AQ).
 
     가벼운 ping query — pool에서 1개 connection 빌려 즉시 release.
+    PR-DB: PR-DA로 적용한 session timeout이 backend 연결에 살아있는지 확인용으로
+    `idle_in_transaction_session_timeout` 값 함께 노출 (운영 검증).
     """
     from sqlalchemy import text
 
@@ -167,7 +169,11 @@ async def health_db() -> dict[str, str]:
     try:
         with SessionLocal() as db:
             db.execute(text("SELECT 1"))
-        return {"status": "ok"}
+            row = db.execute(
+                text("SHOW idle_in_transaction_session_timeout")
+            ).first()
+            iit = row[0] if row else "unknown"
+        return {"status": "ok", "idle_in_transaction_session_timeout": iit}
     except Exception as e:  # noqa: BLE001
         raise HTTPException(status_code=503, detail=f"db unhealthy: {e}")
 
