@@ -257,3 +257,75 @@ PR-BP에서 `hydrateUserFromMe()`가 `authFetch("/api/auth/me")`를 사용. SSO 
 - PR-BP revert: b51fd72
 - PR-BQ revert: 5ae788e
 - 상태 → PR-BO + PR-BN 시점(ce6f264) 안정 운영 중
+
+---
+
+## 2026-05-15 — idle in transaction connection 4시간+ 잔존 → ALTER TABLE lock wait
+
+### 증상
+
+- Supabase advisor RLS enable 작업 중 `apply_migration` / SQL editor에서 ALTER TABLE 실행 시 `57014: canceling statement due to statement timeout` 반복.
+- `pg_stat_activity` 조회 시 `state='idle in transaction'` connection이 4시간+ 잔존. `application_name=Supavisor`이고 `query`는 mirror_tasks/mirror_projects SELECT.
+- 원인 connection이 ACCESS EXCLUSIVE lock 대기 중인 ALTER TABLE을 영구 차단.
+
+### 원인
+
+PR-AQ(get_db rollback + `pool_reset_on_return="rollback"`)가 적용됐어도 다음 시나리오에서 SQLAlchemy 정리 호출이 누락되는 것으로 추정:
+
+1. **Render uvicorn worker OOM/SIGKILL** — 메모리 압박이나 platform restart로 worker가 정상 cleanup 없이 죽음. SQLAlchemy `__del__`/`close()`가 호출 안 됨.
+2. **Supabase pooler(PgBouncer) TCP fin 인지 지연** — backend 측 socket이 닫혀도 pooler는 한동안 active 간주.
+3. 결과: pooler에서 transaction이 idle 상태로 잔존 → 5분 cron + 사용자 요청이 누적될 때마다 leak 추가.
+
+이 leak은 PR-AO(Supavisor pool 50 도달 사고)의 root cause이기도 함.
+
+### 조치 (PR-DA)
+
+`backend/app/db.py`에 connection 시점 event listener 추가:
+
+```python
+@event.listens_for(engine, "connect")
+def _set_session_params(dbapi_conn, _conn_rec):
+    if _is_sqlite:
+        return
+    with dbapi_conn.cursor() as cur:
+        cur.execute("SET idle_in_transaction_session_timeout = '300s'")
+```
+
+5분 안에 PostgreSQL이 자동으로 transaction rollback + connection 종료.
+backend 측 정리가 누락돼도 DB 측에서 강제 회수.
+
+connection-level 적용 — `ALTER DATABASE`로 cluster default 변경 X (다른 사용자/프로젝트 무관).
+
+### 즉시 복구 (사고 시점)
+
+```sql
+-- 잔존 idle in transaction 강제 종료 (ALTER 진행 가능하게)
+SELECT pg_terminate_backend(pid)
+FROM pg_stat_activity
+WHERE state = 'idle in transaction'
+  AND application_name LIKE 'Supavisor%';
+```
+
+### 검증
+
+PR-DB로 `/api/health/db` 응답에 `idle_in_transaction_session_timeout` 노출:
+
+```bash
+curl https://dy-task-backend.onrender.com/api/health/db
+# {"status":"ok","idle_in_transaction_session_timeout":"5min"}
+```
+
+배포 직후 Supabase pg_stat_activity 재조회 시 idle in transaction 0건 확인.
+
+### 교훈
+
+- **backend cleanup만으로는 leak 차단 불충분** — worker가 비정상 종료할 수 있는 환경(Render 등 PaaS)에서는 DB-side timeout이 마지막 방어선.
+- **`/api/health/db` 같은 endpoint에 진단용 SHOW 노출은 운영 검증을 단순화한다** — Supabase MCP는 다른 세션 설정을 못 보므로 backend 자기 connection의 SET 적용 여부는 self-report 외 검증 어려움.
+- **connection-level `SET`는 cluster default 변경(`ALTER DATABASE`)보다 안전** — 다른 사용자/프로젝트에 영향 없음.
+
+### 추적
+
+- PR-DA (5분 timeout): 2687eb4
+- PR-DB (health endpoint 확장): 0a6f663
+- PR-DB (alembic file alembic_version 포함, 운영 일치): 3e388c9
+- 검증 시점: 2026-05-15. 운영 `/api/health/db` 응답 `"5min"` 확인.

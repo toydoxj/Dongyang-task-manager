@@ -45,6 +45,7 @@
 | **PR-AD** WeeklyReport in-memory cache + 새로고침 버튼 | backend module-level OrderedDict LRU cache (key=(ws,we,lws), TTL 300s, max 16). publish는 force_refresh=True. last-published.pdf는 cache hit 활용. frontend [새로고침] 버튼 추가 — refreshTick 증가 → SWR key 변경 + force_refresh=true | f293aa5 |
 | **PR-AE ~ AN Phase 4-A 컴포넌트 분리 1차** | SalesEditModal 1670→1480(-190), weekly-report/page 1213→384(-829, **-68%**), me/page 1117→618(-499, -45%), QuoteForm 982→926(-56). 신규 컴포넌트 14개 파일 추출. lint·tsc 통과, 동작 영향 0 | 82853c4 ~ 1de0ae2 |
 | **2026-05-12 연결 풀 사고 + 방어** | SQLAlchemy 풀 leak으로 Supavisor 50 도달 → 전사 접속 불가. 즉시 복구 (Supabase pg_terminate_backend + Render restart). 임시 보강: pool_size 10→5 / overflow 20→10 / recycle 300→120s(PR-AO). 근본 방어: pool_reset_on_return=rollback + get_db rollback + /api/health/db 라우트 + Render Health Check Path 교체(PR-AQ). 매뉴얼은 [INCIDENT.md](INCIDENT.md) | c4de851 / b57d525 / 4f95017 |
+| **PR-DA / PR-DB idle in transaction leak 근본 fix** | 4시간+ 살아있는 idle in transaction connection이 ALTER TABLE lock 차단(2026-05-15 RLS migration 사고). connect 시점에 PostgreSQL `idle_in_transaction_session_timeout = '300s'` 강제(`db.py` event listener) → backend cleanup 누락돼도 5분 안에 DB측 자동 rollback + close. /api/health/db 응답에 SHOW 결과 노출해 운영 검증("5min" 확인). 운영 사고 영향: PR-AO 재발 / RLS migration 차단 / 주기적 backend restart 필요성 모두 해소 | 2687eb4 / 0a6f663 |
 | **PR-AR Sync 관리** | render.yaml cron 5개 schedule 업무시간(KST 06~20) 회피 → UTC 11-21시(KST 20~06)만 실행. backend `/api/admin/sync/{status,run}` 신규 라우터 + frontend `/admin/sync` 페이지 (admin only, 10초 자동 refresh, kind별 강제 트리거) | 6bc3ede |
 | **PR-AS / AT 권한 audit 마무리** | 「건의사항」 사이드바 manager 노출 + employees.GET "" 직원 명부 admin+팀장+manager(`require_editor`). master_projects는 현 정책(전 직원) 유지 결정 — audit 미결정 항목 모두 해소 | f70885a / 119dbf8 |
 | **PR-AU ~ BC Phase 4-A 컴포넌트 분리 2차** | project/_shared.tsx 신설로 Field/inputCls 5+ 파일 통합. MasterProjectModal 608→514(-94), admin/employees/page 604→339(-265, -44%), seal-requests/page 543→154(**-389, -72%**), StageBoard 528→289(-239, -45%), TaskCreateModal 490→469(-21), IncomeFormModal 436→415(-21). 누적 9 파일 -2701줄 (-26%) / 신규 분리 파일 18개 | a73363f ~ c89c905 |
@@ -194,9 +195,11 @@ postgresql://postgres.hxhdqjbzfuddinoejoyo:<PASSWORD>@aws-0-ap-northeast-2.poole
 - `pool_size=5`
 - `max_overflow=10` (워커당 최대 15)
 - `pool_recycle=120s` (idle leak 빠른 회수)
+- `pool_reset_on_return="rollback"` (PR-AQ — 명시적 표기)
+- connect 시 `SET idle_in_transaction_session_timeout = '300s'` (PR-DA — backend cleanup 누락돼도 5분 후 DB측 자동 회수)
 - Supavisor 50까지 여유 35
 
-근본 leak source 추적은 별도 cycle 진행 중. 자세한 내역은 [INCIDENT.md](INCIDENT.md#2026-05-12--sqlalchemy-connection-leak--supavisor-pool-고갈--전사-접속-불가) 참조.
+근본 leak source 추적은 PR-DA로 사실상 해소. 자세한 내역은 [INCIDENT.md](INCIDENT.md#2026-05-15--idle-in-transaction-connection-4시간-잔존--alter-table-lock-wait) 참조.
 
 ### Supabase 진단 도구
 
