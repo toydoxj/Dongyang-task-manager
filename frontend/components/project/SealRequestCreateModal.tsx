@@ -218,9 +218,10 @@ function Form({
       );
       const realSourceId = matchedClient?.id ?? "";
 
+      let result;
       if (redoFrom) {
         // 재날인요청 — 기존 row 덮어쓰기. 자동 TASK 흐름은 backend가 새로 생성.
-        await redoSealRequest(redoFrom.id, {
+        result = await redoSealRequest(redoFrom.id, {
           seal_type: sealType,
           due_date: dueDate,
           title,
@@ -246,7 +247,15 @@ function Form({
         fd.append("with_safety_cert", withSafetyCert ? "true" : "false");
         fd.append("summary", summary);
         fd.append("doc_kind", docKind);
-        await createSealRequest(fd);
+        result = await createSealRequest(fd);
+      }
+      // PR-BY (외부 리뷰 12.x #1 본격): 부분 실패(드라이브 업로드 등) 사용자 안내.
+      // backend가 partial_errors 정형 응답 채움 — toast 시스템 도입 전이라 alert.
+      if (result?.partial_errors && result.partial_errors.length > 0) {
+        const lines = result.partial_errors
+          .map((e) => `- ${e.message || e.code}`)
+          .join("\n");
+        window.alert(`등록은 성공했으나 일부 작업이 실패했습니다:\n\n${lines}`);
       }
       onCreated();
     } catch (e) {
