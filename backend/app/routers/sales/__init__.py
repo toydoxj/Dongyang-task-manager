@@ -36,7 +36,6 @@ from app.services.mirror_dto import sale_from_mirror
 from app.services.notion import NotionService, get_notion
 from app.services.quote_calculator import (
     QuoteInput,
-    QuoteResult,
     QuoteType,
     calculate,
 )
@@ -270,16 +269,7 @@ async def create_sale(
     return Sale.from_notion_page(page)
 
 
-# ── 견적서 산출 미리보기 (저장 없음) ──
-
-
-@router.post("/quote/preview", response_model=QuoteResult)
-def preview_quote(
-    body: QuoteInput,
-    _user: User = Depends(get_current_user),
-) -> QuoteResult:
-    """견적서 입력 → 산출 결과만 반환 (저장 X). 프론트의 실시간 산출 패널용."""
-    return calculate(body)
+# /quote/preview — PR-CF에서 sales/quote_meta.py로 이동
 
 
 # ── 영업당 다중 견적서 CRUD (PR-M1) ──
