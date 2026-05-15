@@ -98,6 +98,20 @@ def _sql_after(
         )
 
 
+# PR-DA: connect 시점에 PostgreSQL session 변수 강제 설정.
+# 운영 worker가 OOM/restart로 죽으면 SQLAlchemy 정리 안 됨 → Supabase pooler에
+# idle in transaction 잔존 (TCP fin 인지 늦음). 5분 안에 PostgreSQL이 자동
+# rollback + connection close → leak 자동 회수. ALTER lock wait 사고 회피.
+# database-wide ALTER DATABASE 대신 우리 connection만 적용 (다른 사용자 무관).
+@event.listens_for(engine, "connect")
+def _set_session_params(dbapi_conn: Any, _conn_rec: Any) -> None:
+    if _is_sqlite:
+        return
+    with dbapi_conn.cursor() as cur:
+        # 5분 idle in transaction → 자동 rollback + connection 종료
+        cur.execute("SET idle_in_transaction_session_timeout = '300s'")
+
+
 @event.listens_for(engine, "checkout")
 def _pool_checkout(
     _conn: Any, conn_rec: Any, _conn_proxy: Any
