@@ -894,6 +894,8 @@ async def create_seal_request(
     # 응답 — 자동 TASK는 background라 페이지에 아직 미반영. final fetch는 첨부메타/
     # 폴더URL 변경분을 정확한 read 형식으로 가져오기 위해 한 번만 호출.
     final = await notion.get_page(page_id)
+    # PR-CQ: mirror_seal_requests 즉시 sync (5분 cron lag 회피).
+    get_sync().upsert_page("seal_requests", final)
     item = _from_notion_page(final)
     # PR-BX: failed[](텍스트)를 partial_errors(정형)로도 응답. 비고에는 이미 append됨.
     # PR-CA: 노션 update 실패도 failed에 섞이므로 prefix로 code 분기.
@@ -1062,6 +1064,8 @@ async def add_attachments(
     if failed:
         logger.warning("첨부 추가 일부 실패 (page=%s): %s", page_id, failed)
     final = await notion.get_page(page_id)
+    # PR-CQ: mirror 즉시 sync.
+    get_sync().upsert_page("seal_requests", final)
     item = _from_notion_page(final)
     # PR-BX: 첨부 추가 partial failure를 정형 응답에 포함.
     # PR-CA: 노션 update 실패도 분류 (helper 재사용).
@@ -1156,6 +1160,16 @@ async def delete_seal_request(
     for tid in (item.linked_task_id, item.lead_task_id, item.admin_task_id):
         if tid:
             await _sync_linked_task(notion, tid, target="완료")
+
+    # PR-CQ: mirror 즉시 sync (취소 마킹은 upsert, archive는 archive_page).
+    if keep_with_marker:
+        try:
+            updated = await notion.get_page(page_id)
+            get_sync().upsert_page("seal_requests", updated)
+        except Exception as e:  # noqa: BLE001
+            logger.warning("delete mirror upsert 실패 (page=%s): %s", page_id, e)
+    else:
+        get_sync().archive_page("seal_requests", page_id)
 
     notion.clear_cache()
     return {

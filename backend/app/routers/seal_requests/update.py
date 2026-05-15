@@ -26,6 +26,7 @@ from app.security import get_current_user
 from app.services import notion_props as P
 from app.services import seal_logic as SL
 from app.services.notion import NotionService, get_notion
+from app.services.sync import get_sync  # PR-CQ: write 즉시 mirror sync
 
 router = APIRouter()
 
@@ -206,6 +207,7 @@ async def update_seal_request(
                 _bot_send(_resolve_works_id(adm), msg)
 
     updated = await notion.get_page(page_id)
+    get_sync().upsert_page("seal_requests", updated)  # PR-CQ
     return _from_notion_page(updated)
 
 
@@ -388,4 +390,5 @@ async def redo_seal_request(
             _bot_send(_resolve_works_id(adm), msg)
 
     final = await notion.get_page(page_id)
+    get_sync().upsert_page("seal_requests", final)  # PR-CQ
     return _from_notion_page(final)

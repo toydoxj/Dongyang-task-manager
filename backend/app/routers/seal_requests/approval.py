@@ -29,6 +29,7 @@ from app.security import require_admin, require_admin_or_lead
 from app.services import notion_props as P
 from app.services import seal_logic as SL
 from app.services.notion import NotionService, get_notion
+from app.services.sync import get_sync  # PR-CQ: write 즉시 mirror sync
 
 router = APIRouter()
 
@@ -122,6 +123,7 @@ async def approve_lead(
         _bot_send(_resolve_works_id(adm), msg)
 
     updated = await notion.get_page(page_id)
+    get_sync().upsert_page("seal_requests", updated)  # PR-CQ
     return _from_notion_page(updated)
 
 
@@ -175,6 +177,7 @@ async def approve_admin(
     _bot_send(_resolve_works_id(requester_user), msg)
 
     updated = await notion.get_page(page_id)
+    get_sync().upsert_page("seal_requests", updated)  # PR-CQ
     return _from_notion_page(updated)
 
 
@@ -239,4 +242,5 @@ async def reject_seal_request(
     _bot_send(_resolve_works_id(requester_user), msg)
 
     updated = await notion.get_page(page_id)
+    get_sync().upsert_page("seal_requests", updated)  # PR-CQ
     return _from_notion_page(updated)
