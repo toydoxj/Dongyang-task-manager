@@ -1,6 +1,6 @@
 # 작업 Status
 
-> 마지막 업데이트: 2026-05-15 (Phase 4-J 12단계 완료 — sales/seal_requests 라우터 분할 + idle in transaction leak 근본 fix)
+> 마지막 업데이트: 2026-05-15 (Phase 4-J 15단계 완료 — sales/seal_requests/projects 라우터 + quote_calculator 패키지 분할)
 
 ## 완료된 PR
 
@@ -100,6 +100,9 @@
 | **PR-CY SSO callback /me hydration + cookie 검증 (INCIDENT #1 #4)** | `verifyAndHydrateFromMe()` — callback page redirect 직전 raw `fetch("/api/auth/me")` (authFetch 미사용 → 401 silent SSO 무한 재귀 회피, INCIDENT #4). 200이면 `saveAuth(user)` 갱신 / 401·network는 fragment user fallback + console.warn. fragment user_b64 schema 변경 / Vercel chunk stale 자동 정정 | a1e8d08 |
 | **PR-CZ Supabase RLS enable (advisor 보안 경고 조치)** | 모든 public 테이블에 RLS enable. policy 부여 없음 → anon/authenticated 차단. backend는 service_role connection이라 RLS bypass — 영향 없음. frontend는 Supabase JS client 미사용 확인. alembic `f1d2e3f05015` migration. 22 ERROR → 19 INFO(rls_enabled_no_policy, 의도된 상태) | f502cf6 / 3e388c9 |
 | **PR-DA / PR-DB idle in transaction leak 근본 fix** | 4시간+ 살아있는 idle in transaction connection이 ALTER TABLE lock 차단(2026-05-15 RLS migration 사고). connect 시점에 PostgreSQL `idle_in_transaction_session_timeout = '300s'` 강제(`db.py` event listener) → backend cleanup 누락돼도 5분 안에 DB측 자동 rollback + close. /api/health/db 응답에 SHOW 결과 노출해 운영 검증("5min" 확인). 운영 사고 영향: PR-AO 재발 / RLS migration 차단 / 주기적 backend restart 필요성 모두 해소 | 2687eb4 / 0a6f663 |
+| **PR-DC Phase 4-J 13단계 — projects 라우터 패키지 변환** | `routers/projects.py` (1040 lines) → `routers/projects/__init__.py` 패키지 변환 (`git mv`). 가장 작은 read-only endpoint `GET /options` (~32 lines, ProjectOptions model 포함)를 `routers/projects/options.py` sub-router로 분리. 19 endpoint 모두 정상 등록 확인, pytest 63 passed | cb4f2cc |
+| **PR-DD Phase 4-J 14단계 — projects/drive sub-router** | WORKS Drive 임베디드 탐색기 영역 통째로 분리 — 7 endpoint(review-folder GET/POST + drive/children + issue-token + stream + upload + delete) + 5 helper(`_extract_resource_key`/`_today_ymd`/`_review_folder_state`/`_issue/_verify_drive_stream_token`) + 6 model을 `routers/projects/drive.py`로 이동(~473 lines). 자체 logger("projects.drive"). __init__.py 1013 → 576 lines (-43%). 고아 import 12개 정리(time/date/Any/parse_qs/httpx/jose/BackgroundTask/File/UploadFile 등). test 1건 import path 갱신, pytest 63 passed | 793f2c0 |
+| **PR-DE Phase 4-J 15단계 — quote_calculator 패키지 + struct strategy 분리** | `services/quote_calculator.py` (1585 lines) → `services/quote_calculator/__init__.py` 패키지 변환. `strategies/struct.py` 신설(106 lines): `_calculate_struct_design` + `_calculate_struct_review`. 4 호출처(sales/quote_meta·sales/__init__·quote_code·quote_pdf) import 변경 없음. _DISPATCH 정의 직전에 strategies.struct를 import → partial loading 시점에 helper(baseline_manhours/_excel_round_half_up/_resolve_rate)와 model 모두 attribute 확보 → 순환 import 충돌 없음. import + 산출 smoke 검증 + pytest 63 passed | 82ab200 |
 
 ## 미완료 / 보류
 
@@ -122,7 +125,7 @@ DASH-001~004 / PROJ-001~005 / MY-001~005 / WEEK-001~005 / COMMON-001~003 항목 
 | **4-E** 권한 layout 통합 | `useRoleGuard` hook 도입(PR-BS/BT/BU, 누적 10 page) / 잔여(weekly-report/seal-requests/notices — 전 직원 진입 + isAdmin UI 분기로 useRoleGuard 부적합, useAuth 유지 결정) | 권한 가드 코드 일관성 |
 | **4-H** 문서 자동 동기화 체계 | 미진행 | USER_MANUAL/STATUS/PERMISSIONS auto-sync |
 | **4-I** Frontend 테스트 framework | 미진행 | Vitest + Playwright |
-| **4-J** Backend 라우터/서비스 분할 | 부분 완료 (PR-CC ~ PR-CW, 12단계) | sales 4 단계 분리 + seal_requests 8 단계 분리(__init__.py 1826→699, -62%). 잔여: projects / quote_calculator / weekly_report |
+| **4-J** Backend 라우터/서비스 분할 | 부분 완료 (PR-CC ~ PR-DE, 15단계) | sales 4 + seal_requests 8 + projects 2(`__init__.py` 1040→576, -43%) + quote_calculator 1(strategies/struct.py 분리). 잔여: projects 추가 helper / quote_calculator 9 strategy / weekly_report aggregate |
 
 ### Backend atomicity·페이징·silent except (외부 리뷰 12.x — 1차 모두 완료)
 | 항목 | 상태 | 비고 |
