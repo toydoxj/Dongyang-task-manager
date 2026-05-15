@@ -360,11 +360,24 @@ async def _sync_sale_estimated_amount(
 ) -> None:
     """영업 row의 estimated_amount를 모든 견적(일반+외부)의 final 합계로 갱신.
     mirror_sales + 노션 "견적금액" 둘 다 update. 견적 add/edit/delete 후 호출.
+
+    PR-BZ (외부 리뷰 12.x #3): row-level lock으로 동시 호출 race 차단.
+    두 명이 동시에 견적을 추가/수정해도 last-write-wins이 아닌 직렬 처리.
+    노션 호출은 락 release 후 (외부 API latency가 락에 영향 X).
     """
+    from sqlalchemy import select as sa_select
     from sqlalchemy import update as sa_update
 
-    row = db.get(M.MirrorSales, page_id)
+    # SELECT ... FOR UPDATE — 동일 page_id의 동시 _sync 호출은 락 대기 후 직렬화.
+    # SQLite(test)에서는 noop이라 운영(Postgres)에만 효과. 호출처 트랜잭션 commit
+    # 이후이므로 quote_form_data는 항상 최신.
+    row = db.execute(
+        sa_select(M.MirrorSales)
+        .where(M.MirrorSales.page_id == page_id)
+        .with_for_update()
+    ).scalar_one_or_none()
     if row is None:
+        db.rollback()
         return
     forms = normalize_quote_forms(
         row.quote_form_data, legacy_doc_number=row.quote_doc_number or ""
@@ -382,7 +395,7 @@ async def _sync_sale_estimated_amount(
         .where(M.MirrorSales.page_id == page_id)
         .values(estimated_amount=float(total))
     )
-    db.commit()
+    db.commit()  # 락 release. 노션 update는 별도 트랜잭션 외부.
 
     try:
         updated = await notion.update_page(

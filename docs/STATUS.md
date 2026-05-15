@@ -76,7 +76,8 @@
 | **PR-BV silent except audit + 2 case 시범 fix (외부 리뷰 12.x #1)** | `docs/audit/silent_except.md` 신설 — backend 41 case 분류(의도적 25 / 외부 API silent 12 / 정상 fallback 4). 위험한 외부 API silent 2개 시범 fix(`routers/projects.py:117` 변경 이력 page 생성 / `routers/master_projects.py:395` master blocks write-through). 본격 partial_errors schema + Drive/Notion atomicity는 별도 cycle | 7d33cb4 |
 | **PR-BW silent except 마감 (외부 리뷰 12.x #1 1차 완료)** | 잔여 case 점검 — audit script 오탐(seal_requests:643/645는 이미 logger 있음) 정정 + 정상 의도 fallback(quote_code/weekly_report/cashflow) 분류. 진짜 silent 1건 추가 fix(`routers/projects.py:670` review folder list 실패 → `logger.warning`). 외부 API silent 모두 logger 또는 failed.append 처리. 다음 단계는 partial_errors schema(별도 cycle) | 9e13a38 |
 | **PR-BX partial_errors schema (외부 리뷰 12.x #1 본격)** | seal_requests 응답에 `partial_errors: [{code, target, message, retryable}]` 정형 필드 추가. create_seal_request + attachments endpoint에서 `failed[]` → `partial_errors[]` 변환(드라이브 업로드 실패 정형화). frontend `PartialError` 타입 + `SealRequestItem.partial_errors?` 추가 | ff2b7ef |
-| **PR-BY partial_errors 사용자 안내 (PR-BX 후속)** | `SealRequestCreateModal`에서 createSealRequest/redoSealRequest 응답 받은 후 `partial_errors`가 있으면 `window.alert("등록은 성공했으나 일부 작업이 실패했습니다:\n- ...")` 노출 후 `onCreated()`. toast 시스템 미도입이라 native alert. 추후 toast 도입 시 한 곳만 교체 | (pending push) |
+| **PR-BY partial_errors 사용자 안내 (PR-BX 후속)** | `SealRequestCreateModal`에서 createSealRequest/redoSealRequest 응답 받은 후 `partial_errors`가 있으면 `window.alert("등록은 성공했으나 일부 작업이 실패했습니다:\n- ...")` 노출 후 `onCreated()`. toast 시스템 미도입이라 native alert. 추후 toast 도입 시 한 곳만 교체 | f45d8e9 |
+| **PR-BZ _sync_sale_estimated_amount race 해소 (외부 리뷰 12.x #3)** | `db.get()` → `SELECT ... FOR UPDATE`로 row-level lock. 동일 page_id의 동시 호출은 직렬화되어 last-write-wins overwrite 차단. 노션 update는 락 release 후(commit 후) 외부 API latency가 락에 영향 X. SQLite(test)는 noop, Postgres(운영)에만 효과. 5 호출처 영향 없음 | (pending push) |
 
 ## 미완료 / 보류
 
