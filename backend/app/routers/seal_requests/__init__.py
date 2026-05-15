@@ -52,10 +52,8 @@ logger = logging.getLogger("seal_requests")
 
 router = APIRouter(prefix="/seal-requests", tags=["seal-requests"])
 
-# PR-CG (Phase 4-J 5단계): sub-router include — 상위 router의 prefix 상속.
-from app.routers.seal_requests import meta as _meta  # noqa: E402
-
-router.include_router(_meta.router)
+# PR-CG/CH (Phase 4-J): sub-router include는 파일 끝으로 — attachments.py가
+# 이 모듈의 _can_access helper를 lazy import 하므로 fully loaded 후 mount.
 
 # Bot send_text fire-and-forget 강 참조 set — GC가 task를 회수하기 전에 끝나도록 보관
 _bg_tasks: set[asyncio.Task[Any]] = set()
@@ -1249,127 +1247,8 @@ async def update_seal_request(
     return _from_notion_page(updated)
 
 
-def _get_attachment_or_404(
-    page: dict[str, Any], idx: int
-) -> SealAttachment:
-    props = page.get("properties", {})
-    items = _parse_attachments_meta(props)
-    if not items:
-        items = [
-            SealAttachment(name=f["name"], legacy_url=f["url"])
-            for f in P.files(props, "첨부파일")
-        ]
-    if idx < 0 or idx >= len(items):
-        raise HTTPException(status_code=404, detail="첨부파일을 찾을 수 없습니다")
-    return items[idx]
-
-
-@router.get("/{page_id}/download/{idx}")
-async def get_attachment_url(
-    page_id: str,
-    idx: int,
-    user: User = Depends(get_current_user),
-    notion: NotionService = Depends(get_notion),
-    db: Session = Depends(get_db),
-) -> dict[str, str]:
-    try:
-        page = await notion.get_page(page_id)
-    except NotFoundError as exc:
-        raise HTTPException(status_code=404, detail=exc.message) from exc
-    if not _can_access(user, page, db):
-        raise HTTPException(status_code=403, detail="해당 요청 접근 권한이 없습니다")
-    item = _get_attachment_or_404(page, idx)
-    # 우선순위: drive_file_id → storage_key → legacy_url
-    if item.drive_file_id:
-        try:
-            url = await sso_drive.get_download_url(item.drive_file_id)
-        except sso_drive.DriveError as exc:
-            raise HTTPException(status_code=500, detail=str(exc)) from exc
-        return {"url": url, "name": item.name}
-    if item.storage_key:
-        try:
-            url = storage.presigned_get_url(
-                key=item.storage_key, filename=item.name
-            )
-        except storage.StorageError as exc:
-            raise HTTPException(status_code=500, detail=str(exc)) from exc
-        return {"url": url, "name": item.name}
-    return {"url": item.legacy_url, "name": item.name}
-
-
-@router.get("/{page_id}/preview/{idx}")
-async def preview_attachment(
-    page_id: str,
-    idx: int,
-    user: User = Depends(get_current_user),
-    notion: NotionService = Depends(get_notion),
-    db: Session = Depends(get_db),
-):
-    """stream proxy + Content-Disposition: inline."""
-    import httpx
-    from fastapi.responses import StreamingResponse
-
-    try:
-        page = await notion.get_page(page_id)
-    except NotFoundError as exc:
-        raise HTTPException(status_code=404, detail=exc.message) from exc
-    if not _can_access(user, page, db):
-        raise HTTPException(status_code=403, detail="해당 요청 접근 권한이 없습니다")
-    item = _get_attachment_or_404(page, idx)
-
-    if item.drive_file_id:
-        try:
-            url = await sso_drive.get_download_url(item.drive_file_id)
-        except sso_drive.DriveError as exc:
-            raise HTTPException(status_code=500, detail=str(exc)) from exc
-    elif item.storage_key:
-        try:
-            url = storage.presigned_inline_url(
-                key=item.storage_key, filename=item.name
-            )
-        except storage.StorageError as exc:
-            raise HTTPException(status_code=500, detail=str(exc)) from exc
-    else:
-        url = item.legacy_url
-    filename = item.name or "file.bin"
-
-    client = httpx.AsyncClient(timeout=120.0)
-    try:
-        upstream = await client.send(
-            client.build_request("GET", url), stream=True
-        )
-    except httpx.HTTPError as exc:
-        await client.aclose()
-        raise HTTPException(
-            status_code=502, detail=f"파일 fetch 실패: {exc}"
-        ) from exc
-    if upstream.status_code >= 400:
-        await upstream.aclose()
-        await client.aclose()
-        raise HTTPException(
-            status_code=upstream.status_code, detail="파일 fetch 실패"
-        )
-
-    media_type = upstream.headers.get(
-        "content-type", item.content_type or "application/octet-stream"
-    )
-
-    async def _iter():
-        try:
-            async for chunk in upstream.aiter_bytes(chunk_size=64 * 1024):
-                yield chunk
-        finally:
-            await upstream.aclose()
-            await client.aclose()
-
-    return StreamingResponse(
-        _iter(),
-        media_type=media_type,
-        headers={
-            "Content-Disposition": f'inline; filename="{filename}"',
-            "Cache-Control": "private, max-age=300",
-        },
-    )
+# _get_attachment_or_404 + GET /:id/download/:idx + GET /:id/preview/:idx —
+# PR-CH에서 routers/seal_requests/attachments.py로 이동
 
 
 @router.post("/{page_id}/attachments", response_model=SealRequestItem)
@@ -1778,3 +1657,11 @@ async def delete_seal_request(
     return {
         "status": "marked-cancelled" if keep_with_marker else "archived",
     }
+
+
+# ── PR-CG/CH sub-router include (파일 끝 — 모든 helper 정의 후) ──
+from app.routers.seal_requests import attachments as _attachments  # noqa: E402
+from app.routers.seal_requests import meta as _meta  # noqa: E402
+
+router.include_router(_meta.router)
+router.include_router(_attachments.router)
