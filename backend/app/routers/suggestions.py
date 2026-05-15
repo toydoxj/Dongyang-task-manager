@@ -89,11 +89,15 @@ def _from_notion_page(page: dict[str, Any]) -> SuggestionItem:
     # 운영은 title 컬럼명이 "내용"이라 기존 P.title("제목")이 빈 string 반환 → 502는 write에서만.
     # read는 안전하게 dynamic lookup 후 한 번 찾아두면 OK이지만 sync 함수라 일단 운영 컬럼명 직접 매핑.
     title_text = P.title(props, "내용") or P.title(props, "제목") or P.title(props, "Name")
+    # PR-CP: "작성자"는 운영 노션에서 multi_select type. 첫 옵션이 본인 이름.
+    # 호환: 옛 rich_text type일 가능성도 처리 (둘 중 채워진 것 우선).
+    author_list = P.multi_select_names(props, "작성자")
+    author_text = author_list[0] if author_list else P.rich_text(props, "작성자")
     return SuggestionItem(
         id=page.get("id", ""),
         title=title_text,
         content=P.rich_text(props, "방안"),
-        author=P.rich_text(props, "작성자"),
+        author=author_text,
         categories=P.multi_select_names(props, "구분"),
         status=P.status_name(props, "진행상황") or P.select_name(props, "진행상황") or "접수",
         resolution=P.rich_text(props, "조치내용"),
@@ -137,12 +141,12 @@ async def create_suggestion(
     title_prop = await _get_title_prop_name(notion)
     # PR-CO: 운영 노션 schema 매핑 — title 컬럼은 "내용"(dynamic), 본문은 "방안",
     # 진행상황은 status type. title_prop과 "방안"이 충돌하지 않도록 분리.
+    author_name = user.name or user.username
     props: dict[str, Any] = {
         title_prop: {"title": [{"text": {"content": body.title.strip()}}]},
         "방안": {"rich_text": [{"text": {"content": body.content}}]},
-        "작성자": {
-            "rich_text": [{"text": {"content": user.name or user.username}}]
-        },
+        # PR-CP: 운영 노션 "작성자"는 multi_select. 사용자명 1개 옵션으로.
+        "작성자": {"multi_select": [{"name": author_name}]},
         "진행상황": {"status": {"name": "접수"}},
     }
     if body.categories:
@@ -167,7 +171,10 @@ async def update_suggestion(
         raise HTTPException(status_code=404, detail=exc.message) from exc
 
     is_admin_or_lead = user.role in {"admin", "team_lead"}
-    page_author = P.rich_text(page.get("properties", {}), "작성자")
+    # PR-CP: 작성자 read는 multi_select 우선 (운영) + rich_text fallback
+    _author_props = page.get("properties", {})
+    _author_list = P.multi_select_names(_author_props, "작성자")
+    page_author = _author_list[0] if _author_list else P.rich_text(_author_props, "작성자")
     is_owner = (user.name or user.username) == page_author
 
     update_props: dict[str, Any] = {}
@@ -236,7 +243,10 @@ async def delete_suggestion(
     except NotFoundError as exc:
         raise HTTPException(status_code=404, detail=exc.message) from exc
 
-    page_author = P.rich_text(page.get("properties", {}), "작성자")
+    # PR-CP: 작성자 read는 multi_select 우선 (운영) + rich_text fallback
+    _author_props = page.get("properties", {})
+    _author_list = P.multi_select_names(_author_props, "작성자")
+    page_author = _author_list[0] if _author_list else P.rich_text(_author_props, "작성자")
     is_owner = (user.name or user.username) == page_author
     is_admin_or_lead = user.role in {"admin", "team_lead"}
     if not (is_owner or is_admin_or_lead):

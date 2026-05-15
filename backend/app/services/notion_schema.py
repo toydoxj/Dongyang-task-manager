@@ -231,7 +231,7 @@ SALES_DB_REQUIRED: dict[str, dict[str, Any]] = {
 # "진행상황"은 status type — option 자동 추가 미지원이지만 dict에 spec 정의는 안전.
 SUGGESTION_DB_REQUIRED: dict[str, dict[str, Any]] = {
     "방안": {"rich_text": {}},
-    "작성자": {"rich_text": {}},
+    "작성자": {"multi_select": {"options": []}},  # PR-CP: 운영 schema multi_select
     "구분": {"multi_select": {"options": []}},  # 옵션은 운영자가 노션에서 자유 추가
     "조치내용": {"rich_text": {}},
 }
