@@ -226,18 +226,13 @@ SALES_DB_REQUIRED: dict[str, dict[str, Any]] = {
 }
 
 
-# 건의사항 DB
+# 건의사항 DB (PR-CO: 운영 schema 정정)
+# title 컬럼명은 "내용" — title type은 자동 등록 미지원이라 dict에서 제외 (운영자 노션에 이미 있음).
+# "진행상황"은 status type — option 자동 추가 미지원이지만 dict에 spec 정의는 안전.
 SUGGESTION_DB_REQUIRED: dict[str, dict[str, Any]] = {
-    "내용": {"rich_text": {}},
+    "방안": {"rich_text": {}},
     "작성자": {"rich_text": {}},
-    "진행상황": _select(
-        [
-            ("접수", "gray"),
-            ("검토중", "yellow"),
-            ("완료", "green"),
-            ("반려", "red"),
-        ]
-    ),
+    "구분": {"multi_select": {"options": []}},  # 옵션은 운영자가 노션에서 자유 추가
     "조치내용": {"rich_text": {}},
 }
 

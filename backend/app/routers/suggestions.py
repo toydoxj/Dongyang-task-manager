@@ -54,6 +54,7 @@ class SuggestionItem(BaseModel):
     title: str = ""
     content: str = ""
     author: str = ""
+    categories: list[str] = []  # PR-CO: 노션 "구분" multi_select
     status: str = "접수"
     resolution: str = ""
     created_time: str | None = None
@@ -68,23 +69,33 @@ class SuggestionListResponse(BaseModel):
 class SuggestionCreate(BaseModel):
     title: str
     content: str = ""
+    categories: list[str] = []
 
 
 class SuggestionUpdate(BaseModel):
     title: str | None = None
     content: str | None = None
-    status: str | None = None      # admin/team_lead만 변경 가능
-    resolution: str | None = None  # admin/team_lead만 변경 가능
+    categories: list[str] | None = None  # 작성자/admin/team_lead 변경 가능
+    status: str | None = None       # admin/team_lead만 변경 가능
+    resolution: str | None = None   # admin/team_lead만 변경 가능
 
 
 def _from_notion_page(page: dict[str, Any]) -> SuggestionItem:
+    """PR-CO: 운영 노션 schema 매핑 — title="내용"(title), content="방안"(rich_text),
+    categories="구분"(multi_select), status="진행상황"(status type), resolution="조치내용".
+    """
     props = page.get("properties", {})
+    # title 컬럼명은 dynamic이지만 read는 "type=title"인 첫 컬럼만 잡으면 됨 (helper 동일).
+    # 운영은 title 컬럼명이 "내용"이라 기존 P.title("제목")이 빈 string 반환 → 502는 write에서만.
+    # read는 안전하게 dynamic lookup 후 한 번 찾아두면 OK이지만 sync 함수라 일단 운영 컬럼명 직접 매핑.
+    title_text = P.title(props, "내용") or P.title(props, "제목") or P.title(props, "Name")
     return SuggestionItem(
         id=page.get("id", ""),
-        title=P.title(props, "제목"),
-        content=P.rich_text(props, "내용"),
+        title=title_text,
+        content=P.rich_text(props, "방안"),
         author=P.rich_text(props, "작성자"),
-        status=P.select_name(props, "진행상황") or "접수",
+        categories=P.multi_select_names(props, "구분"),
+        status=P.status_name(props, "진행상황") or P.select_name(props, "진행상황") or "접수",
         resolution=P.rich_text(props, "조치내용"),
         created_time=page.get("created_time"),
         last_edited_time=page.get("last_edited_time"),
@@ -124,14 +135,20 @@ async def create_suggestion(
     if not body.title.strip():
         raise HTTPException(status_code=400, detail="제목을 입력하세요")
     title_prop = await _get_title_prop_name(notion)
+    # PR-CO: 운영 노션 schema 매핑 — title 컬럼은 "내용"(dynamic), 본문은 "방안",
+    # 진행상황은 status type. title_prop과 "방안"이 충돌하지 않도록 분리.
     props: dict[str, Any] = {
         title_prop: {"title": [{"text": {"content": body.title.strip()}}]},
-        "내용": {"rich_text": [{"text": {"content": body.content}}]},
+        "방안": {"rich_text": [{"text": {"content": body.content}}]},
         "작성자": {
             "rich_text": [{"text": {"content": user.name or user.username}}]
         },
-        "진행상황": {"select": {"name": "접수"}},
+        "진행상황": {"status": {"name": "접수"}},
     }
+    if body.categories:
+        props["구분"] = {
+            "multi_select": [{"name": c} for c in body.categories if c.strip()]
+        }
     page = await notion.create_page(_db_id(), props)
     return _from_notion_page(page)
 
@@ -155,7 +172,7 @@ async def update_suggestion(
 
     update_props: dict[str, Any] = {}
 
-    # 제목/내용 — 작성자 본인 또는 admin/team_lead 만
+    # 제목/내용/구분 — 작성자 본인 또는 admin/team_lead 만 (PR-CO)
     if body.title is not None:
         if not (is_owner or is_admin_or_lead):
             raise HTTPException(
@@ -170,7 +187,15 @@ async def update_suggestion(
             raise HTTPException(
                 status_code=403, detail="본인이 작성한 글만 수정 가능"
             )
-        update_props["내용"] = {"rich_text": [{"text": {"content": body.content}}]}
+        update_props["방안"] = {"rich_text": [{"text": {"content": body.content}}]}
+    if body.categories is not None:
+        if not (is_owner or is_admin_or_lead):
+            raise HTTPException(
+                status_code=403, detail="본인이 작성한 글만 수정 가능"
+            )
+        update_props["구분"] = {
+            "multi_select": [{"name": c} for c in body.categories if c.strip()]
+        }
 
     # 진행상황 / 조치내용 — admin/team_lead 전용
     if body.status is not None:
@@ -180,7 +205,7 @@ async def update_suggestion(
             )
         if body.status not in _VALID_STATUSES:
             raise HTTPException(status_code=400, detail=f"잘못된 상태: {body.status}")
-        update_props["진행상황"] = {"select": {"name": body.status}}
+        update_props["진행상황"] = {"status": {"name": body.status}}
     if body.resolution is not None:
         if not is_admin_or_lead:
             raise HTTPException(

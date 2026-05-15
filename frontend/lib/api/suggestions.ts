@@ -7,6 +7,7 @@ export interface SuggestionItem {
   title: string;
   content: string;
   author: string;
+  categories: string[];  // PR-CO: 노션 "구분" multi_select
   status: string;
   resolution: string;
   created_time: string | null;
@@ -26,6 +27,7 @@ export async function listSuggestions(): Promise<SuggestionListResponse> {
 export async function createSuggestion(body: {
   title: string;
   content?: string;
+  categories?: string[];
 }): Promise<SuggestionItem> {
   const res = await authFetch(`/api/suggestions`, {
     method: "POST",
@@ -40,6 +42,7 @@ export async function updateSuggestion(
   body: {
     title?: string;
     content?: string;
+    categories?: string[];
     status?: string;
     resolution?: string;
   },

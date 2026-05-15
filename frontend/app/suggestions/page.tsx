@@ -144,6 +144,7 @@ function CreateModal({
 }) {
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
+  const [categories, setCategories] = useState("");  // PR-CO: comma-separated 입력
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
@@ -155,7 +156,11 @@ function CreateModal({
     setBusy(true);
     setErr(null);
     try {
-      await createSuggestion({ title: title.trim(), content });
+      const cats = categories
+        .split(",")
+        .map((c) => c.trim())
+        .filter(Boolean);
+      await createSuggestion({ title: title.trim(), content, categories: cats });
       onCreated();
     } catch (e) {
       setErr(e instanceof Error ? e.message : "등록 실패");
@@ -174,6 +179,15 @@ function CreateModal({
             onChange={(e) => setTitle(e.target.value)}
             className={inputCls}
             autoFocus
+          />
+        </Field>
+        <Field label="구분">
+          <input
+            type="text"
+            value={categories}
+            onChange={(e) => setCategories(e.target.value)}
+            className={inputCls}
+            placeholder="여러 개는 쉼표로 구분 (예: 시스템, 업무방식)"
           />
         </Field>
         <Field label="내용">
@@ -230,20 +244,32 @@ function DetailModal({
 }) {
   const [title, setTitle] = useState(item.title);
   const [content, setContent] = useState(item.content);
+  const [categories, setCategories] = useState(
+    (item.categories || []).join(", "),
+  );
   const [status, setStatus] = useState(item.status);
   const [resolution, setResolution] = useState(item.resolution);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
   const canEditBody = isOwner || isAdminOrLead;
+  const initialCategories = (item.categories || []).join(", ");
 
   const save = async (): Promise<void> => {
     setBusy(true);
     setErr(null);
     try {
+      const newCats =
+        categories === initialCategories
+          ? undefined
+          : categories
+              .split(",")
+              .map((c) => c.trim())
+              .filter(Boolean);
       await updateSuggestion(item.id, {
         title: title === item.title ? undefined : title,
         content: content === item.content ? undefined : content,
+        categories: newCats,
         status:
           isAdminOrLead && status !== item.status ? status : undefined,
         resolution:
@@ -281,6 +307,16 @@ function DetailModal({
             value={title}
             onChange={(e) => setTitle(e.target.value)}
             disabled={!canEditBody}
+            className={cn(inputCls, !canEditBody && "opacity-70")}
+          />
+        </Field>
+        <Field label="구분">
+          <input
+            type="text"
+            value={categories}
+            onChange={(e) => setCategories(e.target.value)}
+            disabled={!canEditBody}
+            placeholder="여러 개는 쉼표로 구분"
             className={cn(inputCls, !canEditBody && "opacity-70")}
           />
         </Field>
