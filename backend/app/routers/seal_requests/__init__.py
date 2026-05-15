@@ -52,6 +52,11 @@ logger = logging.getLogger("seal_requests")
 
 router = APIRouter(prefix="/seal-requests", tags=["seal-requests"])
 
+# PR-CG (Phase 4-J 5단계): sub-router include — 상위 router의 prefix 상속.
+from app.routers.seal_requests import meta as _meta  # noqa: E402
+
+router.include_router(_meta.router)
+
 # Bot send_text fire-and-forget 강 참조 set — GC가 task를 회수하기 전에 끝나도록 보관
 _bg_tasks: set[asyncio.Task[Any]] = set()
 
@@ -145,8 +150,7 @@ class SealListResponse(BaseModel):
     count: int
 
 
-class PendingCount(BaseModel):
-    count: int
+# PendingCount — PR-CG에서 seal_requests/meta.py로 이동
 
 
 class RejectBody(BaseModel):
@@ -695,57 +699,7 @@ async def list_seal_requests(
     return SealListResponse(items=items, count=len(items))
 
 
-class NextDocNumberResponse(BaseModel):
-    """다음 발급될 문서번호 (구조검토서만 의미). 발급은 안 함."""
-
-    seal_type: str
-    next_doc_number: str  # 빈 문자열 = 자동 발급 안 하는 type
-
-
-@router.get("/next-doc-number", response_model=NextDocNumberResponse)
-async def get_next_doc_number(
-    seal_type: str,
-    _user: User = Depends(get_current_user),
-    notion: NotionService = Depends(get_notion),
-) -> NextDocNumberResponse:
-    """모달 미리보기용 — 다음 발급될 문서번호를 미리 계산.
-
-    실제 발급은 create 시점에 다시 issue_review_doc_number 호출로. 그 사이
-    다른 사용자가 한 건 발급하면 모달의 미리보기와 실제 부여 번호가 다를 수
-    있음 (사용자에게 정보 제공 목적이라 허용).
-    """
-    seal_type = SL.normalize_type(seal_type.strip())
-    if seal_type != "구조검토서":
-        return NextDocNumberResponse(seal_type=seal_type, next_doc_number="")
-    next_no = await SL.issue_review_doc_number(notion, _db_id())
-    return NextDocNumberResponse(seal_type=seal_type, next_doc_number=next_no)
-
-
-@router.get("/pending-count", response_model=PendingCount)
-async def get_pending_count(
-    user: User = Depends(get_current_user),
-    notion: NotionService = Depends(get_notion),
-) -> PendingCount:
-    """본인이 처리해야 할 건수 (사이드바 알림 배지용).
-
-    - team_lead: '1차검토 중'(또는 호환 '요청')
-    - admin: '2차검토 중'(또는 호환 '팀장승인')
-    """
-    if user.role == "team_lead":
-        targets = ["1차검토 중", "요청"]
-    elif user.role == "admin":
-        targets = ["2차검토 중", "팀장승인"]
-    else:
-        return PendingCount(count=0)
-    pages = await notion.query_all(
-        _db_id(),
-        filter={
-            "or": [
-                {"property": "상태", "select": {"equals": t}} for t in targets
-            ]
-        },
-    )
-    return PendingCount(count=len(pages))
+# /next-doc-number + /pending-count + 2 model — PR-CG에서 seal_requests/meta.py로 분리
 
 
 @router.post("", response_model=SealRequestItem, status_code=status.HTTP_201_CREATED)
