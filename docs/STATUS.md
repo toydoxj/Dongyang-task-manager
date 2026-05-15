@@ -1,6 +1,6 @@
 # 작업 Status
 
-> 마지막 업데이트: 2026-05-13 (Phase 4-A 100% 완료 — lib/api.ts 1450→49줄 / 컴포넌트 분리 13 cycle)
+> 마지막 업데이트: 2026-05-15 (Phase 4-J 12단계 완료 — sales/seal_requests 라우터 분할 + idle in transaction leak 근본 fix)
 
 ## 완료된 PR
 
@@ -45,7 +45,6 @@
 | **PR-AD** WeeklyReport in-memory cache + 새로고침 버튼 | backend module-level OrderedDict LRU cache (key=(ws,we,lws), TTL 300s, max 16). publish는 force_refresh=True. last-published.pdf는 cache hit 활용. frontend [새로고침] 버튼 추가 — refreshTick 증가 → SWR key 변경 + force_refresh=true | f293aa5 |
 | **PR-AE ~ AN Phase 4-A 컴포넌트 분리 1차** | SalesEditModal 1670→1480(-190), weekly-report/page 1213→384(-829, **-68%**), me/page 1117→618(-499, -45%), QuoteForm 982→926(-56). 신규 컴포넌트 14개 파일 추출. lint·tsc 통과, 동작 영향 0 | 82853c4 ~ 1de0ae2 |
 | **2026-05-12 연결 풀 사고 + 방어** | SQLAlchemy 풀 leak으로 Supavisor 50 도달 → 전사 접속 불가. 즉시 복구 (Supabase pg_terminate_backend + Render restart). 임시 보강: pool_size 10→5 / overflow 20→10 / recycle 300→120s(PR-AO). 근본 방어: pool_reset_on_return=rollback + get_db rollback + /api/health/db 라우트 + Render Health Check Path 교체(PR-AQ). 매뉴얼은 [INCIDENT.md](INCIDENT.md) | c4de851 / b57d525 / 4f95017 |
-| **PR-DA / PR-DB idle in transaction leak 근본 fix** | 4시간+ 살아있는 idle in transaction connection이 ALTER TABLE lock 차단(2026-05-15 RLS migration 사고). connect 시점에 PostgreSQL `idle_in_transaction_session_timeout = '300s'` 강제(`db.py` event listener) → backend cleanup 누락돼도 5분 안에 DB측 자동 rollback + close. /api/health/db 응답에 SHOW 결과 노출해 운영 검증("5min" 확인). 운영 사고 영향: PR-AO 재발 / RLS migration 차단 / 주기적 backend restart 필요성 모두 해소 | 2687eb4 / 0a6f663 |
 | **PR-AR Sync 관리** | render.yaml cron 5개 schedule 업무시간(KST 06~20) 회피 → UTC 11-21시(KST 20~06)만 실행. backend `/api/admin/sync/{status,run}` 신규 라우터 + frontend `/admin/sync` 페이지 (admin only, 10초 자동 refresh, kind별 강제 트리거) | 6bc3ede |
 | **PR-AS / AT 권한 audit 마무리** | 「건의사항」 사이드바 manager 노출 + employees.GET "" 직원 명부 admin+팀장+manager(`require_editor`). master_projects는 현 정책(전 직원) 유지 결정 — audit 미결정 항목 모두 해소 | f70885a / 119dbf8 |
 | **PR-AU ~ BC Phase 4-A 컴포넌트 분리 2차** | project/_shared.tsx 신설로 Field/inputCls 5+ 파일 통합. MasterProjectModal 608→514(-94), admin/employees/page 604→339(-265, -44%), seal-requests/page 543→154(**-389, -72%**), StageBoard 528→289(-239, -45%), TaskCreateModal 490→469(-21), IncomeFormModal 436→415(-21). 누적 9 파일 -2701줄 (-26%) / 신규 분리 파일 18개 | a73363f ~ c89c905 |
@@ -90,7 +89,17 @@
 | **PR-CI Phase 4-J 7단계 — seal_requests approval sub-router** | status 전이 3 endpoint(`PATCH /:id/approve-lead` + `PATCH /:id/approve-admin` + `PATCH /:id/reject`) + `_set_status_with_handler` helper + `RejectBody` model을 `routers/seal_requests/approval.py`로 이동(~240 lines). `_set_status_with_handler`는 approve-lead/admin에서만 사용 → 함께 이동. 다른 helper(`_from_notion_page`/`_sync_linked_task` 등)는 함수 안 lazy import. `SealRequestItem`은 decorator(`response_model`)에 필요해 module-level lazy import. `__init__.py` 1667 → 1495 lines. 경로 동일, pytest 63 passed | 028ab12 |
 | **PR-CJ Phase 4-J 8단계 — seal_requests update/redo sub-router** | `PATCH /:id` (update_seal_request) + `POST /:id/redo` (redo_seal_request) 2 endpoint + `SealUpdateBody` + `SealRedoBody` 2 model을 `routers/seal_requests/update.py`로 이동(~410 lines). 두 endpoint 모두 본문이 큼 — update(~125 lines)는 반려→재요청 복구 흐름, redo(~167 lines)는 row 덮어쓰기 + 새 사이클 task 생성. helper(`_can_access`/`_get_title_prop_name`/`_project_summary_from_db`/`_create_seal_task_bg` 등 10+개)는 함수 안 lazy import. `__init__.py` 1495 → 1173 lines (~21% 감소). 경로 동일, pytest 63 passed | cfbc0c9 |
 | **PR-CK dashboard slow 1단계 — pending-count 분리 + TTL cache (운영 6.4초 병목 fix)** | 운영 로그에서 `/api/dashboard/summary` 6420ms 식별. 원인: `_count_pending_seals(notion)` → `notion.query_all` 페이지당 0.4s rate limit. codex 권장 Step 1 적용 — (1) backend `dashboard.py`에서 `_count_pending_seals` 호출 제거 + 함수 자체 deprecated(요청 경로에서 노션 호출 완전 제거, mirror DB만 사용 → ~수백 ms). (2) `seal_requests/meta.py`의 `pending-count` endpoint에 5분 TTL in-memory cache 추가 — Sidebar 60초 polling이 cache hit. (3) `KPICards.tsx`에서 `summary.pending_seal_count` → `useSWR(['seal-pending'], getSealPendingCount)`로 분리, Sidebar SWR cache 공유. 추가 backend 호출 0. Step 2(mirror_seal_requests 신설)는 별도 cycle | a5930e6 |
-| **PR-CL dashboard slow 2단계 (근본 fix) — mirror_seal_requests 신설** | codex 권장 Step 2. `MirrorSealRequest` model 신설 (page_id/title/seal_type/status/requester/project_ids 최소 schema). alembic `e0c1d2e05015_mirror_seal_requests` migration. `sync.py`에 `seal_requests` SyncKind 추가 + `_upsert_seal_request` (SL.normalize_status 호환). `seal_requests/meta.py`의 `pending-count`를 노션 query_all에서 mirror DB count(`SELECT COUNT(*)`)로 전환 — TTL cache 제거(이제 마이크로초 응답). 5분 sync lag 허용 (write 흐름 즉시 sync는 별도 PR). 운영 배포 시 `alembic upgrade head` + 다음 5분 cron이 첫 full sync 실행. pytest 63 passed | (pending push) |
+| **PR-CL dashboard slow 2단계 (근본 fix) — mirror_seal_requests 신설** | codex 권장 Step 2. `MirrorSealRequest` model 신설 (page_id/title/seal_type/status/requester/project_ids 최소 schema). alembic `e0c1d2e05015_mirror_seal_requests` migration. `sync.py`에 `seal_requests` SyncKind 추가 + `_upsert_seal_request` (SL.normalize_status 호환). `seal_requests/meta.py`의 `pending-count`를 노션 query_all에서 mirror DB count(`SELECT COUNT(*)`)로 전환 — TTL cache 제거(이제 마이크로초 응답). 5분 sync lag 허용 (write 흐름 즉시 sync는 별도 PR). pytest 63 passed | 88aea10 |
+| **PR-CM 사이드바/page 권한 — 팀장도 프로젝트 진입** | 「운영 관리 > 프로젝트」 사이드바 + `/projects` page guard에 team_lead 추가. backend는 이미 전 직원 허용. team_lead 로그인 시 사이드바에서 누락되던 dead-end 해소 | ec35c33 |
+| **PR-CN/CO/CP 건의사항 502 fix (운영 노션 schema 일치화)** | 「+새건의 → 저장」 시 502 NotionApiError. 운영 노션 schema가 backend 기대와 불일치(`내용`이 title / `구분`이 multi_select 신설 / `방안`은 text / `진행상황`은 status / `작성자`는 multi_select). PR-CN(title 컬럼명 dynamic lookup) → PR-CO(매핑 정정 + 구분 필드 추가) → PR-CP(작성자 multi_select). 사용자 schema 정보 직접 제공 후 단계적 fix. 「이제 된다」 확인 | 05183ec / 1a9cfd6 / e1244c5 |
+| **PR-CQ seal_requests write 즉시 mirror sync (PR-CL 후속)** | 5분 sync lag로 새 seal request가 pending count에 즉시 반영 안 됨. create/update/approve/reject 4 endpoint에 `_upsert_seal_request` 즉시 호출 (best-effort, 실패 시 5분 cron이 회수). pytest 63 passed | df11314 |
+| **PR-CR SQL/pool checkout 분리 계측 (Step 3 진단 1단계)** | `db.py`에 `before/after_cursor_execute` + `checkout/checkin` event listener. SQL ≥0.5s → "slow SQL" warn. checkout~checkin ≥0.3s → "long DB connection held" warn. 운영 mirror endpoint 2~3초 병목이 (a) SQL 자체 (b) connection wait 중 어느 것인지 분리 진단용 | 1fbad0a |
+| **PR-CS 계약기간 입력 → 계약 자동 체크** | 프로젝트 PATCH에서 `contract_start`/`contract_end` 둘 다 채워지면 backend에서 `is_contracted=True` 자동 set. 운영 흐름(계약기간 입력했는데 계약 체크 누락) 사전 차단 | eafb5f9 |
+| **PR-CT~CW Phase 4-J 9~12단계 — seal_requests 본격 분할** | attachments add를 attachments.py로 통합(PR-CT) / delete sub-router(PR-CU) / list endpoint sub-module(PR-CV, FastAPI prefix=="" 충돌 회피로 함수만 export + add_api_route 패턴) / create_seal_request 분리(PR-CW). `__init__.py` 1826 → 699 lines (-62%). 누적 12단계 (sales 4 + seal_requests 8) 완료. 경로 동일, pytest 63 passed | bf75dab / be0dd9a / 0f52bea / 10c2b46 |
+| **PR-CX silent SSO 실패 flag 5분 TTL (INCIDENT #1 #3)** | `_isSilentFailedRecently` — `dy_silent_failed`를 timestamp로 저장해 5분 후 자동 재시도 허용. 기존 영구 차단으로 cookie 만료 후 사용자 회복 불가(loop)였던 상태 해소. legacy "1" 값은 fresh fail로 marker 갱신 | 97ccd73 |
+| **PR-CY SSO callback /me hydration + cookie 검증 (INCIDENT #1 #4)** | `verifyAndHydrateFromMe()` — callback page redirect 직전 raw `fetch("/api/auth/me")` (authFetch 미사용 → 401 silent SSO 무한 재귀 회피, INCIDENT #4). 200이면 `saveAuth(user)` 갱신 / 401·network는 fragment user fallback + console.warn. fragment user_b64 schema 변경 / Vercel chunk stale 자동 정정 | a1e8d08 |
+| **PR-CZ Supabase RLS enable (advisor 보안 경고 조치)** | 모든 public 테이블에 RLS enable. policy 부여 없음 → anon/authenticated 차단. backend는 service_role connection이라 RLS bypass — 영향 없음. frontend는 Supabase JS client 미사용 확인. alembic `f1d2e3f05015` migration. 22 ERROR → 19 INFO(rls_enabled_no_policy, 의도된 상태) | f502cf6 / 3e388c9 |
+| **PR-DA / PR-DB idle in transaction leak 근본 fix** | 4시간+ 살아있는 idle in transaction connection이 ALTER TABLE lock 차단(2026-05-15 RLS migration 사고). connect 시점에 PostgreSQL `idle_in_transaction_session_timeout = '300s'` 강제(`db.py` event listener) → backend cleanup 누락돼도 5분 안에 DB측 자동 rollback + close. /api/health/db 응답에 SHOW 결과 노출해 운영 검증("5min" 확인). 운영 사고 영향: PR-AO 재발 / RLS migration 차단 / 주기적 backend restart 필요성 모두 해소 | 2687eb4 / 0a6f663 |
 
 ## 미완료 / 보류
 
@@ -113,22 +122,22 @@ DASH-001~004 / PROJ-001~005 / MY-001~005 / WEEK-001~005 / COMMON-001~003 항목 
 | **4-E** 권한 layout 통합 | `useRoleGuard` hook 도입(PR-BS/BT/BU, 누적 10 page) / 잔여(weekly-report/seal-requests/notices — 전 직원 진입 + isAdmin UI 분기로 useRoleGuard 부적합, useAuth 유지 결정) | 권한 가드 코드 일관성 |
 | **4-H** 문서 자동 동기화 체계 | 미진행 | USER_MANUAL/STATUS/PERMISSIONS auto-sync |
 | **4-I** Frontend 테스트 framework | 미진행 | Vitest + Playwright |
-| **4-J** Backend 라우터/서비스 분할 | 미진행 | seal_requests / sales / projects / quote_calculator / weekly_report 큰 파일들 |
+| **4-J** Backend 라우터/서비스 분할 | 부분 완료 (PR-CC ~ PR-CW, 12단계) | sales 4 단계 분리 + seal_requests 8 단계 분리(__init__.py 1826→699, -62%). 잔여: projects / quote_calculator / weekly_report |
 
-### Backend atomicity·페이징·silent except (HIGH 위험 — 별도 cycle 권장)
+### Backend atomicity·페이징·silent except (외부 리뷰 12.x — 1차 모두 완료)
 | 항목 | 상태 | 비고 |
 |---|---|---|
-| Drive↔Notion 업기 atomicity | 보류 | `sales.py:1038~`, `seal_requests.py:862~` |
-| `_sync_sale_estimated_amount` race | 보류 | |
-| `query_all` 페이징 | 보류 | 노션 100건 limit 안전성 |
-| silent except → partial-failure | 1차 audit + 시범 fix(PR-BV, 2 case) / 잔여 5 case + partial_errors schema 별도 cycle. `docs/audit/silent_except.md` 참조 | 응답 형식 통일 |
+| Drive↔Notion atomicity | 1차 완료 (PR-CA) | seal_requests 마지막 update_page 실패를 partial_errors 노출. 2차 보상 트랜잭션은 워크플로 검토 후 |
+| `_sync_sale_estimated_amount` race | ✅ 완료 (PR-BZ) | `db.get()` → `SELECT ... FOR UPDATE` row lock |
+| `query_all` 페이징 | ✅ 완료 (PR-CB) | max_pages=200 + cursor 검증 + cycle 검증 fail-fast |
+| silent except → partial-failure | ✅ 1차 완료 (PR-BV/BW/BX/BY) | partial_errors schema + 사용자 안내 alert. `docs/audit/silent_except.md` 참조 |
 
 ### 작은 잔여 (낮은 우선순위)
 | 항목 | 비고 |
 |---|---|
-| **#113** /sales — onClose 시 ?sale= query 정리 | SaleLink referrer 보존(PR-114)으로 우회됨 |
 | **#116** /weekly-report 페이지 PDF와 양식 통일 | 데이터·구조 동일. 시각 디테일(컬럼폭·색상)만 잔여 |
-| **SQLAlchemy leak 근본 source 추적** | PR-AO/AQ 임시 방어 + auto restart 동작 중 |
+| **PR-BI 재시도 (Phase 4-G 2단계)** | INCIDENT.md PR-BP/BQ 체크리스트 4항목 충족 후. 안전망(PR-BN/BO/BL-5/CX/CY) 모두 적용됨 |
+| **mirror endpoint slow** | PR-CR 계측 수집 후 진단. PR-CL/CQ로 dashboard 6.4초 병목은 해소 |
 
 ## 핵심 helper / 모듈 위치
 
