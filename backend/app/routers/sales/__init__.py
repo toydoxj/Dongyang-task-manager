@@ -62,6 +62,12 @@ from app.settings import get_settings
 logger = logging.getLogger("api.sales")
 router = APIRouter(prefix="/sales", tags=["sales"])
 
+# PR-CC (Phase 4-J 1단계): sub-router include — 상위 router의 prefix(`/sales`)를
+# 그대로 상속받음. sub-module은 prefix 없이 endpoint 정의.
+from app.routers.sales import quote_meta as _quote_meta  # noqa: E402
+
+router.include_router(_quote_meta.router)
+
 
 async def _create_quote_task_for_sale(
     notion: NotionService, sale_row: M.MirrorSales, db: Session
@@ -853,15 +859,7 @@ async def update_external_quote(
     return _form_to_response(forms[target_idx])
 
 
-@router.get("/quote/types")
-def list_quote_types(
-    _user: User = Depends(get_current_user),
-) -> list[dict[str, str]]:
-    """견적서 종류 enum + 한글 라벨. frontend select 옵션용.
-
-    value/label 모두 한글 동일 (enum 값이 그대로 노션 select option name).
-    """
-    return [{"value": t.value, "label": t.value} for t in QuoteType]
+# /quote/types — PR-CC에서 sales/quote_meta.py로 분리 (sub-router include는 파일 말미)
 
 
 # ── 견적서 PDF 다운로드 ──
