@@ -261,19 +261,55 @@ class NotionService:
         *,
         filter: dict[str, Any] | None = None,
         sorts: list[dict[str, Any]] | None = None,
+        max_pages: int = 200,
     ) -> list[dict[str, Any]]:
-        """페이지네이션 자동 처리, 모든 결과 누적 (backward compat)."""
+        """페이지네이션 자동 처리, 모든 결과 누적 (backward compat).
+
+        PR-CB (외부 리뷰 12.x #4): 안전장치 3종.
+        - max_pages: 기본 200(=20000 row). 초과 시 RuntimeError fail-fast.
+        - cursor=None & has_more=True: 노션 응답 비정상 → RuntimeError.
+        - cursor cycle: 같은 cursor 재출현 → RuntimeError.
+
+        부분 결과 truncate는 silent 데이터 불일치 위험이라 fail-fast 선택
+        (codex 자문). 진짜 큰 DB는 호출처에서 iter_query_pages로 전환.
+        """
         results: list[dict[str, Any]] = []
         cursor: str | None = None
-        while True:
+        seen_cursors: set[str] = set()
+        for page_no in range(1, max_pages + 1):
             page = await self.query_database(
                 db_id, filter=filter, sorts=sorts, start_cursor=cursor
             )
             results.extend(page.get("results", []))
             if not page.get("has_more"):
-                break
-            cursor = page.get("next_cursor")
-        return results
+                return results
+            next_cursor = page.get("next_cursor")
+            if not next_cursor:
+                logger.warning(
+                    "query_all 비정상 응답 — has_more=True인데 next_cursor=null "
+                    "(db=%s page=%d)", db_id, page_no,
+                )
+                raise RuntimeError(
+                    f"query_all: has_more=True인데 next_cursor 없음 (db={db_id})"
+                )
+            if next_cursor in seen_cursors:
+                logger.warning(
+                    "query_all cursor cycle — 같은 cursor 재등장 (db=%s page=%d cur=%s)",
+                    db_id, page_no, next_cursor[:16],
+                )
+                raise RuntimeError(
+                    f"query_all: cursor cycle 감지 (db={db_id})"
+                )
+            seen_cursors.add(next_cursor)
+            cursor = next_cursor
+        logger.warning(
+            "query_all max_pages 초과 — DB가 너무 큼 (db=%s max=%d row=%d)",
+            db_id, max_pages, len(results),
+        )
+        raise RuntimeError(
+            f"query_all: max_pages={max_pages} 초과 (db={db_id}). "
+            "iter_query_pages로 전환 필요."
+        )
 
     async def iter_query_pages(
         self,
