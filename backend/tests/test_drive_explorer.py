@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import pytest
 
-from app.routers.projects import _extract_resource_key
+from app.routers.projects.drive import _extract_resource_key
 
 
 def test_extract_resource_key_normal() -> None:
