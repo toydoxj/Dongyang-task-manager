@@ -181,6 +181,8 @@ def project_update_to_props(req: ProjectUpdateRequest) -> dict[str, Any]:
             req.contract_end is None or req.contract_end == ""
         ):
             props["계약기간"] = {"date": None}
+            # PR-CS: 계약기간을 모두 비우면 "계약" checkbox도 해제 — 일관성
+            props["계약"] = {"checkbox": False}
         else:
             props["계약기간"] = {
                 "date": {
@@ -188,6 +190,8 @@ def project_update_to_props(req: ProjectUpdateRequest) -> dict[str, Any]:
                     "end": req.contract_end or None,
                 }
             }
+            # PR-CS: 계약기간이 채워지면 "계약" checkbox 자동 True (사용자 요청)
+            props["계약"] = {"checkbox": True}
     if req.end_date is not None:
         props["완료일"] = (
             {"date": None}
