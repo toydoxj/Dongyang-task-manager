@@ -903,7 +903,17 @@ async def create_seal_request(
         update_props["비고"] = {
             "rich_text": [{"text": {"content": (note or "") + fail_note}}]
         }
-    await notion.update_page(page_id, update_props)
+    # PR-CA (외부 리뷰 12.x #2): notion.update_page는 _call에서 4 attempts retry되지만
+    # 그래도 최종 실패하면 raise → Drive에 orphan 파일 + 사용자 500. try/except로 wrap해
+    # partial_errors로 노출 (사용자 알림 + 운영 수동 보정 단서).
+    try:
+        await notion.update_page(page_id, update_props)
+    except Exception as exc:  # noqa: BLE001
+        logger.exception(
+            "seal_request 첨부메타 노션 update 실패 — Drive 파일은 존재 (page=%s)",
+            page_id,
+        )
+        failed.append(f"노션 첨부메타 업데이트 실패: {exc}")
 
     # 6) 자동 TASK 생성 — fire-and-forget.
     # 요청자용 1개 + 1차 검토자(팀장 또는 admin)용 1개.
@@ -969,11 +979,18 @@ async def create_seal_request(
     final = await notion.get_page(page_id)
     item = _from_notion_page(final)
     # PR-BX: failed[](텍스트)를 partial_errors(정형)로도 응답. 비고에는 이미 append됨.
-    item.partial_errors = [
-        PartialError(code="drive_upload", target=msg.split(":", 1)[0], message=msg)
-        for msg in failed
-    ]
+    # PR-CA: 노션 update 실패도 failed에 섞이므로 prefix로 code 분기.
+    item.partial_errors = [_failed_to_partial(msg) for msg in failed]
     return item
+
+
+def _failed_to_partial(msg: str) -> PartialError:
+    """failed[] 텍스트를 PartialError로 분류. 노션 update 실패면 code='notion_update'."""
+    if msg.startswith("노션 "):
+        return PartialError(code="notion_update", target="page", message=msg)
+    return PartialError(
+        code="drive_upload", target=msg.split(":", 1)[0], message=msg
+    )
 
 
 async def _set_status_with_handler(
@@ -1529,16 +1546,22 @@ async def add_attachments(
         update_props["팀장처리자"] = {"rich_text": [{"text": {"content": ""}}]}
         update_props["팀장처리일"] = {"date": None}
 
-    await notion.update_page(page_id, update_props)
+    # PR-CA (외부 리뷰 12.x #2): notion update 최종 실패 시 partial_errors로 노출.
+    try:
+        await notion.update_page(page_id, update_props)
+    except Exception as exc:  # noqa: BLE001
+        logger.exception(
+            "seal_request 첨부 add 노션 update 실패 — Drive 파일은 존재 (page=%s)",
+            page_id,
+        )
+        failed.append(f"노션 첨부메타 업데이트 실패: {exc}")
     if failed:
         logger.warning("첨부 추가 일부 실패 (page=%s): %s", page_id, failed)
     final = await notion.get_page(page_id)
     item = _from_notion_page(final)
     # PR-BX: 첨부 추가 partial failure를 정형 응답에 포함.
-    item.partial_errors = [
-        PartialError(code="drive_upload", target=msg.split(":", 1)[0], message=msg)
-        for msg in failed
-    ]
+    # PR-CA: 노션 update 실패도 분류 (helper 재사용).
+    item.partial_errors = [_failed_to_partial(msg) for msg in failed]
     return item
 
 
