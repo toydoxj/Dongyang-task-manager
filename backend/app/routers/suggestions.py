@@ -7,6 +7,7 @@
 """
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -19,9 +20,33 @@ from app.services import notion_props as P
 from app.services.notion import NotionService, get_notion
 from app.settings import get_settings
 
+logger = logging.getLogger("api.suggestions")
 router = APIRouter(prefix="/suggestions", tags=["suggestions"])
 
 _VALID_STATUSES = {"접수", "검토중", "완료", "반려"}
+
+# PR-CN: 노션 DB의 title 컬럼명은 운영자가 자유 변경 가능 (default "Name", 한글 "제목" 등).
+# create/update 시 잘못된 prop 이름 → 노션 400 → NotionApiError(502).
+# 첫 호출 schema query로 동적 lookup + 모듈 단위 cache.
+_title_prop_name: str | None = None
+
+
+async def _get_title_prop_name(notion: NotionService) -> str:
+    """건의사항 DB의 title type property 이름. 첫 호출 schema query, 이후 cache."""
+    global _title_prop_name
+    if _title_prop_name is not None:
+        return _title_prop_name
+    try:
+        ds = await notion.get_data_source(_db_id())
+    except Exception as e:  # noqa: BLE001
+        logger.warning("suggestions title prop 탐지 실패 — `제목` fallback: %s", e)
+        return "제목"
+    for name, spec in (ds.get("properties") or {}).items():
+        if isinstance(spec, dict) and spec.get("type") == "title":
+            _title_prop_name = name
+            return name
+    logger.warning("suggestions DB에 title type property 없음 — `제목` fallback")
+    return "제목"
 
 
 class SuggestionItem(BaseModel):
@@ -98,8 +123,9 @@ async def create_suggestion(
 ) -> SuggestionItem:
     if not body.title.strip():
         raise HTTPException(status_code=400, detail="제목을 입력하세요")
+    title_prop = await _get_title_prop_name(notion)
     props: dict[str, Any] = {
-        "제목": {"title": [{"text": {"content": body.title.strip()}}]},
+        title_prop: {"title": [{"text": {"content": body.title.strip()}}]},
         "내용": {"rich_text": [{"text": {"content": body.content}}]},
         "작성자": {
             "rich_text": [{"text": {"content": user.name or user.username}}]
@@ -135,7 +161,8 @@ async def update_suggestion(
             raise HTTPException(
                 status_code=403, detail="본인이 작성한 글만 수정 가능"
             )
-        update_props["제목"] = {
+        title_prop = await _get_title_prop_name(notion)
+        update_props[title_prop] = {
             "title": [{"text": {"content": body.title.strip()}}]
         }
     if body.content is not None:
