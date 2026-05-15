@@ -20,7 +20,7 @@ from fastapi import (
 )
 from fastapi.responses import StreamingResponse
 from jose import JWTError, jwt
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 from starlette.background import BackgroundTask
@@ -161,38 +161,11 @@ def _resolve_names(db: Session, projects: list[Project]) -> None:
 # ── 라우터 ──
 
 
-class ProjectOptions(BaseModel):
-    """프로젝트 DB의 multi_select 옵션 (편집 모달의 chips 표시용)."""
+# PR-DC (Phase 4-J 13단계): sub-router include — 상위 router의 prefix(`/projects`)를
+# 그대로 상속받음. sub-module은 prefix 없이 endpoint 정의.
+from app.routers.projects import options as _options  # noqa: E402
 
-    work_types: list[str] = Field(default_factory=list)
-
-
-@router.get("/options", response_model=ProjectOptions)
-async def get_project_options(
-    _user: User = Depends(get_current_user),
-    notion: NotionService = Depends(get_notion),
-) -> ProjectOptions:
-    """노션 프로젝트 DB의 multi_select 옵션 — work_types 등.
-
-    NotionService의 30초 ds 캐시에 의존하므로 별도 캐시 불필요.
-    """
-    db_id = get_settings().notion_db_projects
-    if not db_id:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="NOTION_DB_PROJECTS 미설정",
-        )
-    ds = await notion.get_data_source(db_id)
-    props = ds.get("properties", {})
-
-    def _opts(name: str) -> list[str]:
-        prop = props.get(name) or {}
-        if prop.get("type") != "multi_select":
-            return []
-        opts = (prop.get("multi_select") or {}).get("options") or []
-        return [o.get("name", "") for o in opts if o.get("name")]
-
-    return ProjectOptions(work_types=_opts("업무내용"))
+router.include_router(_options.router)
 
 
 @router.get("", response_model=ProjectListResponse)
