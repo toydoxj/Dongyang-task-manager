@@ -135,9 +135,9 @@ function cmpDateDesc(a: string | null, b: string | null): number {
 export default function ProjectsPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  // admin과 manager만 프로젝트 목록 접근 가능 (사용자 결정 2026-05-11)
-  // — team_lead/일반직원은 /me로 redirect
-  const { user, allowed } = useRoleGuard(["admin", "manager"]);
+  // admin/team_lead/manager 진입 가능 (사용자 결정 2026-05-15 — 팀장 추가)
+  // — 일반직원(member)은 /me로 redirect
+  const { user, allowed } = useRoleGuard(["admin", "team_lead", "manager"]);
   useEffect(() => {
     if (user && !allowed) router.replace("/me");
   }, [user, allowed, router]);
