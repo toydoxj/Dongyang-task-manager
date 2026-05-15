@@ -112,40 +112,9 @@ def _cache_set(cache: OrderedDict, key: tuple, value) -> None:
         cache.popitem(last=False)
 
 
-async def _count_pending_seals(notion: NotionService) -> int:
-    """1차/2차 검토중 status인 날인 페이지 수.
-
-    notion `상태` column type(select vs status)이나 enum값 변경에 영향 안 받도록
-    server-side filter는 쓰지 않고 in-memory에서 매칭. WeeklyReport pattern과 동일.
-    """
-    s = get_settings()
-    db_id = s.notion_db_seal_requests
-    if not db_id:
-        logger.warning("seal pending count: NOTION_DB_SEAL_REQUESTS 미설정")
-        return 0
-    try:
-        pages = await notion.query_all(db_id)
-    except Exception:  # noqa: BLE001
-        logger.exception("seal pending count 조회 실패")
-        return 0
-
-    count = 0
-    for p in pages:
-        props = p.get("properties", {})
-        if not isinstance(props, dict):
-            continue
-        status_obj = props.get("상태")
-        if not isinstance(status_obj, dict):
-            continue
-        # select 또는 status 둘 다 호환 — 노션은 두 type을 비슷한 shape으로 직렬화
-        inner = status_obj.get("select") or status_obj.get("status")
-        if not isinstance(inner, dict):
-            continue
-        name = inner.get("name") or ""
-        if name in _PENDING_SEAL_STATUSES:
-            count += 1
-    logger.info("seal pending count = %d (of %d pages)", count, len(pages))
-    return count
+# _count_pending_seals — PR-CK에서 제거 (운영 6.4초 병목 원인).
+# /api/seal-requests/pending-count endpoint가 동일 로직을 별도로 제공.
+# frontend KPICards가 별도 fetch (Sidebar SWR cache 공유).
 
 
 @router.get("/summary", response_model=DashboardSummary)
@@ -246,10 +215,11 @@ async def get_dashboard_summary(
     week_income = int(sum(r[0] or 0 for r in week_income_row))
     week_expense = int(sum(r[0] or 0 for r in week_expense_row))
 
-    # 4 — seal pending count (PR-BJ-3a). notion status filter로 페이지 수만 카운트.
-    # 운영 시 매 호출 notion API hit이라 미세하게 비용. 추후 짧은 TTL cache(BJ-5)
-    # 또는 mirror_seal 신설로 개선 여지.
-    pending_seal_count = await _count_pending_seals(notion)
+    # 4 — seal pending count: PR-CK에서 summary 응답 경로에서 제거 (운영 6.4초 병목).
+    # frontend KPICards가 별도 endpoint(/api/seal-requests/pending-count)로 병렬 fetch.
+    # Sidebar의 SWR cache와 공유되어 추가 노션 호출 없음.
+    # 본 응답에서는 schema 호환 위해 0으로 보냄. 추후 mirror_seal_requests로 근본 fix.
+    pending_seal_count = 0
 
     summary = DashboardSummary(
         in_progress_count=in_progress_count,

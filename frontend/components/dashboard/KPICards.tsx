@@ -1,7 +1,9 @@
 "use client";
 
 import Link from "next/link";
+import useSWR from "swr";
 
+import { getSealPendingCount } from "@/lib/api";
 import type { DashboardSummary } from "@/lib/api";
 import { formatWon } from "@/lib/format";
 
@@ -14,6 +16,12 @@ interface Props {
 
 export default function KPICards({ summary }: Props) {
   const weekNet = summary.week_income - summary.week_expense;
+  // PR-CK: 승인 대기 날인 카운트는 별도 endpoint로 fetch (운영 6.4초 병목 분리).
+  // Sidebar의 ["seal-pending"] SWR key와 공유 — 추가 backend 호출 없음.
+  const { data: sealPending } = useSWR(["seal-pending"], () => getSealPendingCount(), {
+    refreshInterval: 60_000,
+  });
+  const pendingSealCount = sealPending?.count ?? 0;
 
   return (
     <section className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-6">
@@ -39,10 +47,10 @@ export default function KPICards({ summary }: Props) {
       />
       <KpiCard
         label="승인 대기 날인"
-        value={summary.pending_seal_count}
+        value={pendingSealCount}
         hint="1차 / 2차 검토중"
         href="/seal-requests"
-        tone={summary.pending_seal_count > 0 ? "warn" : "neutral"}
+        tone={pendingSealCount > 0 ? "warn" : "neutral"}
       />
       <KpiCard
         label="이번 주 순현금"
