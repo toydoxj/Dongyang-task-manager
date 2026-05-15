@@ -151,8 +151,7 @@ class SealListResponse(BaseModel):
 # PendingCount — PR-CG에서 seal_requests/meta.py로 이동
 
 
-class RejectBody(BaseModel):
-    reason: str = ""
+# RejectBody — PR-CI에서 routers/seal_requests/approval.py로 이동
 
 
 class SealUpdateBody(BaseModel):
@@ -945,179 +944,8 @@ def _failed_to_partial(msg: str) -> PartialError:
     )
 
 
-async def _set_status_with_handler(
-    notion: NotionService,
-    page_id: str,
-    new_status: str,
-    handler_field: str,
-    handler_date_field: str,
-    handler_name: str,
-) -> dict[str, Any]:
-    today = date.today().isoformat()
-    return await notion.update_page(
-        page_id,
-        {
-            "상태": {"select": {"name": new_status}},
-            handler_field: {"rich_text": [{"text": {"content": handler_name}}]},
-            handler_date_field: {"date": {"start": today}},
-        },
-    )
-
-
-@router.patch("/{page_id}/approve-lead", response_model=SealRequestItem)
-async def approve_lead(
-    page_id: str,
-    user: User = Depends(require_admin_or_lead),
-    notion: NotionService = Depends(get_notion),
-    db: Session = Depends(get_db),
-) -> SealRequestItem:
-    try:
-        page = await notion.get_page(page_id)
-    except NotFoundError as exc:
-        raise HTTPException(status_code=404, detail=exc.message) from exc
-    cur = SL.normalize_status(P.select_name(page.get("properties", {}), "상태"))
-    if cur != "1차검토 중":
-        raise HTTPException(
-            status_code=400,
-            detail=f"현재 상태가 '1차검토 중'이 아닙니다 (현재: {cur or '미정'})",
-        )
-    handler = user.name or user.username
-    item = _from_notion_page(page)
-
-    await _set_status_with_handler(
-        notion, page_id, "2차검토 중", "팀장처리자", "팀장처리일", handler
-    )
-
-    # 1차 검토자 TASK 완료 + 2차 검토자(admin) TASK 생성
-    if item.lead_task_id:
-        await _sync_linked_task(notion, item.lead_task_id, target="완료")
-    project_id_for_task = item.project_ids[0] if item.project_ids else ""
-    admins = _find_admins(db)
-    admin_reviewer_name = (admins[0].name or "") if admins else ""
-    if project_id_for_task and admin_reviewer_name:
-        _spawn_task(
-            _create_seal_task_bg(
-                notion,
-                seal_page_id=page_id,
-                seal_link_prop="2차검토TASK",
-                project_id=project_id_for_task,
-                title=f"[날인 2차검토] {item.title}",
-                assignee_name=admin_reviewer_name,
-                today_iso=date.today().isoformat(),
-            )
-        )
-
-    # Bot 알림 — admin 전원 (본인 포함)
-    msg = (
-        f"[2차검토 요청] {item.title}"
-        f"\n1차검토자: {handler} / 요청자: {item.requester} / 제출예정일: {item.due_date or '-'}"
-    )
-    for adm in _find_admins(db):
-        _bot_send(_resolve_works_id(adm), msg)
-
-    updated = await notion.get_page(page_id)
-    return _from_notion_page(updated)
-
-
-@router.patch("/{page_id}/approve-admin", response_model=SealRequestItem)
-async def approve_admin(
-    page_id: str,
-    user: User = Depends(require_admin),
-    notion: NotionService = Depends(get_notion),
-    db: Session = Depends(get_db),
-) -> SealRequestItem:
-    try:
-        page = await notion.get_page(page_id)
-    except NotFoundError as exc:
-        raise HTTPException(status_code=404, detail=exc.message) from exc
-    cur = SL.normalize_status(P.select_name(page.get("properties", {}), "상태"))
-    if cur not in {"2차검토 중", "1차검토 중"}:
-        raise HTTPException(
-            status_code=400,
-            detail=f"승인 가능 상태가 아님 (현재: {cur or '미정'})",
-        )
-    handler = user.name or user.username
-    item = _from_notion_page(page)
-
-    await _set_status_with_handler(
-        notion, page_id, "승인", "관리자처리자", "관리자처리일", handler
-    )
-
-    # 2차 검토자 TASK 완료 + (1차 검토자 TASK가 1차 미경유 케이스로 남아있으면 함께 완료)
-    # + 요청자 TASK 완료
-    if item.admin_task_id:
-        await _sync_linked_task(notion, item.admin_task_id, target="완료")
-    if item.lead_task_id:
-        # 1차 미경유로 admin이 바로 승인한 경우 lead task가 진행 중일 수 있어 같이 완료
-        await _sync_linked_task(notion, item.lead_task_id, target="완료")
-    if item.linked_task_id:
-        await _sync_linked_task(notion, item.linked_task_id, target="완료")
-
-    # Bot 알림 — 요청자에게
-    requester_user = _find_user_by_name(db, item.requester)
-    msg = (
-        f"[승인 완료] {item.title}\n처리자: {handler}"
-    )
-    _bot_send(_resolve_works_id(requester_user), msg)
-
-    updated = await notion.get_page(page_id)
-    return _from_notion_page(updated)
-
-
-@router.patch("/{page_id}/reject", response_model=SealRequestItem)
-async def reject_seal_request(
-    page_id: str,
-    body: RejectBody,
-    user: User = Depends(require_admin_or_lead),
-    notion: NotionService = Depends(get_notion),
-    db: Session = Depends(get_db),
-) -> SealRequestItem:
-    try:
-        page = await notion.get_page(page_id)
-    except NotFoundError as exc:
-        raise HTTPException(status_code=404, detail=exc.message) from exc
-    cur = SL.normalize_status(P.select_name(page.get("properties", {}), "상태"))
-    if cur not in {"1차검토 중", "2차검토 중"}:
-        raise HTTPException(
-            status_code=400,
-            detail=f"반려 가능 상태가 아님 (현재: {cur or '미정'})",
-        )
-    # 정책: 팀장은 1차검토 단계에서만 반려 가능. 2차검토 중인 항목의 반려는 admin only.
-    if cur == "2차검토 중" and user.role != "admin":
-        raise HTTPException(
-            status_code=403,
-            detail="2차검토 중인 항목의 반려는 관리자만 가능합니다",
-        )
-    rejector = user.name or user.username
-    reason = (body.reason or "").strip()
-    update_props: dict[str, Any] = {
-        "상태": {"select": {"name": "반려"}},
-        "반려사유": {
-            "rich_text": [
-                {"text": {"content": f"[{rejector}] {reason}" if reason else f"[{rejector}]"}}
-            ]
-        },
-    }
-    await notion.update_page(page_id, update_props)
-
-    # 현재 단계 검토자 TASK 완료 (반려도 검토 완료로 간주). 요청자 TASK는
-    # 그대로 진행 — 사용자가 재요청하면 다시 1차검토 중으로 돌아감.
-    item_for_task = _from_notion_page(page)
-    if cur == "1차검토 중" and item_for_task.lead_task_id:
-        await _sync_linked_task(notion, item_for_task.lead_task_id, target="완료")
-    elif cur == "2차검토 중" and item_for_task.admin_task_id:
-        await _sync_linked_task(notion, item_for_task.admin_task_id, target="완료")
-
-    item = _from_notion_page(page)
-    requester_user = _find_user_by_name(db, item.requester)
-    msg = (
-        f"[반려] {item.title}"
-        f"\n사유: {reason or '(미기재)'} / 처리자: {rejector}"
-    )
-    _bot_send(_resolve_works_id(requester_user), msg)
-
-    updated = await notion.get_page(page_id)
-    return _from_notion_page(updated)
+# _set_status_with_handler + approve-lead/approve-admin/reject 3 endpoint —
+# PR-CI에서 routers/seal_requests/approval.py로 이동
 
 
 @router.patch("/{page_id}", response_model=SealRequestItem)
@@ -1659,9 +1487,11 @@ async def delete_seal_request(
     }
 
 
-# ── PR-CG/CH sub-router include (파일 끝 — 모든 helper 정의 후) ──
+# ── PR-CG/CH/CI sub-router include (파일 끝 — 모든 helper 정의 후) ──
+from app.routers.seal_requests import approval as _approval  # noqa: E402
 from app.routers.seal_requests import attachments as _attachments  # noqa: E402
 from app.routers.seal_requests import meta as _meta  # noqa: E402
 
 router.include_router(_meta.router)
 router.include_router(_attachments.router)
+router.include_router(_approval.router)
