@@ -95,6 +95,9 @@
 - 영업↔프로젝트 reverse lookup: `GET /api/sales/by-project/{project_id}` (converted_project_id indexed).
 - 묶음 PDF 갑지 총액 토글: `?show_total=true|false` (기본 ON).
 - xlsx 검증: `docs/quote_formulas/*.md` dump → backend strategy transcribe → ±0원 일치.
+- mirror_seal_requests (PR-CL): pending-count는 노션 query_all이 아니라 mirror DB `SELECT COUNT(*)`. write 흐름(create/update/approve/reject)은 즉시 `_upsert_seal_request` (PR-CQ). 5분 cron이 회수 안전망.
+- 건의사항 노션 schema (PR-CN/CO/CP): title=`내용` (dynamic lookup), 구분=multi_select(필드 추가됨), 방안=text, 진행상황=status, 조치내용=text, 작성자=multi_select. schema 불일치 시 502 NotionApiError — 운영 노션 UI에서 직접 정정.
+- `/api/health/db` 응답에 `idle_in_transaction_session_timeout` SHOW 결과 포함 (PR-DB). PR-DA가 backend 연결에 적용됐는지 검증용.
 
 **PR-W 주간업무일지 패턴**
 - `build_weekly_report(week_start, *, week_end=None, last_week_start=None)` — 3개 날짜 input. default: `week_end = week_start + 4`, `last_week_start = -7`, `last_week_end = week_start - 1day` (자동, 토일 cover).
@@ -125,9 +128,11 @@
 - Render: backend Docker 빌드 5-8분 (WeasyPrint + cairo + fonts-nanum). 짧은 시간 6+ commits push → pipeline limit (dashboard에서 큐 cancel 또는 plan 업그레이드).
 - 한글 파일명 표기 주의 ("프**레**젠테이션" vs "프**리**젠테이션").
 - PDF 결과 검증 protocol: build_quote_pdf() → /tmp PDF → pdftoppm PNG → Read 시각 확인 → 사용자 OK → push.
+- DB connection cleanup (PR-DA): backend connect 시 `SET idle_in_transaction_session_timeout='300s'` 자동 적용 (`db.py` event listener). Render worker OOM/restart로 SQLAlchemy 정리 누락돼도 5분 안에 PostgreSQL이 자동 rollback + close. cluster-wide ALTER DATABASE 대신 connection-level. ALTER TABLE lock wait 사고 회피.
 
 **주요 디렉터리**
-- `backend/app/routers/sales.py` — 영업/견적 CRUD, PDF 라우터
+- `backend/app/routers/sales/` — 영업/견적 패키지 (PR-CC~CF). `__init__.py` (CRUD) + `quote_meta.py` (read-only meta+preview) + `link.py` (project↔sale) + `pdf.py` (PDF endpoints).
+- `backend/app/routers/seal_requests/` — 날인 패키지 (PR-CG~CW, 8 sub-module). `__init__.py` 1826→699 (-62%). `meta.py` / `attachments.py` / `approval.py` / `update.py` / `delete.py` / `list_endpoint.py` / `create.py`. list endpoint는 함수만 export + `__init__.py`에서 `add_api_route("", _list.list_seal_requests, ...)` (sub-router prefix="" FastAPI 충돌 회피).
 - `backend/app/services/quote_*.py` — 산출 strategy / PDF / forms helper
 - `backend/app/templates/quote_template.html` — PDF Jinja2 템플릿
 - `backend/app/services/weekly_report.py` — PR-W 집계 (10+ aggregate 함수)
