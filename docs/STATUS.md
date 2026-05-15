@@ -135,9 +135,14 @@ DASH-001~004 / PROJ-001~005 / MY-001~005 / WEEK-001~005 / COMMON-001~003 항목 
 ### 작은 잔여 (낮은 우선순위)
 | 항목 | 비고 |
 |---|---|
-| **#116** /weekly-report 페이지 PDF와 양식 통일 | 데이터·구조 동일. 시각 디테일(컬럼폭·색상)만 잔여 |
 | **PR-BI 재시도 (Phase 4-G 2단계)** | INCIDENT.md PR-BP/BQ 체크리스트 4항목 충족 후. 안전망(PR-BN/BO/BL-5/CX/CY) 모두 적용됨 |
 | **mirror endpoint slow** | PR-CR 계측 수집 후 진단. PR-CL/CQ로 dashboard 6.4초 병목은 해소 |
+
+### 사용자 결정으로 close
+| 항목 | 비고 |
+|---|---|
+| **#113** /sales — onClose ?sale= query 정리 | 이미 처리됨 (commit 9dea4a9 + e0fade2). task list만 stale였음 |
+| **#116** /weekly-report 페이지 PDF와 양식 통일 | 데이터/섹션 순서/컬럼 라벨 모두 1:1 동일 (ReportPreview 헤더 주석에도 명시). 시각 차이(폰트 사이즈/cell-shrink/badge-bid/empty placeholder)는 PDF 인쇄용 vs 모니터 화면용으로 의도된 차이 |
 
 ## 핵심 helper / 모듈 위치
 
