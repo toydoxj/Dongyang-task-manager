@@ -94,6 +94,15 @@ class SealAttachment(BaseModel):
     content_type: str = ""
 
 
+# PR-BX (외부 리뷰 12.x #1 본격): 부분 실패 정형화. 기존 비고 텍스트 append와 병행.
+# frontend는 응답에 partial_errors가 있으면 toast로 사용자 안내.
+class PartialError(BaseModel):
+    code: str          # 예: "drive_upload" / "drive_folder" / "notion_update"
+    target: str = ""   # 실패 대상 식별자 (파일명, page_id 등)
+    message: str = ""
+    retryable: bool = True
+
+
 class SealRequestItem(BaseModel):
     id: str
     title: str = ""
@@ -126,6 +135,9 @@ class SealRequestItem(BaseModel):
     admin_task_id: str = ""      # 2차검토TASK page_id (admin)
     created_time: str | None = None
     last_edited_time: str | None = None
+    # PR-BX: 응답 시점에 발생한 부분 실패(Drive 업로드/폴더 생성 등). 기존 비고
+    # 텍스트 append와 별도로 정형 응답. list endpoint 응답에는 항상 빈 list.
+    partial_errors: list[PartialError] = []
 
 
 class SealListResponse(BaseModel):
@@ -955,7 +967,13 @@ async def create_seal_request(
     # 응답 — 자동 TASK는 background라 페이지에 아직 미반영. final fetch는 첨부메타/
     # 폴더URL 변경분을 정확한 read 형식으로 가져오기 위해 한 번만 호출.
     final = await notion.get_page(page_id)
-    return _from_notion_page(final)
+    item = _from_notion_page(final)
+    # PR-BX: failed[](텍스트)를 partial_errors(정형)로도 응답. 비고에는 이미 append됨.
+    item.partial_errors = [
+        PartialError(code="drive_upload", target=msg.split(":", 1)[0], message=msg)
+        for msg in failed
+    ]
+    return item
 
 
 async def _set_status_with_handler(
@@ -1515,7 +1533,13 @@ async def add_attachments(
     if failed:
         logger.warning("첨부 추가 일부 실패 (page=%s): %s", page_id, failed)
     final = await notion.get_page(page_id)
-    return _from_notion_page(final)
+    item = _from_notion_page(final)
+    # PR-BX: 첨부 추가 partial failure를 정형 응답에 포함.
+    item.partial_errors = [
+        PartialError(code="drive_upload", target=msg.split(":", 1)[0], message=msg)
+        for msg in failed
+    ]
+    return item
 
 
 @router.post("/{page_id}/redo", response_model=SealRequestItem)

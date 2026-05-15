@@ -10,6 +10,17 @@ export interface SealAttachment {
   legacy_url?: string;
 }
 
+/** PR-BX (외부 리뷰 12.x #1): 부분 실패 정형 응답.
+ * create / attachments endpoint 응답에 포함될 수 있음. 호출자가 toast로 노출.
+ * 비어있으면 정상 또는 silent (logger만).
+ */
+export interface PartialError {
+  code: string;
+  target: string;
+  message: string;
+  retryable: boolean;
+}
+
 export interface SealRequestItem {
   id: string;
   title: string;
@@ -39,6 +50,8 @@ export interface SealRequestItem {
   linked_task_id: string;
   created_time: string | null;
   last_edited_time: string | null;
+  /** PR-BX: create / attachments POST 응답에서만 채워짐. list endpoint는 항상 빈 배열. */
+  partial_errors?: PartialError[];
 }
 
 export interface SealUpdateBody {
