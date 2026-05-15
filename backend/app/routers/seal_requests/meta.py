@@ -8,11 +8,14 @@ PR-CG (Phase 4-J 5단계): seal_requests/__init__.py 분할 시작.
 from __future__ import annotations
 
 import logging
-import time
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
+from sqlalchemy import func, select
+from sqlalchemy.orm import Session
 
+from app.db import get_db
+from app.models import mirror as M
 from app.models.auth import User
 from app.security import get_current_user
 from app.services import seal_logic as SL
@@ -21,11 +24,6 @@ from app.settings import get_settings
 
 logger = logging.getLogger("api.seal_requests.meta")
 router = APIRouter()
-
-# PR-CK: pending-count TTL cache. role별로 key 분리. multi-worker별 in-memory.
-# Sidebar의 60초 polling이 5분 TTL 동안 cache hit → 노션 호출 5분에 1회.
-_PENDING_CACHE_TTL_S = 300.0  # 5분
-_pending_count_cache: dict[str, tuple[float, int]] = {}
 
 
 # ── helper (중복 정의 — __init__.py와 동일. 다른 endpoint도 사용해 추출 못 함) ──
@@ -80,17 +78,18 @@ async def get_next_doc_number(
 
 
 @router.get("/pending-count", response_model=PendingCount)
-async def get_pending_count(
+def get_pending_count(
     user: User = Depends(get_current_user),
-    notion: NotionService = Depends(get_notion),
+    db: Session = Depends(get_db),
 ) -> PendingCount:
     """본인이 처리해야 할 건수 (사이드바 알림 배지용).
 
     - team_lead: '1차검토 중'(또는 호환 '요청')
     - admin: '2차검토 중'(또는 호환 '팀장승인')
 
-    PR-CK: 5분 TTL cache — Sidebar 60초 polling + 대시보드 KPI fetch 누적 부하
-    완화. 노션 query_all은 페이지당 0.4s rate limit이라 cache miss 시 2~6초.
+    PR-CL: mirror_seal_requests DB count로 전환 (이전엔 노션 query_all → 2~6초).
+    sync cron 5분 lag 허용 — 알림 배지는 즉시성 < 빠른 응답이 우선.
+    write 흐름에서 즉시 sync하면 lag 0 (별도 PR).
     """
     if user.role == "team_lead":
         targets = ["1차검토 중", "요청"]
@@ -99,21 +98,10 @@ async def get_pending_count(
     else:
         return PendingCount(count=0)
 
-    # role 단위 cache (admin/team_lead만 의미). targets 키로 단순화.
-    cache_key = "|".join(targets)
-    now = time.monotonic()
-    hit = _pending_count_cache.get(cache_key)
-    if hit and (now - hit[0]) < _PENDING_CACHE_TTL_S:
-        return PendingCount(count=hit[1])
-
-    pages = await notion.query_all(
-        _db_id(),
-        filter={
-            "or": [
-                {"property": "상태", "select": {"equals": t}} for t in targets
-            ]
-        },
-    )
-    count = len(pages)
-    _pending_count_cache[cache_key] = (now, count)
-    return PendingCount(count=count)
+    count = db.execute(
+        select(func.count(M.MirrorSealRequest.page_id)).where(
+            M.MirrorSealRequest.archived.is_(False),
+            M.MirrorSealRequest.status.in_(targets),
+        )
+    ).scalar_one()
+    return PendingCount(count=int(count))

@@ -201,6 +201,33 @@ class MirrorSales(Base):
     archived: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
 
 
+class MirrorSealRequest(Base):
+    """날인요청 미러 (PR-CL).
+
+    당장은 status 카운트(pending-count)만 빠르게 처리하기 위한 최소 schema.
+    상세 endpoint(create/approve/preview 등)는 여전히 노션 직접 호출 — 추후 확장.
+
+    sync.py가 5분마다 incremental upsert. write 흐름은 별도 PR에서 즉시 upsert.
+    """
+
+    __tablename__ = "mirror_seal_requests"
+
+    page_id: Mapped[str] = mapped_column(String, primary_key=True)
+    title: Mapped[str] = mapped_column(String, default="")
+    seal_type: Mapped[str] = mapped_column(String, default="", index=True)
+    status: Mapped[str] = mapped_column(String, default="", index=True)  # 정규화된 status
+    requester: Mapped[str] = mapped_column(String, default="", index=True)
+    project_ids: Mapped[list[str]] = mapped_column(ARRAY(String), default=list)
+    created_time: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    last_edited_time: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, index=True
+    )
+    synced_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    archived: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+
+
 class MirrorBlock(Base):
     """페이지 본문 블록 (특히 마스터 프로젝트의 image block)."""
 

@@ -36,6 +36,7 @@ SyncKind = Literal[
     "expense",
     "contract_items",
     "sales",
+    "seal_requests",
 ]
 ALL_KINDS: tuple[SyncKind, ...] = (
     "projects",
@@ -46,6 +47,7 @@ ALL_KINDS: tuple[SyncKind, ...] = (
     "expense",
     "contract_items",
     "sales",
+    "seal_requests",
 )
 
 # incremental query lookback. since를 sync 시작 시각으로 박아도 노션 인덱싱
@@ -271,6 +273,7 @@ class NotionSyncService:
             "expense": s.notion_db_expense,
             "contract_items": s.notion_db_contract_items,
             "sales": s.notion_db_sales,
+            "seal_requests": s.notion_db_seal_requests,
         }[kind]
 
     def _upsert_one(self, db: Session, kind: SyncKind, page: dict) -> None:
@@ -290,6 +293,8 @@ class NotionSyncService:
             self._upsert_contract_item(db, page)
         elif kind == "sales":
             self._upsert_sale(db, page)
+        elif kind == "seal_requests":
+            self._upsert_seal_request(db, page)
 
     def _archive_one(self, db: Session, kind: SyncKind, page_id: str) -> None:
         table = self._table_for(kind)
@@ -309,6 +314,7 @@ class NotionSyncService:
             "expense": M.MirrorCashflow,
             "contract_items": M.MirrorContractItem,
             "sales": M.MirrorSales,
+            "seal_requests": M.MirrorSealRequest,
         }.get(kind)
 
     def _mark_missing_archived(
@@ -637,6 +643,64 @@ class NotionSyncService:
                     assignees=stmt.excluded.assignees,
                     properties=stmt.excluded.properties,
                     url=stmt.excluded.url,
+                    created_time=stmt.excluded.created_time,
+                    last_edited_time=stmt.excluded.last_edited_time,
+                    synced_at=stmt.excluded.synced_at,
+                    archived=stmt.excluded.archived,
+                ),
+            )
+        )
+
+    def _upsert_seal_request(self, db: Session, page: dict) -> None:
+        """PR-CL: 날인요청 mirror upsert.
+
+        SL.normalize_status로 status 정규화 (호환 enum '요청'/'팀장승인' → 신 enum).
+        pending-count 등 mirror count에 사용.
+        """
+        # lazy import — services.seal_logic이 router 의존성을 가지지 않도록.
+        from app.services import seal_logic as SL
+
+        page_id = page.get("id", "")
+        if not page_id:
+            return
+        props = page.get("properties", {})
+        # title은 "제목" / "Name" / db마다 다름 — files() 같은 simple read 대신
+        # find_title_text helper. notion_props에 없으면 properties 직접 탐색.
+        title_text = ""
+        for prop in props.values():
+            if isinstance(prop, dict) and prop.get("type") == "title":
+                title_text = "".join(
+                    seg.get("plain_text", "")
+                    for seg in (prop.get("title") or [])
+                ).strip()
+                break
+
+        seal_type = SL.normalize_type(P.select_name(props, "날인유형"))
+        status = SL.normalize_status(P.select_name(props, "상태"))
+        requester = P.rich_text(props, "요청자")
+        project_ids = P.relation_ids(props, "프로젝트")
+
+        stmt = pg_insert(M.MirrorSealRequest).values(
+            page_id=page_id,
+            title=title_text,
+            seal_type=seal_type or "",
+            status=status or "",
+            requester=requester or "",
+            project_ids=list(project_ids),
+            created_time=_parse_iso(page.get("created_time")),
+            last_edited_time=_parse_iso(page.get("last_edited_time")),
+            synced_at=_utcnow(),
+            archived=bool(page.get("archived", False)),
+        )
+        db.execute(
+            stmt.on_conflict_do_update(
+                index_elements=["page_id"],
+                set_=dict(
+                    title=stmt.excluded.title,
+                    seal_type=stmt.excluded.seal_type,
+                    status=stmt.excluded.status,
+                    requester=stmt.excluded.requester,
+                    project_ids=stmt.excluded.project_ids,
                     created_time=stmt.excluded.created_time,
                     last_edited_time=stmt.excluded.last_edited_time,
                     synced_at=stmt.excluded.synced_at,
