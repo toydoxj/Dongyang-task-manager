@@ -88,11 +88,11 @@ async function _authFetchInternal(
   if (res.status !== 401) return res;
 
   // 401. 첫 발생이면 silent SSO 한 번 시도해 cookie/token 갱신 후 재시도.
-  // 같은 탭에서 silent 이미 실패했거나 명시 logout 직후면 skip.
+  // 같은 탭에서 silent 5분 안에 실패했거나 명시 logout 직후면 skip.
+  // PR-CX: TTL 기반 — 5분 후 재시도 허용 (기존 영구 차단 → cookie 회복 가능).
   if (!retried && typeof window !== "undefined") {
     const justLoggedOut = window.sessionStorage.getItem("dy_logged_out") === "1";
-    const silentFailed = window.sessionStorage.getItem(SILENT_FAILED_KEY) === "1";
-    if (!justLoggedOut && !silentFailed) {
+    if (!justLoggedOut && !_isSilentFailedRecently()) {
       const recoveredUser = await trySilentSSO(window.location.pathname || "/");
       if (recoveredUser) {
         return _authFetchInternal(path, init, true);
@@ -143,6 +143,30 @@ export function worksLoginUrl(next: string = "/"): string {
  */
 const SILENT_FAILED_KEY = "dy_silent_failed";
 const SILENT_TIMEOUT_MS = 3000;
+// PR-CX (INCIDENT #1 체크리스트 #3 보강): silent_failed flag를 timestamp로 저장해
+// 5분 후 자동 재시도 가능. 기존엔 같은 탭에서 한 번 실패하면 영구 차단되어
+// cookie 만료 후 사용자가 회복 불가 (새로고침 안 하면 loop).
+const SILENT_FAIL_TTL_MS = 5 * 60 * 1000;
+
+
+function _markSilentFailed(): void {
+  if (typeof window === "undefined") return;
+  window.sessionStorage.setItem(SILENT_FAILED_KEY, String(Date.now()));
+}
+
+
+function _isSilentFailedRecently(): boolean {
+  if (typeof window === "undefined") return false;
+  const raw = window.sessionStorage.getItem(SILENT_FAILED_KEY);
+  if (!raw) return false;
+  // legacy: "1" 그대로면 fresh fail로 간주해 5분 TTL 적용
+  const at = Number(raw);
+  if (!Number.isFinite(at) || at === 1) {
+    _markSilentFailed();
+    return true;
+  }
+  return Date.now() - at < SILENT_FAIL_TTL_MS;
+}
 
 export function trySilentSSO(next: string = "/"): Promise<UserInfo | null> {
   return new Promise((resolve) => {
@@ -177,7 +201,7 @@ export function trySilentSSO(next: string = "/"): Promise<UserInfo | null> {
         resolve(data.user);
       } else if (data.type === "sso_silent_failed") {
         settled = true;
-        window.sessionStorage.setItem(SILENT_FAILED_KEY, "1");
+        _markSilentFailed();
         cleanup();
         resolve(null);
       }
@@ -188,7 +212,7 @@ export function trySilentSSO(next: string = "/"): Promise<UserInfo | null> {
       if (!settled) {
         settled = true;
         // X-Frame-Options 차단·NAVER prompt=none 미지원 등 → 같은 탭에서 재시도 안 함
-        window.sessionStorage.setItem(SILENT_FAILED_KEY, "1");
+        _markSilentFailed();
         cleanup();
         resolve(null);
       }
