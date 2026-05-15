@@ -926,111 +926,13 @@ def _failed_to_partial(msg: str) -> PartialError:
 
 # POST /:id/attachments — PR-CT에서 routers/seal_requests/attachments.py로 이동
 
-@router.delete("/{page_id}")
-async def delete_seal_request(
-    page_id: str,
-    user: User = Depends(get_current_user),
-    notion: NotionService = Depends(get_notion),
-    db: Session = Depends(get_db),
-) -> dict[str, str]:
-    """취소 — 작성자 본인 또는 admin.
-
-    구조검토서이며 문서번호가 발급되어 있으면:
-        - 후속 번호가 이미 있음(중간 번호)  → archive 안 함, 제목 [날인취소] prefix + 상태 '반려'
-        - 후속 번호 없음(마지막 번호)        → archive (다음 발급에서 그 번호 회수)
-    그 외 유형: archive.
-    """
-    try:
-        page = await notion.get_page(page_id)
-    except NotFoundError as exc:
-        raise HTTPException(status_code=404, detail=exc.message) from exc
-    if not _can_access(user, page, db):
-        raise HTTPException(status_code=403, detail="해당 요청 접근 권한이 없습니다")
-    props = page.get("properties", {})
-    requester = P.rich_text(props, "요청자")
-    is_owner = (user.name or user.username) == requester
-    if not (is_owner or user.role == "admin"):
-        raise HTTPException(
-            status_code=403, detail="본인 글만 삭제 가능 (관리자는 모두 가능)"
-        )
-
-    seal_type = SL.normalize_type(P.select_name(props, "날인유형"))
-    doc_no = P.rich_text(props, "문서번호").strip()
-    keep_with_marker = False
-    if seal_type == "구조검토서" and doc_no:
-        try:
-            is_last = await SL.is_last_review_doc_number(
-                notion, _db_id(), doc_no=doc_no
-            )
-        except Exception as e:  # noqa: BLE001
-            logger.warning("마지막 번호 검사 실패: %s — 보수적으로 흔적 남김", e)
-            is_last = False
-        keep_with_marker = not is_last
-
-    item = _from_notion_page(page)
-
-    if keep_with_marker:
-        # 흔적 남김: 제목 prefix + 상태 '취소' (재요청 차단) + 첨부메타 비움
-        cur_title = ""
-        for v in props.values():
-            if isinstance(v, dict) and v.get("type") == "title":
-                arr = v.get("title") or []
-                cur_title = arr[0].get("plain_text", "") if arr else ""
-                break
-        new_title = (
-            cur_title if cur_title.startswith("[날인취소] ") else f"[날인취소] {cur_title}"
-        )
-        title_prop = await _get_title_prop_name(notion)
-        await notion.update_page(
-            page_id,
-            {
-                title_prop: {"title": [{"text": {"content": new_title}}]},
-                "상태": {"select": {"name": "취소"}},
-                "반려사유": {
-                    "rich_text": [
-                        {"text": {"content": f"[취소 by {user.name or user.username}]"}}
-                    ]
-                },
-                "첨부메타": {"rich_text": [{"text": {"content": "[]"}}]},
-            },
-        )
-    else:
-        # legacy S3 cleanup (있으면)
-        for a in _parse_attachments_meta(props):
-            if a.storage_key:
-                try:
-                    storage.delete_object(key=a.storage_key)
-                except storage.StorageError as e:
-                    logger.warning("S3 cleanup 실패 (%s): %s", a.storage_key, e)
-        await asyncio.to_thread(
-            notion._client.pages.update, page_id=page_id, archived=True
-        )
-
-    # 연결 task 완료 처리 (요청자 + 검토자 모두) — 취소도 라이프사이클 종료로 간주.
-    # 진행 단계='완료' + 기간.end=오늘. 노션에 흔적이 남아 사후 조회 가능.
-    for tid in (item.linked_task_id, item.lead_task_id, item.admin_task_id):
-        if tid:
-            await _sync_linked_task(notion, tid, target="완료")
-
-    # PR-CQ: mirror 즉시 sync (취소 마킹은 upsert, archive는 archive_page).
-    if keep_with_marker:
-        try:
-            updated = await notion.get_page(page_id)
-            get_sync().upsert_page("seal_requests", updated)
-        except Exception as e:  # noqa: BLE001
-            logger.warning("delete mirror upsert 실패 (page=%s): %s", page_id, e)
-    else:
-        get_sync().archive_page("seal_requests", page_id)
-
-    notion.clear_cache()
-    return {
-        "status": "marked-cancelled" if keep_with_marker else "archived",
-    }
+# DELETE /:id — PR-CU에서 routers/seal_requests/delete.py로 이동
 
 
-# ── PR-CG/CH/CI/CJ sub-router include (파일 끝 — 모든 helper 정의 후) ──
+# ── PR-CG/CH/CI/CJ/CU sub-router include (파일 끝 — 모든 helper 정의 후) ──
 from app.routers.seal_requests import approval as _approval  # noqa: E402
 from app.routers.seal_requests import attachments as _attachments  # noqa: E402
+from app.routers.seal_requests import delete as _delete  # noqa: E402
 from app.routers.seal_requests import meta as _meta  # noqa: E402
 from app.routers.seal_requests import update as _update  # noqa: E402
 
@@ -1038,3 +940,4 @@ router.include_router(_meta.router)
 router.include_router(_attachments.router)
 router.include_router(_approval.router)
 router.include_router(_update.router)
+router.include_router(_delete.router)
