@@ -1,10 +1,13 @@
 """SQLAlchemy 데이터베이스 초기화 — Postgres(prod) / SQLite(dev fallback)."""
 from __future__ import annotations
 
+import logging
 import os
+import time
 from collections.abc import Generator
+from typing import Any
 
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
 from app.settings import get_settings
@@ -61,6 +64,56 @@ engine = create_engine(
     pool_reset_on_return="rollback",
 )
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
+
+# PR-CR: SQL 실행 시간 + pool checkout wait 분리 계측 (운영 slow 진단용).
+# /api/cashflow, /api/projects 등 mirror DB endpoint 2~3초 원인 분석:
+# (a) SQL 자체 시간이 큰지 (b) connection checkout wait가 큰지 분리.
+# slow log threshold 0.5s — codex 권장.
+_SQL_SLOW_S = 0.5
+_CHECKOUT_SLOW_S = 0.3
+_perf_logger = logging.getLogger("db.perf")
+
+
+@event.listens_for(engine, "before_cursor_execute")
+def _sql_before(
+    conn: Any, _cursor: Any, _statement: str, _params: Any, context: Any, _exec: Any
+) -> None:
+    context._dy_sql_start = time.monotonic()
+
+
+@event.listens_for(engine, "after_cursor_execute")
+def _sql_after(
+    _conn: Any, _cursor: Any, statement: str, _params: Any, context: Any, _exec: Any
+) -> None:
+    start = getattr(context, "_dy_sql_start", None)
+    if start is None:
+        return
+    elapsed = time.monotonic() - start
+    if elapsed >= _SQL_SLOW_S:
+        # 첫 100자만 — params 노출 회피 (PII)
+        snippet = statement.strip().split("\n", 1)[0][:100]
+        _perf_logger.warning(
+            "slow SQL %.0fms — %s", elapsed * 1000, snippet
+        )
+
+
+@event.listens_for(engine, "checkout")
+def _pool_checkout(
+    _conn: Any, conn_rec: Any, _conn_proxy: Any
+) -> None:
+    conn_rec.info["_dy_checkout_start"] = time.monotonic()
+
+
+@event.listens_for(engine, "checkin")
+def _pool_checkin(_conn: Any, conn_rec: Any) -> None:
+    start = conn_rec.info.pop("_dy_checkout_start", None)
+    if start is None:
+        return
+    held = time.monotonic() - start
+    # checkout~checkin이 길면 connection을 오래 점유. pool wait 유발.
+    if held >= _CHECKOUT_SLOW_S:
+        _perf_logger.warning("long DB connection held %.0fms", held * 1000)
 
 
 class Base(DeclarativeBase):
