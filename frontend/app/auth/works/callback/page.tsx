@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 
-import { consumeCallbackFragment } from "@/lib/auth";
+import { consumeCallbackFragment, verifyAndHydrateFromMe } from "@/lib/auth";
 
 const SSO_SILENT_SUCCESS = "sso_silent_success";
 const SSO_SILENT_FAILED = "sso_silent_failed";
@@ -99,7 +99,12 @@ export default function WorksCallbackPage() {
         // 무시
       }
     } else if (resolution.redirect) {
-      window.location.replace(resolution.redirect);
+      // PR-CY (INCIDENT #1 #4): redirect 직전 cookie 기반 /me로 user 검증·갱신.
+      // 401/network 시 graceful fallback (fragment user 그대로 사용). authFetch 미사용 →
+      // INCIDENT #4(401 → silent SSO → 무한 재귀) 회피.
+      void verifyAndHydrateFromMe().finally(() => {
+        window.location.replace(resolution.redirect!);
+      });
     }
   }, [resolution]);
 
