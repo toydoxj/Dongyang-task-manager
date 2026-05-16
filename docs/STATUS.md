@@ -1,6 +1,6 @@
 # 작업 Status
 
-> 마지막 업데이트: 2026-05-16 (Phase 4-F **완료** — dashboard 3 endpoint role-scope 차등)
+> 마지막 업데이트: 2026-05-16 (Phase 4-E useRoleGuard 잔여 마무리 — admin only 페이지 통일)
 
 ## 완료된 PR
 
@@ -116,6 +116,7 @@
 | **PR-DP Phase 4-F 잔여 — dashboard /summary role-scope 차등** | `_resolve_user_scope(db, user) -> (scope, team, employee_name)` helper 신설. admin/manager → all / team_lead → team (Employee.linked_user_id 경유, 미연결 시 self fallback + `scope_degraded` 로그) / member → self (canonical Employee.name 사용). /summary endpoint에 적용: 진행중·정체·마감임박 카운트를 scope 필터, top_team도 scope에 맞게, 재무(week_income/expense)는 scope='all'에서만 채움. cache key에 (scope, team, employee_name) 추가, `_CACHE_MAX` 16→64 (Codex 권고). /actions·/insights는 차기 PR. pytest 63 passed + scope helper 6 시나리오 smoke | d773861 |
 | **PR-DQ Phase 4-F — dashboard /actions role-scope 차등** | 5 항목 모두 scope 분기: stalled/due_soon/stuck은 teams/assignees 메모리 필터, overloaded_team은 'team'→자기 팀 진행건수·'self'→0(개인 단위 의미 X), overdue_seals는 'all'만 notion query_all 호출(운영 6.4초 병목 회피 — 다른 role count=0). 조건부 query 분기로 scope='all' 단일 query 성능 보존. pytest 63 passed | d51143c |
 | **PR-DR Phase 4-F 마무리 — dashboard /insights role-scope 차등 (4-F 완료)** | RecentUpdates(7일 이내 변경 Top 10) + Warnings(미종결 4 flag Top 12) 두 패널에 동일 scope 필터. cache key에 scope 추가. **Phase 4-F 완료** — dashboard 3 endpoint(/summary, /actions, /insights) 모두 admin·manager → 전체 / team_lead → 자기 팀 teams[] / member → 자기 Employee.name이 assignees[]. 재무 + overdue_seals notion 호출은 admin·manager만 노출. pytest 63 passed | 512ce40 |
+| **PR-DS Phase 4-E useRoleGuard 잔여 적용** | admin only 2 페이지(`admin/notices` / `admin/employees`)의 useAuth + 인라인 가드 메시지를 useRoleGuard(["admin"]) + UnauthorizedRedirect 표준 패턴으로 일치화. 나머지 useAuth 미적용 페이지(weekly-report/seal-requests/me/suggestions/schedule)는 전 직원 진입 + isAdmin UI 분기 패턴이라 useRoleGuard 부적합 → STATUS 결정 그대로 유지. tsc + lint 통과 | 36064f1 |
 
 ## 미완료 / 보류
 
@@ -135,7 +136,7 @@ DASH-001~004 / PROJ-001~005 / MY-001~005 / WEEK-001~005 / COMMON-001~003 항목 
 | **4-G** JWT localStorage → httpOnly cookie | 1단계 완료(PR-BH) / 2단계(PR-BI/BP/BQ 3회 시도 모두 운영 회귀로 revert). 안전망(PR-BN saveAuth backward-compat / PR-BO 401 silent retry / PR-BL-5 e2e)은 살아있음. 다음 재시도 전 INCIDENT.md PR-BP/BQ entry 체크리스트 4항목(hydrate raw fetch / callback에서 호출 X / silent retry 인증 endpoint 제외 / PR-BP 후 PR-BQ) 충족 필요 | XSS 방어 강화 |
 | **4-F** 대시보드/주간보고 집계 API | ✅ 완료 (PR-BJ-1~5 + PR-BK 1차 backend 집계 + TTL cache, PR-DP/DQ/DR 3 endpoint 모두 role-scope 차등) | dashboard N+1 → 1 fetch, 4 role 권한 차등 |
 | **4-I** 테스트 framework | Vitest(PR-BL-1/2, 18 단위 테스트) + Playwright(PR-BL-3 smoke + PR-BL-5 4 role 시나리오, 누적 5 e2e) + GitHub Actions CI(PR-BL-4) 완료 / 잔여(backend full mock e2e — 미정밀) | PR-BI 같은 회귀 자동 검출 |
-| **4-E** 권한 layout 통합 | `useRoleGuard` hook 도입(PR-BS/BT/BU, 누적 10 page) / 잔여(weekly-report/seal-requests/notices — 전 직원 진입 + isAdmin UI 분기로 useRoleGuard 부적합, useAuth 유지 결정) | 권한 가드 코드 일관성 |
+| **4-E** 권한 layout 통합 | ✅ 완료 (PR-BS/BT/BU + PR-DS, 누적 12 page) | useRoleGuard 적용 가능한 admin/role-list 가드 페이지 모두 완료. 나머지(weekly-report/seal-requests/me/suggestions/schedule)는 전 직원 진입 + UI 분기 패턴이라 useAuth 유지가 적합 |
 | **4-H** 문서 자동 동기화 체계 | 미진행 | USER_MANUAL/STATUS/PERMISSIONS auto-sync |
 | **4-I** Frontend 테스트 framework | 미진행 | Vitest + Playwright |
 | **4-J** Backend 라우터/서비스 분할 | ✅ 완료 (PR-CC ~ PR-DO, 24단계 + cleanup) | sales 4 + seal_requests 8 + projects 2(1040→576, -45%) + quote_calculator 4 strategy(1585→403, -75%) + weekly_report 7 sub-module(1261→333, -74%). 총 25 sub-module. PR-DO dead code cleanup 적용 |
