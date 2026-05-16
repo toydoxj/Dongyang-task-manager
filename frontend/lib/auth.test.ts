@@ -1,6 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { authFetch, clearAuth, getUser, isLoggedIn, saveAuth } from "./auth";
+import {
+  authFetch,
+  clearAuth,
+  getUser,
+  isLoggedIn,
+  saveAuth,
+  verifyAndHydrateFromMe,
+} from "./auth";
 import type { UserInfo } from "./types";
 
 const SAMPLE_USER: UserInfo = {
@@ -99,5 +106,111 @@ describe("authFetch 401 handling", () => {
     expect(fetchSpy).toHaveBeenCalledTimes(1);
     expect(getUser()).toBeNull();
     fetchSpy.mockRestore();
+  });
+});
+
+/**
+ * PR-CX (INCIDENT #1 체크리스트 #3) — silent_failed flag TTL 회복.
+ *
+ * 기존: 같은 탭에서 silent SSO 한 번 실패 시 영구 차단 → cookie 만료 후
+ * 사용자 회복 불가 (새로고침 안 하면 loop).
+ * 수정: timestamp 기반 5분 TTL — 만료 후 자동 재시도 허용.
+ * legacy "1" 값은 fresh fail로 간주해 timestamp marker로 자동 갱신.
+ */
+describe("silent SSO flag TTL 회복 (PR-CX)", () => {
+  it("legacy '1' 값은 authFetch 401 시 fresh timestamp로 자동 갱신됨", async () => {
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(new Response("{}", { status: 401 }));
+    saveAuth("t", SAMPLE_USER);
+    sessionStorage.setItem("dy_silent_failed", "1");
+
+    await authFetch("/api/test");
+
+    // 401 처리 흐름에서 _isSilentFailedRecently가 호출되어 "1" → timestamp marker로 갱신
+    const raw = sessionStorage.getItem("dy_silent_failed");
+    expect(raw).not.toBeNull();
+    expect(raw).not.toBe("1");
+    const ts = Number(raw);
+    expect(Number.isFinite(ts)).toBe(true);
+    // 갱신된 timestamp는 현재 시점에서 1초 이내 (test 실행 즉시)
+    expect(Date.now() - ts).toBeLessThan(1000);
+    fetchSpy.mockRestore();
+  });
+
+  it("5분 전 timestamp는 stale로 간주되어 silent 재시도 허용 (회복 동작)", async () => {
+    // 첫 401: 5분+1초 전 timestamp → _isSilentFailedRecently=false → silent SSO 시도
+    // 단 silent SSO는 iframe — jsdom에서 timeout 후 _markSilentFailed로 fresh marker
+    // 그 다음 _markSilentFailed 호출됨 (settled=false → timer 만료 분기). 첫 401에서
+    // silent SSO 재시도 흐름이 들어왔는지 fetch call count로 검증.
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(new Response("{}", { status: 401 }));
+    saveAuth("t", SAMPLE_USER);
+    const stale = String(Date.now() - 5 * 60 * 1000 - 1000);
+    sessionStorage.setItem("dy_silent_failed", stale);
+
+    await authFetch("/api/test");
+
+    // stale 상태에선 silent SSO를 trigger (iframe timeout 후 markSilentFailed) →
+    // sessionStorage 값이 새 timestamp marker로 교체됨
+    const raw = sessionStorage.getItem("dy_silent_failed");
+    expect(raw).not.toBe(stale);
+    expect(raw).not.toBeNull();
+    fetchSpy.mockRestore();
+  }, 10_000);
+});
+
+/**
+ * PR-CY (INCIDENT #1 #4) — verifyAndHydrateFromMe.
+ *
+ * callback page에서 normal SSO 성공 후 redirect 직전 1회 호출.
+ * - 200: 응답 user로 saveAuth 갱신 (fragment schema 변경 / chunk stale 자동 정정).
+ * - 401: graceful fallback — null 반환, console.warn, saveAuth 호출 X.
+ * - network: 동일 fallback.
+ *
+ * authFetch 사용 X — 401 시 silent SSO trigger → callback 무한 재귀(INCIDENT #4) 회피.
+ */
+describe("verifyAndHydrateFromMe (PR-CY)", () => {
+  it("200 → 응답 user로 saveAuth 갱신 + user 반환", async () => {
+    const responseUser: UserInfo = { ...SAMPLE_USER, name: "갱신된이름" };
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify(responseUser), { status: 200 }),
+      );
+
+    const result = await verifyAndHydrateFromMe();
+    expect(result).toEqual(responseUser);
+    expect(getUser()).toEqual(responseUser); // saveAuth로 저장됨
+    fetchSpy.mockRestore();
+  });
+
+  it("401 → null 반환 + saveAuth 호출 X + console.warn", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(new Response("Unauthorized", { status: 401 }));
+
+    const result = await verifyAndHydrateFromMe();
+    expect(result).toBeNull();
+    expect(getUser()).toBeNull(); // saveAuth 호출 X
+    expect(warnSpy).toHaveBeenCalled();
+    fetchSpy.mockRestore();
+    warnSpy.mockRestore();
+  });
+
+  it("network reject → null + console.warn (fragment fallback 흐름)", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockRejectedValueOnce(new TypeError("Network error"));
+
+    const result = await verifyAndHydrateFromMe();
+    expect(result).toBeNull();
+    expect(getUser()).toBeNull();
+    expect(warnSpy).toHaveBeenCalled();
+    fetchSpy.mockRestore();
+    warnSpy.mockRestore();
   });
 });
