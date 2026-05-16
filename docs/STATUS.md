@@ -1,6 +1,6 @@
 # 작업 Status
 
-> 마지막 업데이트: 2026-05-16 (Phase 4-C 3차 — q search push-down 3 endpoint)
+> 마지막 업데이트: 2026-05-16 (Phase 4-C 인프라 완료 표기 + 4-H 1단계 docs_audit 신설)
 
 ## 완료된 PR
 
@@ -128,6 +128,7 @@
 | **PR-EB Phase 4-C 3차 — list_sales 페이지네이션 (backend 1차 완료)** | PR-DZ/EA 동일 패턴: backend `list_sales` offset/limit + total Optional, ORDER BY `created_time DESC NULLS LAST` + `page_id` tie-breaker. **4-C backend 1차 완료** — list_projects/tasks/sales 3 endpoint 일관 페이지네이션. pytest 63 passed | ad0abb3 |
 | **PR-EC Phase 4-C frontend 노출 — domain + lib/api option** | 3 `ListResponse` 타입(Project/Task/Sale)에 `total?: number` 추가 + 3 lib/api 함수(listProjects/Tasks/Sales) filters에 `offset?: number` / `limit?: number` 옵션 추가. 기존 호출처 0 영향(option 미지정 시 동일 동작). pagination UI(URL ?page=N) 적용은 차기 PR. tsc + lint 통과 | c12d4e7 |
 | **PR-ED Phase 4-C 3차 — q search push-down** | backend list_projects/tasks/sales에 `q` 파라미터(ILIKE 부분 일치, 대소문자 무시) 추가: projects/sales는 `code OR name`, tasks는 `title OR code`. frontend listX filters에도 `q?: string` 추가. 기존 호출처 0 영향. /projects 페이지의 client-side 검색을 backend로 push down 가능 + pagination과 조합으로 검색 결과 page 단위 fetch 가능. pytest 63 + tsc + lint 통과 | d20cea0 |
+| **PR-EE 4-C 인프라 종료 표기 + 4-H 1단계 docs_audit** | 4-C는 backend pagination/search 인프라 완료 + frontend lib/api 옵션 노출까지 충분 — 페이지 UI 적용은 row 수 임계점(1000+) 넘을 시점으로 보류(현재 client 즉시 검색이 UX 우위, 의도된 결정). `scripts/docs_audit.py` 신설(4-H 1단계): STATUS.md commit hash 99개를 `git rev-parse`로 일관성 검증 — 모두 git log에 존재 확인. stdlib만 사용(venv 불필요). 확장 후보: INCIDENT/USER_MANUAL/PERMISSIONS cross-check, CI 통합 | (next) |
 
 ## 미완료 / 보류
 
@@ -140,7 +141,7 @@ DASH-001~004 / PROJ-001~005 / MY-001~005 / WEEK-001~005 / COMMON-001~003 항목 
 |---|---|---|
 | **4-A** lib/api.ts 도메인 분리 | ✅ 완료 (PR-S/S2/AR/BD/BE/BG, 100%) | 15/15 도메인 lib/api/*.ts. lib/api.ts는 49줄 re-export hub만 남음 |
 | **4-B** 대형 컴포넌트 외과적 분리 | ✅ 완료 (PR-AE~BC, 13 cycle) | -2701줄/-26%, 신규 분리 18개. 본격 design refactor는 별도 cycle |
-| **4-C** 리스트 서버 필터링·페이지네이션 | backend pagination + search push-down + frontend option 노출 (PR-DZ/EA/EB/EC/ED) | 잔여: 페이지 UI(URL ?q=...&page=N + pagination navigation) + 명시 limit 도입 시점 결정 |
+| **4-C** 리스트 서버 필터링·페이지네이션 | ✅ 인프라 완료 (PR-DZ/EA/EB/EC/ED, backend + frontend lib option). 페이지 UI 적용은 row 수가 client-side filter 임계점(1000+) 넘을 시점에 활성 — 현재 수백 row 수준에선 client 즉시 검색이 UX 우위라 의도된 보류 |
 | **4-D** 메뉴 그룹 URL 재구성 | 미진행 | `/workspace`, `/operations`, `/admin` 통합 |
 | **4-E** 권한 로직 layout 통합 | 미진행 | 페이지마다 분산된 가드를 layout 레벨로 |
 | **4-F** 대시보드/주간보고 집계 API 별도 | 미진행 | client-side aggregation을 backend로 push |
@@ -148,7 +149,7 @@ DASH-001~004 / PROJ-001~005 / MY-001~005 / WEEK-001~005 / COMMON-001~003 항목 
 | **4-F** 대시보드/주간보고 집계 API | ✅ 완료 (PR-BJ-1~5 + PR-BK 1차 backend 집계 + TTL cache, PR-DP/DQ/DR 3 endpoint 모두 role-scope 차등) | dashboard N+1 → 1 fetch, 4 role 권한 차등 |
 | **4-I** 테스트 framework | Vitest(PR-BL-1/2, 18 단위 테스트) + Playwright(PR-BL-3 smoke + PR-BL-5 4 role 시나리오, 누적 5 e2e) + GitHub Actions CI(PR-BL-4) 완료 / 잔여(backend full mock e2e — 미정밀) | PR-BI 같은 회귀 자동 검출 |
 | **4-E** 권한 layout 통합 | ✅ 완료 (PR-BS/BT/BU + PR-DS, 누적 12 page) | useRoleGuard 적용 가능한 admin/role-list 가드 페이지 모두 완료. 나머지(weekly-report/seal-requests/me/suggestions/schedule)는 전 직원 진입 + UI 분기 패턴이라 useAuth 유지가 적합 |
-| **4-H** 문서 자동 동기화 체계 | 미진행 | USER_MANUAL/STATUS/PERMISSIONS auto-sync |
+| **4-H** 문서 자동 동기화 체계 | 1단계 (PR-EE `scripts/docs_audit.py` — STATUS commit hash ↔ git log 검증, 99/99 통과) | 잔여: INCIDENT/USER_MANUAL/PERMISSIONS cross-check, CI 통합 |
 | **4-I** Frontend 테스트 framework | 미진행 | Vitest + Playwright |
 | **4-J** Backend 라우터/서비스 분할 | ✅ 완료 (PR-CC ~ PR-DO, 24단계 + cleanup) | sales 4 + seal_requests 8 + projects 2(1040→576, -45%) + quote_calculator 4 strategy(1585→403, -75%) + weekly_report 7 sub-module(1261→333, -74%). 총 25 sub-module. PR-DO dead code cleanup 적용 |
 
