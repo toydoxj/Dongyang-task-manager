@@ -8,7 +8,12 @@ services:
     # Dockerfile이 dependency 설치 + alembic upgrade + uvicorn 기동을 모두 처리.
     # WeasyPrint(한글 PDF)용 cairo/pango/fonts-nanum이 image에 포함됨.
     dockerfilePath: ./Dockerfile
-    healthCheckPath: /health
+    # INCIDENT #1 교훈 #1 (PR-DY): /health는 DB 안 거치므로 connection pool 고갈
+    # 사고에서 backend가 healthy로 인식되어 Render auto-restart trigger 안 됐음.
+    # /api/health/db는 SELECT 1 + idle_in_transaction_session_timeout SHOW까지
+    # 거쳐 503 반환 → Render auto-restart trigger. PR-AQ + PR-DA 안전망과 합쳐
+    # connection leak 사고 즉시 복구.
+    healthCheckPath: /api/health/db
     envVars:
       - key: PYTHON_VERSION
         value: 3.12.7

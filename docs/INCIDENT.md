@@ -67,7 +67,7 @@
 - [x] **silent except path에서 db.close() 누락 점검** — PR-DX audit + PR-BV/BW silent except 분류 결과 cross-check. `except` 블록 내부에서 `SessionLocal()` 호출 케이스 0건 — silent except의 db.close 누락 위험 없음.
 
 근본 연결 누수 위험은 PR-AQ(get_db rollback + reset_on_return + /api/health/db) + PR-DA(idle_in_transaction_session_timeout 300s) 2중 안전망으로 cover.
-- [ ] `/api/health/db` 라우트 + Render health check path 교체
+- [x] **`/api/health/db` 라우트 + Render health check path 교체** — PR-DB(/api/health/db endpoint, idle_in_transaction_session_timeout SHOW 함께 노출) + PR-DY(render.yaml healthCheckPath `/health` → `/api/health/db`). DB 끊김 시 503 반환 → Render auto-restart trigger. INCIDENT #1 교훈 #1 충족.
 
 ---
 
