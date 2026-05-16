@@ -1,6 +1,6 @@
 # 작업 Status
 
-> 마지막 업데이트: 2026-05-16 (INCIDENT #1 healthCheckPath 교체 — auto-restart trigger 활성화)
+> 마지막 업데이트: 2026-05-16 (Phase 4-C 1차 — list_projects 페이지네이션)
 
 ## 완료된 PR
 
@@ -123,6 +123,7 @@
 | **PR-DW /help page USER_MANUAL sync — dashboard role-scope** | PR-DU에서 USER_MANUAL.md 3.1에 추가한 role-scope 차등 안내(KPI/액션/Warnings 노출 범위가 역할에 따라 다름)를 in-app `/help` page에도 sync. 운영자가 실제로 시스템에서 보는 콘텐츠와 일치하도록 — V-3 cross-check 컨벤션 유지. tsc + lint 통과 | 740fc60 |
 | **PR-DX INCIDENT #1 추적 4항목 audit (모두 clean)** | 2026-05-12 SQLAlchemy connection leak 사고의 "추적 항목 (별도 cycle 진행)" 4개 모두 audit → 모두 [x]: (1) `_report_cache`는 Pydantic DTO만 보관 ORM X (2) sync.py 11 callsites + 다른 background 5 service 모두 with/try-finally close 보장 (3) PDF service는 Session 의존 0 + 라우터는 Depends(get_db) 자동 close (4) silent except 안 SessionLocal() 호출 0건. 근본 안전망은 PR-AQ + PR-DA로 cover. **INCIDENT #1 클로즈** | cf4eab8 |
 | **PR-DY INCIDENT #1 교훈 #1 — healthCheckPath 교체** | `backend/render.yaml` `healthCheckPath` `/health` → `/api/health/db` 1줄 변경. `/health`는 DB 안 거쳐 connection pool 고갈 시 Render auto-restart trigger 안 됐던 문제(2026-05-12 사고 시 수동 Restart 필요) 해소. `/api/health/db`(PR-DB)는 SELECT 1 + idle_in_transaction_session_timeout SHOW 거쳐 DB 끊김이면 503 반환 → Render auto-restart 자동 트리거. PR-AQ + PR-DA 안전망과 합쳐 sub-5분 사고 복구 가능 | 4bbfb44 |
+| **PR-DZ Phase 4-C 1차 — list_projects 페이지네이션** | backend `list_projects`에 `offset` / `limit` Query + `total` 필드 추가. Codex 권고: limit 미지정 unbounded(backward-compat) / 명시 시 max 500 cap / count(현 페이지)+total(filter 적용 후 전체) 동시 노출 / total Optional(None default — frontend 타입 충돌 회피) / ORDER BY code+page_id tie-breaker. SELECT COUNT(*) subquery는 offset/limit 명시 시에만 호출 → 기존 호출처 성능/응답 영향 0. frontend SWR 갱신은 차기 PR. pytest 63 passed | 502a4b8 |
 
 ## 미완료 / 보류
 
@@ -135,7 +136,7 @@ DASH-001~004 / PROJ-001~005 / MY-001~005 / WEEK-001~005 / COMMON-001~003 항목 
 |---|---|---|
 | **4-A** lib/api.ts 도메인 분리 | ✅ 완료 (PR-S/S2/AR/BD/BE/BG, 100%) | 15/15 도메인 lib/api/*.ts. lib/api.ts는 49줄 re-export hub만 남음 |
 | **4-B** 대형 컴포넌트 외과적 분리 | ✅ 완료 (PR-AE~BC, 13 cycle) | -2701줄/-26%, 신규 분리 18개. 본격 design refactor는 별도 cycle |
-| **4-C** 리스트 서버 필터링·페이지네이션 | 미진행 | backend list_projects/tasks/sales — offset/limit + push-down filter |
+| **4-C** 리스트 서버 필터링·페이지네이션 | 1차 시작 (PR-DZ list_projects 페이지네이션 backward-compat) | 잔여: list_tasks / list_sales pagination + frontend SWR 적용 + 명시 limit 도입 시점 결정 |
 | **4-D** 메뉴 그룹 URL 재구성 | 미진행 | `/workspace`, `/operations`, `/admin` 통합 |
 | **4-E** 권한 로직 layout 통합 | 미진행 | 페이지마다 분산된 가드를 layout 레벨로 |
 | **4-F** 대시보드/주간보고 집계 API 별도 | 미진행 | client-side aggregation을 backend로 push |
