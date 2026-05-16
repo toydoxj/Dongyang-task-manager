@@ -1,6 +1,6 @@
 # 작업 Status
 
-> 마지막 업데이트: 2026-05-16 (Phase 4-E useRoleGuard 잔여 마무리 — admin only 페이지 통일)
+> 마지막 업데이트: 2026-05-16 (INCIDENT #4/#5 회귀 검증 vitest 5 시나리오 보강)
 
 ## 완료된 PR
 
@@ -117,6 +117,7 @@
 | **PR-DQ Phase 4-F — dashboard /actions role-scope 차등** | 5 항목 모두 scope 분기: stalled/due_soon/stuck은 teams/assignees 메모리 필터, overloaded_team은 'team'→자기 팀 진행건수·'self'→0(개인 단위 의미 X), overdue_seals는 'all'만 notion query_all 호출(운영 6.4초 병목 회피 — 다른 role count=0). 조건부 query 분기로 scope='all' 단일 query 성능 보존. pytest 63 passed | d51143c |
 | **PR-DR Phase 4-F 마무리 — dashboard /insights role-scope 차등 (4-F 완료)** | RecentUpdates(7일 이내 변경 Top 10) + Warnings(미종결 4 flag Top 12) 두 패널에 동일 scope 필터. cache key에 scope 추가. **Phase 4-F 완료** — dashboard 3 endpoint(/summary, /actions, /insights) 모두 admin·manager → 전체 / team_lead → 자기 팀 teams[] / member → 자기 Employee.name이 assignees[]. 재무 + overdue_seals notion 호출은 admin·manager만 노출. pytest 63 passed | 512ce40 |
 | **PR-DS Phase 4-E useRoleGuard 잔여 적용** | admin only 2 페이지(`admin/notices` / `admin/employees`)의 useAuth + 인라인 가드 메시지를 useRoleGuard(["admin"]) + UnauthorizedRedirect 표준 패턴으로 일치화. 나머지 useAuth 미적용 페이지(weekly-report/seal-requests/me/suggestions/schedule)는 전 직원 진입 + isAdmin UI 분기 패턴이라 useRoleGuard 부적합 → STATUS 결정 그대로 유지. tsc + lint 통과 | 36064f1 |
+| **PR-DT INCIDENT #4/#5 회귀 vitest 보강** | `auth.test.ts`에 5 시나리오 추가 — PR-CX silent flag TTL 회복(legacy "1" → fresh timestamp 자동 갱신 + 5분 전 stale → 재시도 허용) 2 + PR-CY verifyAndHydrateFromMe(200/401/network) 3. 회귀 시 사용자 영구 차단 loop(PR-CX 사고) / callback 무한 재귀(PR-BP/BQ 사고) 즉시 검출. vitest unit이 e2e보다 적합(시간 mock + storage 직접 조작, 3초 fast feedback). 11 passed | 3119ba9 |
 
 ## 미완료 / 보류
 
