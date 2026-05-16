@@ -1,6 +1,6 @@
 # 작업 Status
 
-> 마지막 업데이트: 2026-05-16 (Phase 4-F role-scope 1차 — dashboard /summary)
+> 마지막 업데이트: 2026-05-16 (Phase 4-F **완료** — dashboard 3 endpoint role-scope 차등)
 
 ## 완료된 PR
 
@@ -114,6 +114,8 @@
 | **PR-DN Phase 4-J 24단계 — team 도메인 마지막 분리 (4-J 마무리)** | `aggregate_team_projects`(~84줄) + `aggregate_team_work`(가장 무거움, bulk pre-fetch + bucket 패턴으로 N+1 회피, ~190줄) → `weekly_report/team.py` (446줄). 정렬 상수 `_ACTIVE_STAGES`/`_STAGE_SORT_PRIORITY` + "dead helper" 3개(`_employee_*` / `_project_weekly_plans` — 현재 호출처 없음, docstring 명시 후 잔류) 동반 이동. **누적 weekly_report __init__.py 1261 → 337 (-73%)** / sub-module 7(helpers/notices/personnel/sales/projects/personal/team) = 1174줄. **Phase 4-J 완료** — sales 4 + seal_requests 8 + projects 2 + quote_calculator 4 + weekly_report 7 = 25 sub-module. pytest 63 passed | 91c3e1f |
 | **PR-DO Phase 4-J 후속 — dead code cleanup** | `_NEW_STAGES` 상수(weekly_report/__init__.py, docstring만 언급되던 dead) + team.py의 3 dead helper(`_employee_last_week_done` / `_employee_this_week_plan` / `_project_weekly_plans`, PR-W 1차 N+1 fallback이었으나 bulk pre-fetch로 대체됨)와 "사용 X 안내" 주석 정리. dead가 된 `_relation_column` import만 team.py에서 제거(helpers.py 정의 + __init__.py re-export 잔류). __init__.py 337→333, team.py 446→328 (-26%). pytest 63 passed | fa0b5f6 |
 | **PR-DP Phase 4-F 잔여 — dashboard /summary role-scope 차등** | `_resolve_user_scope(db, user) -> (scope, team, employee_name)` helper 신설. admin/manager → all / team_lead → team (Employee.linked_user_id 경유, 미연결 시 self fallback + `scope_degraded` 로그) / member → self (canonical Employee.name 사용). /summary endpoint에 적용: 진행중·정체·마감임박 카운트를 scope 필터, top_team도 scope에 맞게, 재무(week_income/expense)는 scope='all'에서만 채움. cache key에 (scope, team, employee_name) 추가, `_CACHE_MAX` 16→64 (Codex 권고). /actions·/insights는 차기 PR. pytest 63 passed + scope helper 6 시나리오 smoke | d773861 |
+| **PR-DQ Phase 4-F — dashboard /actions role-scope 차등** | 5 항목 모두 scope 분기: stalled/due_soon/stuck은 teams/assignees 메모리 필터, overloaded_team은 'team'→자기 팀 진행건수·'self'→0(개인 단위 의미 X), overdue_seals는 'all'만 notion query_all 호출(운영 6.4초 병목 회피 — 다른 role count=0). 조건부 query 분기로 scope='all' 단일 query 성능 보존. pytest 63 passed | d51143c |
+| **PR-DR Phase 4-F 마무리 — dashboard /insights role-scope 차등 (4-F 완료)** | RecentUpdates(7일 이내 변경 Top 10) + Warnings(미종결 4 flag Top 12) 두 패널에 동일 scope 필터. cache key에 scope 추가. **Phase 4-F 완료** — dashboard 3 endpoint(/summary, /actions, /insights) 모두 admin·manager → 전체 / team_lead → 자기 팀 teams[] / member → 자기 Employee.name이 assignees[]. 재무 + overdue_seals notion 호출은 admin·manager만 노출. pytest 63 passed | 512ce40 |
 
 ## 미완료 / 보류
 
@@ -131,7 +133,7 @@ DASH-001~004 / PROJ-001~005 / MY-001~005 / WEEK-001~005 / COMMON-001~003 항목 
 | **4-E** 권한 로직 layout 통합 | 미진행 | 페이지마다 분산된 가드를 layout 레벨로 |
 | **4-F** 대시보드/주간보고 집계 API 별도 | 미진행 | client-side aggregation을 backend로 push |
 | **4-G** JWT localStorage → httpOnly cookie | 1단계 완료(PR-BH) / 2단계(PR-BI/BP/BQ 3회 시도 모두 운영 회귀로 revert). 안전망(PR-BN saveAuth backward-compat / PR-BO 401 silent retry / PR-BL-5 e2e)은 살아있음. 다음 재시도 전 INCIDENT.md PR-BP/BQ entry 체크리스트 4항목(hydrate raw fetch / callback에서 호출 X / silent retry 인증 endpoint 제외 / PR-BP 후 PR-BQ) 충족 필요 | XSS 방어 강화 |
-| **4-F** 대시보드/주간보고 집계 API | KPI/액션/RecentUpdates/Warnings 모두 backend 집계 + TTL cache 완료(PR-BJ-1~5 + PR-BK) + /summary role-scope 차등(PR-DP) / 잔여(/actions·/insights role-scope) | dashboard N+1 → 1 fetch |
+| **4-F** 대시보드/주간보고 집계 API | ✅ 완료 (PR-BJ-1~5 + PR-BK 1차 backend 집계 + TTL cache, PR-DP/DQ/DR 3 endpoint 모두 role-scope 차등) | dashboard N+1 → 1 fetch, 4 role 권한 차등 |
 | **4-I** 테스트 framework | Vitest(PR-BL-1/2, 18 단위 테스트) + Playwright(PR-BL-3 smoke + PR-BL-5 4 role 시나리오, 누적 5 e2e) + GitHub Actions CI(PR-BL-4) 완료 / 잔여(backend full mock e2e — 미정밀) | PR-BI 같은 회귀 자동 검출 |
 | **4-E** 권한 layout 통합 | `useRoleGuard` hook 도입(PR-BS/BT/BU, 누적 10 page) / 잔여(weekly-report/seal-requests/notices — 전 직원 진입 + isAdmin UI 분기로 useRoleGuard 부적합, useAuth 유지 결정) | 권한 가드 코드 일관성 |
 | **4-H** 문서 자동 동기화 체계 | 미진행 | USER_MANUAL/STATUS/PERMISSIONS auto-sync |
