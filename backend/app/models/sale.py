@@ -111,7 +111,10 @@ def _first_relation_id(props: dict[str, Any], name: str) -> str:
 
 class SaleListResponse(BaseModel):
     items: list[Sale]
-    count: int
+    count: int  # 현재 응답에 담긴 items 길이 (기존 의미 유지)
+    # PR-EB (4-C 3차): pagination 적용 전 filter 결과 전체 개수.
+    # offset/limit 미지정 시 None (backward-compat — 신규 클라이언트만 사용).
+    total: int | None = None
 
 
 class SaleCreateRequest(BaseModel):

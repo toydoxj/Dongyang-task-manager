@@ -13,7 +13,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
-from sqlalchemy import or_, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 # url_quote는 PR-CE에서 pdf.py로 이동
 
@@ -135,12 +135,18 @@ _SUBMITTED_VISIBLE_DAYS: int = 60
 # ── 읽기 ──
 
 
+# PR-EB (4-C 3차): list_sales pagination. PR-DZ list_projects 동일 패턴.
+_LIST_MAX_LIMIT = 500
+
+
 @router.get("", response_model=SaleListResponse)
 def list_sales(
     assignee: str | None = Query(default=None),
     kind: str | None = Query(default=None, description="수주영업|기술지원"),
     stage: str | None = Query(default=None),
     mine: bool = Query(default=False),
+    offset: int | None = Query(default=None, ge=0),
+    limit: int | None = Query(default=None, ge=1, le=_LIST_MAX_LIMIT),
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> SaleListResponse:
@@ -172,11 +178,25 @@ def list_sales(
                 M.MirrorSales.submission_date >= cutoff,
             )
         )
-    # 최신 영업이 위로 — 등록일 역순. created_time이 None이면 last_edited_time fallback.
-    stmt = stmt.order_by(M.MirrorSales.created_time.desc().nullslast())
+    # 최신 영업이 위로 — 등록일 역순 + page_id tie-breaker (결정론 보장).
+    stmt = stmt.order_by(
+        M.MirrorSales.created_time.desc().nullslast(),
+        M.MirrorSales.page_id.asc(),
+    )
+
+    paged = offset is not None or limit is not None
+    total: int | None = None
+    if paged:
+        count_stmt = select(func.count()).select_from(stmt.subquery())
+        total = int(db.execute(count_stmt).scalar() or 0)
+        if offset is not None:
+            stmt = stmt.offset(offset)
+        if limit is not None:
+            stmt = stmt.limit(limit)
+
     rows = db.execute(stmt).scalars().all()
     items = [sale_from_mirror(r) for r in rows]
-    return SaleListResponse(items=items, count=len(items))
+    return SaleListResponse(items=items, count=len(items), total=total)
 
 
 @router.get("/{page_id}", response_model=Sale)
