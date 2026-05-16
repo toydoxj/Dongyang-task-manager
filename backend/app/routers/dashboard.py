@@ -647,18 +647,24 @@ class DashboardInsights(BaseModel):
 @router.get("/insights", response_model=DashboardInsights)
 async def get_dashboard_insights(
     force_refresh: bool = Query(default=False, description="cache 우회"),
-    user: User = Depends(get_current_user),  # noqa: ARG001
+    user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> DashboardInsights:
-    """RecentUpdatesPanel + WarningItemsPanel을 single fetch로 통합.
+    """RecentUpdatesPanel + WarningItemsPanel을 single fetch로 통합 — role-scope (PR-DR).
 
     frontend 컴포넌트와 동일 로직:
     - recent: last_edited_time 7일 이내, 내림차순 Top 10
     - warnings: 미종결 프로젝트 중 stalled/noAssignee/incomeIssue/overdue flag 합산,
       flag 수 많은 순 Top 12
+
+    role-scope (PR-DR): 두 패널 모두 동일 필터.
+    - admin/manager: 전체
+    - team_lead   : MirrorProject.teams[]에 자기 팀 포함된 프로젝트만
+    - member       : MirrorProject.assignees[]에 자기 이름 포함된 프로젝트만
     """
     today = _kst_today()
-    cache_key = ("insights", today.isoformat())
+    scope, scope_team, scope_emp = _resolve_user_scope(db, user)
+    cache_key = ("insights", today.isoformat(), scope, scope_team or "", scope_emp or "")
     if not force_refresh:
         cached = _cache_get(_insights_cache, cache_key)
         if cached is not None:
@@ -674,6 +680,7 @@ async def get_dashboard_insights(
             MirrorProject.code,
             MirrorProject.name,
             MirrorProject.stage,
+            MirrorProject.teams,
             MirrorProject.assignees,
             MirrorProject.last_edited_time,
             MirrorProject.properties,
@@ -683,7 +690,16 @@ async def get_dashboard_insights(
     recent_pool: list[tuple[datetime, str, str, str]] = []  # (dt, id, code, name)
     warning_pool: list[tuple[str, str, list[str]]] = []  # (id, name, flags)
 
-    for pid, code, name, stage, assignees, last_edited, props in rows:
+    def _in_scope(teams: list[str] | None, assignees: list[str] | None) -> bool:
+        if scope == "all":
+            return True
+        if scope == "team":
+            return bool(scope_team) and scope_team in (teams or [])
+        return bool(scope_emp) and scope_emp in (assignees or [])
+
+    for pid, code, name, stage, teams, assignees, last_edited, props in rows:
+        if not _in_scope(teams, assignees):
+            continue
         # recent
         if last_edited is not None:
             le = last_edited
