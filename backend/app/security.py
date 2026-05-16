@@ -1,6 +1,7 @@
 """JWT 토큰 + 패스워드 해싱 + 인증 의존성."""
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
@@ -15,6 +16,7 @@ from app.models.auth import User, UserSession
 from app.settings import get_settings
 
 _bearer = HTTPBearer(auto_error=False)
+_auth_logger = logging.getLogger("dy.auth")
 
 # PR-BH: JWT cookie 이름. backend가 set/delete + frontend가 credentials:include로 자동 첨부.
 JWT_COOKIE_NAME = "dy_jwt"
@@ -66,6 +68,12 @@ def get_current_user(
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="로그인이 필요합니다"
         )
+    # PR-EL (Phase 4-G 2단계 telemetry): 인증 채널 분기 비율 관찰.
+    # PR-EM에서 frontend가 localStorage token 저장을 중단하면 신규 cohort부터 cookie로
+    # 수렴. PR-EN(header 코드 완전 제거) go/no-go 판단에 cookie 비율 99%+ 지표 활용.
+    # 사용자 식별자는 사후 로깅(decode 후) — 여기는 채널만.
+    _auth_via = "header" if cred is not None else "cookie"
+    _auth_logger.info("auth_via=%s", _auth_via)
     try:
         payload = decode_token(raw_token)
         username: str = payload.get("sub", "")
