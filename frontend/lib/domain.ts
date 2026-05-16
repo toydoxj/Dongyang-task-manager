@@ -37,6 +37,9 @@ export interface Project {
 export interface ProjectListResponse {
   items: Project[];
   count: number;
+  /** PR-EC (4-C): pagination 적용 시 backend가 채우는 filter 적용 전체 개수.
+   * offset/limit 미지정 호출에서는 undefined (backward-compat). */
+  total?: number;
 }
 
 export interface ProjectCreateRequest {
@@ -299,6 +302,8 @@ export interface Task {
 export interface TaskListResponse {
   items: Task[];
   count: number;
+  /** PR-EC (4-C): pagination 적용 시 backend가 채우는 filter 적용 전체 개수. */
+  total?: number;
 }
 
 export interface TaskCreateRequest {
@@ -515,6 +520,8 @@ export interface Sale {
 export interface SaleListResponse {
   items: Sale[];
   count: number;
+  /** PR-EC (4-C): pagination 적용 시 backend가 채우는 filter 적용 전체 개수. */
+  total?: number;
 }
 
 export interface SaleCreateRequest {
