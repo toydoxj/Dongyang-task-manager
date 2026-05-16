@@ -1,6 +1,6 @@
 # 작업 Status
 
-> 마지막 업데이트: 2026-05-16 (Phase 4-H 5단계 완료 — PERMISSIONS ↔ backend require_* sync audit)
+> 마지막 업데이트: 2026-05-16 (Phase 4-D 1단계 — 운영 4 페이지 → /operations/ 재구성)
 
 ## 완료된 PR
 
@@ -133,6 +133,7 @@
 | **PR-EG 4-H 3단계 — docs_audit CI job 통합** | `.github/workflows/ci.yml`에 신규 job `docs` 추가 — ubuntu-latest, python 3.12, `checkout@v4 fetch-depth: 0`(STATUS의 옛 hash까지 rev-parse 가능), `python scripts/docs_audit.py` 실행. dependency 0 (stdlib만). PR 시점 자동 회귀 검출 → 운영자 수동 V-3 cross-check 부담 해소 | d1f125e |
 | **PR-EH 4-H 4단계 — INCIDENT 체크리스트 형식 audit** | docs_audit.py에 3번째 검사 추가: `- [ ]` / `- [x]` 만 valid, `- [X]` / `- []` / `- [ x]` / `- [xx]` 등 GitHub markdown 렌더 안 되는 오타 검출. pending(미완료) 카운트는 정보용 표시(FAIL 아님). 5/5 valid 통과. 잔여: PERMISSIONS ↔ backend require_* cross-check | ab4aa60 |
 | **PR-EI 4-H 5단계 완료 — PERMISSIONS ↔ backend require_* sync** | docs_audit.py에 4번째 검사 추가 — `backend/app/security.py`의 `def require_X(...)` set과 PERMISSIONS.md의 \`require_X\` 백틱 set 양방향 비교. 신규 helper 추가 + 문서 누락 / deprecated 제거 + 문서 잔존 즉시 검출. 현재 4개(`require_admin`/`_admin_or_lead`/`_admin_or_manager`/`_editor`) 모두 일치. **4-H 5 검사 모두 통과 + CI 통합 완료** | 2a61ca5 |
+| **PR-EJ 4-D 1단계 — admin 운영 페이지 → /operations/ 재구성** | 사이드바 3 그룹과 URL 계층 일치화. 운영 영역 4 페이지(`admin/incomes`+`clients` / `admin/expenses` / `admin/contracts`)를 `app/operations/` 하위로 `git mv` 폴더 단위 이동(history 보존). next.config.ts redirects 308 permanent 4건으로 옛 URL 호환(북마크/사내 미갱신 link). Sidebar/KPICards href 5건 갱신. Codex 권고: 폴더 단위 mv + next.config redirects > server redirect() > client redirect 우선순위 + sub-route 별도 명시 + employee-work 차기 PR. tsc + lint 통과 / `/admin/(incomes|expenses|contracts)` 잔존 0건 | 9cc755c |
 
 ## 미완료 / 보류
 
@@ -146,7 +147,7 @@ DASH-001~004 / PROJ-001~005 / MY-001~005 / WEEK-001~005 / COMMON-001~003 항목 
 | **4-A** lib/api.ts 도메인 분리 | ✅ 완료 (PR-S/S2/AR/BD/BE/BG, 100%) | 15/15 도메인 lib/api/*.ts. lib/api.ts는 49줄 re-export hub만 남음 |
 | **4-B** 대형 컴포넌트 외과적 분리 | ✅ 완료 (PR-AE~BC, 13 cycle) | -2701줄/-26%, 신규 분리 18개. 본격 design refactor는 별도 cycle |
 | **4-C** 리스트 서버 필터링·페이지네이션 | ✅ 인프라 완료 (PR-DZ/EA/EB/EC/ED, backend + frontend lib option). 페이지 UI 적용은 row 수가 client-side filter 임계점(1000+) 넘을 시점에 활성 — 현재 수백 row 수준에선 client 즉시 검색이 UX 우위라 의도된 보류 |
-| **4-D** 메뉴 그룹 URL 재구성 | 미진행 | `/workspace`, `/operations`, `/admin` 통합 |
+| **4-D** 메뉴 그룹 URL 재구성 | 1단계 (PR-EJ 운영 vs 시스템 분리) | 운영 4 페이지(incomes/clients/expenses/contracts) → /operations/. next.config redirects 308 옛 URL 호환. 잔여: /admin/employee-work 검토 |
 | **4-E** 권한 로직 layout 통합 | 미진행 | 페이지마다 분산된 가드를 layout 레벨로 |
 | **4-F** 대시보드/주간보고 집계 API 별도 | 미진행 | client-side aggregation을 backend로 push |
 | **4-G** JWT localStorage → httpOnly cookie | 1단계 완료(PR-BH) / 2단계(PR-BI/BP/BQ 3회 시도 모두 운영 회귀로 revert). 안전망(PR-BN saveAuth backward-compat / PR-BO 401 silent retry / PR-BL-5 e2e)은 살아있음. 다음 재시도 전 INCIDENT.md PR-BP/BQ entry 체크리스트 4항목(hydrate raw fetch / callback에서 호출 X / silent retry 인증 endpoint 제외 / PR-BP 후 PR-BQ) 충족 필요 | XSS 방어 강화 |
