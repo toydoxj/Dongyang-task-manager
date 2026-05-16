@@ -171,6 +171,7 @@ def list_projects(
     team: str | None = Query(default=None),
     completed: bool | None = Query(default=None),
     mine: bool = Query(default=False),
+    q: str | None = Query(default=None, description="code/name ILIKE 검색 (PR-ED 4-C)"),
     offset: int | None = Query(default=None, ge=0),
     limit: int | None = Query(default=None, ge=1, le=_LIST_MAX_LIMIT),
     user: User = Depends(get_current_user),
@@ -194,6 +195,14 @@ def list_projects(
         stmt = stmt.where(M.MirrorProject.teams.contains([team]))  # type: ignore[attr-defined]
     if completed is not None:
         stmt = stmt.where(M.MirrorProject.completed.is_(completed))
+    if q:
+        # PR-ED: code 또는 name에 부분 일치 (대소문자 무시).
+        from sqlalchemy import or_ as _or
+
+        pattern = f"%{q.strip()}%"
+        stmt = stmt.where(
+            _or(M.MirrorProject.code.ilike(pattern), M.MirrorProject.name.ilike(pattern))
+        )
     # ORDER BY code ASC + page_id tie-breaker (Codex 권고: code 중복 가능성 대비
     # 결정론 보장). page_id는 노션 UUID라 사실상 unique.
     stmt = stmt.order_by(M.MirrorProject.code.asc(), M.MirrorProject.page_id.asc())

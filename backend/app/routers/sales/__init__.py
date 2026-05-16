@@ -145,6 +145,7 @@ def list_sales(
     kind: str | None = Query(default=None, description="수주영업|기술지원"),
     stage: str | None = Query(default=None),
     mine: bool = Query(default=False),
+    q: str | None = Query(default=None, description="code/name ILIKE 검색 (PR-ED 4-C)"),
     offset: int | None = Query(default=None, ge=0),
     limit: int | None = Query(default=None, ge=1, le=_LIST_MAX_LIMIT),
     user: User = Depends(get_current_user),
@@ -177,6 +178,12 @@ def list_sales(
                 M.MirrorSales.submission_date.is_(None),
                 M.MirrorSales.submission_date >= cutoff,
             )
+        )
+    if q:
+        # PR-ED: code 또는 name 부분 일치 (대소문자 무시).
+        pattern = f"%{q.strip()}%"
+        stmt = stmt.where(
+            or_(M.MirrorSales.code.ilike(pattern), M.MirrorSales.name.ilike(pattern))
         )
     # 최신 영업이 위로 — 등록일 역순 + page_id tie-breaker (결정론 보장).
     stmt = stmt.order_by(

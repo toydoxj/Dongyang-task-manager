@@ -63,6 +63,7 @@ def list_tasks(
         default=False,
         description="True면 일정 task만 (분류=외근/출장/휴가 OR 활동=외근/출장)",
     ),
+    q: str | None = Query(default=None, description="title/code ILIKE 검색 (PR-ED 4-C)"),
     offset: int | None = Query(default=None, ge=0),
     limit: int | None = Query(default=None, ge=1, le=_LIST_MAX_LIMIT),
     user: User = Depends(get_current_user),
@@ -97,6 +98,14 @@ def list_tasks(
                 ),
                 M.MirrorTask.activity.in_(["외근", "출장"]),
             )
+        )
+    if q:
+        # PR-ED: title 또는 code 부분 일치 (대소문자 무시).
+        from sqlalchemy import or_ as _or
+
+        pattern = f"%{q.strip()}%"
+        stmt = stmt.where(
+            _or(M.MirrorTask.title.ilike(pattern), M.MirrorTask.code.ilike(pattern))
         )
     # ORDER BY end_date ASC NULLS LAST + page_id tie-breaker (결정론 보장)
     stmt = stmt.order_by(

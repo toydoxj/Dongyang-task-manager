@@ -18,6 +18,8 @@ export async function listSales(
     kind?: string;
     stage?: string;
     mine?: boolean;
+    /** PR-ED (4-C): code/name ILIKE 검색. 미지정 시 검색 안 함. */
+    q?: string;
     /** PR-EC (4-C): pagination. 미지정 시 backend는 unbounded 반환. */
     offset?: number;
     /** 1~500. 미지정 시 backend unbounded. */
