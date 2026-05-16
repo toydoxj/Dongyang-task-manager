@@ -427,11 +427,11 @@ def _extract_title(props: dict) -> str:
 @router.get("/actions", response_model=DashboardActions)
 async def get_dashboard_actions(
     force_refresh: bool = Query(default=False, description="cache 우회 (사용자 새로고침)"),
-    user: User = Depends(get_current_user),  # noqa: ARG001 — 권한 차등은 별도 cycle
+    user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
     notion: NotionService = Depends(get_notion),
 ) -> DashboardActions:
-    """'지금 처리할 것' 패널 5개 항목 집계.
+    """'지금 처리할 것' 패널 5개 항목 집계 — role-scope 차등 (PR-DQ).
 
     frontend PriorityActionsPanel.tsx와 동일 로직:
     1) 장기 정체 프로젝트 — (진행중|대기) AND start_date ≤ today-90d
@@ -439,9 +439,15 @@ async def get_dashboard_actions(
     3) 마감 가까운 업무 — task status≠완료 AND today ≤ end_date ≤ today+3d
     4) 담당 편중 팀 — 진행중 프로젝트 teams[] 카운트 1위 (count = 그 팀의 진행 건수)
     5) 오래 멈춘 TASK — status='시작 전' AND created_time ≤ today-60d
+
+    role-scope:
+    - stalled/due_soon/stuck: scope에 따라 teams[] 또는 assignees[] 필터.
+    - overloaded_team: 'all'→전체 1위 / 'team'→자기 팀 진행건수 / 'self'→0(의미 X).
+    - overdue_seals: 'all'만 notion 호출 (운영 6.4초 병목 회피 — 다른 role은 0).
     """
     today = _kst_today()
-    cache_key = ("actions", today.isoformat())
+    scope, scope_team, scope_emp = _resolve_user_scope(db, user)
+    cache_key = ("actions", today.isoformat(), scope, scope_team or "", scope_emp or "")
     if not force_refresh:
         cached = _cache_get(_actions_cache, cache_key)
         if cached is not None:
@@ -451,12 +457,20 @@ async def get_dashboard_actions(
     action_due_end = today + timedelta(days=_ACTION_DUE_SOON_DAYS)
     stuck_cutoff = today - timedelta(days=_STALE_TASK_DAYS)
 
-    # 1·4 — projects (한 번 조회)
+    def _proj_in_scope(teams: list[str] | None, assignees: list[str] | None) -> bool:
+        if scope == "all":
+            return True
+        if scope == "team":
+            return bool(scope_team) and scope_team in (teams or [])
+        return bool(scope_emp) and scope_emp in (assignees or [])
+
+    # 1·4 — projects (한 번 조회, scope는 메모리 필터)
     proj_rows = db.execute(
         select(
             MirrorProject.page_id,
             MirrorProject.stage,
             MirrorProject.teams,
+            MirrorProject.assignees,
             MirrorProject.properties,
             MirrorProject.name,
         ).where(MirrorProject.archived.is_(False))
@@ -464,7 +478,9 @@ async def get_dashboard_actions(
 
     stalled_list: list[tuple[str, str]] = []  # (start_date_iso, name)
     team_load: Counter[str] = Counter()
-    for _pid, stage, teams, props, name in proj_rows:
+    for _pid, stage, teams, assignees, props, name in proj_rows:
+        if not _proj_in_scope(teams, assignees):
+            continue
         if stage == "진행중":
             for t in (teams or []):
                 if t:
@@ -479,53 +495,122 @@ async def get_dashboard_actions(
         preview=stalled_list[0][1] if stalled_list else "",
     )
 
-    top_team_entry = team_load.most_common(1)
-    overloaded_team = (
-        ActionItem(
-            count=top_team_entry[0][1],
-            preview=f"{top_team_entry[0][0]} — 진행중 {top_team_entry[0][1]}건",
-        )
-        if top_team_entry
-        else ActionItem(count=0)
-    )
-
-    # 3 — 마감 임박 TASK (3일 cutoff). end_date 인덱스 활용
-    due_soon_rows = db.execute(
-        select(MirrorTask.title, MirrorTask.end_date).where(
-            and_(
-                MirrorTask.archived.is_(False),
-                MirrorTask.status != "완료",
-                MirrorTask.end_date.is_not(None),
-                MirrorTask.end_date >= today,
-                MirrorTask.end_date <= action_due_end,
+    # 4 — overloaded_team:
+    # 'all' → 전체 1위 팀, 'team' → 자기 팀 진행건수, 'self' → 0(개인 단위 의미 X)
+    if scope == "self":
+        overloaded_team = ActionItem(count=0)
+    else:
+        top_team_entry = team_load.most_common(1)
+        overloaded_team = (
+            ActionItem(
+                count=top_team_entry[0][1],
+                preview=f"{top_team_entry[0][0]} — 진행중 {top_team_entry[0][1]}건",
             )
-        ).order_by(MirrorTask.end_date.asc())
-    ).all()
-    due_soon_item = ActionItem(
-        count=len(due_soon_rows),
-        preview=(due_soon_rows[0][0] or "") if due_soon_rows else "",
-    )
+            if top_team_entry
+            else ActionItem(count=0)
+        )
+
+    # 3·5 — task 공통 scope filter helper
+    def _task_in_scope(t_assignees: list[str] | None, t_teams: list[str] | None) -> bool:
+        if scope == "all":
+            return True
+        if scope == "team":
+            return bool(scope_team) and scope_team in (t_teams or [])
+        return bool(scope_emp) and scope_emp in (t_assignees or [])
+
+    # 3 — 마감 임박 TASK (3일 cutoff). scope='all'은 단일 query, 그 외는 메모리 필터
+    if scope == "all":
+        due_soon_rows = db.execute(
+            select(MirrorTask.title, MirrorTask.end_date).where(
+                and_(
+                    MirrorTask.archived.is_(False),
+                    MirrorTask.status != "완료",
+                    MirrorTask.end_date.is_not(None),
+                    MirrorTask.end_date >= today,
+                    MirrorTask.end_date <= action_due_end,
+                )
+            ).order_by(MirrorTask.end_date.asc())
+        ).all()
+        due_soon_item = ActionItem(
+            count=len(due_soon_rows),
+            preview=(due_soon_rows[0][0] or "") if due_soon_rows else "",
+        )
+    else:
+        due_rows = db.execute(
+            select(
+                MirrorTask.title,
+                MirrorTask.end_date,
+                MirrorTask.assignees,
+                MirrorTask.teams,
+            ).where(
+                and_(
+                    MirrorTask.archived.is_(False),
+                    MirrorTask.status != "완료",
+                    MirrorTask.end_date.is_not(None),
+                    MirrorTask.end_date >= today,
+                    MirrorTask.end_date <= action_due_end,
+                )
+            ).order_by(MirrorTask.end_date.asc())
+        ).all()
+        filtered = [
+            (title, end) for title, end, t_a, t_t in due_rows
+            if _task_in_scope(t_a, t_t)
+        ]
+        due_soon_item = ActionItem(
+            count=len(filtered),
+            preview=(filtered[0][0] or "") if filtered else "",
+        )
 
     # 5 — 오래 멈춘 TASK
-    stuck_rows = db.execute(
-        select(MirrorTask.title, MirrorTask.created_time).where(
-            and_(
-                MirrorTask.archived.is_(False),
-                MirrorTask.status == "시작 전",
-                MirrorTask.created_time.is_not(None),
-                MirrorTask.created_time <= datetime.combine(
-                    stuck_cutoff, datetime.max.time(), tzinfo=_KST
-                ),
-            )
-        ).order_by(MirrorTask.created_time.asc())
-    ).all()
-    stuck_item = ActionItem(
-        count=len(stuck_rows),
-        preview=(stuck_rows[0][0] or "") if stuck_rows else "",
-    )
+    if scope == "all":
+        stuck_rows = db.execute(
+            select(MirrorTask.title, MirrorTask.created_time).where(
+                and_(
+                    MirrorTask.archived.is_(False),
+                    MirrorTask.status == "시작 전",
+                    MirrorTask.created_time.is_not(None),
+                    MirrorTask.created_time <= datetime.combine(
+                        stuck_cutoff, datetime.max.time(), tzinfo=_KST
+                    ),
+                )
+            ).order_by(MirrorTask.created_time.asc())
+        ).all()
+        stuck_item = ActionItem(
+            count=len(stuck_rows),
+            preview=(stuck_rows[0][0] or "") if stuck_rows else "",
+        )
+    else:
+        stuck_rows_raw = db.execute(
+            select(
+                MirrorTask.title,
+                MirrorTask.created_time,
+                MirrorTask.assignees,
+                MirrorTask.teams,
+            ).where(
+                and_(
+                    MirrorTask.archived.is_(False),
+                    MirrorTask.status == "시작 전",
+                    MirrorTask.created_time.is_not(None),
+                    MirrorTask.created_time <= datetime.combine(
+                        stuck_cutoff, datetime.max.time(), tzinfo=_KST
+                    ),
+                )
+            ).order_by(MirrorTask.created_time.asc())
+        ).all()
+        stuck_filtered = [
+            (title, ct) for title, ct, t_a, t_t in stuck_rows_raw
+            if _task_in_scope(t_a, t_t)
+        ]
+        stuck_item = ActionItem(
+            count=len(stuck_filtered),
+            preview=(stuck_filtered[0][0] or "") if stuck_filtered else "",
+        )
 
-    # 2 — 승인 지연 날인 (notion 호출 — 무거움. BJ-5에서 cache)
-    overdue_seal_item = await _collect_overdue_seals(notion, today)
+    # 2 — 승인 지연 날인 (notion 호출 — 운영 6.4초 병목. scope='all'만 호출)
+    if scope == "all":
+        overdue_seal_item = await _collect_overdue_seals(notion, today)
+    else:
+        overdue_seal_item = ActionItem(count=0)
 
     actions = DashboardActions(
         stalled_projects=stalled_item,
