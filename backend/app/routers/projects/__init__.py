@@ -12,7 +12,7 @@ from fastapi import (
     status,
 )
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.db import get_db
@@ -158,6 +158,12 @@ from app.routers.projects import options as _options  # noqa: E402
 router.include_router(_options.router)
 
 
+# PR-DZ (4-C 1차): list_projects pagination. backward-compat 최우선 —
+# offset/limit 미지정 시 기존 unbounded 동작 유지. 명시 시 max 500 cap.
+# total 필드는 신규 클라이언트만 사용 (Optional).
+_LIST_MAX_LIMIT = 500
+
+
 @router.get("", response_model=ProjectListResponse)
 def list_projects(
     assignee: str | None = Query(default=None),
@@ -165,6 +171,8 @@ def list_projects(
     team: str | None = Query(default=None),
     completed: bool | None = Query(default=None),
     mine: bool = Query(default=False),
+    offset: int | None = Query(default=None, ge=0),
+    limit: int | None = Query(default=None, ge=1, le=_LIST_MAX_LIMIT),
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> ProjectListResponse:
@@ -186,11 +194,25 @@ def list_projects(
         stmt = stmt.where(M.MirrorProject.teams.contains([team]))  # type: ignore[attr-defined]
     if completed is not None:
         stmt = stmt.where(M.MirrorProject.completed.is_(completed))
-    stmt = stmt.order_by(M.MirrorProject.code.asc())
+    # ORDER BY code ASC + page_id tie-breaker (Codex 권고: code 중복 가능성 대비
+    # 결정론 보장). page_id는 노션 UUID라 사실상 unique.
+    stmt = stmt.order_by(M.MirrorProject.code.asc(), M.MirrorProject.page_id.asc())
+
+    # pagination — offset/limit 명시되면 적용 + total 채움. 미지정이면 unbounded.
+    paged = offset is not None or limit is not None
+    total: int | None = None
+    if paged:
+        count_stmt = select(func.count()).select_from(stmt.subquery())
+        total = int(db.execute(count_stmt).scalar() or 0)
+        if offset is not None:
+            stmt = stmt.offset(offset)
+        if limit is not None:
+            stmt = stmt.limit(limit)
+
     rows = db.execute(stmt).scalars().all()
     items = [project_from_mirror(r) for r in rows]
     _resolve_names(db, items)
-    return ProjectListResponse(items=items, count=len(items))
+    return ProjectListResponse(items=items, count=len(items), total=total)
 
 
 @router.post("", response_model=Project, status_code=status.HTTP_201_CREATED)
