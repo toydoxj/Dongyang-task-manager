@@ -32,6 +32,8 @@ STATUS_PATH = REPO_ROOT / "docs" / "STATUS.md"
 USER_MANUAL_PATH = REPO_ROOT / "docs" / "USER_MANUAL.md"
 HELP_PAGE_PATH = REPO_ROOT / "frontend" / "app" / "help" / "page.tsx"
 INCIDENT_PATH = REPO_ROOT / "docs" / "INCIDENT.md"
+PERMISSIONS_PATH = REPO_ROOT / "docs" / "PERMISSIONS.md"
+SECURITY_PATH = REPO_ROOT / "backend" / "app" / "security.py"
 
 # `| <7~8 hex> |` (마지막 column) 형식 매칭. 표 row 마지막 셀에 단독 hash만 있을 때.
 COMMIT_HASH_RE = re.compile(r"\|\s*([0-9a-f]{7,8})\s*\|")
@@ -46,6 +48,12 @@ HELP_SECTION_RE = re.compile(r"<H3>(\d+\.\d+)\s")
 # `- [xx]` 등) 오타 검출.
 CHECKLIST_VALID_RE = re.compile(r"^- \[[ x]\] ", re.MULTILINE)
 CHECKLIST_ANY_RE = re.compile(r"^- \[", re.MULTILINE)
+
+# backend security.py에 정의된 `def require_X(...)` 함수 이름.
+SECURITY_REQUIRE_RE = re.compile(r"^(?:async )?def (require_[a-z_]+)\(", re.MULTILINE)
+
+# PERMISSIONS.md에서 `` `require_X` `` 형태로 언급된 이름.
+PERMISSIONS_REQUIRE_RE = re.compile(r"`(require_[a-z_]+)`")
 
 
 def _git_exists(hash_: str) -> bool:
@@ -171,12 +179,50 @@ def _check_incident_checklist_format() -> int:
     return 0
 
 
+def _check_permissions_require_sync() -> int:
+    """4단계: PERMISSIONS.md ↔ backend security.py의 `require_*` set 일치 (PR-EI, 4-H 5단계).
+
+    backend에 신규 `require_X` helper 추가 시 PERMISSIONS.md 업데이트 누락을 검출.
+    반대로 PERMISSIONS.md에만 있는 deprecated 이름도 검출.
+    """
+    if not SECURITY_PATH.is_file():
+        print(f"security.py 없음: {SECURITY_PATH}", file=sys.stderr)
+        return 2
+    if not PERMISSIONS_PATH.is_file():
+        print(f"PERMISSIONS.md 없음: {PERMISSIONS_PATH}", file=sys.stderr)
+        return 2
+
+    sec_text = SECURITY_PATH.read_text(encoding="utf-8")
+    perm_text = PERMISSIONS_PATH.read_text(encoding="utf-8")
+
+    backend_reqs = set(SECURITY_REQUIRE_RE.findall(sec_text))
+    docs_reqs = set(PERMISSIONS_REQUIRE_RE.findall(perm_text))
+
+    only_in_backend = sorted(backend_reqs - docs_reqs)
+    only_in_docs = sorted(docs_reqs - backend_reqs)
+
+    if only_in_backend or only_in_docs:
+        print(
+            f"[FAIL] backend security.py ({len(backend_reqs)}개) ↔ PERMISSIONS.md "
+            f"({len(docs_reqs)}개) require_* 불일치:"
+        )
+        if only_in_backend:
+            print(f"  backend에만 있음 (PERMISSIONS.md 업데이트 필요): {', '.join(only_in_backend)}")
+        if only_in_docs:
+            print(f"  PERMISSIONS.md에만 있음 (backend deprecated?): {', '.join(only_in_docs)}")
+        return 1
+
+    print(f"[OK] PERMISSIONS.md ↔ backend require_* 일치 ({len(backend_reqs)}개)")
+    return 0
+
+
 def main() -> int:
     rc = 0
     checks = (
         _check_status_commit_hashes,
         _check_user_manual_help_sync,
         _check_incident_checklist_format,
+        _check_permissions_require_sync,
     )
     for check in checks:
         result = check()
