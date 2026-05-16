@@ -393,6 +393,20 @@ export default function HelpPage() {
         <Ul>
           <li>공지/교육 관리, 직원 관리, 사용자 관리, Drive 연결</li>
         </Ul>
+        <H3>9.4 「Sync 관리」 (/admin/sync)</H3>
+        <Ul>
+          <li>
+            노션 미러 동기화 — 정기 cron은{" "}
+            <B>업무시간(KST 06~20시) 회피</B> (KST 20~06시에만 실행).
+          </li>
+          <li>업무 중 노션에서 변경한 항목을 즉시 화면에 반영하려면 본 페이지에서 트리거:</li>
+          <Ul>
+            <li><B>전체 sync (incremental)</B> — 모든 kind 변경분만 sync</li>
+            <li><B>전체 sync (full reconcile)</B> — archive된 row 정리까지 (시간 길어짐)</li>
+            <li><B>kind별 sync 버튼</B> — projects / tasks / clients / master / cashflow / expense / contract_items / sales 개별 실행</li>
+            <li>표가 10초마다 자동 갱신 — 마지막 시각·건수·에러 확인</li>
+          </Ul>
+        </Ul>
       </Section>
 
       <Section title="10. 문의">
