@@ -83,3 +83,21 @@ jobs:
 
       - name: Pytest
         run: uv run pytest tests/ -q
+
+  docs:
+    name: Docs audit (PR-EG, 4-H)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        # docs_audit가 `git rev-parse`로 STATUS.md의 옛 commit hash까지 검증.
+        # default shallow clone(depth=1)이면 옛 hash 누락으로 false negative 발생.
+        with:
+          fetch-depth: 0
+
+      - name: Setup Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Run docs audit
+        run: python scripts/docs_audit.py
