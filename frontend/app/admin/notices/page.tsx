@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import useSWR from "swr";
 
-import { useAuth } from "@/components/AuthGuard";
+import UnauthorizedRedirect from "@/components/UnauthorizedRedirect";
 import LoadingState from "@/components/ui/LoadingState";
 import {
   createNotice,
@@ -13,6 +13,7 @@ import {
   type Notice,
   type NoticeKind,
 } from "@/lib/api";
+import { useRoleGuard } from "@/lib/useRoleGuard";
 
 const KINDS: NoticeKind[] = ["공지", "교육", "휴일"];
 
@@ -39,8 +40,7 @@ function formatRange(n: Notice): string {
 }
 
 export default function AdminNoticesPage() {
-  const { user } = useAuth();
-  const isAdmin = user?.role === "admin";
+  const { user, allowed: isAdmin } = useRoleGuard(["admin"]);
 
   const [form, setForm] = useState<FormState>(INITIAL_FORM);
   const [filterKind, setFilterKind] = useState<NoticeKind | "전체">("전체");
@@ -57,9 +57,10 @@ export default function AdminNoticesPage() {
 
   if (user && !isAdmin) {
     return (
-      <div className="rounded-md border border-amber-500/40 bg-amber-500/5 p-6 text-center text-sm text-amber-600 dark:text-amber-400">
-        공지/교육 관리는 관리자만 접근할 수 있습니다.
-      </div>
+      <UnauthorizedRedirect
+        targetPath="/"
+        message="공지/교육 관리는 관리자만 접근할 수 있습니다."
+      />
     );
   }
 

@@ -16,7 +16,8 @@ import {
 import { useEffect, useMemo, useRef, useState } from "react";
 import useSWR from "swr";
 
-import { useAuth } from "@/components/AuthGuard";
+import UnauthorizedRedirect from "@/components/UnauthorizedRedirect";
+import { useRoleGuard } from "@/lib/useRoleGuard";
 import {
   deleteEmployee,
   listEmployees,
@@ -35,12 +36,12 @@ import { cn } from "@/lib/utils";
 import { EditRow, NewRow, SortableRow } from "./_rows";
 
 export default function EmployeesAdminPage() {
-  const { user } = useAuth();
+  const { user, allowed: isAdmin } = useRoleGuard(["admin"]);
   const [q, setQ] = useState("");
   const [debouncedQ, setDebouncedQ] = useState("");
   const [view, setView] = useState<EmployeeView>("active");
   const { data, isLoading, mutate, error } = useSWR(
-    user?.role === "admin" ? ["employees", view, debouncedQ] : null,
+    isAdmin ? ["employees", view, debouncedQ] : null,
     () => listEmployees(debouncedQ || undefined, view),
   );
   const [editId, setEditId] = useState<number | null>(null);
@@ -140,12 +141,13 @@ export default function EmployeesAdminPage() {
     }
   }
 
-  // 권한 체크 — 모든 hook 호출 후
-  if (user && user.role !== "admin") {
+  // 권한 체크 — 모든 hook 호출 후 (rules-of-hooks)
+  if (user && !isAdmin) {
     return (
-      <main className="p-6">
-        <p className="text-sm text-red-500">관리자 권한이 필요합니다.</p>
-      </main>
+      <UnauthorizedRedirect
+        targetPath="/"
+        message="직원 관리는 관리자만 접근할 수 있습니다."
+      />
     );
   }
 
