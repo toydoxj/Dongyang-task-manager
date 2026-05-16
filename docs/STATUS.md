@@ -1,6 +1,6 @@
 # 작업 Status
 
-> 마지막 업데이트: 2026-05-16 (INCIDENT #1 추적 4항목 audit 완료 — 모두 clean)
+> 마지막 업데이트: 2026-05-16 (INCIDENT #1 healthCheckPath 교체 — auto-restart trigger 활성화)
 
 ## 완료된 PR
 
@@ -122,6 +122,7 @@
 | **PR-DV INCIDENT #5 체크리스트 #3 충족 — authFetch silent retry 제외 list** | `_authFetchInternal`에 `isAuthVerifyEndpoint` 분기 추가 — `/api/auth/me` / `/api/auth/status` 시작 path는 silent SSO trigger 안 함 (미래 회귀 방지 예방, 현재 callsite 없음). silent SSO 자체가 callback page 사용이라 인증 검증 endpoint에서 trigger 시 PR-BP/BQ 패턴 무한 재귀 위험. INCIDENT.md 체크리스트 audit 갱신 — #1/#3/#4 충족, #2 결과적 안전(설계 차이). 4-G PR-BP/BQ 2단계 재시도 가능 상태 진입(staging dual-run 안전망은 추가 필요). vitest 13 passed (2 신규) | aec8e01 |
 | **PR-DW /help page USER_MANUAL sync — dashboard role-scope** | PR-DU에서 USER_MANUAL.md 3.1에 추가한 role-scope 차등 안내(KPI/액션/Warnings 노출 범위가 역할에 따라 다름)를 in-app `/help` page에도 sync. 운영자가 실제로 시스템에서 보는 콘텐츠와 일치하도록 — V-3 cross-check 컨벤션 유지. tsc + lint 통과 | 740fc60 |
 | **PR-DX INCIDENT #1 추적 4항목 audit (모두 clean)** | 2026-05-12 SQLAlchemy connection leak 사고의 "추적 항목 (별도 cycle 진행)" 4개 모두 audit → 모두 [x]: (1) `_report_cache`는 Pydantic DTO만 보관 ORM X (2) sync.py 11 callsites + 다른 background 5 service 모두 with/try-finally close 보장 (3) PDF service는 Session 의존 0 + 라우터는 Depends(get_db) 자동 close (4) silent except 안 SessionLocal() 호출 0건. 근본 안전망은 PR-AQ + PR-DA로 cover. **INCIDENT #1 클로즈** | cf4eab8 |
+| **PR-DY INCIDENT #1 교훈 #1 — healthCheckPath 교체** | `backend/render.yaml` `healthCheckPath` `/health` → `/api/health/db` 1줄 변경. `/health`는 DB 안 거쳐 connection pool 고갈 시 Render auto-restart trigger 안 됐던 문제(2026-05-12 사고 시 수동 Restart 필요) 해소. `/api/health/db`(PR-DB)는 SELECT 1 + idle_in_transaction_session_timeout SHOW 거쳐 DB 끊김이면 503 반환 → Render auto-restart 자동 트리거. PR-AQ + PR-DA 안전망과 합쳐 sub-5분 사고 복구 가능 | 4bbfb44 |
 
 ## 미완료 / 보류
 
