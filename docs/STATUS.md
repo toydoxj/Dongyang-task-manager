@@ -1,6 +1,6 @@
 # 작업 Status
 
-> 마지막 업데이트: 2026-05-16 (Phase 4-H 4단계 — INCIDENT 체크리스트 형식 audit)
+> 마지막 업데이트: 2026-05-16 (Phase 4-H 5단계 완료 — PERMISSIONS ↔ backend require_* sync audit)
 
 ## 완료된 PR
 
@@ -132,6 +132,7 @@
 | **PR-EF 4-H 2단계 — USER_MANUAL ↔ /help section sync 자동화** | docs_audit.py에 검사 추가 — 두 파일의 섹션 번호(N.M) set 일치(문구는 의도적으로 다를 수 있어 번호만). 초회 실행에서 `### 9.4 「Sync 관리」`가 /help page에 누락된 것 발견(PR-AR 도입 시 USER_MANUAL만 추가, /help sync 누락) → /help page에 9.4 섹션 추가 후 19/19 일치 OK. V-3 cross-check 수동 작업 자동화 | ea17a0a |
 | **PR-EG 4-H 3단계 — docs_audit CI job 통합** | `.github/workflows/ci.yml`에 신규 job `docs` 추가 — ubuntu-latest, python 3.12, `checkout@v4 fetch-depth: 0`(STATUS의 옛 hash까지 rev-parse 가능), `python scripts/docs_audit.py` 실행. dependency 0 (stdlib만). PR 시점 자동 회귀 검출 → 운영자 수동 V-3 cross-check 부담 해소 | d1f125e |
 | **PR-EH 4-H 4단계 — INCIDENT 체크리스트 형식 audit** | docs_audit.py에 3번째 검사 추가: `- [ ]` / `- [x]` 만 valid, `- [X]` / `- []` / `- [ x]` / `- [xx]` 등 GitHub markdown 렌더 안 되는 오타 검출. pending(미완료) 카운트는 정보용 표시(FAIL 아님). 5/5 valid 통과. 잔여: PERMISSIONS ↔ backend require_* cross-check | ab4aa60 |
+| **PR-EI 4-H 5단계 완료 — PERMISSIONS ↔ backend require_* sync** | docs_audit.py에 4번째 검사 추가 — `backend/app/security.py`의 `def require_X(...)` set과 PERMISSIONS.md의 \`require_X\` 백틱 set 양방향 비교. 신규 helper 추가 + 문서 누락 / deprecated 제거 + 문서 잔존 즉시 검출. 현재 4개(`require_admin`/`_admin_or_lead`/`_admin_or_manager`/`_editor`) 모두 일치. **4-H 5 검사 모두 통과 + CI 통합 완료** | 2a61ca5 |
 
 ## 미완료 / 보류
 
@@ -152,7 +153,7 @@ DASH-001~004 / PROJ-001~005 / MY-001~005 / WEEK-001~005 / COMMON-001~003 항목 
 | **4-F** 대시보드/주간보고 집계 API | ✅ 완료 (PR-BJ-1~5 + PR-BK 1차 backend 집계 + TTL cache, PR-DP/DQ/DR 3 endpoint 모두 role-scope 차등) | dashboard N+1 → 1 fetch, 4 role 권한 차등 |
 | **4-I** 테스트 framework | Vitest(PR-BL-1/2, 18 단위 테스트) + Playwright(PR-BL-3 smoke + PR-BL-5 4 role 시나리오, 누적 5 e2e) + GitHub Actions CI(PR-BL-4) 완료 / 잔여(backend full mock e2e — 미정밀) | PR-BI 같은 회귀 자동 검출 |
 | **4-E** 권한 layout 통합 | ✅ 완료 (PR-BS/BT/BU + PR-DS, 누적 12 page) | useRoleGuard 적용 가능한 admin/role-list 가드 페이지 모두 완료. 나머지(weekly-report/seal-requests/me/suggestions/schedule)는 전 직원 진입 + UI 분기 패턴이라 useAuth 유지가 적합 |
-| **4-H** 문서 자동 동기화 체계 | 1·2·3·4단계 (PR-EE STATUS hash + PR-EF USER_MANUAL ↔ /help section + PR-EG CI 통합 + PR-EH INCIDENT 체크리스트 형식) | 잔여: PERMISSIONS ↔ backend require_* cross-check |
+| **4-H** 문서 자동 동기화 체계 | ✅ 완료 (PR-EE~EI, 4 검사 + CI 통합) — STATUS hash / USER_MANUAL ↔ /help section / INCIDENT 체크리스트 형식 / PERMISSIONS ↔ backend require_* 자동 검증 |
 | **4-I** Frontend 테스트 framework | 미진행 | Vitest + Playwright |
 | **4-J** Backend 라우터/서비스 분할 | ✅ 완료 (PR-CC ~ PR-DO, 24단계 + cleanup) | sales 4 + seal_requests 8 + projects 2(1040→576, -45%) + quote_calculator 4 strategy(1585→403, -75%) + weekly_report 7 sub-module(1261→333, -74%). 총 25 sub-module. PR-DO dead code cleanup 적용 |
 
