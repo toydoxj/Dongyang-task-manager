@@ -53,15 +53,16 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       { href: "/projects", label: "프로젝트", roles: ["admin", "team_lead", "manager"] },
       { href: "/sales", label: "영업 관리", roles: ["admin", "team_lead", "manager"] },
+      // PR-EJ (4-D 1단계): 운영 영역 admin/* → /operations/*. next.config redirects 308.
       {
-        href: "/admin/incomes/clients",
+        href: "/operations/incomes/clients",
         label: "발주처 관리",
         roles: ["admin", "manager"],
       },
-      { href: "/admin/incomes", label: "수금 관리", roles: ["admin", "manager"] },
+      { href: "/operations/incomes", label: "수금 관리", roles: ["admin", "manager"] },
       // 지출 관리 / 계약서 관리는 페이지 미구현 — placeholder route. 추후 page 추가 시 link 활성화.
-      { href: "/admin/expenses", label: "지출 관리", roles: ["admin", "manager"] },
-      { href: "/admin/contracts", label: "계약서 관리", roles: ["admin", "manager"] },
+      { href: "/operations/expenses", label: "지출 관리", roles: ["admin", "manager"] },
+      { href: "/operations/contracts", label: "계약서 관리", roles: ["admin", "manager"] },
     ],
   },
   // 시스템 — admin only. 공지·직원·사용자·Drive 등 인프라 설정.

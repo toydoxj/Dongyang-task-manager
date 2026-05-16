@@ -56,7 +56,7 @@ export default function KPICards({ summary }: Props) {
         label="이번 주 순현금"
         value={formatWon(weekNet, true)}
         hint={`수입 ${formatWon(summary.week_income, true)} / 지출 ${formatWon(summary.week_expense, true)}`}
-        href="/admin/incomes"
+        href="/operations/incomes"
         tone={weekNet >= 0 ? "good" : "warn"}
       />
       <KpiCard
