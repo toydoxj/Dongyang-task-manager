@@ -45,10 +45,6 @@ from app.services.weekly_report.helpers import (  # noqa: E402, F401
 )
 
 
-# 신규 프로젝트로 간주할 stage 휴리스틱
-_NEW_STAGES = frozenset({"사업승인", "계획설계", "계획검토", "기본설계"})
-
-
 # ── DTO ──
 
 
