@@ -1,6 +1,6 @@
 # 작업 Status
 
-> 마지막 업데이트: 2026-05-16 (Phase 4-J 22단계 완료 — weekly_report projects 도메인 분리)
+> 마지막 업데이트: 2026-05-16 (Phase 4-J 23단계 완료 — weekly_report personal_schedule 분리)
 
 ## 완료된 PR
 
@@ -110,6 +110,7 @@
 | **PR-DJ Phase 4-J 20단계 — notices 짝 aggregate 분리** | `aggregate_holidays`(법정 공휴일 + 사내휴일 합치기, ~35줄) + `aggregate_notices`(공지/교육 title list, ~22줄) → `weekly_report/notices.py` (87줄). Codex 권고 "PR 작게 유지" → 가장 작고 응집도 높은 짝(둘 다 Notice 모델 + 단순 SQL) 선택. `HolidayItem` model은 __init__.py 잔류, build_weekly_report 직전 import. __init__.py 1123 → 1070 (-53 줄, -5%). pytest 63 passed | 4dec0ed |
 | **PR-DK Phase 4-J 21단계 — personnel + sales aggregate 분리** | `aggregate_headcount`(인원현황, ~38줄) + `aggregate_team_members`(팀원 명단, ~29줄) → `weekly_report/personnel.py` (99줄, 인원 짝 — 둘 다 Employee 동일 재직 조건). `aggregate_sales`(영업시작일 cutoff, ~41줄) → `weekly_report/sales.py` (67줄, MirrorSales 단독). 누적 weekly_report __init__.py 1261 → 967 (-23%) / sub-module 4(helpers/notices/personnel/sales) = 434줄. pytest 63 passed | 48721da |
 | **PR-DL Phase 4-J 22단계 — projects 도메인 3 aggregate 분리** | `aggregate_stage_projects`(stage 매칭 + 90일 stale, ~49줄) + `aggregate_completed`(end_date cutoff, ~59줄) + `aggregate_new_projects`(start_date cutoff + sales scale, ~57줄) → `weekly_report/projects.py` (217줄). `_TERMINATED_STAGES` 상수도 aggregate_completed 단독 사용 → 동반 이동. `_NEW_STAGES`는 docstring만 언급된 dead code(외과적 수정으로 잔류). 누적 weekly_report __init__.py 1261 → 790 (-37%) / sub-module 5 = 651줄. pytest 63 passed | 954a85b |
+| **PR-DM Phase 4-J 23단계 — personal_schedule aggregate 분리** | `aggregate_personal_schedule`(직원×요일 일정 매트릭스, ~53줄) → `weekly_report/personal.py` (84줄). `_SCHEDULE_CATEGORIES` 모듈 상수도 단독 사용 → 동반 이동. helpers의 `_normalize_schedule_category`(휴가→연차/반차 분기 + activity fallback) 의존. 누적 weekly_report __init__.py 1261 → 734 (-42%) / sub-module 6(helpers/notices/personnel/sales/projects/personal) = 735줄. pytest 63 passed | db65ee8 |
 
 ## 미완료 / 보류
 
@@ -132,7 +133,7 @@ DASH-001~004 / PROJ-001~005 / MY-001~005 / WEEK-001~005 / COMMON-001~003 항목 
 | **4-E** 권한 layout 통합 | `useRoleGuard` hook 도입(PR-BS/BT/BU, 누적 10 page) / 잔여(weekly-report/seal-requests/notices — 전 직원 진입 + isAdmin UI 분기로 useRoleGuard 부적합, useAuth 유지 결정) | 권한 가드 코드 일관성 |
 | **4-H** 문서 자동 동기화 체계 | 미진행 | USER_MANUAL/STATUS/PERMISSIONS auto-sync |
 | **4-I** Frontend 테스트 framework | 미진행 | Vitest + Playwright |
-| **4-J** Backend 라우터/서비스 분할 | 부분 완료 (PR-CC ~ PR-DL, 22단계) | sales 4 + seal_requests 8 + projects 2(1040→576, -45%) + quote_calculator 4 strategy 분할 완료(1585→403, -75%) + weekly_report 패키지화 + helpers/notices/personnel/sales/projects 5 sub-module(1261→790, -37% 누적). 잔여: 큰 _employee_* helper + team 도메인(가장 무거움, ~560줄) + personal_schedule |
+| **4-J** Backend 라우터/서비스 분할 | 부분 완료 (PR-CC ~ PR-DM, 23단계) | sales 4 + seal_requests 8 + projects 2(1040→576, -45%) + quote_calculator 4 strategy 분할 완료(1585→403, -75%) + weekly_report 패키지화 + 6 sub-module(helpers/notices/personnel/sales/projects/personal, 1261→734, -42% 누적). 잔여: 큰 _employee_* / _project_weekly_plans helper(~280줄) + team 도메인(team_projects + team_work, ~280줄) — 4-J 마지막 단계 |
 
 ### Backend atomicity·페이징·silent except (외부 리뷰 12.x — 1차 모두 완료)
 | 항목 | 상태 | 비고 |
