@@ -1,6 +1,6 @@
 # 작업 Status
 
-> 마지막 업데이트: 2026-05-16 (Phase 4-C backend 1차 완료 — list_projects/tasks/sales 3 endpoint 페이지네이션)
+> 마지막 업데이트: 2026-05-16 (Phase 4-C 2차 — frontend domain/lib/api pagination option 노출)
 
 ## 완료된 PR
 
@@ -126,6 +126,7 @@
 | **PR-DZ Phase 4-C 1차 — list_projects 페이지네이션** | backend `list_projects`에 `offset` / `limit` Query + `total` 필드 추가. Codex 권고: limit 미지정 unbounded(backward-compat) / 명시 시 max 500 cap / count(현 페이지)+total(filter 적용 후 전체) 동시 노출 / total Optional(None default — frontend 타입 충돌 회피) / ORDER BY code+page_id tie-breaker. SELECT COUNT(*) subquery는 offset/limit 명시 시에만 호출 → 기존 호출처 성능/응답 영향 0. frontend SWR 갱신은 차기 PR. pytest 63 passed | 502a4b8 |
 | **PR-EA Phase 4-C 2차 — list_tasks 페이지네이션** | PR-DZ 동일 패턴: backend `list_tasks`에 `offset` / `limit` + `total` Optional 추가, max 500 cap, ORDER BY `end_date NULLS LAST` + `page_id` tie-breaker. SELECT COUNT(*) subquery 조건부 호출. 기존 frontend `listTasks()` 호출 영향 0. pytest 63 passed | 8c17f57 |
 | **PR-EB Phase 4-C 3차 — list_sales 페이지네이션 (backend 1차 완료)** | PR-DZ/EA 동일 패턴: backend `list_sales` offset/limit + total Optional, ORDER BY `created_time DESC NULLS LAST` + `page_id` tie-breaker. **4-C backend 1차 완료** — list_projects/tasks/sales 3 endpoint 일관 페이지네이션. pytest 63 passed | ad0abb3 |
+| **PR-EC Phase 4-C frontend 노출 — domain + lib/api option** | 3 `ListResponse` 타입(Project/Task/Sale)에 `total?: number` 추가 + 3 lib/api 함수(listProjects/Tasks/Sales) filters에 `offset?: number` / `limit?: number` 옵션 추가. 기존 호출처 0 영향(option 미지정 시 동일 동작). pagination UI(URL ?page=N) 적용은 차기 PR. tsc + lint 통과 | c12d4e7 |
 
 ## 미완료 / 보류
 
@@ -138,7 +139,7 @@ DASH-001~004 / PROJ-001~005 / MY-001~005 / WEEK-001~005 / COMMON-001~003 항목 
 |---|---|---|
 | **4-A** lib/api.ts 도메인 분리 | ✅ 완료 (PR-S/S2/AR/BD/BE/BG, 100%) | 15/15 도메인 lib/api/*.ts. lib/api.ts는 49줄 re-export hub만 남음 |
 | **4-B** 대형 컴포넌트 외과적 분리 | ✅ 완료 (PR-AE~BC, 13 cycle) | -2701줄/-26%, 신규 분리 18개. 본격 design refactor는 별도 cycle |
-| **4-C** 리스트 서버 필터링·페이지네이션 | backend 1차 완료 (PR-DZ list_projects + PR-EA list_tasks + PR-EB list_sales, 모두 backward-compat) | 잔여: frontend SWR 적용 (URL ?page=N&pageSize=M) + 명시 limit 도입 시점 결정 |
+| **4-C** 리스트 서버 필터링·페이지네이션 | backend 1차 완료 + frontend lib/api option 노출 (PR-DZ/EA/EB/EC) | 잔여: 페이지 UI(URL ?page=N&pageSize=M + pagination navigation) + 명시 limit 도입 시점 결정 |
 | **4-D** 메뉴 그룹 URL 재구성 | 미진행 | `/workspace`, `/operations`, `/admin` 통합 |
 | **4-E** 권한 로직 layout 통합 | 미진행 | 페이지마다 분산된 가드를 layout 레벨로 |
 | **4-F** 대시보드/주간보고 집계 API 별도 | 미진행 | client-side aggregation을 backend로 push |
