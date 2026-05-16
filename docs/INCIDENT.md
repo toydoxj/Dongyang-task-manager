@@ -254,7 +254,7 @@ PR-BP에서 `hydrateUserFromMe()`가 `authFetch("/api/auth/me")`를 사용. SSO 
 3. **PR-BO `authFetch` silent retry에 제외 list 추가** ✅ — PR-DV: `_authFetchInternal`에 `isAuthVerifyEndpoint` 분기 추가, `/api/auth/me` / `/api/auth/status` 시작 path는 silent SSO 시도 안 함. vitest 2 시나리오로 회귀 방지.
 4. **PR-BQ 재시도 전 PR-BP 재설계 완료** ✅ — PR-CY 완료(2026-05-14 commit a1e8d08) + PR-DT vitest 회귀 보강(3119ba9) + PR-DV silent retry 제외(2026-05-16).
 5. **🚨 PR-EM/EN 4차 시도(2026-05-16)에서 사고 발생** — 위 체크리스트 1~4 모두 충족됐음에도 cookie 발급 안 된 사용자에서 회귀. 누락된 안전망: **운영 telemetry 1주 관찰(PR-EL → 차단된 채 PR-EN 진행)** + **playwright e2e 4 role 인증 흐름 cookie 발급/차단 시나리오** (체크리스트 #5/#6). 5차 시도 전 반드시 두 가지 충족.
-6. **graceful fallback 설계 개선 필요** — verifyAndHydrateFromMe가 401 vs network을 구별 시그니처로 호출처에 전달(`{user, reason: 'ok'|'unauthorized'|'network'}`). AuthGuard는 401이면 silent SSO trigger, network이면 stale user 유지. 현 PR-CY의 graceful은 cookie 만료 시점에 401 폭주를 표면화 못 함.
+6. **graceful fallback 설계 개선 필요** — verifyAndHydrateFromMe가 401 vs network을 구별 시그니처로 호출처에 전달(`{user, reason: 'ok'|'unauthorized'|'network'}`). AuthGuard는 401이면 silent SSO trigger, network이면 stale user 유지. 현 PR-CY의 graceful은 cookie 만료 시점에 401 폭주를 표면화 못 함. **1차 충족: PR-EO(feb2a4c, 2026-05-17) — VerifyResult discriminated union + vitest 4 시나리오. AuthGuard 활용은 5차 본격 PR로 분리.**
 
 ### 추적
 
