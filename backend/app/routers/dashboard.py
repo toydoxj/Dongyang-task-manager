@@ -22,6 +22,7 @@ from sqlalchemy.orm import Session
 
 from app.db import get_db
 from app.models.auth import User
+from app.models.employee import Employee
 from app.models.mirror import MirrorCashflow, MirrorProject, MirrorTask
 from app.security import get_current_user
 from app.services import notion_props as P
@@ -70,6 +71,48 @@ def _kst_today() -> date:
     return datetime.now(_KST).date()
 
 
+# ── PR-DP: role-scope 차등 ──
+# admin / manager → "all"  (전체 조직)
+# team_lead      → "team"  (Employee.team 매칭 프로젝트, 미연결 시 self fallback)
+# member         → "self"  (Employee.name이 assignees에 포함된 항목만)
+# scope_degraded는 운영 로그/디버깅 용 — 응답엔 노출 X.
+def _resolve_user_scope(
+    db: Session, user: User
+) -> tuple[str, str | None, str | None]:
+    """(scope, team, employee_name) 반환.
+
+    Codex 권고:
+    - team_lead Employee 미연결 → fail-closed self fallback (401/422 대신).
+    - member는 User.name 직접 매칭 X — Employee.linked_user_id 경유 canonical name.
+    """
+    role = (user.role or "").strip()
+    if role in ("admin", "manager"):
+        return ("all", None, None)
+    emp = (
+        db.query(Employee.name, Employee.team)
+        .filter(Employee.linked_user_id == user.id)
+        .first()
+    )
+    if emp is None:
+        # 미연결 사용자 — 권한 좁히기 (Codex 권고). 운영 로그로 추적.
+        logger.warning(
+            "dashboard scope degraded — user.id=%s role=%s Employee 미연결",
+            user.id, role,
+        )
+        return ("self", None, None)
+    emp_name, emp_team = emp
+    if role == "team_lead":
+        if not emp_team:
+            logger.warning(
+                "team_lead scope degraded — user.id=%s Employee.team 빈 값",
+                user.id,
+            )
+            return ("self", None, emp_name or None)
+        return ("team", emp_team, emp_name or None)
+    # member (기타 role 포함)
+    return ("self", emp_team or None, emp_name or None)
+
+
 def _week_bounds(today: date) -> tuple[date, date]:
     """월요일 시작 (KST). end는 다음 월요일 00:00 (exclusive)."""
     weekday = today.weekday()  # 월=0
@@ -84,9 +127,10 @@ _PENDING_SEAL_STATUSES = {"1차검토 중", "2차검토 중"}
 # ── PR-BJ-5: in-memory TTL cache ─────────────────────────────────────────────
 # WeeklyReport pattern과 동일. cache key는 KST 기준일(today) — 자정 넘어가면 자동
 # 무효화. 운영 user 액션(프로젝트/날인/cashflow 변경)이 30초 이내 반영되도록 짧게.
-# role 스코프 분리 시 key에 (role, team) 추가 예정.
+# PR-DP: role-scope 분리로 key에 scope tuple 추가. _CACHE_MAX는 active user 수
+# 만큼 늘려 thrash 회피 (Codex 권고 64~128).
 _CACHE_TTL_SEC = 30
-_CACHE_MAX = 16
+_CACHE_MAX = 64
 
 _summary_cache: OrderedDict[tuple, tuple[float, "DashboardSummary"]] = OrderedDict()
 _actions_cache: OrderedDict[tuple, tuple[float, "DashboardActions"]] = OrderedDict()
@@ -120,11 +164,11 @@ def _cache_set(cache: OrderedDict, key: tuple, value) -> None:
 @router.get("/summary", response_model=DashboardSummary)
 async def get_dashboard_summary(
     force_refresh: bool = Query(default=False, description="cache 우회 (사용자 새로고침)"),
-    user: User = Depends(get_current_user),  # noqa: ARG001 — 권한 차등은 별도 cycle
+    user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
     notion: NotionService = Depends(get_notion),
 ) -> DashboardSummary:
-    """KPI 6개 집계.
+    """KPI 6개 집계 — role-scope 차등 (PR-DP).
 
     frontend KPICards.tsx와 동일 로직:
     1) 진행중 — projects.stage='진행중'
@@ -133,9 +177,16 @@ async def get_dashboard_summary(
     4) 승인 대기 날인 — seal status ∈ {1차검토 중, 2차검토 중}
     5) 이번 주 수금/지출 — cashflow week_start ≤ date < week_end
     6) 최다 부하 팀 — 진행중 프로젝트의 teams[] 카운트 1위
+
+    role-scope:
+    - admin/manager: 전체
+    - team_lead   : 자기 팀 teams[] 포함 프로젝트/태스크. top_team은 자기 팀.
+    - member       : Employee.name이 assignees[] 포함된 항목.
+    재무(week_income/expense)는 scope='all'에서만 채움 — 다른 role 0.
     """
     today = _kst_today()
-    cache_key = ("summary", today.isoformat())
+    scope, scope_team, scope_emp = _resolve_user_scope(db, user)
+    cache_key = ("summary", today.isoformat(), scope, scope_team or "", scope_emp or "")
     if not force_refresh:
         cached = _cache_get(_summary_cache, cache_key)
         if cached is not None:
@@ -145,17 +196,30 @@ async def get_dashboard_summary(
     due_soon_end = today + timedelta(days=_DUE_SOON_DAYS)
     week_start, week_end = _week_bounds(today)
 
-    # 1·2·6 — projects (단일 query)
+    # 1·2·6 — projects (단일 query, scope는 메모리 필터)
     proj_rows = db.execute(
-        select(MirrorProject.stage, MirrorProject.teams, MirrorProject.properties).where(
-            MirrorProject.archived.is_(False)
-        )
+        select(
+            MirrorProject.stage,
+            MirrorProject.teams,
+            MirrorProject.assignees,
+            MirrorProject.properties,
+        ).where(MirrorProject.archived.is_(False))
     ).all()
+
+    def _proj_in_scope(teams: list[str] | None, assignees: list[str] | None) -> bool:
+        if scope == "all":
+            return True
+        if scope == "team":
+            return bool(scope_team) and scope_team in (teams or [])
+        # self
+        return bool(scope_emp) and scope_emp in (assignees or [])
 
     in_progress_count = 0
     stalled_count = 0
     team_load: Counter[str] = Counter()
-    for stage, teams, props in proj_rows:
+    for stage, teams, assignees, props in proj_rows:
+        if not _proj_in_scope(teams, assignees):
+            continue
         if stage == "진행중":
             in_progress_count += 1
             for t in (teams or []):
@@ -175,45 +239,72 @@ async def get_dashboard_summary(
         else None
     )
 
-    # 3 — tasks (status, end_date 인덱스 활용)
-    due_soon_tasks = db.execute(
-        select(MirrorTask.page_id).where(
-            and_(
-                MirrorTask.archived.is_(False),
-                MirrorTask.status != "완료",
-                MirrorTask.end_date.is_not(None),
-                MirrorTask.end_date >= today,
-                MirrorTask.end_date <= due_soon_end,
+    # 3 — tasks (status, end_date 인덱스 활용. scope 적용 시 메모리 필터)
+    if scope == "all":
+        task_rows = db.execute(
+            select(MirrorTask.page_id).where(
+                and_(
+                    MirrorTask.archived.is_(False),
+                    MirrorTask.status != "완료",
+                    MirrorTask.end_date.is_not(None),
+                    MirrorTask.end_date >= today,
+                    MirrorTask.end_date <= due_soon_end,
+                )
             )
-        )
-    ).all()
-    due_soon_tasks_count = len(due_soon_tasks)
+        ).all()
+        due_soon_tasks_count = len(task_rows)
+    else:
+        task_rows = db.execute(
+            select(MirrorTask.assignees, MirrorTask.teams).where(
+                and_(
+                    MirrorTask.archived.is_(False),
+                    MirrorTask.status != "완료",
+                    MirrorTask.end_date.is_not(None),
+                    MirrorTask.end_date >= today,
+                    MirrorTask.end_date <= due_soon_end,
+                )
+            )
+        ).all()
+        if scope == "team":
+            due_soon_tasks_count = sum(
+                1 for _, t_teams in task_rows
+                if bool(scope_team) and scope_team in (t_teams or [])
+            )
+        else:  # self
+            due_soon_tasks_count = sum(
+                1 for t_assignees, _ in task_rows
+                if bool(scope_emp) and scope_emp in (t_assignees or [])
+            )
 
-    # 5 — cashflow (date 인덱스)
-    week_income_row = db.execute(
-        select(MirrorCashflow.amount).where(
-            and_(
-                MirrorCashflow.archived.is_(False),
-                MirrorCashflow.kind == "income",
-                MirrorCashflow.date.is_not(None),
-                MirrorCashflow.date >= week_start,
-                MirrorCashflow.date < week_end,
+    # 5 — cashflow: admin/manager만. team_lead/member는 재무 정보 노출 X.
+    if scope == "all":
+        week_income_row = db.execute(
+            select(MirrorCashflow.amount).where(
+                and_(
+                    MirrorCashflow.archived.is_(False),
+                    MirrorCashflow.kind == "income",
+                    MirrorCashflow.date.is_not(None),
+                    MirrorCashflow.date >= week_start,
+                    MirrorCashflow.date < week_end,
+                )
             )
-        )
-    ).all()
-    week_expense_row = db.execute(
-        select(MirrorCashflow.amount).where(
-            and_(
-                MirrorCashflow.archived.is_(False),
-                MirrorCashflow.kind == "expense",
-                MirrorCashflow.date.is_not(None),
-                MirrorCashflow.date >= week_start,
-                MirrorCashflow.date < week_end,
+        ).all()
+        week_expense_row = db.execute(
+            select(MirrorCashflow.amount).where(
+                and_(
+                    MirrorCashflow.archived.is_(False),
+                    MirrorCashflow.kind == "expense",
+                    MirrorCashflow.date.is_not(None),
+                    MirrorCashflow.date >= week_start,
+                    MirrorCashflow.date < week_end,
+                )
             )
-        )
-    ).all()
-    week_income = int(sum(r[0] or 0 for r in week_income_row))
-    week_expense = int(sum(r[0] or 0 for r in week_expense_row))
+        ).all()
+        week_income = int(sum(r[0] or 0 for r in week_income_row))
+        week_expense = int(sum(r[0] or 0 for r in week_expense_row))
+    else:
+        week_income = 0
+        week_expense = 0
 
     # 4 — seal pending count: PR-CK에서 summary 응답 경로에서 제거 (운영 6.4초 병목).
     # frontend KPICards가 별도 endpoint(/api/seal-requests/pending-count)로 병렬 fetch.
