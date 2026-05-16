@@ -1,6 +1,6 @@
 # 작업 Status
 
-> 마지막 업데이트: 2026-05-16 (Phase 4-G 재시도 시작 — PR-EL telemetry 복구)
+> 마지막 업데이트: 2026-05-16 (Phase 4-G 2단계 완료 — PR-EL/EM/EN, cookie 단독 인증)
 
 ## 완료된 PR
 
@@ -137,6 +137,7 @@
 | **PR-EK 4-D 2단계 — admin/employee-work → /operations/ + PR-EJ redirects 보강** | `app/admin/employee-work/` → `app/operations/employee-work/` git mv (팀장 권한, 운영성 페이지). callsite 4 갱신 (Sidebar / ReportPreview sourceHref / PriorityActionsPanel ctaHref / help page). next.config.ts redirects 5건 한 번에 추가 — PR-EJ에서 누락됐던 4건(incomes/clients/expenses/contracts) + 이번 1건(employee-work). 모두 308 permanent. /operations/incomes/layout.tsx tabs path도 PR-EJ 폴더 이동 후 옛 path 잔존 → 갱신. tsc + lint 통과 / `/admin/(incomes|expenses|contracts|employee-work)` 잔존 0건. **4-D 1·2단계 완료** | b731285 |
 | **PR-EL 4-G 2단계 1차 — backend auth_via=header\|cookie telemetry 복구** | INCIDENT #4 체크리스트 #6. PR-BI revert 시 함께 제거된 `dy.auth` logger.info를 `security.py get_current_user`에 다시 추가. 1회 진입당 1 줄 — header/cookie 분기 비율 관측. PR-EM(frontend localStorage token 저장 중단) deploy 후 신규 cohort부터 cookie 비율 99%+ 수렴하는지 운영 telemetry로 확인 → PR-EN(authFetch Authorization header 첨부 코드 완전 제거) go/no-go 판단. 운영 인증 흐름 변경 없음 — log 한 줄 추가. pytest 63 통과 | 93f4d5b |
 | **PR-EM 4-G 2단계 2차 — frontend cookie-only 인증 전환 (PR-BP+BQ 통합 재시도)** | `saveAuth(token, user)` token 인자 무시(signature backward-compat 유지로 chunk stale 회피, 체크리스트 #2). `isLoggedIn` 을 `!!getUser()` 로 변경 — cookie httpOnly이라 frontend read 불가, user JSON 존재로 판단. AuthGuard.refresh isLoggedIn 분기에 `verifyAndHydrateFromMe` 추가 — cookie validity 검증, 200이면 user 갱신, 401/network는 graceful fallback(Phase 0-B 정책 + PR-BO silent SSO retry 자동 회복). vitest 32 통과(saveAuth 시나리오 PR-EM 동작 반영). **기존 사용자: localStorage token 그대로 유지 + backend header fallback 호환. 신규 로그인부터 cookie 단독 자연 수렴.** PR-CY callback page raw fetch 패턴 + AuthGuard에서 동일 패턴 활용으로 INCIDENT #4 무한 재귀 회피 | 9f5576e |
+| **PR-EN 4-G 2단계 3차 — authFetch Authorization header 첨부 코드 완전 제거** | 사용자 명시 결정(운영 관찰 없이 즉시 진행, 회귀 위험 감수). `authFetch`/`backendLogout`에서 `getToken()` + `Authorization: Bearer` header 첨부 코드 제거 → cookie 단독 인증(credentials:"include"). `getToken` 함수 자체 제거(callsite 0건). `clearAuth`는 legacy localStorage token cleanup 위해 removeItem 유지(idempotent). vitest 33 통과 — PR-EN 회귀 보강 시나리오 1건 추가(legacy localStorage token 잔존해도 header 첨부 X 검증). **4-G 2단계 완료** — PR-BP/BQ 3회 회귀 회피, Codex 권고 3단계 분리(EL/EM/EN) + PR-CY raw fetch + PR-BO/CX/DV 401 silent retry 안전망 모두 적용 | b60d720 |
 
 ## 미완료 / 보류
 
@@ -153,7 +154,7 @@ DASH-001~004 / PROJ-001~005 / MY-001~005 / WEEK-001~005 / COMMON-001~003 항목 
 | **4-D** 메뉴 그룹 URL 재구성 | ✅ 1·2단계 완료 (PR-EJ/EK) | 운영 5 페이지(incomes/clients/expenses/contracts/employee-work) → /operations/. next.config redirects 5건 308 영구. 사이드바 그룹과 URL 일치. 잔여 /admin/* 5개(notices/employees/users/sync/drive)는 시스템 관리 적합 — 유지 |
 | **4-E** 권한 로직 layout 통합 | 미진행 | 페이지마다 분산된 가드를 layout 레벨로 |
 | **4-F** 대시보드/주간보고 집계 API 별도 | 미진행 | client-side aggregation을 backend로 push |
-| **4-G** JWT localStorage → httpOnly cookie | 1단계 완료(PR-BH) / 2단계 PR-EL+EM 적용 완료. 안전망(PR-BN/BO/BL-5/CX/CY/DT/DV) 모두 살아있음. **다음: PR-EM deploy 후 운영 telemetry(`dy.auth` logger.info)로 cookie 비율 99%+ 수렴 확인 → PR-EN(authFetch Authorization header 첨부 코드 완전 제거) 진행**. PR-EN go/no-go는 운영 1주 관찰 후 사용자 판단 | XSS 방어 강화 |
+| **4-G** JWT localStorage → httpOnly cookie | ✅ 완료 (PR-BH 1단계 + PR-EL/EM/EN 2단계 3차 — cookie 단독 인증). 안전망(PR-BN/BO/BL-5/CX/CY/DT/DV/PR-EL telemetry) 모두 적용. PR-BP/BQ 3회 회귀 회피 — 사용자 명시 결정으로 운영 관찰 없이 PR-EN 즉시 진행. 운영 회귀 시 PR-EN 단독 revert(`git revert b60d720`) → 즉시 header fallback으로 복귀 가능 | XSS 방어 강화 |
 | **4-F** 대시보드/주간보고 집계 API | ✅ 완료 (PR-BJ-1~5 + PR-BK 1차 backend 집계 + TTL cache, PR-DP/DQ/DR 3 endpoint 모두 role-scope 차등) | dashboard N+1 → 1 fetch, 4 role 권한 차등 |
 | **4-I** 테스트 framework | Vitest(PR-BL-1/2, 18 단위 테스트) + Playwright(PR-BL-3 smoke + PR-BL-5 4 role 시나리오, 누적 5 e2e) + GitHub Actions CI(PR-BL-4) 완료 / 잔여(backend full mock e2e — 미정밀) | PR-BI 같은 회귀 자동 검출 |
 | **4-E** 권한 layout 통합 | ✅ 완료 (PR-BS/BT/BU + PR-DS, 누적 12 page) | useRoleGuard 적용 가능한 admin/role-list 가드 페이지 모두 완료. 나머지(weekly-report/seal-requests/me/suggestions/schedule)는 전 직원 진입 + UI 분기 패턴이라 useAuth 유지가 적합 |
