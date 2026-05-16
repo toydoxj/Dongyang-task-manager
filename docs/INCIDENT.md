@@ -61,10 +61,12 @@
 
 ### 추적 항목 (별도 cycle 진행)
 
-- [ ] weekly_report `_report_cache`가 ORM 객체 보유 여부 검토
-- [ ] background sync (5분 incremental) session close 보장
-- [ ] PDF route (`build_weekly_report_pdf` 등)의 db 의존성 정리
-- [ ] silent except path에서 db.close() 누락 점검
+- [x] **weekly_report `_report_cache`가 ORM 객체 보유 여부 검토** — PR-DX audit (2026-05-16). `_report_cache`는 Pydantic `WeeklyReport` DTO만 보관 (BaseModel, ORM 객체 X). cache TTL 5분 후 자동 invalidate. 안전.
+- [x] **background sync (5분 incremental) session close 보장** — PR-DX audit. `sync.py NotionSyncService`는 `with self.session_factory() as db:` 패턴 일관 사용 (180~755 11 callsites 모두). `weekly_snapshot.py` / `task_auto_progress.py` / `project_stage_sync.py`는 `with SessionLocal() as db:` 자동 close. `sso_drive.py` 3 callsites / `task_calendar_sync.py` 2 callsites는 `try: ... finally: db.close()` 패턴 — 모두 보장.
+- [x] **PDF route (`build_weekly_report_pdf` 등)의 db 의존성 정리** — PR-DX audit. `weekly_report_pdf.py` / `quote_pdf.py`는 pure DTO → bytes 변환 (Session 의존 0건). 라우터(`routers/weekly_report.py`, `sales/pdf.py`)는 FastAPI `Depends(get_db)`로 자동 close.
+- [x] **silent except path에서 db.close() 누락 점검** — PR-DX audit + PR-BV/BW silent except 분류 결과 cross-check. `except` 블록 내부에서 `SessionLocal()` 호출 케이스 0건 — silent except의 db.close 누락 위험 없음.
+
+근본 연결 누수 위험은 PR-AQ(get_db rollback + reset_on_return + /api/health/db) + PR-DA(idle_in_transaction_session_timeout 300s) 2중 안전망으로 cover.
 - [ ] `/api/health/db` 라우트 + Render health check path 교체
 
 ---
