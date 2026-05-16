@@ -123,3 +123,49 @@ export async function mockBackendEmpty(page: Page): Promise<void> {
   // 그 외 모든 /api/* 호출은 빈 객체로 fallback (e2e 깨짐 방지)
   await page.route("**/api/**", (r) => fulfillJson(r, {}));
 }
+
+/** PR-EP: callback page fragment 합성 helper. backend works_callback이 redirect URL에
+ * 박는 `#token=...&user=<base64url>&next=...` 형태를 e2e에서 모사. */
+export function makeCallbackFragment(
+  role: Role,
+  next: string = "/",
+): string {
+  const user = userJson(role); // 이미 string
+  const b64 = Buffer.from(user, "utf-8")
+    .toString("base64")
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/, "");
+  return `#token=mock-${role}-token&user=${b64}&next=${encodeURIComponent(next)}`;
+}
+
+/** PR-EP: callback page가 호출하는 `/api/auth/me`만 별도 status로 mock.
+ * 200: user 갱신 흐름 / 401: cookie 미발급 graceful / fail: network reject. */
+export async function mockAuthMe(
+  page: Page,
+  opts: { status: 200 | 401; user?: object; fail?: boolean },
+): Promise<void> {
+  await page.route("**/api/auth/me", (r) => {
+    if (r.request().method() === "OPTIONS") {
+      void r.fulfill({ status: 204, headers: CORS_HEADERS, body: "" });
+      return;
+    }
+    if (opts.fail) {
+      void r.abort("failed");
+      return;
+    }
+    if (opts.status === 401) {
+      void r.fulfill({
+        status: 401,
+        headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
+        body: JSON.stringify({ detail: "unauthorized" }),
+      });
+      return;
+    }
+    void r.fulfill({
+      status: 200,
+      headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
+      body: JSON.stringify(opts.user ?? {}),
+    });
+  });
+}
