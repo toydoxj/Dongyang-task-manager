@@ -1,6 +1,6 @@
 # 작업 Status
 
-> 마지막 업데이트: 2026-05-16 (Phase 4-J 17단계 완료 — quote_calculator inspection + seismic strategy 분리)
+> 마지막 업데이트: 2026-05-16 (Phase 4-J 18단계 완료 — quote_calculator strategy 4 모듈화 종료, 1585→403 -75%)
 
 ## 완료된 PR
 
@@ -105,6 +105,7 @@
 | **PR-DE Phase 4-J 15단계 — quote_calculator 패키지 + struct strategy 분리** | `services/quote_calculator.py` (1585 lines) → `services/quote_calculator/__init__.py` 패키지 변환. `strategies/struct.py` 신설(106 lines): `_calculate_struct_design` + `_calculate_struct_review`. 4 호출처(sales/quote_meta·sales/__init__·quote_code·quote_pdf) import 변경 없음. _DISPATCH 정의 직전에 strategies.struct를 import → partial loading 시점에 helper(baseline_manhours/_excel_round_half_up/_resolve_rate)와 model 모두 attribute 확보 → 순환 import 충돌 없음. import + 산출 smoke 검증 + pytest 63 passed | 82ab200 |
 | **PR-DF Phase 4-J 16단계 — inspection 짝 strategy 분리** | `_calculate_inspection_bma`(건축물관리법점검, ~248줄) + `_calculate_inspection_legal`(시특법 정기/정밀/진단, ~395줄) 한 짝 → `strategies/inspection.py` (674 줄). PR-DE 동일 패턴 — model(QuoteInput/QuoteResult/QuoteType/OptionalTaskBreakdown/ManhourFormulaStep) + helper(_excel_round_half_up/_resolve_rate)는 부모 package import. `bma_table`/`inspection_legal_table` 함수 내부 lazy import 그대로 유지. seismic helper(`interpolate_seismic_manhours`)는 분리 대상 아님(__init__.py 잔류, PR-DG 동반 이동). __init__.py 1512 → 870 (-642 줄, -42%). pytest 63 passed | e3d4bff |
 | **PR-DG Phase 4-J 17단계 — seismic_eval strategy 분리** | `_calculate_seismic_eval`(내진성능평가, ~141줄) + helper 두 개(`interpolate_seismic_manhours` ~50줄, `_SEISMIC_AREA_TABLE` ~14줄) → `strategies/seismic.py` (230 줄). helper는 seismic_eval만 사용 + 외부 import 0건 확인 후 통째 동반 이동(모듈 응집도). __init__.py 870 → 660 (-210 줄, -24%). 누적(PR-DC ~ PR-DG): quote_calculator 1585 → 660 (-58%) / projects 1040 → 576 (-45%). xlsx AA58/AB58/AC58 보간 sanity ±0.001 일치, pytest 63 passed | 2802266 |
+| **PR-DH Phase 4-J 18단계 — 소형 4 strategy simple.py 일괄 분리** | `_calculate_field_support`(현장지원, 74줄) + `_calculate_supervision`(구조감리, 72줄) + `_calculate_reinforcement_design`(내진보강, 66줄) + `_calculate_third_party_review`(3자검토, 58줄) → `strategies/simple.py` (297 줄). 응집도 결정 — 4개 모두 단일 인.일 입력 모델 + 단가만 다른 단순 산식이라 한 파일에 묶음(strategies/ 파일 수 8 폭증 회피). __init__.py 660 → 403 (-257 줄, -39%). 누적 quote_calculator 1585 → 403 (-75%) / strategies(struct 106 + inspection 674 + seismic 229 + simple 297) = 1306줄. pytest 63 passed | 24ae196 |
 
 ## 미완료 / 보류
 
@@ -127,7 +128,7 @@ DASH-001~004 / PROJ-001~005 / MY-001~005 / WEEK-001~005 / COMMON-001~003 항목 
 | **4-E** 권한 layout 통합 | `useRoleGuard` hook 도입(PR-BS/BT/BU, 누적 10 page) / 잔여(weekly-report/seal-requests/notices — 전 직원 진입 + isAdmin UI 분기로 useRoleGuard 부적합, useAuth 유지 결정) | 권한 가드 코드 일관성 |
 | **4-H** 문서 자동 동기화 체계 | 미진행 | USER_MANUAL/STATUS/PERMISSIONS auto-sync |
 | **4-I** Frontend 테스트 framework | 미진행 | Vitest + Playwright |
-| **4-J** Backend 라우터/서비스 분할 | 부분 완료 (PR-CC ~ PR-DG, 17단계) | sales 4 + seal_requests 8 + projects 2(1040→576, -45%) + quote_calculator 3(struct/inspection/seismic, 1585→660, -58%). 잔여: 소형 strategy 4개(field_support/supervision/reinforcement/third_party, ~270줄) / weekly_report aggregate |
+| **4-J** Backend 라우터/서비스 분할 | 부분 완료 (PR-CC ~ PR-DH, 18단계) | sales 4 + seal_requests 8 + projects 2(1040→576, -45%) + quote_calculator 4 strategy 분할 완료(1585→403, -75% / strategies 4 file 1306줄). 잔여: weekly_report.py(1261줄) aggregate 분할 |
 
 ### Backend atomicity·페이징·silent except (외부 리뷰 12.x — 1차 모두 완료)
 | 항목 | 상태 | 비고 |
