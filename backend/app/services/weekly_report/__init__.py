@@ -373,45 +373,6 @@ def _project_weekly_plans(
 # ── 집계 함수 ──
 
 
-def aggregate_headcount(db: Session, week_start: date, week_end: date) -> HeadcountSummary:
-    """재직자 수 + 직종/팀별 분포 + 주간 신규/퇴사."""
-    # 재직 = resigned_at is None or resigned_at > week_end (퇴사일이 이번 주 이후면 아직 재직)
-    rows = (
-        db.query(Employee)
-        .filter(or_(Employee.resigned_at.is_(None), Employee.resigned_at > week_end))
-        .all()
-    )
-    by_occ: dict[str, int] = defaultdict(int)
-    by_team: dict[str, int] = defaultdict(int)
-    for e in rows:
-        by_occ[_classify_occupation(e.team, e.position)] += 1
-        if e.team:
-            by_team[e.team] += 1
-
-    # 이번 주 신규 (created_at은 datetime, KST 자정 기준)
-    new_count = (
-        db.query(Employee)
-        .filter(Employee.created_at >= datetime.combine(week_start, time.min))
-        .filter(Employee.created_at <= datetime.combine(week_end, time.max))
-        .count()
-    )
-
-    # 이번 주 퇴사
-    resigned_rows = (
-        db.query(Employee.name)
-        .filter(Employee.resigned_at >= week_start)
-        .filter(Employee.resigned_at <= week_end)
-        .all()
-    )
-
-    return HeadcountSummary(
-        total=len(rows),
-        by_occupation=dict(by_occ),
-        by_team=dict(by_team),
-        new_this_week=new_count,
-        resigned_this_week=[r[0] for r in resigned_rows],
-    )
-
 
 def aggregate_stage_projects(
     db: Session,
@@ -463,36 +424,6 @@ def aggregate_stage_projects(
     items.sort(key=lambda x: (x.teams[0] if x.teams else "￿", x.code))
     return items
 
-
-def aggregate_team_members(
-    db: Session, week_end: date
-) -> dict[str, list[TeamMember]]:
-    """팀별 재직 직원 명단 — 개인일정 grid에서 빈 칸이라도 행이 보이도록.
-
-    재직 = resigned_at IS NULL or resigned_at > week_end (주차 안에 퇴사한 사람도
-    표시). 팀별로 sort_order → 이름 정렬. 팀이 비어있는 직원은 제외.
-    """
-    rows = (
-        db.query(Employee)
-        .filter(or_(Employee.resigned_at.is_(None), Employee.resigned_at > week_end))
-        .all()
-    )
-    by_team: dict[str, list[TeamMember]] = defaultdict(list)
-    for e in rows:
-        team = (e.team or "").strip()
-        if not team:
-            continue
-        by_team[team].append(
-            TeamMember(
-                name=e.name,
-                position=e.position or "",
-                team=team,
-                sort_order=e.sort_order or 0,
-            )
-        )
-    for members in by_team.values():
-        members.sort(key=lambda m: (m.sort_order, m.name))
-    return dict(by_team)
 
 
 _TERMINATED_STAGES = frozenset({"종결", "타절"})
@@ -617,48 +548,6 @@ def aggregate_new_projects(
         )
     return items
 
-
-def aggregate_sales(
-    db: Session,
-    last_week_start: date,
-    last_week_end: date,
-) -> list[SalesItem]:
-    """저번주 범위 내 시작된 영업 — 영업시작일(sales_start_date) 기준.
-
-    종결 단계(수주확정/실주/취소/전환완료)는 제외. sales_start_date 비어있으면
-    무시 (운영자가 노션에서 입력 안 한 영업).
-    """
-    rows = (
-        db.query(M.MirrorSales)
-        .filter(M.MirrorSales.archived.is_(False))
-        .filter(~M.MirrorSales.stage.in_(["수주확정", "실주", "취소", "전환완료"]))
-        .filter(M.MirrorSales.sales_start_date.isnot(None))
-        .filter(M.MirrorSales.sales_start_date >= last_week_start)
-        .filter(M.MirrorSales.sales_start_date <= last_week_end)
-        .order_by(M.MirrorSales.code)
-        .all()
-    )
-    client_name_by_id = _client_name_lookup(db)
-    items: list[SalesItem] = []
-    for s in rows:
-        client_name = client_name_by_id.get(s.client_id, "") if s.client_id else ""
-        items.append(
-            SalesItem(
-                page_id=s.page_id,
-                code=s.code,
-                category=list(s.category or []),
-                name=s.name,
-                client=client_name,
-                scale=_scale_text(s),
-                estimated_amount=s.estimated_amount,
-                probability=s.probability,
-                is_bid=s.is_bid,
-                stage=s.stage,
-                submission_date=s.submission_date.isoformat() if s.submission_date else None,
-                sales_start_date=s.sales_start_date.isoformat() if s.sales_start_date else None,
-            )
-        )
-    return items
 
 
 def aggregate_personal_schedule(
@@ -997,12 +886,18 @@ def aggregate_team_work(
 # ── main ──
 
 # PR-DJ: notices 짝(holidays + 공지/교육) → weekly_report/notices.py 분리.
-# build_weekly_report 직전에 import — partial loading 시점에 HolidayItem
+# PR-DK: 인원 짝(headcount + team_members) → personnel.py / 영업(sales) → sales.py.
+# build_weekly_report 직전에 import — partial loading 시점에 model
 # (BaseModel) attribute가 확보된 상태 → 순환 import 충돌 없음.
 from app.services.weekly_report.notices import (  # noqa: E402
     aggregate_holidays,
     aggregate_notices,
 )
+from app.services.weekly_report.personnel import (  # noqa: E402
+    aggregate_headcount,
+    aggregate_team_members,
+)
+from app.services.weekly_report.sales import aggregate_sales  # noqa: E402
 
 
 def build_weekly_report(
