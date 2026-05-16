@@ -4,7 +4,7 @@ from __future__ import annotations
 import asyncio
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.db import get_db
@@ -47,6 +47,11 @@ def _ensure_can_modify_task(user: User, assignees: list[str] | None) -> None:
         )
 
 
+# PR-EA (4-C 2차): list_tasks pagination. PR-DZ list_projects 동일 패턴 —
+# backward-compat 최우선, limit 명시 시에만 max cap.
+_LIST_MAX_LIMIT = 500
+
+
 @router.get("", response_model=TaskListResponse)
 def list_tasks(
     project_id: str | None = Query(default=None),
@@ -58,6 +63,8 @@ def list_tasks(
         default=False,
         description="True면 일정 task만 (분류=외근/출장/휴가 OR 활동=외근/출장)",
     ),
+    offset: int | None = Query(default=None, ge=0),
+    limit: int | None = Query(default=None, ge=1, le=_LIST_MAX_LIMIT),
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> TaskListResponse:
@@ -91,10 +98,25 @@ def list_tasks(
                 M.MirrorTask.activity.in_(["외근", "출장"]),
             )
         )
-    stmt = stmt.order_by(M.MirrorTask.end_date.asc().nullslast())
+    # ORDER BY end_date ASC NULLS LAST + page_id tie-breaker (결정론 보장)
+    stmt = stmt.order_by(
+        M.MirrorTask.end_date.asc().nullslast(),
+        M.MirrorTask.page_id.asc(),
+    )
+
+    paged = offset is not None or limit is not None
+    total: int | None = None
+    if paged:
+        count_stmt = select(func.count()).select_from(stmt.subquery())
+        total = int(db.execute(count_stmt).scalar() or 0)
+        if offset is not None:
+            stmt = stmt.offset(offset)
+        if limit is not None:
+            stmt = stmt.limit(limit)
+
     rows = db.execute(stmt).scalars().all()
     items = [task_from_mirror(r) for r in rows]
-    return TaskListResponse(items=items, count=len(items))
+    return TaskListResponse(items=items, count=len(items), total=total)
 
 
 @router.post("", response_model=Task, status_code=status.HTTP_201_CREATED)
