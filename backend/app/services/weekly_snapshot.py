@@ -16,7 +16,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from app.db import SessionLocal
 from app.models import mirror as M
 from app.models.snapshot import ProjectSnapshot
-from app.services.weekly_report import _avg_task_progress
+from app.services.weekly_report.helpers import _avg_task_progress
 
 logger = logging.getLogger("weekly_snapshot")
 
