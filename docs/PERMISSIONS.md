@@ -85,6 +85,7 @@
 | `/api/suggestions *` | 건의 등록·수정·삭제 | 본인것만 수정·삭제 (내부 가드) |
 | `/api/tasks *` | TASK 생성·수정·삭제 (담당자/생성자 본인) | |
 | `/api/weekly-report GET/.pdf/last-published/last-published.pdf` | 주간업무일지 조회·다운로드 | 모든 직원 동일 콘텐츠 (날인대장 포함, PR-AA) |
+| `/api/dashboard/summary` `/actions` `/insights` | 대시보드 KPI/액션/경고 집계 | **role-scope 차등 (PR-DP/DQ/DR)** — admin/manager는 전체, team_lead는 `MirrorProject.teams[]` 자기 팀, member는 `Employee.name` assignees[] 매칭. 재무(week_income/expense)와 overdue_seals notion 호출은 admin/manager만 노출. team_lead가 Employee 미연결이거나 team 빈 값이면 fail-closed self fallback (`scope_degraded` 로그) |
 
 ## 프론트엔드 가드
 
