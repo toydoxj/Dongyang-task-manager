@@ -247,16 +247,17 @@ PR-BP에서 `hydrateUserFromMe()`가 `authFetch("/api/auth/me")`를 사용. SSO 
 
 ### 다음 PR-BP 재설계 시 체크리스트
 
-1. **`hydrateUserFromMe`는 raw `fetch` 사용** — `Authorization` header 수동 첨부 + `credentials: "include"` + 401에 자동 silent SSO 호출 X.
-2. **callback page에서 호출 X** — AuthGuard `ready` phase 진입 시 또는 `/me` 페이지 mount 시 등 callback 외 시점에서 호출.
-3. **PR-BO `authFetch` silent retry에 제외 list 추가** — `/api/auth/me`, `/api/auth/status` 등 인증 endpoint는 401에 silent retry 안 함 (loop 방지).
-4. **PR-BQ 재시도 전 PR-BP 재설계 완료** — Authorization header 제거는 hydration 안전 장치 검증된 후에만.
+1. **`hydrateUserFromMe`는 raw `fetch` 사용** ✅ — PR-CY `verifyAndHydrateFromMe` (line 243 frontend/lib/auth.ts): raw `fetch` + `credentials: "include"` + 401/network graceful fallback. silent SSO trigger 안 함.
+2. **callback page에서 호출 X** ⚠️ — 현재 callback page(`frontend/app/auth/works/callback/page.tsx:105`)에서 호출 중이지만, PR-CY 설계가 raw fetch + 401 graceful fallback이라 INCIDENT #5 무한 재귀는 회피됨(silent SSO trigger 없음). 체크리스트 의도와 다르지만 결과적 안전.
+3. **PR-BO `authFetch` silent retry에 제외 list 추가** ✅ — PR-DV: `_authFetchInternal`에 `isAuthVerifyEndpoint` 분기 추가, `/api/auth/me` / `/api/auth/status` 시작 path는 silent SSO 시도 안 함. vitest 2 시나리오로 회귀 방지.
+4. **PR-BQ 재시도 전 PR-BP 재설계 완료** ✅ — PR-CY 완료(2026-05-14 commit a1e8d08) + PR-DT vitest 회귀 보강(3119ba9) + PR-DV silent retry 제외(2026-05-16).
 
 ### 추적
 
 - PR-BP revert: b51fd72
 - PR-BQ revert: 5ae788e
 - 상태 → PR-BO + PR-BN 시점(ce6f264) 안정 운영 중
+- 체크리스트 #1/#3/#4 충족, #2는 결과적 안전(설계 차이) — PR-BP/BQ 2단계 재시도 가능 상태. 단 staging dual-run 검증(체크리스트 #5 PR-BL-5 / 별도 cycle 운영 telemetry #6)이 여전히 안전망 강화 필요
 
 ---
 

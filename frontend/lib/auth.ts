@@ -87,10 +87,17 @@ async function _authFetchInternal(
 
   if (res.status !== 401) return res;
 
+  // PR-DV (INCIDENT #5 체크리스트 #3): 인증 검증 endpoint는 401에 silent SSO를
+  // trigger하면 안 됨. silent SSO 자체가 callback page를 사용하므로 callback에서
+  // /api/auth/me 같은 검증 endpoint를 trigger하면 무한 재귀 위험.
+  // 현재는 callsite가 없지만 미래 회귀 방지 예방.
+  const isAuthVerifyEndpoint =
+    path.startsWith("/api/auth/me") || path.startsWith("/api/auth/status");
+
   // 401. 첫 발생이면 silent SSO 한 번 시도해 cookie/token 갱신 후 재시도.
   // 같은 탭에서 silent 5분 안에 실패했거나 명시 logout 직후면 skip.
   // PR-CX: TTL 기반 — 5분 후 재시도 허용 (기존 영구 차단 → cookie 회복 가능).
-  if (!retried && typeof window !== "undefined") {
+  if (!retried && !isAuthVerifyEndpoint && typeof window !== "undefined") {
     const justLoggedOut = window.sessionStorage.getItem("dy_logged_out") === "1";
     if (!justLoggedOut && !_isSilentFailedRecently()) {
       const recoveredUser = await trySilentSSO(window.location.pathname || "/");

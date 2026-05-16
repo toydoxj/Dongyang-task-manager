@@ -107,6 +107,36 @@ describe("authFetch 401 handling", () => {
     expect(getUser()).toBeNull();
     fetchSpy.mockRestore();
   });
+
+  /**
+   * PR-DV (INCIDENT #5 체크리스트 #3) — 인증 검증 endpoint는 401에 silent SSO
+   * trigger 안 함. 현재 callsite 없지만 미래 회귀 방지.
+   */
+  it("/api/auth/me 401은 silent SSO 재시도 X — 즉시 cleanup", async () => {
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(new Response("{}", { status: 401 }));
+    saveAuth("t", SAMPLE_USER);
+
+    const res = await authFetch("/api/auth/me");
+    expect(res.status).toBe(401);
+    expect(fetchSpy).toHaveBeenCalledTimes(1); // silent SSO trigger X
+    expect(getUser()).toBeNull(); // clearAuth
+    fetchSpy.mockRestore();
+  });
+
+  it("/api/auth/status 401도 silent SSO 재시도 X — 즉시 cleanup", async () => {
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(new Response("{}", { status: 401 }));
+    saveAuth("t", SAMPLE_USER);
+
+    const res = await authFetch("/api/auth/status");
+    expect(res.status).toBe(401);
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    expect(getUser()).toBeNull();
+    fetchSpy.mockRestore();
+  });
 });
 
 /**
