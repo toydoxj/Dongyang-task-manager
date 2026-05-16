@@ -262,7 +262,7 @@ export default function ReportPreview({
       </Section>
 
       {/* 팀별 업무 현황 — 직원 × 프로젝트 행 단위 */}
-      <Section title="팀별 업무 현황" id="team-work" badge="auto" sourceHref="/admin/employee-work">
+      <Section title="팀별 업무 현황" id="team-work" badge="auto" sourceHref="/operations/employee-work">
         {teamWorkNames.length === 0 ? (
           <p className="text-xs text-zinc-500">(배정된 진행 프로젝트 없음)</p>
         ) : (

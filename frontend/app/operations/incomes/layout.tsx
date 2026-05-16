@@ -6,8 +6,8 @@ import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 
 const TABS = [
-  { href: "/admin/incomes", label: "수금 일지" },
-  { href: "/admin/incomes/clients", label: "발주처 관리" },
+  { href: "/operations/incomes", label: "수금 일지" },
+  { href: "/operations/incomes/clients", label: "발주처 관리" },
 ];
 
 export default function IncomesLayout({
@@ -21,8 +21,8 @@ export default function IncomesLayout({
       <nav className="flex gap-1 border-b border-zinc-200 dark:border-zinc-800">
         {TABS.map((t) => {
           const active =
-            t.href === "/admin/incomes"
-              ? pathname === "/admin/incomes"
+            t.href === "/operations/incomes"
+              ? pathname === "/operations/incomes"
               : pathname.startsWith(t.href);
           return (
             <Link

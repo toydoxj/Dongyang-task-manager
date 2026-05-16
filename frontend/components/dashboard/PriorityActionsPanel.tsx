@@ -45,7 +45,7 @@ export default function PriorityActionsPanel({ actions }: Props) {
       count: actions.overloaded_team.count,
       preview: actions.overloaded_team.preview,
       ctaLabel: CTA.viewLoad,
-      ctaHref: "/admin/employee-work",
+      ctaHref: "/operations/employee-work",
     },
     {
       icon: "🐢",

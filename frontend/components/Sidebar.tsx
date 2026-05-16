@@ -34,7 +34,7 @@ const NAV_GROUPS: NavGroup[] = [
       { href: "/", label: "대시보드", roles: ["admin", "team_lead", "manager"] },
       { href: "/me", label: "내 업무", hiddenForRoles: ["manager"] },
       {
-        href: "/admin/employee-work",
+        href: "/operations/employee-work",
         label: "직원 업무",
         roles: ["admin", "team_lead"],
       },

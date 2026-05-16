@@ -360,7 +360,7 @@ export default function HelpPage() {
             />
             <Tr
               l="팀장 (team_lead)"
-              r="+ 대시보드, 같은 팀 직원 업무 보기 (/admin/employee-work), 날인 1차 승인/반려"
+              r="+ 대시보드, 같은 팀 직원 업무 보기 (/operations/employee-work), 날인 1차 승인/반려"
             />
             <Tr
               l="관리팀 (manager)"
