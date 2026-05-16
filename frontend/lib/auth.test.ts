@@ -88,6 +88,34 @@ describe("authFetch 401 handling", () => {
     fetchSpy.mockRestore();
   });
 
+  /**
+   * PR-EN (Phase 4-G 2단계 3차) — authFetch가 Authorization header를 더 이상
+   * 보내지 않음. legacy localStorage에 token이 남아있어도 영향 없어야 함.
+   * cookie(credentials:"include")가 단독 인증 채널.
+   */
+  it("PR-EN: legacy localStorage token이 있어도 Authorization header 첨부 안 함", async () => {
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(new Response("{}", { status: 200 }));
+    // 옛 PR-EM 이전 세션의 잔존 token을 직접 주입
+    localStorage.setItem("dy_auth_token", "legacy-token-should-be-ignored");
+
+    await authFetch("/api/test");
+
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    const call = fetchSpy.mock.calls[0];
+    const init = call[1] as RequestInit | undefined;
+    expect(init?.credentials).toBe("include"); // cookie 단독
+    // headers가 RequestInit에 명시 안 됐거나, 명시됐어도 Authorization 없음
+    const headers = init?.headers;
+    if (headers instanceof Headers) {
+      expect(headers.has("Authorization")).toBe(false);
+    } else if (headers && typeof headers === "object") {
+      expect(("Authorization" in headers ? true : false)).toBe(false);
+    }
+    fetchSpy.mockRestore();
+  });
+
   it("logged_out flag가 있으면 401 시 silent 재시도 안 하고 즉시 cleanup", async () => {
     const fetchSpy = vi
       .spyOn(globalThis, "fetch")
