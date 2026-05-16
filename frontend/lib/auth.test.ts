@@ -201,8 +201,8 @@ describe("silent SSO flag TTL 회복 (PR-CX)", () => {
  *
  * authFetch 사용 X — 401 시 silent SSO trigger → callback 무한 재귀(INCIDENT #4) 회피.
  */
-describe("verifyAndHydrateFromMe (PR-CY)", () => {
-  it("200 → 응답 user로 saveAuth 갱신 + user 반환", async () => {
+describe("verifyAndHydrateFromMe (PR-CY + PR-EO)", () => {
+  it("200 → {user, reason:'ok'} + saveAuth 갱신", async () => {
     const responseUser: UserInfo = { ...SAMPLE_USER, name: "갱신된이름" };
     const fetchSpy = vi
       .spyOn(globalThis, "fetch")
@@ -211,33 +211,50 @@ describe("verifyAndHydrateFromMe (PR-CY)", () => {
       );
 
     const result = await verifyAndHydrateFromMe();
-    expect(result).toEqual(responseUser);
+    expect(result.reason).toBe("ok");
+    expect(result.user).toEqual(responseUser);
     expect(getUser()).toEqual(responseUser); // saveAuth로 저장됨
     fetchSpy.mockRestore();
   });
 
-  it("401 → null 반환 + saveAuth 호출 X + console.warn", async () => {
+  it("401 → {user:null, reason:'unauthorized'} + saveAuth 호출 X + console.warn", async () => {
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     const fetchSpy = vi
       .spyOn(globalThis, "fetch")
       .mockResolvedValueOnce(new Response("Unauthorized", { status: 401 }));
 
     const result = await verifyAndHydrateFromMe();
-    expect(result).toBeNull();
+    expect(result.reason).toBe("unauthorized");
+    expect(result.user).toBeNull();
     expect(getUser()).toBeNull(); // saveAuth 호출 X
     expect(warnSpy).toHaveBeenCalled();
     fetchSpy.mockRestore();
     warnSpy.mockRestore();
   });
 
-  it("network reject → null + console.warn (fragment fallback 흐름)", async () => {
+  it("500 등 비-200도 reason:'unauthorized' (보수적 — cookie validity 모름)", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(new Response("Server error", { status: 500 }));
+
+    const result = await verifyAndHydrateFromMe();
+    expect(result.reason).toBe("unauthorized");
+    expect(result.user).toBeNull();
+    expect(warnSpy).toHaveBeenCalled();
+    fetchSpy.mockRestore();
+    warnSpy.mockRestore();
+  });
+
+  it("network reject → {user:null, reason:'network'} — 호출처가 stale user 유지 결정", async () => {
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     const fetchSpy = vi
       .spyOn(globalThis, "fetch")
       .mockRejectedValueOnce(new TypeError("Network error"));
 
     const result = await verifyAndHydrateFromMe();
-    expect(result).toBeNull();
+    expect(result.reason).toBe("network");
+    expect(result.user).toBeNull();
     expect(getUser()).toBeNull();
     expect(warnSpy).toHaveBeenCalled();
     fetchSpy.mockRestore();

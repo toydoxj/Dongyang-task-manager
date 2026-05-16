@@ -238,36 +238,50 @@ function decodeBase64UrlUtf8(s: string): string {
   return new TextDecoder("utf-8").decode(bytes);
 }
 
-/** PR-CY (INCIDENT #1 #4): cookie 기반 /me fetch로 user/cookie validity 동시 검증.
+/** PR-CY (INCIDENT #1 #4) + PR-EO (Phase 4-G 5차 재시도 안전망): cookie 기반 /me
+ * fetch로 user/cookie validity 동시 검증.
  *
- * 사용처: callback page에서 normal SSO 성공 후 redirect 직전 1회 호출.
- * - 200: 응답 user로 saveAuth 갱신 (fragment user_b64 schema 변경 / chunk stale 자동 정정).
- * - 401/network: graceful fallback — fragment user 그대로 사용 + console.warn (운영 진단).
+ * 사용처:
+ * 1. callback page (현 PR-CY): normal SSO 성공 후 redirect 직전 1회. 결과 무시,
+ *    saveAuth 부수효과만 활용.
+ * 2. AuthGuard.refresh (5차 재시도 본격 PR 예정): reason='unauthorized'면 silent
+ *    SSO trigger, 'network'면 stale user 유지로 차등 처리.
  *
- * authFetch 사용 X — 401 시 silent SSO trigger → callback 무한 재귀(INCIDENT #4) 회피.
- * 직접 fetch + credentials:"include"로 cookie만 검증.
+ * 반환 reason:
+ * - 'ok': 200 응답. user 갱신 + saveAuth 호출.
+ * - 'unauthorized': 401(혹은 다른 4xx/5xx 비-200). cookie 미발급/만료.
+ * - 'network': fetch 자체가 throw. backend down / CORS / DNS 실패.
+ *
+ * authFetch 사용 X — 401 시 silent SSO trigger → callback 무한 재귀(INCIDENT #4)
+ * 회피. 직접 fetch + credentials:"include"로 cookie만 검증.
  */
-export async function verifyAndHydrateFromMe(): Promise<UserInfo | null> {
+export type VerifyResult =
+  | { user: UserInfo; reason: "ok" }
+  | { user: null; reason: "unauthorized" | "network" };
+
+export async function verifyAndHydrateFromMe(): Promise<VerifyResult> {
   try {
     const res = await fetch(`${API_BASE}/api/auth/me`, {
       credentials: "include",
     });
     if (res.status === 401) {
-      // cookie 발급 실패 가능성 — 운영 진단용 log만 남기고 fragment user 신뢰
+      // cookie 발급 실패/만료 — 호출처가 silent SSO trigger 결정
       console.warn("[auth] /me 401 — cookie 미발급/만료. fragment user fallback");
-      return null;
+      return { user: null, reason: "unauthorized" };
     }
     if (!res.ok) {
+      // 5xx 등 비-200 응답도 cookie validity 모름 → unauthorized 취급(보수적)
       console.warn(`[auth] /me ${res.status} — fragment user fallback`);
-      return null;
+      return { user: null, reason: "unauthorized" };
     }
     const user = (await res.json()) as UserInfo;
     // saveAuth(user) 1-arg form — token 위치는 cookie. backward-compat overload OK.
     saveAuth(user);
-    return user;
+    return { user, reason: "ok" };
   } catch (e) {
+    // backend down / CORS / DNS 등. 호출처는 stale user 유지 권장(graceful).
     console.warn("[auth] /me network fail — fragment user fallback:", e);
-    return null;
+    return { user: null, reason: "network" };
   }
 }
 
