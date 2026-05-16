@@ -31,6 +31,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 STATUS_PATH = REPO_ROOT / "docs" / "STATUS.md"
 USER_MANUAL_PATH = REPO_ROOT / "docs" / "USER_MANUAL.md"
 HELP_PAGE_PATH = REPO_ROOT / "frontend" / "app" / "help" / "page.tsx"
+INCIDENT_PATH = REPO_ROOT / "docs" / "INCIDENT.md"
 
 # `| <7~8 hex> |` (마지막 column) 형식 매칭. 표 row 마지막 셀에 단독 hash만 있을 때.
 COMMIT_HASH_RE = re.compile(r"\|\s*([0-9a-f]{7,8})\s*\|")
@@ -40,6 +41,11 @@ MANUAL_SECTION_RE = re.compile(r"^###\s+(\d+\.\d+)\s", re.MULTILINE)
 
 # /help page: `<H3>N.M ...</H3>`
 HELP_SECTION_RE = re.compile(r"<H3>(\d+\.\d+)\s")
+
+# INCIDENT.md 체크리스트: `- [ ]` 또는 `- [x]` 만 valid. 그 외(`- [X]`, `- []`,
+# `- [xx]` 등) 오타 검출.
+CHECKLIST_VALID_RE = re.compile(r"^- \[[ x]\] ", re.MULTILINE)
+CHECKLIST_ANY_RE = re.compile(r"^- \[", re.MULTILINE)
 
 
 def _git_exists(hash_: str) -> bool:
@@ -127,9 +133,52 @@ def _check_user_manual_help_sync() -> int:
     return 0
 
 
+def _check_incident_checklist_format() -> int:
+    """3단계: INCIDENT.md 체크리스트 항목 형식 검증 (PR-EH, 4-H 4단계).
+
+    valid: `- [ ] ...` 또는 `- [x] ...` (소문자 x, 정확히 한 칸 padding)
+    invalid 예: `- []`, `- [X]`, `- [ x]`, `- [xx]` 등 (오타로 GitHub 렌더 안 됨)
+    미완료(- [ ])는 정보용으로 카운트만 표시.
+    """
+    if not INCIDENT_PATH.is_file():
+        print(f"INCIDENT.md 없음: {INCIDENT_PATH}", file=sys.stderr)
+        return 2
+
+    lines = INCIDENT_PATH.read_text(encoding="utf-8").splitlines()
+
+    invalid: list[tuple[int, str]] = []
+    valid = 0
+    pending = 0
+
+    for lineno, line in enumerate(lines, start=1):
+        if not line.startswith("- ["):
+            continue
+        if CHECKLIST_VALID_RE.match(line + "\n"):
+            valid += 1
+            if line.startswith("- [ ]"):
+                pending += 1
+        else:
+            invalid.append((lineno, line[:80]))
+
+    if invalid:
+        print(f"[FAIL] INCIDENT.md 체크리스트 형식 오류 {len(invalid)}건:")
+        for lineno, snippet in invalid:
+            print(f"  line {lineno}: {snippet!r}")
+        return 1
+
+    pending_note = f", 미완료 {pending}개" if pending else ""
+    print(f"[OK] INCIDENT.md 체크리스트 형식 {valid}개 모두 valid{pending_note}")
+    return 0
+
+
 def main() -> int:
     rc = 0
-    for check in (_check_status_commit_hashes, _check_user_manual_help_sync):
+    checks = (
+        _check_status_commit_hashes,
+        _check_user_manual_help_sync,
+        _check_incident_checklist_format,
+    )
+    for check in checks:
         result = check()
         if result == 2:
             return 2  # 접근 실패는 즉시 종료
