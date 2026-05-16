@@ -261,6 +261,7 @@ PR-BP에서 `hydrateUserFromMe()`가 `authFetch("/api/auth/me")`를 사용. SSO 
 - 상태 → PR-BO + PR-BN 시점(ce6f264) 안정 운영 중
 - 체크리스트 #1/#3/#4 충족, #2는 결과적 안전(설계 차이) — PR-BP/BQ 2단계 재시도 가능 상태. 단 staging dual-run 검증(체크리스트 #5 PR-BL-5 / 별도 cycle 운영 telemetry #6)이 여전히 안전망 강화 필요
 - 2026-05-16 PR-EL(93f4d5b): backend `dy.auth` logger.info("auth_via=header|cookie") 복구 — 체크리스트 #6 telemetry 충족. PR-EM(localStorage token 저장 중단) deploy 후 cookie 비율 모니터링으로 PR-EN(header 코드 완전 제거) go/no-go 판단 가능.
+- 2026-05-16 PR-EM(9f5576e): frontend cookie-only 전환 (PR-BP+PR-BQ 재설계 통합본). `saveAuth(token, user)` token 인자 무시(signature backward-compat 유지) + `isLoggedIn` user-기반 + AuthGuard 부팅 시 `verifyAndHydrateFromMe` cookie validity 검증. 기존 PR-BP(/me hydration)는 PR-CY로 callback page에서 raw fetch 패턴 완성됐으며, AuthGuard에서도 동일 패턴 활용으로 무한 재귀 회피. 운영 deploy 후 1주 telemetry 관찰 → PR-EN(header 첨부 코드 완전 제거) 진행 결정.
 
 ---
 
