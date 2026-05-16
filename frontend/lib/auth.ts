@@ -3,6 +3,11 @@ import { API_BASE, AuthStatus, UserInfo } from "./types";
 const TOKEN_KEY = "dy_auth_token";
 const USER_KEY = "dy_auth_user";
 
+export function getToken(): string | null {
+  if (typeof window === "undefined") return null;
+  return localStorage.getItem(TOKEN_KEY);
+}
+
 export function getUser(): UserInfo | null {
   if (typeof window === "undefined") return null;
   const s = localStorage.getItem(USER_KEY);
@@ -41,8 +46,6 @@ export function saveAuth(arg1: string | UserInfo, user?: UserInfo): void {
 }
 
 export function clearAuth(): void {
-  // PR-EN: TOKEN_KEY는 더 이상 저장하지 않지만 PR-EM 이전 사용자의 legacy
-  // localStorage 토큰 cleanup을 위해 removeItem은 유지 (idempotent).
   localStorage.removeItem(TOKEN_KEY);
   localStorage.removeItem(USER_KEY);
   // logout 직후 silent SSO 자동 재로그인 방지 (현재 탭 한정)
@@ -59,13 +62,11 @@ export function isLoggedIn(): boolean {
   return !!getUser();
 }
 
-/** 인증 fetch 래퍼 — 401 시 silent SSO 1회 재시도 후 로그아웃.
+/** 인증 헤더가 자동 포함된 fetch 래퍼 — 401 시 silent SSO 1회 재시도 후 로그아웃.
  *
  * PR-BH (Phase 4-G 1단계): credentials:"include" — httpOnly JWT cookie 자동 첨부.
- * PR-BO (INCIDENT #3): 401 발생 시 silent SSO 1회 재시도. cookie 만료로 인한
- * 일시 회복 가능. 실패 시 clearAuth + /login. 무한 재귀 방지 위해 retry flag.
- * PR-EN (Phase 4-G 2단계 3차): Authorization header 첨부 코드 제거 — cookie 단독
- * 인증. backend는 여전히 header fallback 받지만 더 이상 frontend가 보내지 않음.
+ * PR-BO (INCIDENT #3): 401 발생 시 silent SSO 1회 재시도. cookie/token 만료로
+ * 인한 일시 회복 가능. 실패 시 clearAuth + /login. 무한 재귀 방지 위해 retry flag.
  */
 export async function authFetch(
   path: string,
@@ -79,8 +80,11 @@ async function _authFetchInternal(
   init: RequestInit | undefined,
   retried: boolean,
 ): Promise<Response> {
+  const token = getToken();
+  const headers = new Headers(init?.headers);
+  if (token) headers.set("Authorization", `Bearer ${token}`);
   const url = path.startsWith("http") ? path : `${API_BASE}${path}`;
-  const res = await fetch(url, { ...init, credentials: "include" });
+  const res = await fetch(url, { ...init, credentials: "include", headers });
 
   if (res.status !== 401) return res;
 
@@ -111,13 +115,16 @@ async function _authFetchInternal(
 }
 
 /** PR-BH: backend logout — httpOnly cookie 제거 + DB UserSession 삭제. 실패해도
- * 로컬 clearAuth는 호출자가 별도로 진행하므로 본 함수는 best-effort.
- * PR-EN: Authorization header 첨부 제거 — cookie 단독으로 backend가 user 식별. */
+ * 로컬 clearAuth는 호출자가 별도로 진행하므로 본 함수는 best-effort. */
 export async function backendLogout(): Promise<void> {
   try {
+    const headers = new Headers();
+    const t = getToken();
+    if (t) headers.set("Authorization", `Bearer ${t}`);
     await fetch(`${API_BASE}/api/auth/logout`, {
       method: "POST",
       credentials: "include",
+      headers,
     });
   } catch {
     /* network down 등은 무시 — 사용자 인지 logout flow는 차단 안 함 */
