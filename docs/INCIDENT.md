@@ -253,16 +253,21 @@ PR-BP에서 `hydrateUserFromMe()`가 `authFetch("/api/auth/me")`를 사용. SSO 
 2. **callback page에서 호출 X** ⚠️ — 현재 callback page(`frontend/app/auth/works/callback/page.tsx:105`)에서 호출 중이지만, PR-CY 설계가 raw fetch + 401 graceful fallback이라 INCIDENT #5 무한 재귀는 회피됨(silent SSO trigger 없음). 체크리스트 의도와 다르지만 결과적 안전.
 3. **PR-BO `authFetch` silent retry에 제외 list 추가** ✅ — PR-DV: `_authFetchInternal`에 `isAuthVerifyEndpoint` 분기 추가, `/api/auth/me` / `/api/auth/status` 시작 path는 silent SSO 시도 안 함. vitest 2 시나리오로 회귀 방지.
 4. **PR-BQ 재시도 전 PR-BP 재설계 완료** ✅ — PR-CY 완료(2026-05-14 commit a1e8d08) + PR-DT vitest 회귀 보강(3119ba9) + PR-DV silent retry 제외(2026-05-16).
+5. **🚨 PR-EM/EN 4차 시도(2026-05-16)에서 사고 발생** — 위 체크리스트 1~4 모두 충족됐음에도 cookie 발급 안 된 사용자에서 회귀. 누락된 안전망: **운영 telemetry 1주 관찰(PR-EL → 차단된 채 PR-EN 진행)** + **playwright e2e 4 role 인증 흐름 cookie 발급/차단 시나리오** (체크리스트 #5/#6). 5차 시도 전 반드시 두 가지 충족.
+6. **graceful fallback 설계 개선 필요** — verifyAndHydrateFromMe가 401 vs network을 구별 시그니처로 호출처에 전달(`{user, reason: 'ok'|'unauthorized'|'network'}`). AuthGuard는 401이면 silent SSO trigger, network이면 stale user 유지. 현 PR-CY의 graceful은 cookie 만료 시점에 401 폭주를 표면화 못 함.
 
 ### 추적
 
 - PR-BP revert: b51fd72
 - PR-BQ revert: 5ae788e
-- 상태 → PR-BO + PR-BN 시점(ce6f264) 안정 운영 중
+- PR-EN revert: b752a40 (2026-05-16, 4차 시도)
+- PR-EM revert: 7ea0824 (2026-05-16, 4차 시도)
+- 상태 → PR-EL telemetry만 살아있음(93f4d5b), 인증 흐름은 PR-BH 1단계와 동일(header+cookie 둘 다 허용)
 - 체크리스트 #1/#3/#4 충족, #2는 결과적 안전(설계 차이) — PR-BP/BQ 2단계 재시도 가능 상태. 단 staging dual-run 검증(체크리스트 #5 PR-BL-5 / 별도 cycle 운영 telemetry #6)이 여전히 안전망 강화 필요
 - 2026-05-16 PR-EL(93f4d5b): backend `dy.auth` logger.info("auth_via=header|cookie") 복구 — 체크리스트 #6 telemetry 충족. PR-EM(localStorage token 저장 중단) deploy 후 cookie 비율 모니터링으로 PR-EN(header 코드 완전 제거) go/no-go 판단 가능.
 - 2026-05-16 PR-EM(9f5576e): frontend cookie-only 전환 (PR-BP+PR-BQ 재설계 통합본). `saveAuth(token, user)` token 인자 무시(signature backward-compat 유지) + `isLoggedIn` user-기반 + AuthGuard 부팅 시 `verifyAndHydrateFromMe` cookie validity 검증. 기존 PR-BP(/me hydration)는 PR-CY로 callback page에서 raw fetch 패턴 완성됐으며, AuthGuard에서도 동일 패턴 활용으로 무한 재귀 회피.
-- 2026-05-16 PR-EN(b60d720): authFetch Authorization header 첨부 코드 완전 제거 + `getToken` 함수 제거. 사용자 명시 결정으로 운영 1주 관찰 없이 즉시 진행. 회귀 시 단독 revert로 header fallback 복귀 가능. vitest 33 통과 (legacy localStorage token 잔존해도 header 첨부 X 회귀 보강). **체크리스트 #1~#6 모두 충족 + 4-G 2단계 완전 완료**. 잔여 안전망 — INCIDENT #5 playwright e2e cookie-only 시나리오는 별도 cycle.
+- 2026-05-16 PR-EN(b60d720): authFetch Authorization header 첨부 코드 완전 제거 + `getToken` 함수 제거. 사용자 명시 결정으로 운영 1주 관찰 없이 즉시 진행. 회귀 시 단독 revert로 header fallback 복귀 가능. vitest 33 통과.
+- **2026-05-16 PR-EM/EN 운영 회귀 (4차 시도 실패)** — PR-EN deploy 직후 사용자 console에 `GET /api/auth/me 401` + 그 후 모든 API call 401 무한 반복. 원인: cookie 발급 안 된 운영 사용자가 PR-EM 이전엔 localStorage token으로 backend header fallback 인증 받고 있었음. PR-EM/EN으로 frontend가 header 첨부 안 함 → backend header fallback 무용지물. 즉시 revert: PR-EN(b752a40) + PR-EM(7ea0824). PR-EL telemetry 복구는 유지.
 
 ---
 

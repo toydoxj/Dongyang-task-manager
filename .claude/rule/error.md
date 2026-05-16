@@ -276,3 +276,23 @@
 - 해결: `_missing_select_options` 헬퍼 추가. 기존 옵션(id 포함) + 누락 옵션을 union해 전체 list로 patch. `_ensure_db`가 컬럼 추가 + 옵션 보강 둘 다 처리. logger도 `노션 schema 옵션 보강 [...]` / `노션 schema 컬럼 추가 [...]`로 분리해 운영 가시성 향상
 - 응급 처치: 사용자가 노션 DB에서 누락 옵션을 수동 추가 (5분). 코드 fix는 다음 backend 재배포 시 동일 사고 자동 방어
 - 재발 방지: select enum 추가 시 schema 보강 함수가 옵션 union까지 처리하는지 항상 확인. `_ensure_db` 처럼 schema 자동 적용 코드는 단위 테스트로 (a) 컬럼 누락 (b) 옵션 누락 (c) 옵션 일부 동일 (d) 변경 없음 4가지 경로 cover
+
+### 2026-05-16 — Phase 4-G PR-EM/EN 운영 회귀 4차 (cookie-only 인증 전환 — 즉시 revert)
+- 컨텍스트: Phase 4-G 2단계 PR-EL(telemetry 복구) → PR-EM(saveAuth token 무시 + isLoggedIn user-기반 + AuthGuard 부팅 verify) → PR-EN(Authorization header 첨부 코드 완전 제거) 3단계 분리 적용. Codex 권고대로 PR-EM 후 운영 1주 telemetry 관찰 후 PR-EN 진행하기로 했으나 사용자 명시 결정으로 즉시 PR-EN 진행
+- 증상: PR-EN deploy 후 console에 `GET /api/auth/me 401 (Unauthorized)` → `[auth] /me 401 — cookie 미발급/만료. fragment user fallback` → 그 후 모든 API call(`/api/cashflow`, `/api/tasks`, `/api/dashboard/summary`, `/api/projects` 등) 전부 401 무한 반복. 사용자가 페이지 진입 불가
+- 원인: 운영 사용자 일부가 cookie가 발급되지 않은 상태 (PR-BH 1단계 이전 로그인 / third-party cookie 차단 환경 / domain mismatch). 이 사용자들은 PR-EM 이전엔 localStorage token으로 backend header fallback 인증을 받고 있었음. PR-EM이 saveAuth token 저장을 중단하고 PR-EN이 frontend Authorization header 첨부 코드를 제거 → backend는 여전히 header fallback을 제공하지만 frontend가 안 보내니 무용지물 → 401 무한
+- 해결: 즉시 PR-EN(`b60d720`) revert → 그래도 동일 증상 → PR-EM(`9f5576e`) 추가 revert. 두 commit 모두 revert 후 main에 push → Render auto-deploy 5-8분 → 사용자 회복 확인. PR-EL telemetry 복구는 유지 (운영 영향 없음)
+- 재발 방지:
+  - **cookie-only 전환은 운영 모든 사용자가 cookie 발급 받은 상태가 확인된 후에만 진행할 것.** PR-EL telemetry로 cookie 비율 99%+ 수렴이 확인되지 않은 채 PR-EM/EN을 진행하지 말 것 (= Codex의 원래 권고)
+  - **AuthGuard 부팅 verify의 graceful fallback은 stale user를 ready phase에 진입시킴.** 401 fallback이 "user 그대로 유지"라 첫 API call에서 401 폭주 — graceful이 오히려 사고를 표면화 못 하게 만듦. backend down(network fail)과 cookie 만료(401)를 구별해 처리해야 안전. 401은 즉시 silent SSO + 실패 시 login redirect로
+  - **vitest unit test는 cookie 발급 안 된 운영 환경을 시뮬레이션 못 함.** Codex 권고 #5(playwright e2e 4 role 인증 흐름 cookie 발급 검증)가 충족 안 된 상태에서 PR-EN 진행한 것이 가장 큰 위험. playwright e2e에 (a) cookie 발급 정상 (b) cookie 차단 시 fallback (c) silent SSO retry 3가지 시나리오 cover 후 재시도
+  - **운영 telemetry(`dy.auth` logger.info)를 PR-EL로 복구했음에도 운영 deploy 후 1주 관찰 단계를 건너뛰면 사고는 자동 시간 압축.** "회귀 위험 감수" 결정도 telemetry 수집이 가능한 환경에서만 의미가 있음. 다음 재시도 시 PR-EM deploy → 1주 telemetry → cookie 비율 보고 → PR-EN 결정 순서 엄수
+  - **개선 필요한 graceful fallback 설계** — verifyAndHydrateFromMe가 401 vs network을 호출처에 구별 전달하도록 시그니처 보강 (`{user: UserInfo | null, reason: 'ok' | 'unauthorized' | 'network'}`). AuthGuard는 401이면 silent SSO trigger, network이면 stale user 유지. 다음 재시도 전 PR-CY 패턴 보강이 선행돼야 함
+- 추적: PR-EN revert `b752a40` / PR-EM revert `7ea0824` / 누적 4차 시도 회귀(PR-BI / PR-BP/BQ / 이번 PR-EM/EN)
+
+### 2026-05-06 — Render Blueprint(`render.yaml`)의 `plan` 필드가 dashboard 변경을 덮어씀
+- 컨텍스트: 운영자가 backend hang 진단 도중 dashboard에서 `dy-task-backend`의 plan을 starter → standard로 변경. 이후 무관한 backend 코드 fix(`e235eaa`: cron 분산 + slow request 미들웨어)를 push했더니 운영자가 "render.yaml이 standard를 starter로 되돌리고 있는 거 아닌가?" 발견
+- 증상: dashboard 변경이 사용자 모르게 매 deploy 시 원복. 운영자 불신 + plan 변경이 무효화되는 silent 문제
+- 원인: Render Blueprint는 `services[].plan`이 명시되어 있으면 그것을 source-of-truth로 강제 — dashboard에서 manual 변경해도 다음 Blueprint sync에서 yaml 값으로 되돌림. `render.yaml`에 7개 service 모두 `plan: starter`로 박혀 있었음
+- 해결: `dy-task-backend`만 `plan: standard`로 yaml 수정, cron 6개는 starter 유지 (`88743d9`)
+- 재발 방지: Render dashboard에서 plan/region/scaling 같은 service-level 필드를 변경하기 전에 반드시 `render.yaml`의 동일 필드를 먼저 또는 동시에 수정. yaml에 `plan` 필드가 명시된 service는 dashboard 변경이 영구화되지 않는다. yaml에서 plan 필드를 제거하면 dashboard 우선이 되지만 코드에 plan 정보가 남지 않아 향후 재배포 시 헷갈리므로 명시 권장

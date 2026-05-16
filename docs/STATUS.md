@@ -1,6 +1,6 @@
 # 작업 Status
 
-> 마지막 업데이트: 2026-05-16 (Phase 4-G 2단계 완료 — PR-EL/EM/EN, cookie 단독 인증)
+> 마지막 업데이트: 2026-05-16 (Phase 4-G PR-EM/EN 운영 회귀 → 즉시 revert, 1단계 상태로 복귀)
 
 ## 완료된 PR
 
@@ -154,7 +154,7 @@ DASH-001~004 / PROJ-001~005 / MY-001~005 / WEEK-001~005 / COMMON-001~003 항목 
 | **4-D** 메뉴 그룹 URL 재구성 | ✅ 1·2단계 완료 (PR-EJ/EK) | 운영 5 페이지(incomes/clients/expenses/contracts/employee-work) → /operations/. next.config redirects 5건 308 영구. 사이드바 그룹과 URL 일치. 잔여 /admin/* 5개(notices/employees/users/sync/drive)는 시스템 관리 적합 — 유지 |
 | **4-E** 권한 로직 layout 통합 | 미진행 | 페이지마다 분산된 가드를 layout 레벨로 |
 | **4-F** 대시보드/주간보고 집계 API 별도 | 미진행 | client-side aggregation을 backend로 push |
-| **4-G** JWT localStorage → httpOnly cookie | ✅ 완료 (PR-BH 1단계 + PR-EL/EM/EN 2단계 3차 — cookie 단독 인증). 안전망(PR-BN/BO/BL-5/CX/CY/DT/DV/PR-EL telemetry) 모두 적용. PR-BP/BQ 3회 회귀 회피 — 사용자 명시 결정으로 운영 관찰 없이 PR-EN 즉시 진행. 운영 회귀 시 PR-EN 단독 revert(`git revert b60d720`) → 즉시 header fallback으로 복귀 가능 | XSS 방어 강화 |
+| **4-G** JWT localStorage → httpOnly cookie | 1단계 완료(PR-BH) / 2단계 4차 시도 회귀 → 즉시 revert (PR-EN b752a40, PR-EM 7ea0824, 2026-05-16). PR-EL telemetry(93f4d5b)는 유지. cookie 발급 안 된 사용자에서 401 무한 사고 — header fallback 안전망 끊은 게 원인. INCIDENT.md 체크리스트 #5(playwright e2e cookie 시나리오) + #6(graceful fallback 설계 개선)이 5차 시도 전 필수 | XSS 방어 강화 |
 | **4-F** 대시보드/주간보고 집계 API | ✅ 완료 (PR-BJ-1~5 + PR-BK 1차 backend 집계 + TTL cache, PR-DP/DQ/DR 3 endpoint 모두 role-scope 차등) | dashboard N+1 → 1 fetch, 4 role 권한 차등 |
 | **4-I** 테스트 framework | Vitest(PR-BL-1/2, 18 단위 테스트) + Playwright(PR-BL-3 smoke + PR-BL-5 4 role 시나리오, 누적 5 e2e) + GitHub Actions CI(PR-BL-4) 완료 / 잔여(backend full mock e2e — 미정밀) | PR-BI 같은 회귀 자동 검출 |
 | **4-E** 권한 layout 통합 | ✅ 완료 (PR-BS/BT/BU + PR-DS, 누적 12 page) | useRoleGuard 적용 가능한 admin/role-list 가드 페이지 모두 완료. 나머지(weekly-report/seal-requests/me/suggestions/schedule)는 전 직원 진입 + UI 분기 패턴이라 useAuth 유지가 적합 |
