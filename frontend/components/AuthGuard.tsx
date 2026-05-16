@@ -3,13 +3,7 @@
 import { usePathname } from "next/navigation";
 import { createContext, lazy, Suspense, useContext, useEffect, useState } from "react";
 
-import {
-  checkAuthStatus,
-  getUser,
-  isLoggedIn,
-  trySilentSSO,
-  verifyAndHydrateFromMe,
-} from "@/lib/auth";
+import { checkAuthStatus, getUser, isLoggedIn, trySilentSSO } from "@/lib/auth";
 import type { UserInfo } from "@/lib/types";
 
 const LoginForm = lazy(() => import("@/app/login/LoginForm"));
@@ -81,14 +75,7 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
         setPhase("login");
         return;
       }
-      // PR-EM (Phase 4-G 2단계): 부팅 시 cookie validity 검증.
-      // verifyAndHydrateFromMe는 raw fetch + credentials:include — silent SSO trigger
-      // 안 함(callback 무한 재귀 회피, INCIDENT #4 체크리스트 #1 패턴).
-      // 200: 응답 user로 saveAuth 갱신(fragment 시점 schema 변경 자동 정정).
-      // 401/network: null. backend down 시에도 graceful — 첫 authFetch 401 → PR-BO
-      // silent SSO 1회 retry로 회복. 여기서 login redirect 강제 X (Phase 0-B 정책).
-      const verified = await verifyAndHydrateFromMe();
-      setUser(verified ?? getUser());
+      setUser(getUser());
       setPhase("ready");
       // 로그인 후에도 /login URL에 머물러 있으면 즉시 내 업무로 이동
       if (

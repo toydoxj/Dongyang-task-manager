@@ -20,24 +20,27 @@ export function getUser(): UserInfo | null {
 }
 
 // PR-BN (INCIDENT 체크리스트 #2): backward-compatible signature.
-// PR-EM (Phase 4-G 2단계): saveAuth(token, user)도 token 인자를 무시 — cookie가
-// 인증 source. signature는 backward-compat 유지 (Vercel chunk 부분 stale로 옛/새
-// chunk 혼재 시 type mismatch 예방). PR-BI 사고(saveAuth signature 변경 + chunk
-// stale → user 자리에 token 저장 → getUser()=null → 로그인 loop) 회피.
-// 기존 사용자 localStorage token은 backend가 header fallback으로 받아주므로
-// 점진 마이그레이션 — clearAuth 또는 새 로그인부터 cookie 단독으로 수렴.
+// 1단계(현재): saveAuth(token, user) — token + user 모두 localStorage 저장.
+// 2단계(추후): saveAuth(user) — token 인자 없이 user만. cookie가 인증 source.
+// 두 호출 모두 안전 — Vercel chunk 부분 stale로 옛/새 chunk 혼재 시 type mismatch
+// 예방. PR-BI 사고(saveAuth signature 변경 + chunk stale → user 자리에 token 저장
+// → getUser()=null → 로그인 loop) 회피.
 export function saveAuth(token: string, user: UserInfo): void;
 export function saveAuth(user: UserInfo): void;
 export function saveAuth(arg1: string | UserInfo, user?: UserInfo): void {
   let resolvedUser: UserInfo;
+  let token: string | null = null;
   if (typeof arg1 === "string" && user !== undefined) {
+    token = arg1;
     resolvedUser = user;
   } else if (typeof arg1 === "object" && arg1 !== null) {
     resolvedUser = arg1 as UserInfo;
   } else {
     return; // 잘못된 호출 — silent skip (e.g. arg1=undefined)
   }
-  // PR-EM: token 인자 무시 — XSS 영향 줄임. cookie가 인증 source.
+  if (token !== null) {
+    localStorage.setItem(TOKEN_KEY, token);
+  }
   localStorage.setItem(USER_KEY, JSON.stringify(resolvedUser));
   if (typeof window !== "undefined") {
     window.sessionStorage.removeItem("dy_logged_out");
@@ -54,12 +57,8 @@ export function clearAuth(): void {
   }
 }
 
-// PR-EM (Phase 4-G 2단계): cookie httpOnly이라 frontend가 직접 read 불가 → 대신
-// localStorage의 user JSON 존재 여부로 판단. cookie가 만료된 경우 stale user는
-// AuthGuard 부팅 시 verifyAndHydrateFromMe()로 검증되어 401이면 silent SSO 또는
-// login redirect로 회복.
 export function isLoggedIn(): boolean {
-  return !!getUser();
+  return !!getToken();
 }
 
 /** 인증 헤더가 자동 포함된 fetch 래퍼 — 401 시 silent SSO 1회 재시도 후 로그아웃.
