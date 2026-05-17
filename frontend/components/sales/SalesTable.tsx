@@ -7,8 +7,10 @@ import { formatDate } from "@/lib/format";
 import { useClients } from "@/lib/hooks";
 import { cn } from "@/lib/utils";
 
-/** PR-FC: 정렬 가능 컬럼 7개 (사용자 결정 — 핵심 6 + 담당). */
+/** PR-FC: 정렬 가능 컬럼 7개 (사용자 결정 — 핵심 6 + 담당).
+ * PR-FD: CODE 추가 — natural sort (영25-9 < 영25-10). */
 export type SalesSortKey =
+  | "code"
   | "stage"
   | "estimated_amount"
   | "probability"
@@ -117,8 +119,27 @@ export default function SalesTable({
       const i = (BID_STAGES as readonly string[]).indexOf(s);
       return i === -1 ? BID_STAGES.length : i;
     };
+    // PR-FD: 영업코드 natural sort — 영{YY}-{NNN} / {YY}-영업-{NNN} 둘 다
+    // 처리. 마지막 숫자 chunk를 분리해 prefix(string) + tail(number)로 비교.
+    // padding 0 일관성 무관 (5 vs 10 정확 비교).
+    const codeKey = (c: string): [string, number] => {
+      const m = c.match(/(\d+)$/);
+      if (!m) return [c, Number.POSITIVE_INFINITY];
+      return [c.slice(0, m.index), parseInt(m[1], 10)];
+    };
     const cmp = (a: Sale, b: Sale): number => {
       switch (sortKey) {
+        case "code": {
+          // 빈 code는 항상 맨 뒤 (asc/desc 무관)
+          if (!a.code && !b.code) return 0;
+          if (!a.code) return 1;
+          if (!b.code) return -1;
+          const [ap, an] = codeKey(a.code);
+          const [bp, bn] = codeKey(b.code);
+          const px = ap.localeCompare(bp, "ko");
+          if (px !== 0) return px * dir;
+          return (an - bn) * dir;
+        }
         case "stage":
           return (stageOrder(a.stage) - stageOrder(b.stage)) * dir;
         case "estimated_amount":
@@ -170,7 +191,7 @@ export default function SalesTable({
       <table className="w-full min-w-[920px] text-sm">
         <thead>
           <tr className="border-b border-zinc-200 text-left text-[11px] uppercase text-zinc-500 dark:border-zinc-800">
-            <th className="px-2 py-2">CODE</th>
+            <SortableTh k="code" label="CODE" {...thSort} />
             <th className="px-2 py-2">용역명</th>
             <SortableTh k="client" label="발주처" {...thSort} />
             {showKindColumn && <th className="px-2 py-2">유형</th>}
