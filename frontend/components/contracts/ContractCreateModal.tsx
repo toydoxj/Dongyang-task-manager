@@ -9,6 +9,7 @@
 
 import { useMemo, useState } from "react";
 
+import EnsureProjectFolderButton from "@/components/common/EnsureProjectFolderButton";
 import { Field, inputCls } from "@/components/project/_shared";
 import Modal from "@/components/ui/Modal";
 import { createContract, updateProject } from "@/lib/api";
@@ -196,6 +197,8 @@ export default function ContractCreateModal({
               있습니다. 변경계약·부속합의면 그대로 진행하세요.
             </p>
           )}
+          {/* PR-FV: 선택된 프로젝트의 WORKS Drive 폴더가 없으면 만들기 버튼 노출 */}
+          <EnsureProjectFolderButton project={selectedProject} />
         </Field>
         <Field label="발주처">
           <ClientSearchSelect

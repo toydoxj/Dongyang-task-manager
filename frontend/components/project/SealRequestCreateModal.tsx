@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import useSWR, { useSWRConfig } from "swr";
 
 import { useAuth } from "@/components/AuthGuard";
+import EnsureProjectFolderButton from "@/components/common/EnsureProjectFolderButton";
 import DriveExplorerModal from "@/components/project/DriveExplorerModal";
 import { Field, inputCls } from "@/components/project/_shared";
 import Modal from "@/components/ui/Modal";
@@ -294,6 +295,8 @@ function Form({
               ))}
             </select>
           )}
+          {/* PR-FV: 선택된 프로젝트의 WORKS Drive 폴더가 없으면 만들기 버튼 노출 */}
+          <EnsureProjectFolderButton project={selectedProject} />
         </Field>
 
         <div className="grid grid-cols-2 gap-3">

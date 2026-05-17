@@ -95,6 +95,14 @@ export async function syncProjectStage(pageId: string): Promise<Project> {
   return jsonOrThrow<Project>(res);
 }
 
+/** PR-FV: 누락된 WORKS Drive 프로젝트 폴더를 ensure (idempotent). drive_url 갱신된 Project 반환. */
+export async function ensureProjectDriveFolder(pageId: string): Promise<Project> {
+  const res = await authFetch(`/api/projects/${pageId}/works-drive`, {
+    method: "POST",
+  });
+  return jsonOrThrow<Project>(res);
+}
+
 export interface ProjectLogEntry {
   id: string;
   event_at: string;
