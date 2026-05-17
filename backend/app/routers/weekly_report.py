@@ -90,15 +90,20 @@ def _validate_week_start(week_start: date) -> date:
 
 async def _build_suggestions(
     user: User,
-    notion: NotionService,
+    db: Session,
     last_week_start: date,
     last_week_end: date,
 ) -> list[SuggestionLogItem]:
-    """저번주 cycle 등록된 건의사항 (created_time 기준)."""
+    """저번주 cycle 등록된 건의사항 (created_time 기준).
+
+    PR-FI/11 (회귀 fix): PR-EX/3에서 list_suggestions가 notion 대신 mirror DB로
+    전환됐는데(`db: Session` 받음, sync 함수) 본 호출은 옛 시그니처(notion 인자)를
+    유지해 production에서 500 발생. db로 교체.
+    """
     from app.routers.suggestions import list_suggestions
 
     try:
-        res = await list_suggestions(_user=user, notion=notion)
+        res = list_suggestions(_user=user, db=db)
     except HTTPException as e:
         logger.warning("suggestions 조회 실패: %s", e.detail)
         return []
@@ -250,7 +255,7 @@ async def _build_full_report(
     lws = last_week_start or (ws - timedelta(days=7))
     lwe = ws - timedelta(days=1)
     report.seal_log = await _build_seal_log(user, notion, db, lws, lwe)
-    report.suggestions = await _build_suggestions(user, notion, lws, lwe)
+    report.suggestions = await _build_suggestions(user, db, lws, lwe)
     _cache_set(key, report)
     return report
 
