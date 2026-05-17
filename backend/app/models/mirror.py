@@ -228,6 +228,35 @@ class MirrorSealRequest(Base):
     archived: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
 
 
+class MirrorSuggestion(Base):
+    """건의사항 미러 (PR-EX, 2026-05-17).
+
+    routers/suggestions.py:list_suggestions가 매번 notion.query_all 전체 fetch
+    하던 문제(PR-CR 진단 2순위) 해소. SuggestionItem 전체 schema 미러링.
+
+    write 흐름(create/PATCH)에서 sync.upsert_page로 즉시 upsert (write-through).
+    5분 cron incremental은 sync.py 표준 패턴.
+    """
+
+    __tablename__ = "mirror_suggestions"
+
+    page_id: Mapped[str] = mapped_column(String, primary_key=True)
+    title: Mapped[str] = mapped_column(Text, default="")
+    content: Mapped[str] = mapped_column(Text, default="")
+    author: Mapped[str] = mapped_column(String, default="", index=True)
+    categories: Mapped[list[str]] = mapped_column(ARRAY(String), default=list)
+    status: Mapped[str] = mapped_column(String, default="", index=True)
+    resolution: Mapped[str] = mapped_column(Text, default="")
+    created_time: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    last_edited_time: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, index=True
+    )
+    synced_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    archived: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+
+
 class MirrorBlock(Base):
     """페이지 본문 블록 (특히 마스터 프로젝트의 image block)."""
 
