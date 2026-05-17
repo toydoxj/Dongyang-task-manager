@@ -21,6 +21,31 @@ _auth_logger = logging.getLogger("dy.auth")
 # PR-BH: JWT cookie 이름. backend가 set/delete + frontend가 credentials:include로 자동 첨부.
 JWT_COOKIE_NAME = "dy_jwt"
 
+# PR-ES (Phase 4-G 5차 재시도 안전망): 인증 채널 누적 카운터.
+# PR-EL logger 보강 — Render Logs grep 대신 admin endpoint(`/api/auth/channel-stats`)로
+# 즉시 cookie 비율 조회. Render restart 시 reset (single instance, starter plan).
+# 멀티 인스턴스/재시작 누락 위험은 since 표시로 사용자가 인지 — 영속 영향 적음.
+# 5차 재시도 go 임계값 권고: cookie 비율 99%+ (Codex 권고).
+_auth_channel_counts: dict[str, int] = {"header": 0, "cookie": 0}
+_auth_counter_since: datetime = datetime.now(timezone.utc)
+
+
+def get_auth_channel_stats() -> dict[str, Any]:
+    """현 backend 인스턴스 부팅 후 누적 인증 채널 카운터.
+    `routers/auth.py`의 admin endpoint에서 노출.
+    """
+    h = _auth_channel_counts["header"]
+    c = _auth_channel_counts["cookie"]
+    total = h + c
+    ratio = (c / total) if total > 0 else 0.0
+    return {
+        "header": h,
+        "cookie": c,
+        "total": total,
+        "cookie_ratio": round(ratio, 4),
+        "since": _auth_counter_since.isoformat(),
+    }
+
 
 def hash_password(password: str) -> str:
     return bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
@@ -74,6 +99,8 @@ def get_current_user(
     # 사용자 식별자는 사후 로깅(decode 후) — 여기는 채널만.
     _auth_via = "header" if cred is not None else "cookie"
     _auth_logger.info("auth_via=%s", _auth_via)
+    # PR-ES: in-memory 누적 카운터 증가 (Render single instance, GIL 보호로 race 안전).
+    _auth_channel_counts[_auth_via] += 1
     try:
         payload = decode_token(raw_token)
         username: str = payload.get("sub", "")

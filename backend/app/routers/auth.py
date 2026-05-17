@@ -18,6 +18,7 @@ from sqlalchemy.orm import Session
 from app.db import get_db
 from app.models.auth import User, UserInfo, UserSession, UserUpdateRequest
 from app.security import (
+    get_auth_channel_stats,
     JWT_COOKIE_NAME,
     create_token,
     decode_token,
@@ -114,6 +115,22 @@ def _to_info(u: User) -> UserInfo:
         ),
         auth_provider=u.auth_provider or "password",
     )
+
+
+@router.get("/channel-stats")
+def auth_channel_stats(_user: User = Depends(require_admin)) -> dict[str, object]:
+    """PR-ES (Phase 4-G 5차 재시도 안전망): 인증 채널(header/cookie) 누적 카운터.
+
+    backend 인스턴스 부팅 후 누적. Render single instance + GIL 보호로 race 안전.
+    Render restart 시 reset — `since` 필드로 사용자가 인지.
+
+    5차 재시도(cookie 단독 인증 전환) go 임계값 권고: cookie_ratio ≥ 0.99
+    (Codex 권고). 95~99% 관찰 단계 권장.
+
+    응답:
+        {"header": int, "cookie": int, "total": int, "cookie_ratio": float, "since": str}
+    """
+    return get_auth_channel_stats()
 
 
 @router.get("/status")
