@@ -139,6 +139,32 @@ export function makeCallbackFragment(
   return `#token=mock-${role}-token&user=${b64}&next=${encodeURIComponent(next)}`;
 }
 
+/** PR-EY: admin/auth-stats 페이지가 호출하는 `/api/auth/channel-stats` mock.
+ * cookie_ratio별 verdict 분기(GO/관찰/NO-GO) 회귀 검증용. */
+export async function mockAuthChannelStats(
+  page: Page,
+  opts: {
+    header?: number;
+    cookie?: number;
+    since?: string;
+  } = {},
+): Promise<void> {
+  const header = opts.header ?? 5;
+  const cookie = opts.cookie ?? 495;
+  const total = header + cookie;
+  const ratio = total > 0 ? cookie / total : 0;
+  const since = opts.since ?? new Date(Date.now() - 8 * 24 * 60 * 60 * 1000).toISOString();
+  await page.route("**/api/auth/channel-stats", (r) =>
+    fulfillJson(r, {
+      header,
+      cookie,
+      total,
+      cookie_ratio: Math.round(ratio * 10000) / 10000,
+      since,
+    }),
+  );
+}
+
 /** PR-EP: callback page가 호출하는 `/api/auth/me`만 별도 status로 mock.
  * 200: user 갱신 흐름 / 401: cookie 미발급 graceful / fail: network reject. */
 export async function mockAuthMe(
