@@ -17,6 +17,10 @@ export function TeamWorkTable({
   team: string;
   rows: WeeklyEmployeeWorkRow[];
 }) {
+  // PDF(weekly_report.html)와 동일 규칙: 팀 옆 「(N건)」은 unique 프로젝트/영업 수
+  // (= row.source_id distinct count). task 갯수 아님.
+  const uniqueCount = new Set(rows.map((r) => r.source_id).filter(Boolean)).size;
+
   // 같은 직원 연속 row를 찾아 첫 번째에만 이름 표시 + rowspan 카운트
   const renderRows = rows.map((r, i) => {
     const prev = i > 0 ? rows[i - 1] : null;
@@ -36,7 +40,7 @@ export function TeamWorkTable({
       <h3 className="mb-1 text-sm font-semibold">
         {team}{" "}
         <span className="text-xs font-normal text-zinc-500">
-          ({rows.length}건)
+          ({uniqueCount}건)
         </span>
       </h3>
       <div className="overflow-x-auto rounded border border-zinc-200 dark:border-zinc-800">
