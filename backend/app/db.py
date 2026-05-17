@@ -156,13 +156,17 @@ def init_db() -> None:
     SQLite에서는 ARRAY/JSONB 사용 테이블이 컴파일되지 않으므로 제외.
     운영(Postgres)에서는 모든 테이블 생성.
     """
-    # 모든 모델을 import해 Base.metadata에 등록되도록 한다
+    # 모든 모델을 import해 Base.metadata에 등록되도록 한다.
+    # 신규 모델 추가 시 여기 import 누락하면 dev/test에서 자동 생성 안 됨 + INCIDENT #6
+    # 패턴 재발 위험 (production DB가 reset되거나 alembic stamp만 적용된 경우 누락 발견).
     from app.models import (  # noqa: F401
         auth,
         calendar_event,
+        contract,  # PR-FH/1 (계약서 관리)
         drive_creds,
         employee,
         mirror,
+        notice,  # PR-W (공지/교육/휴일)
         snapshot,
         weekly_publish,
     )

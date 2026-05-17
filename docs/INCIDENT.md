@@ -340,3 +340,46 @@ curl https://dy-task-backend.onrender.com/api/health/db
 - PR-DB (health endpoint 확장): 0a6f663
 - PR-DB (alembic file alembic_version 포함, 운영 일치): 3e388c9
 - 검증 시점: 2026-05-15. 운영 `/api/health/db` 응답 `"5min"` 확인.
+
+---
+
+## 2026-05-17 — alembic_version은 head인데 일부 테이블 schema 누락 → weekly-report 500
+
+### 증상
+
+- 사용자가 `/weekly-report` 진입 시 브라우저 console에 CORS 차단 메시지 + `500 Internal Server Error`.
+- backend log: `sqlalchemy.exc.ProgrammingError: (psycopg.errors.UndefinedTable) relation "weekly_report_publish_log" does not exist`.
+- 다른 endpoint (예: `/api/projects`, `/api/sales`)는 정상 응답.
+- CORS는 OK이지만 500 응답에 CORS header가 안 붙어 브라우저는 CORS 차단으로 표시 (혼동 유발).
+
+### 원인
+
+production DB의 alembic_version = `75b02f886038` (head)이지만 실제 schema에는 `weekly_report_publish_log` 테이블이 없음. 두 가지 가설:
+
+1. 어느 시점에 DB가 reset/migrate되면서 alembic_version은 `stamp head`로 동기화됐지만 누락된 migration 실제 DDL은 안 적용.
+2. 옛 deploy에서 alembic upgrade가 silent fail 후 다음 deploy가 이미 head라고 판단해 skip.
+
+추가 회귀 (동시 발생):
+- `_build_suggestions`가 옛 시그니처(`list_suggestions(notion=...)`) 호출 — PR-EX/3에서 mirror DB 전환됐는데 호출 흐름 미갱신. `TypeError: list_suggestions() got an unexpected keyword argument 'notion'` (PR-FI/11 fix).
+
+### 즉시 조치
+
+Render shell에서 모든 model 명시 import + `Base.metadata.create_all(bind=engine)` 실행:
+
+```bash
+uv run python -c "from app.db import Base, engine; from app.models import auth, calendar_event, contract, drive_creds, employee, mirror, notice, snapshot, weekly_publish; Base.metadata.create_all(bind=engine); print('done')"
+```
+
+`create_all`은 `checkfirst=True` default → 기존 테이블엔 영향 없이 누락분만 생성. `weekly_report_publish_log` + `contracts` (PR-FH/1) 모두 채워짐.
+
+### 추적 항목 (별도 cycle 진행)
+
+- [x] **`db.py init_db()`에 `contract` + `notice` import 추가** — PR-FI/12. 신규 model 추가 시 dev/test 환경에서 SQLAlchemy 자동 생성에 포함되도록 보강. 본 사고의 재발 방지(누락된 model 발견 즉시 dev에서 ImportError로 잡힘).
+- [ ] **production DB alembic_version 무결성 모니터링 endpoint** — `/api/health/db`에 `alembic head` vs 실제 `inspect(engine).get_table_names()` 차이 노출 권장.
+- [ ] **`list_*` 같은 cross-module 호출 회귀 테스트** — `_build_suggestions` 같이 router 간 dependency가 변경됐을 때 pytest로 잡히지 않음. weekly-report endpoint e2e (인증된 시나리오)로 회귀 보강.
+
+### 교훈
+
+- **alembic_version은 head라도 schema 실제 일치는 보장 안 됨** — `alembic upgrade head`가 "이미 head"라고 판단하면 skip. 실제 DDL 적용 여부 별도 검증 필요.
+- **500 응답 + CORS 헤더 누락 = 브라우저 CORS 차단 메시지** — CORS 메시지 보이면 actual response (status + body)부터 확인. backend log 1줄이 진단의 90%를 결정.
+- **`Base.metadata.create_all(checkfirst=True)`는 운영 복구용 안전한 수단** — alembic 외 우회 경로로도 누락된 테이블 채울 수 있음.
