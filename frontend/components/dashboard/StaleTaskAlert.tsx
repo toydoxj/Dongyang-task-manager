@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import { ProjectPopupLink } from "@/components/common/PopupLinks";
 
 import type { Task } from "@/lib/domain";
 import { dDayLabel, formatDate } from "@/lib/format";
@@ -87,12 +87,13 @@ export default function StaleTaskAlert({ tasks, topN = 10 }: Props) {
             return (
               <li key={t.id}>
                 {projId ? (
-                  <Link
-                    href={`/projects/${projId}`}
+                  <ProjectPopupLink
+                    id={projId}
+                    defaultStyle={false}
                     className="block rounded-md hover:bg-zinc-50 dark:hover:bg-zinc-800/50"
                   >
                     {node}
-                  </Link>
+                  </ProjectPopupLink>
                 ) : (
                   node
                 )}

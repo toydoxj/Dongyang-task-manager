@@ -6,21 +6,15 @@
  *
  * PR-AI — app/weekly-report/page.tsx에서 추출.
  * PR-FM — 새 탭에서 열기.
- * PR-FN — 새 탭 → 팝업 윈도우 (사용자 요청). window.open + width/height로 Chrome이 팝업 처리.
+ * PR-FN — 새 탭 → 팝업 윈도우.
+ * PR-FO — 공통 PopupLinks (다른 페이지와 일관) 위임.
  */
 
 import { useAuth } from "@/components/AuthGuard";
-
-const POPUP_FEATURES = "popup=yes,width=1200,height=900,noopener,noreferrer";
-
-function openPopup(href: string): void {
-  // window.open이 popup blocker로 차단되면 null 반환 — fallback으로 새 탭.
-  const w = window.open(href, "_blank", POPUP_FEATURES);
-  if (!w) {
-    // 차단된 경우 일반 navigation으로 fallback (새 탭).
-    window.open(href, "_blank", "noopener,noreferrer");
-  }
-}
+import {
+  ProjectPopupLink,
+  SalePopupLink,
+} from "@/components/common/PopupLinks";
 
 export function ProjectLink({
   id,
@@ -31,19 +25,7 @@ export function ProjectLink({
 }) {
   const { user } = useAuth();
   if (!id || user?.role !== "admin") return <>{children}</>;
-  const href = `/projects/${encodeURIComponent(id)}`;
-  return (
-    <a
-      href={href}
-      onClick={(e) => {
-        e.preventDefault();
-        openPopup(href);
-      }}
-      className="cursor-pointer text-blue-700 underline-offset-2 hover:underline dark:text-blue-400"
-    >
-      {children}
-    </a>
-  );
+  return <ProjectPopupLink id={id}>{children}</ProjectPopupLink>;
 }
 
 export function SaleLink({
@@ -55,17 +37,9 @@ export function SaleLink({
 }) {
   const { user } = useAuth();
   if (!id || user?.role !== "admin") return <>{children}</>;
-  const href = `/sales?sale=${encodeURIComponent(id)}&from=${encodeURIComponent("/weekly-report")}`;
   return (
-    <a
-      href={href}
-      onClick={(e) => {
-        e.preventDefault();
-        openPopup(href);
-      }}
-      className="cursor-pointer text-emerald-700 underline-offset-2 hover:underline dark:text-emerald-400"
-    >
+    <SalePopupLink id={id} from="/weekly-report">
       {children}
-    </a>
+    </SalePopupLink>
   );
 }

@@ -6,7 +6,7 @@
  */
 
 import { useDraggable, useDroppable } from "@dnd-kit/core";
-import Link from "next/link";
+import { ProjectPopupLink } from "@/components/common/PopupLinks";
 import { useState } from "react";
 
 import type { Project } from "@/lib/domain";
@@ -230,14 +230,13 @@ export function ProjectCard({
             {p.name || "(제목 없음)"}
           </p>
           {/* 카드 자체는 drag 영역. 우측 → 링크는 drag 충돌 방지 위해 PointerEvents 막음 */}
-          <Link
-            href={`/projects/${p.id}`}
-            onPointerDown={(e) => e.stopPropagation()}
+          <ProjectPopupLink
+            id={p.id}
+            defaultStyle={false}
             className="shrink-0 text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200"
-            title="상세"
           >
             ↗
-          </Link>
+          </ProjectPopupLink>
         </div>
         <div className="mt-1 flex items-center justify-between">
           <span className="font-mono text-[10px] text-zinc-500">

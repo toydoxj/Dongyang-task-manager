@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import { ProjectPopupLink } from "@/components/common/PopupLinks";
 
 import type { Project } from "@/lib/domain";
 import { formatWon } from "@/lib/format";
@@ -159,8 +159,9 @@ function Group({
 function ProjectRow({ project }: { project: Project }) {
   return (
     <li>
-      <Link
-        href={`/projects/${project.id}`}
+      <ProjectPopupLink
+        id={project.id}
+        defaultStyle={false}
         className="flex items-center gap-2 rounded-md border border-zinc-200 bg-zinc-50/60 px-2 py-1.5 text-xs transition-colors hover:bg-zinc-100 dark:border-zinc-800 dark:bg-zinc-950/60 dark:hover:bg-zinc-800"
       >
         <span
@@ -181,7 +182,7 @@ function ProjectRow({ project }: { project: Project }) {
               : `${project.assignees[0]} +${project.assignees.length - 1}`
             : "—"}
         </span>
-      </Link>
+      </ProjectPopupLink>
     </li>
   );
 }

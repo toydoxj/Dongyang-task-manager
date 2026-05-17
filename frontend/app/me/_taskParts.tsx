@@ -10,8 +10,7 @@
  * PR-AL — app/me/page.tsx에서 추출 (외과적 변경 / 동작 동일).
  */
 
-import Link from "next/link";
-
+import { ProjectPopupLink } from "@/components/common/PopupLinks";
 import type { Project, Task } from "@/lib/domain";
 import { dDayLabel, formatDate } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -109,13 +108,13 @@ export function TaskCard({
         </div>
       </button>
       {t.project_ids[0] && (
-        <Link
-          href={`/projects/${t.project_ids[0]}`}
+        <ProjectPopupLink
+          id={t.project_ids[0]}
+          defaultStyle={false}
           className="flex shrink-0 items-center px-3 text-[10px] text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800"
-          title="프로젝트로 이동"
         >
           →
-        </Link>
+        </ProjectPopupLink>
       )}
     </li>
   );

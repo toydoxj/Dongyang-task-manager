@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import { ProjectPopupLink } from "@/components/common/PopupLinks";
 
 import type { WarningRow } from "@/lib/api";
 
@@ -28,8 +28,9 @@ export default function WarningItemsPanel({ rows }: Props) {
         <ul className="divide-y divide-zinc-100 dark:divide-zinc-800">
           {rows.map((r) => (
             <li key={r.id}>
-              <Link
-                href={`/projects/${r.id}`}
+              <ProjectPopupLink
+                id={r.id}
+                defaultStyle={false}
                 className="flex items-center gap-2 py-1.5 text-xs hover:bg-zinc-50 dark:hover:bg-zinc-800/40"
               >
                 <span
@@ -52,7 +53,7 @@ export default function WarningItemsPanel({ rows }: Props) {
                     <Chip label="수금 지연" tone="red" />
                   )}
                 </div>
-              </Link>
+              </ProjectPopupLink>
             </li>
           ))}
         </ul>

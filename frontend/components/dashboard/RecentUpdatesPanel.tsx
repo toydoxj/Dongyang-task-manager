@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import { ProjectPopupLink } from "@/components/common/PopupLinks";
 
 import type { RecentUpdate } from "@/lib/api";
 
@@ -29,8 +29,9 @@ export default function RecentUpdatesPanel({ items }: Props) {
         <ul className="divide-y divide-zinc-100 dark:divide-zinc-800">
           {items.map((p) => (
             <li key={p.id}>
-              <Link
-                href={`/projects/${p.id}`}
+              <ProjectPopupLink
+                id={p.id}
+                defaultStyle={false}
                 className="flex items-center gap-2 py-1.5 text-xs hover:bg-zinc-50 dark:hover:bg-zinc-800/40"
               >
                 <span className="font-mono text-[10px] text-zinc-500">
@@ -45,7 +46,7 @@ export default function RecentUpdatesPanel({ items }: Props) {
                 <span className="font-mono text-[10px] text-zinc-500">
                   {p.last_edited_time.slice(5, 10).replace("-", "/")}
                 </span>
-              </Link>
+              </ProjectPopupLink>
             </li>
           ))}
         </ul>

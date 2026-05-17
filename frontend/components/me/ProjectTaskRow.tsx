@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import { ProjectPopupLink } from "@/components/common/PopupLinks";
 import { useMemo, useState } from "react";
 
 import TaskKanban from "@/components/project/TaskKanban";
@@ -111,14 +111,13 @@ export default function ProjectTaskRow({
         </span>
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
-            <Link
-              href={`/projects/${project.id}`}
-              onClick={(e) => e.stopPropagation()}
+            <ProjectPopupLink
+              id={project.id}
+              defaultStyle={false}
               className="truncate text-sm font-semibold text-zinc-900 hover:underline dark:text-zinc-100"
-              title={project.name}
             >
               {project.name || "(제목 없음)"}
-            </Link>
+            </ProjectPopupLink>
             {displayStage && (
               <span
                 className={cn(

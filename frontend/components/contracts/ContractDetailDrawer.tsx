@@ -9,8 +9,9 @@
  *   3. 계약서 파일 — 다운로드 / 업로드 / 삭제
  */
 
-import Link from "next/link";
 import { useMemo, useState } from "react";
+
+import { ProjectPopupLink } from "@/components/common/PopupLinks";
 
 import { ClientSearchSelect } from "@/components/contracts/ContractCreateModal";
 import { Field, inputCls } from "@/components/project/_shared";
@@ -202,13 +203,13 @@ function Body({
       <div className="rounded-md bg-zinc-50 px-3 py-2 text-xs dark:bg-zinc-800/50">
         <div>
           <span className="text-zinc-500">프로젝트:</span>{" "}
-          <Link
-            href={`/projects/${contract.project_id}`}
-            target="_blank"
+          <ProjectPopupLink
+            id={contract.project_id}
+            defaultStyle={false}
             className="font-medium text-blue-600 hover:underline dark:text-blue-400"
           >
             {contract.project_name || "(이름 없음)"}
-          </Link>
+          </ProjectPopupLink>
         </div>
         <div className="mt-0.5">
           <span className="text-zinc-500">발주처:</span>{" "}
@@ -391,13 +392,13 @@ function Body({
           계약 분담(공동수급·추가용역) 편집은 프로젝트 상세 페이지에서
           진행합니다.
         </p>
-        <Link
-          href={`/projects/${contract.project_id}`}
-          target="_blank"
+        <ProjectPopupLink
+          id={contract.project_id}
+          defaultStyle={false}
           className="mt-2 inline-block rounded-md border border-zinc-300 px-3 py-1.5 text-xs hover:bg-zinc-50 dark:border-zinc-700 dark:hover:bg-zinc-800"
         >
           프로젝트 상세 열기 →
-        </Link>
+        </ProjectPopupLink>
       </Section>
 
       {error && (

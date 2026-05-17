@@ -1,7 +1,6 @@
 "use client";
 
-import Link from "next/link";
-
+import { ProjectPopupLink } from "@/components/common/PopupLinks";
 import type { ProjectTag } from "@/components/projects/ProjectCard";
 import StageBadge from "@/components/ui/StageBadge";
 import type { Project } from "@/lib/domain";
@@ -51,21 +50,22 @@ export default function ProjectTable({ projects, tagsById }: Props) {
                 className="border-b border-zinc-100 transition-colors hover:bg-zinc-50 dark:border-zinc-900 dark:hover:bg-zinc-800/60"
               >
                 <td className="px-2 py-1.5 font-mono text-[10px] text-zinc-500">
-                  <Link
-                    href={`/projects/${p.id}`}
+                  <ProjectPopupLink
+                    id={p.id}
+                    defaultStyle={false}
                     className="hover:text-zinc-900 dark:hover:text-zinc-100"
                   >
                     {p.code || "—"}
-                  </Link>
+                  </ProjectPopupLink>
                 </td>
                 <td className="max-w-[280px] truncate px-2 py-1.5 font-medium text-zinc-800 dark:text-zinc-200">
-                  <Link
-                    href={`/projects/${p.id}`}
+                  <ProjectPopupLink
+                    id={p.id}
+                    defaultStyle={false}
                     className="hover:underline"
-                    title={p.name}
                   >
                     {p.name || "(제목 없음)"}
-                  </Link>
+                  </ProjectPopupLink>
                 </td>
                 <td className="px-2 py-1.5">
                   <StageBadge stage={p.stage} className="px-1.5" />

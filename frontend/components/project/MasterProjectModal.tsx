@@ -1,7 +1,8 @@
 "use client";
 
-import Link from "next/link";
 import { useRef, useState } from "react";
+
+import { ProjectPopupLink } from "@/components/common/PopupLinks";
 import { mutate } from "swr";
 
 import {
@@ -210,9 +211,10 @@ function Body({
           <ul className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
             {mp.sub_projects.map((sp) => (
               <li key={sp.id}>
-                <Link
-                  href={`/projects/${sp.id}`}
-                  onClick={onClose}
+                <ProjectPopupLink
+                  id={sp.id}
+                  defaultStyle={false}
+                  onAfterClick={onClose}
                   className="flex items-center justify-between gap-2 rounded-md border border-zinc-200 bg-white px-2.5 py-1.5 text-[11px] hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900 dark:hover:bg-zinc-800"
                 >
                   <span className="min-w-0 flex-1 truncate">
@@ -226,7 +228,7 @@ function Body({
                       {sp.stage}
                     </span>
                   )}
-                </Link>
+                </ProjectPopupLink>
               </li>
             ))}
           </ul>
