@@ -18,6 +18,9 @@ export * from "./api/clients";
 // ── 계약 항목 ── (PR-BD — lib/api/contractItems.ts)
 export * from "./api/contractItems";
 
+// ── 계약서 (Contract) — PR-FH/2 — lib/api/contracts.ts
+export * from "./api/contracts";
+
 // ── 마스터 프로젝트 + 이미지 CRUD ── (PR-BD — lib/api/masterProjects.ts)
 export * from "./api/masterProjects";
 

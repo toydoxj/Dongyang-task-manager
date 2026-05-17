@@ -14,6 +14,7 @@ import {
   getSale,
   listClients,
   listContractItems,
+  listContracts,
   listMasterImages,
   listProjects,
   listSales,
@@ -30,6 +31,7 @@ import type {
   CashflowResponse,
   ClientListResponse,
   ContractItemListResponse,
+  ContractListResponse,
   MasterImageList,
   MasterOptions,
   MasterProject,
@@ -53,6 +55,8 @@ export const keys = {
   clients: () => ["clients"] as const,
   contractItems: (projectId?: string) =>
     ["contract-items", projectId ?? null] as const,
+  contracts: (filters?: Parameters<typeof listContracts>[0]) =>
+    ["contracts", filters ?? null] as const,
   sales: (filters?: Parameters<typeof listSales>[0]) =>
     ["sales", filters ?? null] as const,
   sale: (id: string) => ["sale", id] as const,
@@ -158,6 +162,16 @@ export function useContractItems(
   return useSWR(
     projectId ? keys.contractItems(projectId) : null,
     () => listContractItems(projectId!),
+  );
+}
+
+export function useContracts(
+  filters?: Parameters<typeof listContracts>[0],
+  enabled: boolean = true,
+): SWRResponse<ContractListResponse> {
+  return useSWR(
+    enabled ? keys.contracts(filters) : null,
+    () => listContracts(filters),
   );
 }
 

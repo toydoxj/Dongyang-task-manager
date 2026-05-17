@@ -359,6 +359,37 @@ export interface ContractItemListResponse {
   count: number;
 }
 
+// ── 계약서 (Contract) — PR-FH ──
+
+export interface Contract {
+  id: number;
+  project_id: string;
+  title: string;
+  signed_date: string | null; // YYYY-MM-DD
+  start_date: string | null;
+  end_date: string | null;
+  amount: number | null;
+  vat_included: boolean;
+  drive_file_id: string | null;
+  drive_url: string | null;
+  file_name: string | null;
+  uploaded_at: string | null;
+  note: string;
+  created_by: number | null;
+  created_at: string;
+  updated_at: string;
+  // 응답 편의 — backend가 mirror_projects join으로 채움
+  project_code: string | null;
+  project_name: string | null;
+  client_id: string | null;
+  client_name: string | null;
+}
+
+export interface ContractListResponse {
+  items: Contract[];
+  count: number;
+}
+
 export interface CashflowEntry {
   id: string;
   type: "income" | "expense";
