@@ -43,6 +43,9 @@ class Contract(Base):
     project_id: Mapped[str] = mapped_column(
         String, nullable=False, index=True
     )
+    # PR-FI/4: 발주처 page_id (mirror_clients). nullable — 옛 row는 프로젝트의
+    # 발주처를 그대로 따름. 공동수급 등 계약서별로 다른 발주처가 필요한 경우에 사용.
+    client_id: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
     title: Mapped[str] = mapped_column(String, nullable=False, default="")
     signed_date: Mapped[date | None] = mapped_column(Date, nullable=True, index=True)
     start_date: Mapped[date | None] = mapped_column(Date, nullable=True)
@@ -111,6 +114,8 @@ class ContractCreate(BaseModel):
     amount: int | None = None
     vat_included: bool = False
     note: str = ""
+    # PR-FI/4: 계약서 자체 발주처 (생략 시 프로젝트 발주처 사용).
+    client_id: str | None = None
 
 
 class ContractUpdate(BaseModel):
@@ -123,3 +128,5 @@ class ContractUpdate(BaseModel):
     amount: int | None = None
     vat_included: bool | None = None
     note: str | None = None
+    # PR-FI/4: 빈 문자열로는 못 비우고 명시적 null 필요 (PATCH 의미).
+    client_id: str | None = None

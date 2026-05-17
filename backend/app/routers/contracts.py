@@ -69,7 +69,10 @@ def _utcnow() -> datetime:
 def _enrich_with_project(
     db: Session, rows: list[Contract]
 ) -> list[ContractOut]:
-    """Contract row에 mirror_projects join으로 project_code/name/client 정보 채워서 응답."""
+    """Contract row에 mirror_projects join + client_id 우선순위 적용.
+
+    PR-FI/4: contract.client_id가 있으면 그것이 우선, 없으면 project.client_relation_ids[0] fallback.
+    """
     if not rows:
         return []
     project_ids = list({r.project_id for r in rows})
@@ -77,7 +80,11 @@ def _enrich_with_project(
         db.query(MirrorProject).filter(MirrorProject.page_id.in_(project_ids)).all()
     )
     project_map = {p.page_id: p for p in projects}
-    client_ids = set()
+    # 발주처 lookup 대상 = contract.client_id 또는 project.client_relation_ids[0]
+    client_ids: set[str] = set()
+    for r in rows:
+        if r.client_id:
+            client_ids.add(r.client_id)
     for p in projects:
         if p.client_relation_ids:
             client_ids.add(p.client_relation_ids[0])
@@ -95,12 +102,17 @@ def _enrich_with_project(
         if proj is not None:
             item.project_code = proj.code or None
             item.project_name = proj.name or None
-            if proj.client_relation_ids:
-                cid = proj.client_relation_ids[0]
-                item.client_id = cid
-                client = client_map.get(cid)
-                if client is not None:
-                    item.client_name = client.name or None
+        # PR-FI/4: contract.client_id 우선, 없으면 project 발주처 fallback.
+        effective_cid: str | None = None
+        if r.client_id:
+            effective_cid = r.client_id
+        elif proj is not None and proj.client_relation_ids:
+            effective_cid = proj.client_relation_ids[0]
+        if effective_cid:
+            item.client_id = effective_cid
+            client = client_map.get(effective_cid)
+            if client is not None:
+                item.client_name = client.name or None
         out.append(item)
     return out
 
@@ -314,6 +326,7 @@ async def create_contract(
         )
     row = Contract(
         project_id=body.project_id,
+        client_id=body.client_id,
         title=body.title,
         signed_date=body.signed_date,
         start_date=body.start_date,
@@ -343,6 +356,9 @@ async def update_contract(
         raise HTTPException(status_code=404, detail="계약서를 찾을 수 없습니다")
     if body.title is not None:
         row.title = body.title
+    # PR-FI/4: client_id는 명시적 null도 허용 (계약서별 발주처 해제). 빈 문자열도 null로 처리.
+    if "client_id" in body.model_fields_set:
+        row.client_id = body.client_id or None
     if body.signed_date is not None:
         row.signed_date = body.signed_date
     if body.start_date is not None:
