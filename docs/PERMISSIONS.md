@@ -49,6 +49,8 @@
 |---|---|---|
 | `/api/projects/{id} PATCH` | 프로젝트 일반 편집 (이름·발주처·금액·phase 등) | PR-Y |
 | `/api/contract-items POST/PATCH/DELETE` | 계약 분담 (공동수급·추가용역) | PR-Y |
+| `/api/contracts POST/PATCH/DELETE` | 계약서 메타 CRUD | PR-FH/1 |
+| `/api/contracts/{id}/file POST/DELETE` | 계약서 PDF 업로드·삭제 (Drive) | PR-FH/1 |
 | `/api/admin/employees GET ""` | 직원 명부 조회 | PR-AT (manager 휴가·연락처 등 운영 참조 필요) |
 
 ### admin + manager (관리팀 운영)
@@ -76,6 +78,7 @@
 | `/api/cashflow GET` | 수금·지출 통합 시계열 | |
 | `/api/clients GET/POST/PATCH` | 발주처 read·생성·수정 | DELETE만 admin (PR-AC) |
 | `/api/contract-items GET` | 계약 분담 목록 | |
+| `/api/contracts GET / {id} GET` | 계약서 목록·단건 조회 | PR-FH/1 |
 | `/api/employees/teams-map` | 팀 매핑 | |
 | `/api/master-projects *` | 마스터 프로젝트 read·PATCH·이미지 CRUD | audit 미결정 (현재 누구나) |
 | `/api/notices GET` | 공지 목록 | |

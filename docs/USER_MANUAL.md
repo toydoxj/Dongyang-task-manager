@@ -189,7 +189,8 @@
 
 ### 9.2 운영 관리 (admin / manager) — 펼침/접힘
 - 프로젝트, 영업 관리, 발주처 관리, 수금 관리, 지출 관리, 계약서 관리
-- 지출/계약서는 추후 페이지 추가 예정 (현재 placeholder)
+- 지출은 추후 페이지 추가 예정 (현재 placeholder)
+- 계약서 관리는 admin / team_lead / manager 노출 (PR-FH/2부터 본격 구현)
 
 ### 9.3 시스템 관리 (admin only) — 펼침/접힘
 - 공지/교육 관리, 직원 관리, 사용자 관리, **Sync 관리** (PR-AR), **인증 채널 모니터** (PR-ET), Drive 연결
@@ -210,6 +211,24 @@ backend in-memory 누적 카운터 — Render restart 시 reset되므로 `since`
 - **NO-GO** (`ratio < 0.95`) — cookie 미발급 사용자 잔존, header fallback 의존 → 재시도 시 401 무한 회귀 위험 (PR-EM/EN 4차 사고 패턴)
 - 30초 자동 갱신, since 짧으면(수십 분) 표본 부족 → 운영 1주 이상 관찰 권장
 - 같은 사용자가 자주 호출하면 ratio 왜곡 — 다양한 사용자 활동 패턴 누적이 필요
+
+### 9.6 「계약서 관리」 (`/operations/contracts`)
+프로젝트별 계약서 메타 + PDF 파일을 통합 관리하는 페이지 (PR-FH).
+접근 권한: admin / team_lead / manager. member는 UnauthorizedRedirect.
+
+- **list 화면**: 검색(제목/파일명/CODE/용역명/발주처/메모) + 발주처/연도 필터
+- **정렬 가능 컬럼 4종**: 계약일, CODE, 발주처, 계약금액 (header click → 토글)
+- **상단**: 총 계약금액 합계 + 「+ 새 계약서」 버튼
+- **신규 등록**: 프로젝트 선택 + 계약서명/체결일/시작·종료일/금액/VAT/메모. 파일은 등록 후 상세에서 별도 업로드
+- **상세 drawer** (3 sub-section 펼침/접힘):
+  - **계약 메타**: PATCH (제목/날짜/금액/VAT/메모) + 「메타 저장」
+  - **계약서 파일**: 다운로드 link + 신규 업로드 + 파일 삭제. 새 파일 업로드 시 기존 파일 자동 교체
+  - **계약 분담**: 프로젝트 상세 페이지로 link (controlled 패턴이라 embed 보류)
+- **파일 형식**: PDF / DOC / DOCX / HWP / HWPX · 최대 30MB
+- **저장 위치**: NAVER WORKS Drive `[계약서]/{프로젝트 CODE}/{원본 filename}` (폴더는 첫 업로드 시 자동 생성)
+- **삭제**: 계약서 row 삭제 시 첨부 PDF도 함께 삭제 (cascade)
+
+1 프로젝트 → N 계약서 (원계약/변경계약/부속합의 등 다중). 노션 mirror는 차후 단계 (현재 Postgres + Drive only).
 
 ## 10. 문의
 

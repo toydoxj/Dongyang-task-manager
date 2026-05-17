@@ -387,7 +387,8 @@ export default function HelpPage() {
         <H3>9.2 운영 관리 (admin / manager) — 펼침/접힘</H3>
         <Ul>
           <li>프로젝트, 영업 관리, 발주처 관리, 수금 관리, 지출 관리, 계약서 관리</li>
-          <li>지출/계약서는 추후 페이지 추가 예정 (현재 placeholder)</li>
+          <li>지출은 추후 페이지 추가 예정 (현재 placeholder)</li>
+          <li>계약서 관리는 admin / team_lead / manager 노출 (PR-FH/2부터 본격 구현)</li>
         </Ul>
         <H3>9.3 시스템 관리 (admin only) — 펼침/접힘</H3>
         <Ul>
@@ -422,6 +423,27 @@ export default function HelpPage() {
           </Ul>
           <li>30초 자동 갱신. since가 짧으면(수십 분) 표본 부족 → 운영 1주 이상 관찰 권장</li>
           <li>같은 사용자가 자주 호출하면 ratio 왜곡 — 다양한 사용자 활동 패턴 누적이 필요</li>
+        </Ul>
+        <H3>9.6 「계약서 관리」 (/operations/contracts)</H3>
+        <Ul>
+          <li>
+            프로젝트별 계약서 메타 + PDF 파일을 통합 관리. 접근 권한:{" "}
+            <B>admin / team_lead / manager</B>. member는 UnauthorizedRedirect.
+          </li>
+          <li><B>list 화면</B>: 검색(제목/파일명/CODE/용역명/발주처/메모) + 발주처/연도 필터</li>
+          <li><B>정렬 가능 컬럼 4종</B>: 계약일, CODE, 발주처, 계약금액 (header click → 토글)</li>
+          <li><B>상단</B>: 총 계약금액 합계 + 「+ 새 계약서」 버튼</li>
+          <li><B>신규 등록</B>: 프로젝트 선택 + 계약서명/체결일/시작·종료일/금액/VAT/메모. 파일은 등록 후 상세에서 별도 업로드</li>
+          <li><B>상세 drawer</B> (3 sub-section 펼침/접힘):</li>
+          <Ul>
+            <li><B>계약 메타</B>: PATCH (제목/날짜/금액/VAT/메모) + 「메타 저장」</li>
+            <li><B>계약서 파일</B>: 다운로드 link + 신규 업로드 + 파일 삭제. 새 파일 업로드 시 기존 파일 자동 교체</li>
+            <li><B>계약 분담</B>: 프로젝트 상세 페이지로 link (controlled 패턴이라 embed 보류)</li>
+          </Ul>
+          <li><B>파일 형식</B>: PDF / DOC / DOCX / HWP / HWPX · 최대 30MB</li>
+          <li><B>저장 위치</B>: NAVER WORKS Drive [계약서]/{`{프로젝트 CODE}`}/{`{원본 filename}`} (폴더는 첫 업로드 시 자동 생성)</li>
+          <li><B>삭제</B>: 계약서 row 삭제 시 첨부 PDF도 함께 삭제 (cascade)</li>
+          <li>1 프로젝트 → N 계약서 (원계약/변경계약/부속합의 등 다중). 노션 mirror는 차후 단계.</li>
         </Ul>
       </Section>
 
