@@ -1,13 +1,18 @@
 "use client";
 
 import { useSearchParams } from "next/navigation";
-import { useState } from "react";
+import { Suspense, useState } from "react";
 
 import AuthGuard from "./AuthGuard";
 import ProjectDetailModal from "./common/ProjectDetailModal";
 import Sidebar from "./Sidebar";
 
-export default function AppShell({ children }: { children: React.ReactNode }) {
+/**
+ * useSearchParams를 사용하는 inner component. Next.js 16은 prerender 시
+ * useSearchParams가 Suspense 밖에 있으면 CSR bailout → /_not-found 등 static
+ * page export 실패. 별도 컴포넌트로 분리 + Suspense로 wrap.
+ */
+function ShellBody({ children }: { children: React.ReactNode }) {
   const [navOpen, setNavOpen] = useState(false);
   // PR-FQ: ?popup=1 query가 있으면 사이드바·모바일 헤더 없는 chromeless layout.
   // openInPopup에서 자동 부착 — 사용자가 직접 URL 입력해도 동일 동작.
@@ -16,17 +21,17 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
   if (isPopup) {
     return (
-      <AuthGuard>
+      <>
         <main className="min-h-screen bg-zinc-50 p-4 text-zinc-900 dark:bg-zinc-950 dark:text-zinc-100 sm:p-6">
           {children}
         </main>
         <ProjectDetailModal />
-      </AuthGuard>
+      </>
     );
   }
 
   return (
-    <AuthGuard>
+    <>
       <div className="flex min-h-screen bg-zinc-50 dark:bg-zinc-950">
         <Sidebar mobileOpen={navOpen} onCloseMobile={() => setNavOpen(false)} />
 
@@ -73,6 +78,18 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         </div>
       </div>
       <ProjectDetailModal />
+    </>
+  );
+}
+
+export default function AppShell({ children }: { children: React.ReactNode }) {
+  // ShellBody가 useSearchParams를 사용하므로 Suspense로 감싼다.
+  // fallback은 일반 사이드바 layout — 일순간 차이가 거의 보이지 않음 (대다수 진입은 ?popup이 없음).
+  return (
+    <AuthGuard>
+      <Suspense fallback={<div className="min-h-screen bg-zinc-50 dark:bg-zinc-950" />}>
+        <ShellBody>{children}</ShellBody>
+      </Suspense>
     </AuthGuard>
   );
 }
