@@ -148,7 +148,8 @@
 | **PR-EV Phase 4-G 5차 본격 PR 설계 초안 (코드 수정 X)** | `docs/phase-4g-5th-design.md` 신설 — 4차 사고 요약 / 5차 사전 조건(cookie_ratio ≥ 0.99 × 1주+) / PR-FA(AuthGuard reason 분기) → PR-FB(saveAuth token 무시) → PR-FC(authFetch header 제거) 3단계 분리(PR-EW 명명은 2026-05-17 다른 작업에 사용되며 PR-FA로 재명명) + 단독 revert 시나리오 / 회귀 방지 체크리스트 8항목 매핑 | 02b7b09 |
 | **PR-EW PR-CR 진단 4순위 — _collect_overdue_seals notion filter push down** | dashboard `/api/dashboard/actions`의 admin/manager 호출 시마다 notion query_all 전체 fetch + Python에서 상태/제출예정일 필터링하던 것을 notion compound filter(상태 IN {1차/2차 검토중} + 제출예정일 < today)로 push down. PR-CL/CQ로 해소된 건 `_count_pending_seals`였고 `_collect_overdue_seals`는 잔존 — 30초 cache로 일부 완화 상태였음. 운영에서 notion 서버 단 filter로 매칭 페이지만 반환받음. Python loop는 title 추출 + schema 변경 안전망으로 유지. pytest 63 통과 | 4659491 |
 | **PR-EX/1 suggestions mirror 1차 — model + alembic migration** | `MirrorSuggestion` ORM 클래스(SuggestionItem 전체 필드: title/content/author/categories[]/status/resolution/created_time/last_edited_time + synced_at/archived) + alembic `dfaa8ac3a04b_mirror_suggestions.py` (table + 4 index: author/status/last_edited_time/archived). alembic upgrade head 성공 + pytest 63 통과. **후속**: PR-EX/2(sync.py에 "suggestions" SyncKind + _upsert_suggestion) + PR-EX/3(list_suggestions mirror 조회 전환 + write-through). 3단계 분리 (Codex 권고) | de7ef4c |
-| **PR-EX/2 suggestions mirror 2차 — sync.py 서비스 보강** | `SyncKind` Literal + `ALL_KINDS` 튜플에 "suggestions" 추가. `_db_id_for_kind`/`_table_for`/`_upsert_one` 분기 매핑. `_upsert_suggestion` 메서드 신규 — SuggestionItem `_from_notion_page` 동일 매핑(title type 첫 컬럼 / content="방안" / author multi_select 첫 옵션 / status status\|select fallback / categories="구분" / resolution="조치내용"). 5분 cron incremental + admin 강제 sync 자동 포함. pytest 63 통과. **후속 PR-EX/3**: routers/suggestions.py:list_suggestions mirror 조회 전환 + write-through upsert | (push 대기) |
+| **PR-EX/2 suggestions mirror 2차 — sync.py 서비스 보강** | `SyncKind` Literal + `ALL_KINDS` 튜플에 "suggestions" 추가. `_db_id_for_kind`/`_table_for`/`_upsert_one` 분기 매핑. `_upsert_suggestion` 메서드 신규 — SuggestionItem `_from_notion_page` 동일 매핑(title type 첫 컬럼 / content="방안" / author multi_select 첫 옵션 / status status\|select fallback / categories="구분" / resolution="조치내용"). 5분 cron incremental + admin 강제 sync 자동 포함. pytest 63 통과. **후속 PR-EX/3**: routers/suggestions.py:list_suggestions mirror 조회 전환 + write-through upsert | 16ef91d |
+| **PR-EX/3 suggestions mirror 3차 — list endpoint 전환 + write-through** | `routers/suggestions.py`: `list_suggestions` 함수를 sync로 변경 + `db: Session = Depends(get_db)` 추가 + `mirror_suggestions` SELECT(archived=false + created_time DESC nullslast). `_from_mirror` helper 신설(MirrorSuggestion → SuggestionItem). create/update/delete 끝에 `get_sync().upsert_page("suggestions", page)` 또는 `archive_page` write-through(예외 시 logger.exception + 응답은 정상 — sync 실패가 사용자 흐름 차단 X). **PR-CR 2순위 본격 해소 완료** — notion query_all 전량 fetch 폐기, mirror DB 단일 SELECT로 응답. pytest 63 통과 | (push 대기) |
 
 ## 미완료 / 보류
 
@@ -185,7 +186,7 @@ DASH-001~004 / PROJ-001~005 / MY-001~005 / WEEK-001~005 / COMMON-001~003 항목 
 | 항목 | 비고 |
 |---|---|
 | **PR-BI 재시도 (Phase 4-G 2단계)** | INCIDENT.md PR-BP/BQ 체크리스트 4항목 충족 후. 안전망(PR-BN/BO/BL-5/CX/CY) 모두 적용됨 |
-| **mirror endpoint slow** | PR-CR 진단 1차 완료(2026-05-17) — 1순위 list_seal_requests notion query_all 식별 → PR-EQ로 project_id filter push down. 2순위 cashflow 추가 IN SELECT는 우선순위 낮음. 3순위 ILIKE 무인덱스는 4-C 임계점 도래 시 활성 (의도된 보류). PR-CL/CQ로 dashboard 6.4초 병목은 해소 |
+| **mirror endpoint slow** | PR-CR 진단 1·2·4순위 모두 해소 (2026-05-17): 1 PR-EQ(seal_requests notion filter), 2 PR-EX/1~3(suggestions mirror 본격 전환), 4 PR-EW(_collect_overdue_seals notion compound filter). 2순위 cashflow round-trip은 PR-ER로 union_all 통합. 3순위 ILIKE 무인덱스는 4-C 임계점 도래 시 활성 (의도된 보류) |
 
 ### 사용자 결정으로 close
 | 항목 | 비고 |

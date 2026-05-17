@@ -12,12 +12,17 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
+from sqlalchemy import select
+from sqlalchemy.orm import Session
 
+from app.db import get_db
 from app.exceptions import NotFoundError
+from app.models import mirror as M
 from app.models.auth import User
 from app.security import get_current_user
 from app.services import notion_props as P
 from app.services.notion import NotionService, get_notion
+from app.services.sync import get_sync
 from app.settings import get_settings
 
 logger = logging.getLogger("api.suggestions")
@@ -80,6 +85,27 @@ class SuggestionUpdate(BaseModel):
     resolution: str | None = None   # admin/team_lead만 변경 가능
 
 
+def _from_mirror(row: M.MirrorSuggestion) -> SuggestionItem:
+    """PR-EX/3: mirror_suggestions row → SuggestionItem 변환.
+
+    sync.py의 `_upsert_suggestion`이 _from_notion_page와 동일 매핑을 적용해
+    저장하므로 frontend 응답 schema는 100% 일치.
+    """
+    return SuggestionItem(
+        id=row.page_id,
+        title=row.title or "",
+        content=row.content or "",
+        author=row.author or "",
+        categories=list(row.categories or []),
+        status=row.status or "접수",
+        resolution=row.resolution or "",
+        created_time=row.created_time.isoformat() if row.created_time else None,
+        last_edited_time=row.last_edited_time.isoformat()
+        if row.last_edited_time
+        else None,
+    )
+
+
 def _from_notion_page(page: dict[str, Any]) -> SuggestionItem:
     """PR-CO: 운영 노션 schema 매핑 — title="내용"(title), content="방안"(rich_text),
     categories="구분"(multi_select), status="진행상황"(status type), resolution="조치내용".
@@ -117,16 +143,23 @@ def _db_id() -> str:
 
 
 @router.get("", response_model=SuggestionListResponse)
-async def list_suggestions(
+def list_suggestions(
     _user: User = Depends(get_current_user),
-    notion: NotionService = Depends(get_notion),
+    db: Session = Depends(get_db),
 ) -> SuggestionListResponse:
-    """모든 건의사항 — 최신 작성순."""
-    pages = await notion.query_all(
-        _db_id(),
-        sorts=[{"timestamp": "created_time", "direction": "descending"}],
+    """모든 건의사항 — 최신 작성순.
+
+    PR-EX/3 (PR-CR 2순위 본격 해소): mirror_suggestions DB 조회로 전환.
+    옛 notion.query_all 전량 fetch 패턴 폐기 — 5분 incremental cron이 mirror
+    유지, write 흐름은 즉시 upsert(write-through).
+    """
+    stmt = (
+        select(M.MirrorSuggestion)
+        .where(M.MirrorSuggestion.archived.is_(False))
+        .order_by(M.MirrorSuggestion.created_time.desc().nullslast())
     )
-    items = [_from_notion_page(p) for p in pages]
+    rows = db.execute(stmt).scalars().all()
+    items = [_from_mirror(r) for r in rows]
     return SuggestionListResponse(items=items, count=len(items))
 
 
@@ -154,6 +187,11 @@ async def create_suggestion(
             "multi_select": [{"name": c} for c in body.categories if c.strip()]
         }
     page = await notion.create_page(_db_id(), props)
+    # PR-EX/3: write-through — mirror 즉시 upsert (5분 sync 기다리지 않음)
+    try:
+        get_sync().upsert_page("suggestions", page)
+    except Exception:  # noqa: BLE001
+        logger.exception("suggestions mirror upsert 실패 (write-through, 응답은 정상)")
     return _from_notion_page(page)
 
 
@@ -226,6 +264,11 @@ async def update_suggestion(
         raise HTTPException(status_code=400, detail="갱신할 필드가 없습니다")
 
     updated = await notion.update_page(page_id, update_props)
+    # PR-EX/3: write-through
+    try:
+        get_sync().upsert_page("suggestions", updated)
+    except Exception:  # noqa: BLE001
+        logger.exception("suggestions mirror upsert 실패 (write-through, 응답은 정상)")
     return _from_notion_page(updated)
 
 
@@ -256,4 +299,9 @@ async def delete_suggestion(
 
     await asyncio.to_thread(notion._client.pages.update, page_id=page_id, archived=True)
     notion.clear_cache()
+    # PR-EX/3: write-through — mirror에 archived=True 즉시 반영
+    try:
+        get_sync().archive_page("suggestions", page_id)
+    except Exception:  # noqa: BLE001
+        logger.exception("suggestions mirror archive 실패 (write-through, 응답은 정상)")
     return {"status": "archived"}
