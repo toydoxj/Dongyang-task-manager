@@ -77,6 +77,9 @@ export default function ContractsAdminPage() {
   const [sortDir, setSortDir] = useState<SortDir>("desc");
   const [editing, setEditing] = useState<Contract | null>(null);
   const [creating, setCreating] = useState(false);
+  // PR-FI/6: 「계약체크 + 미등록」 가상 row 클릭 시 등록 모달에 projectId prefill.
+  const [createInitialProjectId, setCreateInitialProjectId] = useState<string>("");
+  const [createKey, setCreateKey] = useState(0);
 
   // 전체 list — 1차에서는 client-side 검색/정렬 (운영 N=수백 예상, 페이지네이션 불요).
   const { data, error, mutate } = useContracts(undefined, allowed);
@@ -113,8 +116,45 @@ export default function ContractsAdminPage() {
     }
   };
 
-  const filteredAndSorted = useMemo(() => {
+  // PR-FI/6: contract_signed=True이지만 Contract row 0건인 프로젝트는 가상 row로 추가.
+  // ContractOut shape으로 stub (id < 0 으로 가상 표시).
+  const virtualRows = useMemo<Contract[]>(() => {
     const items = data?.items ?? [];
+    const projects = projectsData?.items ?? [];
+    if (projects.length === 0) return [];
+    const projectsWithContract = new Set(items.map((c) => c.project_id));
+    const missing = projects.filter(
+      (p) => p.contract_signed && !projectsWithContract.has(p.id),
+    );
+    return missing.map((p, idx) => {
+      const cid = p.client_relation_ids?.[0] ?? null;
+      return {
+        id: -(idx + 1),
+        project_id: p.id,
+        title: "",
+        signed_date: null,
+        start_date: p.contract_start ?? null,
+        end_date: p.contract_end ?? null,
+        amount: p.contract_amount ?? null,
+        vat_included: false,
+        drive_file_id: null,
+        drive_url: null,
+        file_name: null,
+        uploaded_at: null,
+        note: "",
+        created_by: null,
+        created_at: "",
+        updated_at: "",
+        project_code: p.code,
+        project_name: p.name,
+        client_id: cid,
+        client_name: cid ? clientNameById.get(cid) ?? null : null,
+      } as Contract;
+    });
+  }, [data, projectsData, clientNameById]);
+
+  const filteredAndSorted = useMemo(() => {
+    const items = [...(data?.items ?? []), ...virtualRows];
     const q = searchQuery.trim().toLowerCase();
     let out = items;
     if (q) {
@@ -165,7 +205,7 @@ export default function ContractsAdminPage() {
           return ((a.amount ?? -Infinity) - (b.amount ?? -Infinity)) * dir;
       }
     });
-  }, [data, searchQuery, clientFilter, yearFilter, sortKey, sortDir]);
+  }, [data, virtualRows, searchQuery, clientFilter, yearFilter, sortKey, sortDir]);
 
   if (user && !allowed) {
     return (
@@ -180,6 +220,18 @@ export default function ContractsAdminPage() {
     (s, c) => s + (c.amount ?? 0),
     0,
   );
+
+  const openCreateForProject = (projectId: string): void => {
+    setCreateInitialProjectId(projectId);
+    setCreateKey((k) => k + 1);
+    setCreating(true);
+  };
+
+  const openCreateBlank = (): void => {
+    setCreateInitialProjectId("");
+    setCreateKey((k) => k + 1);
+    setCreating(true);
+  };
 
   return (
     <div className="space-y-4 p-6">
@@ -198,7 +250,7 @@ export default function ContractsAdminPage() {
         </div>
         <button
           type="button"
-          onClick={() => setCreating(true)}
+          onClick={openCreateBlank}
           className="rounded-md bg-zinc-900 px-3 py-1.5 text-xs text-white hover:bg-zinc-700 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300"
         >
           + 새 계약서
@@ -299,65 +351,86 @@ export default function ContractsAdminPage() {
               </tr>
             </thead>
             <tbody>
-              {filteredAndSorted.map((c) => (
-                <tr
-                  key={c.id}
-                  onClick={() => setEditing(c)}
-                  className="cursor-pointer border-b border-zinc-100 hover:bg-zinc-50 dark:border-zinc-900 dark:hover:bg-zinc-800/50"
-                >
-                  <td className="px-2 py-2 text-xs text-zinc-700 dark:text-zinc-300">
-                    {formatDate(c.signed_date)}
-                  </td>
-                  <td className="px-2 py-2 font-mono text-[11px] text-zinc-500">
-                    {c.project_code || "—"}
-                  </td>
-                  <td className="px-2 py-2">
-                    <div className="font-medium">{c.project_name || "—"}</div>
-                    <div className="mt-0.5 text-[11px] text-zinc-500">
-                      {c.title}
-                      {c.vat_included && (
-                        <span className="ml-1 rounded bg-amber-500/10 px-1 text-[9px] text-amber-700">
-                          VAT 포함
+              {filteredAndSorted.map((c) => {
+                const isVirtual = c.id < 0;
+                return (
+                  <tr
+                    key={isVirtual ? `virtual-${c.project_id}` : c.id}
+                    onClick={() =>
+                      isVirtual ? openCreateForProject(c.project_id) : setEditing(c)
+                    }
+                    className={cn(
+                      "cursor-pointer border-b border-zinc-100 hover:bg-zinc-50 dark:border-zinc-900 dark:hover:bg-zinc-800/50",
+                      isVirtual &&
+                        "bg-amber-500/5 hover:bg-amber-500/10 dark:bg-amber-500/10 dark:hover:bg-amber-500/15",
+                    )}
+                  >
+                    <td className="px-2 py-2 text-xs text-zinc-700 dark:text-zinc-300">
+                      {formatDate(c.signed_date)}
+                    </td>
+                    <td className="px-2 py-2 font-mono text-[11px] text-zinc-500">
+                      {c.project_code || "—"}
+                    </td>
+                    <td className="px-2 py-2">
+                      <div className="font-medium">{c.project_name || "—"}</div>
+                      <div className="mt-0.5 text-[11px] text-zinc-500">
+                        {isVirtual ? (
+                          <span className="text-amber-700 dark:text-amber-400">
+                            ⚠ 계약체크는 되어있지만 계약서가 등록되지 않음 — 클릭해 등록
+                          </span>
+                        ) : (
+                          <>
+                            {c.title}
+                            {c.vat_included && (
+                              <span className="ml-1 rounded bg-amber-500/10 px-1 text-[9px] text-amber-700">
+                                VAT 포함
+                              </span>
+                            )}
+                          </>
+                        )}
+                      </div>
+                    </td>
+                    <td className="px-2 py-2 text-xs text-zinc-700 dark:text-zinc-300">
+                      {c.client_name ||
+                        (c.client_id ? clientNameById.get(c.client_id) ?? "—" : "—")}
+                    </td>
+                    <td className="px-2 py-2 text-xs text-zinc-600 dark:text-zinc-400">
+                      {formatPeriod(c.start_date, c.end_date)}
+                    </td>
+                    <td className="px-2 py-2 text-right font-mono text-xs">
+                      {KRW(c.amount)}
+                    </td>
+                    <td className="px-2 py-2 text-center">
+                      {c.drive_url ? (
+                        <a
+                          href={c.drive_url}
+                          target="_blank"
+                          rel="noreferrer"
+                          onClick={(e) => e.stopPropagation()}
+                          className="rounded bg-blue-500/10 px-2 py-0.5 text-[10px] text-blue-700 hover:bg-blue-500/20 dark:text-blue-400"
+                          title={c.file_name ?? ""}
+                        >
+                          다운로드
+                        </a>
+                      ) : (
+                        <span className="text-[10px] text-zinc-400">
+                          {isVirtual ? "미등록" : "미첨부"}
                         </span>
                       )}
-                    </div>
-                  </td>
-                  <td className="px-2 py-2 text-xs text-zinc-700 dark:text-zinc-300">
-                    {c.client_name ||
-                      (c.client_id ? clientNameById.get(c.client_id) ?? "—" : "—")}
-                  </td>
-                  <td className="px-2 py-2 text-xs text-zinc-600 dark:text-zinc-400">
-                    {formatPeriod(c.start_date, c.end_date)}
-                  </td>
-                  <td className="px-2 py-2 text-right font-mono text-xs">
-                    {KRW(c.amount)}
-                  </td>
-                  <td className="px-2 py-2 text-center">
-                    {c.drive_url ? (
-                      <a
-                        href={c.drive_url}
-                        target="_blank"
-                        rel="noreferrer"
-                        onClick={(e) => e.stopPropagation()}
-                        className="rounded bg-blue-500/10 px-2 py-0.5 text-[10px] text-blue-700 hover:bg-blue-500/20 dark:text-blue-400"
-                        title={c.file_name ?? ""}
-                      >
-                        다운로드
-                      </a>
-                    ) : (
-                      <span className="text-[10px] text-zinc-400">미첨부</span>
-                    )}
-                  </td>
-                </tr>
-              ))}
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
       )}
 
       <ContractCreateModal
+        key={createKey}
         open={creating}
         projects={projectsData?.items ?? []}
+        initialProjectId={createInitialProjectId}
         onClose={() => setCreating(false)}
         onCreated={() => {
           setCreating(false);

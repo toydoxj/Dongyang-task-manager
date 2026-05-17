@@ -433,10 +433,10 @@ export default function HelpPage() {
           <li><B>list 화면</B>: 검색(제목/파일명/CODE/용역명/발주처/메모) + 발주처/연도 필터</li>
           <li><B>정렬 가능 컬럼 4종</B>: 계약일, CODE, 발주처, 계약금액 (header click → 토글)</li>
           <li><B>상단</B>: 총 계약금액 합계 + 「+ 새 계약서」 버튼</li>
-          <li><B>신규 등록 (PR-FI/2)</B>: 프로젝트 검색 typeahead (CODE/이름 부분일치, 결과 30개) + 계약서명/체결일/시작·종료일/금액/VAT/메모. 파일은 등록 후 상세에서 별도 업로드</li>
+          <li><B>신규 등록 (PR-FI/2, FI/5)</B>: 프로젝트 검색 typeahead → 발주처·계약금액 자동 prefill. 다른 발주처/금액 입력 시 amber 경고 + 「프로젝트도 업데이트」 체크박스 → 등록 시 즉시 적용</li>
           <li><B>상세 drawer</B> (3 sub-section 펼침/접힘):</li>
           <Ul>
-            <li><B>계약 메타</B>: PATCH (제목/날짜/금액/VAT/메모) + 「메타 저장」</li>
+            <li><B>계약 메타 (PR-FI/5)</B>: PATCH (제목/발주처/날짜/금액/VAT/메모) + 「메타 저장」. 발주처·금액이 프로젝트와 다를 시 amber 경고 + 「프로젝트도 업데이트」 체크박스</li>
             <li><B>계약서 파일</B>: 다운로드 link + 신규 업로드 + 파일 삭제. 새 파일 업로드 시 기존 파일 자동 교체</li>
             <li><B>계약 분담</B>: 프로젝트 상세 페이지로 link (controlled 패턴이라 embed 보류)</li>
           </Ul>
@@ -450,6 +450,8 @@ export default function HelpPage() {
             <li>계약서 전부 삭제 후에도 contract_signed=True 유지 (한 번 체결한 건 그대로)</li>
             <li>동기화 실패는 silent log warn (Contract 저장은 이미 commit, 부분 성공 허용)</li>
           </Ul>
+          <li><B>계약서 자체 발주처 (PR-FI/4)</B>: Contract.client_id 필드로 계약서마다 다른 발주처 가능 (공동수급 등). 빈 값이면 프로젝트 발주처 사용</li>
+          <li><B>「계약체크 + 미등록」 가상 row (PR-FI/6)</B>: Project.contract_signed=True인데 Contract 0건인 프로젝트는 amber row로 같이 표시. 클릭 시 신규 등록 모달이 그 프로젝트로 prefill</li>
           <li>1 프로젝트 → N 계약서 (원계약/변경계약/부속합의 등 다중). 노션 mirror는 차후 단계.</li>
         </Ul>
       </Section>

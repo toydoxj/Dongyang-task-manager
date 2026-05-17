@@ -19,6 +19,8 @@ import { cn } from "@/lib/utils";
 interface Props {
   open: boolean;
   projects: Project[];
+  /** PR-FI/6: 「계약체크 + 미등록」 가상 row 클릭 시 prefill용. */
+  initialProjectId?: string;
   onClose: () => void;
   onCreated: () => void;
 }
@@ -26,16 +28,28 @@ interface Props {
 export default function ContractCreateModal({
   open,
   projects,
+  initialProjectId,
   onClose,
   onCreated,
 }: Props) {
-  const [projectId, setProjectId] = useState("");
-  const [clientId, setClientId] = useState("");
+  // initial이 있으면 그것의 client/amount까지 prefill — handleSelectProject와 동일 로직.
+  const initialProject = initialProjectId
+    ? projects.find((p) => p.id === initialProjectId) ?? null
+    : null;
+  const [projectId, setProjectId] = useState(initialProjectId ?? "");
+  // initial state는 prop 기준으로 한 번만 — Modal key remount로 새로 mount 시 재설정.
+  const [clientId, setClientId] = useState(
+    initialProject?.client_relation_ids?.[0] ?? "",
+  );
   const [title, setTitle] = useState("원계약서");
   const [signedDate, setSignedDate] = useState("");
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
-  const [amount, setAmount] = useState<string>("");
+  const [amount, setAmount] = useState<string>(
+    initialProject?.contract_amount != null
+      ? String(initialProject.contract_amount)
+      : "",
+  );
   const [vatIncluded, setVatIncluded] = useState(false);
   const [note, setNote] = useState("");
   const [updateProjectClient, setUpdateProjectClient] = useState(false);

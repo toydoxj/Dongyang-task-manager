@@ -219,9 +219,9 @@ backend in-memory 누적 카운터 — Render restart 시 reset되므로 `since`
 - **list 화면**: 검색(제목/파일명/CODE/용역명/발주처/메모) + 발주처/연도 필터
 - **정렬 가능 컬럼 4종**: 계약일, CODE, 발주처, 계약금액 (header click → 토글)
 - **상단**: 총 계약금액 합계 + 「+ 새 계약서」 버튼
-- **신규 등록 (PR-FI/2)**: 프로젝트 검색 typeahead (CODE/이름 부분일치, 결과 30개) + 계약서명/체결일/시작·종료일/금액/VAT/메모. 파일은 등록 후 상세에서 별도 업로드
+- **신규 등록 (PR-FI/2, FI/5)**: 프로젝트 검색 typeahead (CODE/이름 부분일치, 결과 30개) → 발주처·계약금액 자동 prefill (`ProjectSearchSelect` + `ClientSearchSelect`). 사용자가 다른 발주처/금액 입력 시 amber 경고 + 「프로젝트도 업데이트」 체크박스. 체크 후 등록하면 `updateProject` 즉시 호출 (mirror + 노션 양쪽)
 - **상세 drawer** (3 sub-section 펼침/접힘):
-  - **계약 메타**: PATCH (제목/날짜/금액/VAT/메모) + 「메타 저장」
+  - **계약 메타 (PR-FI/5)**: PATCH (제목/발주처/날짜/금액/VAT/메모) + 「메타 저장」. 발주처·금액이 프로젝트와 다를 시 동일 amber 경고 + 「프로젝트도 업데이트」 체크박스
   - **계약서 파일**: 다운로드 link + 신규 업로드 + 파일 삭제. 새 파일 업로드 시 기존 파일 자동 교체
   - **계약 분담**: 프로젝트 상세 페이지로 link (controlled 패턴이라 embed 보류)
 - **파일 형식**: PDF / DOC / DOCX / HWP / HWPX · 최대 30MB
@@ -234,6 +234,10 @@ backend in-memory 누적 카운터 — Render restart 시 reset되므로 `since`
 - `Project.contract_end = max(end_date)` (가장 뒤의 종료일)
 - 계약서 전부 삭제 후에도 `contract_signed=True` 유지 (한 번 체결한 건 그대로)
 - 동기화 실패는 silent log warn — Contract 저장은 이미 commit (부분 성공 허용)
+
+**계약서 자체 발주처 (PR-FI/4)** — `Contract.client_id` 필드로 계약서마다 다른 발주처 가능 (공동수급 등). 빈 값이면 프로젝트의 발주처를 그대로 표시.
+
+**「계약체크 + 미등록」 가상 row (PR-FI/6)** — `Project.contract_signed=True`인데 Contract row 0건인 프로젝트는 amber 배경 row로 list에 같이 표시. 클릭 시 신규 등록 모달이 해당 프로젝트로 prefill된 상태로 열림.
 
 1 프로젝트 → N 계약서 (원계약/변경계약/부속합의 등 다중). 노션 mirror는 차후 단계 (현재 Postgres + Drive only).
 
