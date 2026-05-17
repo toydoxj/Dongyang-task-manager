@@ -26,7 +26,7 @@ import type { ProjectListResponse, Task } from "@/lib/domain";
 import { keys, useProjects, useSealRequests, useTasks } from "@/lib/hooks";
 
 import TodayTasks from "./_TodayTasks";
-import { splitByThisWeek } from "./_utils";
+import { filterCompletedByCutoff, splitByThisWeek } from "./_utils";
 
 // PR-T — 5탭 navigation key/label 상수.
 // PR-FF (사용자 요청, 2026-05-17): 순서 재배치 — 담당 프로젝트가 default 진입점.
@@ -173,25 +173,12 @@ export default function MyPage() {
 
   const error = projectErr ?? tasksErr;
   const allTasks = tasksData?.items;
-  // 내 업무 정책: 완료된 TASK는 '완료된지 주 기준 저저번 주 이전' 까지만 표시.
-  // cutoff = (이번주 월요일 00:00 KST) - 14일. 그보다 오래된 완료 task는 숨김.
-  const tasks = useMemo<Task[] | undefined>(() => {
-    if (!allTasks) return allTasks;
-    const now = new Date();
-    const dow = now.getDay(); // 0=Sun, 1=Mon..6=Sat
-    const diffToMon = dow === 0 ? -6 : 1 - dow;
-    const monday = new Date(now);
-    monday.setDate(monday.getDate() + diffToMon);
-    monday.setHours(0, 0, 0, 0);
-    monday.setDate(monday.getDate() - 14);
-    const cutoffMs = monday.getTime();
-    return allTasks.filter((t) => {
-      if (t.status !== "완료") return true;
-      const ref = t.actual_end_date ?? t.last_edited_time;
-      if (!ref) return true; // 시점 모르면 안전하게 보여줌
-      return new Date(ref).getTime() >= cutoffMs;
-    });
-  }, [allTasks]);
+  // 내 업무 정책: 완료된 TASK는 이번주 월요일 -14일 이후만 표시.
+  // PR-FI/9: 4탭 모두 동일 cutoff — _utils.filterCompletedByCutoff helper 사용.
+  const tasks = useMemo<Task[] | undefined>(
+    () => (allTasks ? filterCompletedByCutoff(allTasks) : allTasks),
+    [allTasks],
+  );
   // mine 프로젝트 = 진행중 + 대기 (완료/타절/종결/이관 제외)
   const candidates = projectData?.items.filter(
     (p) => !p.completed && (p.stage === "진행중" || p.stage === "대기"),

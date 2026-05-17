@@ -1,13 +1,15 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 
 import TaskKanban from "@/components/project/TaskKanban";
 import { unassignMe } from "@/lib/api";
 import type { Project } from "@/lib/domain";
 import { formatDate, formatPercent } from "@/lib/format";
 import { useTasks } from "@/lib/hooks";
+
+import { filterCompletedByCutoff } from "@/app/me/_utils";
 import { cn } from "@/lib/utils";
 
 interface Props {
@@ -40,7 +42,11 @@ export default function ProjectTaskRow({
   // 페이지 레벨 mine tasks 는 '해야할 일' 과 진행중/대기 분류에만 쓰이고
   // 여기 칸반에는 본인/타인 가리지 않고 모두 노출.
   const { data: projectTasksData } = useTasks({ project_id: project.id });
-  const tasks = projectTasksData?.items ?? [];
+  // PR-FI/9: 완료 task 2주 cutoff (page.tsx의 mine tasks와 동일 정책).
+  const tasks = useMemo(
+    () => filterCompletedByCutoff(projectTasksData?.items ?? []),
+    [projectTasksData],
+  );
   // 우리 앱 분류 (effectiveActive) 가 우선, 없으면 노션 stage 사용
   const displayStage =
     effectiveActive == null

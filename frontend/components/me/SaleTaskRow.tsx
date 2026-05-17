@@ -1,11 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 
 import TaskKanban from "@/components/project/TaskKanban";
 import type { Sale } from "@/lib/domain";
 import { useTasks } from "@/lib/hooks";
 import { cn } from "@/lib/utils";
+
+import { filterCompletedByCutoff } from "@/app/me/_utils";
 
 interface Props {
   sale: Sale;
@@ -32,7 +34,12 @@ export default function SaleTaskRow({
 }: Props) {
   // 영업 전체 task (sales_ids @> [sale.id]).
   const { data: saleTasksData } = useTasks({ sale_id: sale.id });
-  const tasks = saleTasksData?.items ?? [];
+  // PR-FI/9: 완료 task 2주 cutoff (/me 4탭 동일 정책). 영업 상세는 SalesEditModal이
+  // 자체 useTasks를 호출하므로 본 컴포넌트 한정 영향.
+  const tasks = useMemo(
+    () => filterCompletedByCutoff(saleTasksData?.items ?? []),
+    [saleTasksData],
+  );
   const displayStage =
     effectiveActive == null ? "" : effectiveActive ? "진행 중" : "대기";
   const [collapsed, setCollapsed] = useState(true);

@@ -6,6 +6,31 @@
 import type { Project, Task } from "@/lib/domain";
 import { formatDate } from "@/lib/format";
 
+/**
+ * 완료된 TASK는 이번주 월요일 00:00 KST 기준 -14일 이후만 표시.
+ * 그보다 오래된 완료는 hide. 완료가 아닌 task는 통과.
+ * 시점(actual_end_date/last_edited_time) 미상이면 안전하게 통과.
+ *
+ * PR-FI/9: /me 4탭(할일/일정/기타업무/담당프로젝트/내영업) 모두 동일 적용.
+ * 기존엔 page.tsx에서만 적용 → ProjectTaskRow/SaleTaskRow는 cutoff 없이 모든 완료 표시.
+ */
+export function filterCompletedByCutoff(tasks: Task[]): Task[] {
+  const now = new Date();
+  const dow = now.getDay(); // 0=Sun, 1=Mon..6=Sat
+  const diffToMon = dow === 0 ? -6 : 1 - dow;
+  const monday = new Date(now);
+  monday.setDate(monday.getDate() + diffToMon);
+  monday.setHours(0, 0, 0, 0);
+  monday.setDate(monday.getDate() - 14);
+  const cutoffMs = monday.getTime();
+  return tasks.filter((t) => {
+    if (t.status !== "완료") return true;
+    const ref = t.actual_end_date ?? t.last_edited_time;
+    if (!ref) return true;
+    return new Date(ref).getTime() >= cutoffMs;
+  });
+}
+
 export function formatRange(start: string | null, end: string | null): string {
   const fmt = (s: string | null): string => {
     if (!s) return "";
