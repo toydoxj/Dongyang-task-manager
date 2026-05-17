@@ -55,8 +55,14 @@ export default function ProjectTaskRow({
       ? project.client_names.join(", ")
       : project.client_text;
   const [busy, setBusy] = useState(false);
-  // 초기 접힘 상태 — 펼침 막대 클릭 시 TASK 칸반 노출
-  const [collapsed, setCollapsed] = useState(true);
+  // PR-FF (사용자 요청, 2026-05-17): default 펼침 — task 있으면 열림, 없으면 닫힘.
+  // derived state 패턴 (set-state-in-effect lint 회피):
+  // - userOverride === null: 자동 — task 도착 후 task.length === 0 ? closed : open
+  // - userOverride !== null: 사용자 명시 토글 결과 우선
+  const [userOverride, setUserOverride] = useState<boolean | null>(null);
+  const autoCollapsed = !projectTasksData || tasks.length === 0;
+  const collapsed = userOverride ?? autoCollapsed;
+  const toggleCollapsed = (): void => setUserOverride(!collapsed);
   const isMine = !!myName && project.assignees.includes(myName);
 
   const handleUnassign = async (): Promise<void> => {
@@ -82,14 +88,14 @@ export default function ProjectTaskRow({
     <section className="rounded-xl border border-zinc-200 bg-zinc-50/30 dark:border-zinc-800 dark:bg-zinc-950/30">
       {/* 펼침 막대 — 빈 공간 클릭 시 TASK 노출. 내부 링크/버튼은 stopPropagation */}
       <div
-        onClick={() => setCollapsed((v) => !v)}
+        onClick={() => toggleCollapsed()}
         role="button"
         tabIndex={0}
         aria-expanded={!collapsed}
         onKeyDown={(e) => {
           if (e.key === "Enter" || e.key === " ") {
             e.preventDefault();
-            setCollapsed((v) => !v);
+            toggleCollapsed();
           }
         }}
         className="flex w-full cursor-pointer items-start gap-2 px-3 py-2 hover:bg-zinc-100/40 dark:hover:bg-zinc-800/30"

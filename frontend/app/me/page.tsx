@@ -6,7 +6,6 @@ import { useMemo, useState } from "react";
 import useSWR, { useSWRConfig } from "swr";
 
 import { useAuth } from "@/components/AuthGuard";
-import MyProjectSnapshots from "@/components/me/MyProjectSnapshots";
 import MySalesSection from "@/components/me/MySalesSection";
 import MyWorkSummaryCards from "@/components/me/MyWorkSummaryCards";
 import TasksByTimeView from "@/components/me/TasksByTimeView";
@@ -30,14 +29,15 @@ import TodayTasks from "./_TodayTasks";
 import { splitByThisWeek } from "./_utils";
 
 // PR-T — 5탭 navigation key/label 상수.
-type TabKey = "todo" | "schedule" | "projects" | "sales" | "other";
+// PR-FF (사용자 요청, 2026-05-17): 순서 재배치 — 담당 프로젝트가 default 진입점.
+type TabKey = "projects" | "sales" | "other" | "schedule" | "todo";
 
 const TABS: { key: TabKey; label: string }[] = [
-  { key: "todo", label: "할 일" },
-  { key: "schedule", label: "일정" },
   { key: "projects", label: "담당 프로젝트" },
   { key: "sales", label: "내 영업" },
   { key: "other", label: "기타 업무" },
+  { key: "schedule", label: "일정" },
+  { key: "todo", label: "할 일" },
 ];
 
 export default function MyPage() {
@@ -81,7 +81,7 @@ export default function MyPage() {
     s === "sales" ||
     s === "other";
   const [activeTab, setActiveTab] = useState<TabKey>(
-    isValidTab(tabFromUrl) ? tabFromUrl : "todo",
+    isValidTab(tabFromUrl) ? tabFromUrl : "projects",
   );
   const onChangeTab = (next: TabKey): void => {
     setActiveTab(next);
@@ -326,12 +326,7 @@ export default function MyPage() {
         sealRequests={sealData?.items ?? []}
       />
 
-      <MyProjectSnapshots
-        projects={projects ?? []}
-        tasks={tasks ?? []}
-      />
-
-      {/* PR-T — 4 탭 navigation */}
+      {/* PR-T — 5탭 navigation (PR-FF: 순서 재배치) */}
       <nav
         aria-label="섹션 전환"
         className="flex flex-wrap items-center gap-1 border-b border-zinc-200 dark:border-zinc-800"
