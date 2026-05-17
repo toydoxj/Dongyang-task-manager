@@ -15,11 +15,19 @@ import type React from "react";
 
 import { cn } from "@/lib/utils";
 
-const POPUP_FEATURES = "popup=yes,width=1200,height=900,noopener,noreferrer";
+// PR-FP fix: features에 noopener/noreferrer가 있으면 Chrome이 popup 무시 + 새 탭 처리.
+// 별도 features만 두고, opener는 결과 window에서 수동 null 처리 (security 동일).
+const POPUP_FEATURES = "popup=1,width=1200,height=900";
 
 export function openInPopup(href: string): void {
   const w = window.open(href, "_blank", POPUP_FEATURES);
-  if (!w) {
+  if (w) {
+    try {
+      w.opener = null;
+    } catch {
+      // cross-origin 또는 이미 null — 무시.
+    }
+  } else {
     // 팝업 차단 시 새 탭으로 fallback.
     window.open(href, "_blank", "noopener,noreferrer");
   }
