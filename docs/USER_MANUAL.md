@@ -213,20 +213,27 @@ backend in-memory 누적 카운터 — Render restart 시 reset되므로 `since`
 - 같은 사용자가 자주 호출하면 ratio 왜곡 — 다양한 사용자 활동 패턴 누적이 필요
 
 ### 9.6 「계약서 관리」 (`/operations/contracts`)
-프로젝트별 계약서 메타 + PDF 파일을 통합 관리하는 페이지 (PR-FH).
+프로젝트별 계약서 메타 + PDF 파일을 통합 관리하는 페이지 (PR-FH/PR-FI).
 접근 권한: admin / team_lead / manager. member는 UnauthorizedRedirect.
 
 - **list 화면**: 검색(제목/파일명/CODE/용역명/발주처/메모) + 발주처/연도 필터
 - **정렬 가능 컬럼 4종**: 계약일, CODE, 발주처, 계약금액 (header click → 토글)
 - **상단**: 총 계약금액 합계 + 「+ 새 계약서」 버튼
-- **신규 등록**: 프로젝트 선택 + 계약서명/체결일/시작·종료일/금액/VAT/메모. 파일은 등록 후 상세에서 별도 업로드
+- **신규 등록 (PR-FI/2)**: 프로젝트 검색 typeahead (CODE/이름 부분일치, 결과 30개) + 계약서명/체결일/시작·종료일/금액/VAT/메모. 파일은 등록 후 상세에서 별도 업로드
 - **상세 drawer** (3 sub-section 펼침/접힘):
   - **계약 메타**: PATCH (제목/날짜/금액/VAT/메모) + 「메타 저장」
   - **계약서 파일**: 다운로드 link + 신규 업로드 + 파일 삭제. 새 파일 업로드 시 기존 파일 자동 교체
   - **계약 분담**: 프로젝트 상세 페이지로 link (controlled 패턴이라 embed 보류)
 - **파일 형식**: PDF / DOC / DOCX / HWP / HWPX · 최대 30MB
-- **저장 위치**: NAVER WORKS Drive `[계약서]/{프로젝트 CODE}/{원본 filename}` (폴더는 첫 업로드 시 자동 생성)
+- **저장 위치 (PR-FI/1)**: NAVER WORKS Drive `[CODE]프로젝트명/6. 계약서/{원본 filename}`. 프로젝트별 자체 폴더의 "6. 계약서" sub-folder. 폴더 누락 시 self-heal로 자동 재생성
 - **삭제**: 계약서 row 삭제 시 첨부 PDF도 함께 삭제 (cascade)
+
+**Contract ↔ Project 동기화 (PR-FI/1)** — Contract 저장 시 해당 프로젝트의 모든 계약서를 aggregate해서 노션 + mirror_projects에 자동 반영:
+- `Project.contract_signed = True` (한 번이라도 체결일 있는 계약서가 있으면)
+- `Project.contract_start = min(start_date)` (가장 빠른 시작일)
+- `Project.contract_end = max(end_date)` (가장 뒤의 종료일)
+- 계약서 전부 삭제 후에도 `contract_signed=True` 유지 (한 번 체결한 건 그대로)
+- 동기화 실패는 silent log warn — Contract 저장은 이미 commit (부분 성공 허용)
 
 1 프로젝트 → N 계약서 (원계약/변경계약/부속합의 등 다중). 노션 mirror는 차후 단계 (현재 Postgres + Drive only).
 

@@ -433,7 +433,7 @@ export default function HelpPage() {
           <li><B>list 화면</B>: 검색(제목/파일명/CODE/용역명/발주처/메모) + 발주처/연도 필터</li>
           <li><B>정렬 가능 컬럼 4종</B>: 계약일, CODE, 발주처, 계약금액 (header click → 토글)</li>
           <li><B>상단</B>: 총 계약금액 합계 + 「+ 새 계약서」 버튼</li>
-          <li><B>신규 등록</B>: 프로젝트 선택 + 계약서명/체결일/시작·종료일/금액/VAT/메모. 파일은 등록 후 상세에서 별도 업로드</li>
+          <li><B>신규 등록 (PR-FI/2)</B>: 프로젝트 검색 typeahead (CODE/이름 부분일치, 결과 30개) + 계약서명/체결일/시작·종료일/금액/VAT/메모. 파일은 등록 후 상세에서 별도 업로드</li>
           <li><B>상세 drawer</B> (3 sub-section 펼침/접힘):</li>
           <Ul>
             <li><B>계약 메타</B>: PATCH (제목/날짜/금액/VAT/메모) + 「메타 저장」</li>
@@ -441,8 +441,15 @@ export default function HelpPage() {
             <li><B>계약 분담</B>: 프로젝트 상세 페이지로 link (controlled 패턴이라 embed 보류)</li>
           </Ul>
           <li><B>파일 형식</B>: PDF / DOC / DOCX / HWP / HWPX · 최대 30MB</li>
-          <li><B>저장 위치</B>: NAVER WORKS Drive [계약서]/{`{프로젝트 CODE}`}/{`{원본 filename}`} (폴더는 첫 업로드 시 자동 생성)</li>
+          <li><B>저장 위치 (PR-FI/1)</B>: NAVER WORKS Drive [CODE]프로젝트명/6. 계약서/{`{원본 filename}`}. 프로젝트별 자체 폴더의 sub-folder. 누락 시 self-heal로 재생성</li>
           <li><B>삭제</B>: 계약서 row 삭제 시 첨부 PDF도 함께 삭제 (cascade)</li>
+          <li><B>Project 자동 동기화 (PR-FI/1)</B>: Contract 저장 시 해당 프로젝트의 모든 계약서를 aggregate → 노션 + mirror_projects 반영:</li>
+          <Ul>
+            <li>Project.contract_signed = True (한 번이라도 체결일 있는 계약서)</li>
+            <li>Project.contract_start = min(start_date), contract_end = max(end_date)</li>
+            <li>계약서 전부 삭제 후에도 contract_signed=True 유지 (한 번 체결한 건 그대로)</li>
+            <li>동기화 실패는 silent log warn (Contract 저장은 이미 commit, 부분 성공 허용)</li>
+          </Ul>
           <li>1 프로젝트 → N 계약서 (원계약/변경계약/부속합의 등 다중). 노션 mirror는 차후 단계.</li>
         </Ul>
       </Section>
