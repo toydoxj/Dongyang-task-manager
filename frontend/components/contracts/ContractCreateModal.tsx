@@ -1,16 +1,17 @@
 "use client";
 
 /**
- * 계약서 신규 생성 모달 — PR-FH/2.
+ * 계약서 신규 생성 모달 — PR-FH/2 / PR-FI/2 (프로젝트 검색 typeahead).
  * 프로젝트 선택 + 메타 입력. 파일 업로드는 생성 후 상세 drawer에서 별도 수행.
  */
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 
 import { Field, inputCls } from "@/components/project/_shared";
 import Modal from "@/components/ui/Modal";
 import { createContract } from "@/lib/api";
 import type { Project } from "@/lib/domain";
+import { cn } from "@/lib/utils";
 
 interface Props {
   open: boolean;
@@ -90,19 +91,11 @@ export default function ContractCreateModal({
     <Modal open={open} onClose={handleClose} title="새 계약서 등록" size="lg">
       <form onSubmit={handleSubmit} className="space-y-3">
         <Field label="프로젝트" required>
-          <select
+          <ProjectSearchSelect
+            projects={projects}
             value={projectId}
-            onChange={(e) => setProjectId(e.target.value)}
-            className={inputCls}
-          >
-            <option value="">— 선택 —</option>
-            {projects.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.code ? `[${p.code}] ` : ""}
-                {p.name || "(이름 없음)"}
-              </option>
-            ))}
-          </select>
+            onChange={setProjectId}
+          />
         </Field>
         <Field label="계약서명" required>
           <input
@@ -196,5 +189,108 @@ export default function ContractCreateModal({
         </p>
       </form>
     </Modal>
+  );
+}
+
+/** PR-FI/2: 프로젝트 검색 typeahead — 운영 N=수백 대응. */
+function ProjectSearchSelect({
+  projects,
+  value,
+  onChange,
+}: {
+  projects: Project[];
+  value: string;
+  onChange: (id: string) => void;
+}) {
+  const [query, setQuery] = useState("");
+  const [focused, setFocused] = useState(false);
+
+  const selected = useMemo(
+    () => (value ? projects.find((p) => p.id === value) : null),
+    [value, projects],
+  );
+
+  // 선택된 프로젝트가 있으면 input에는 그 표시. 사용자가 다시 검색하려면 X(clear) 클릭.
+  const display = selected
+    ? `${selected.code ? `[${selected.code}] ` : ""}${selected.name || "(이름 없음)"}`
+    : query;
+
+  // 결과 필터 — CODE / 이름 부분일치 (case-insensitive). 결과 ≤ 30개.
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return projects.slice(0, 30);
+    return projects
+      .filter((p) => {
+        const haystack = `${p.code ?? ""} ${p.name ?? ""}`.toLowerCase();
+        return haystack.includes(q);
+      })
+      .slice(0, 30);
+  }, [projects, query]);
+
+  const handleClear = (): void => {
+    onChange("");
+    setQuery("");
+  };
+
+  const handleSelect = (p: Project): void => {
+    onChange(p.id);
+    setQuery("");
+    setFocused(false);
+  };
+
+  return (
+    <div className="relative">
+      <div className="relative">
+        <input
+          type="text"
+          value={display}
+          onChange={(e) => {
+            // 입력 시 기존 선택 해제 (사용자가 검색을 새로 함)
+            if (selected) onChange("");
+            setQuery(e.target.value);
+          }}
+          onFocus={() => setFocused(true)}
+          onBlur={() => setTimeout(() => setFocused(false), 150)}
+          placeholder="CODE 또는 프로젝트명으로 검색…"
+          className={cn(inputCls, selected && "pr-8")}
+        />
+        {selected && (
+          <button
+            type="button"
+            onClick={handleClear}
+            className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200"
+            aria-label="선택 해제"
+          >
+            ✕
+          </button>
+        )}
+      </div>
+      {focused && !selected && filtered.length > 0 && (
+        <ul className="absolute left-0 right-0 top-full z-10 mt-1 max-h-64 overflow-y-auto rounded-md border border-zinc-200 bg-white shadow-lg dark:border-zinc-700 dark:bg-zinc-900">
+          {filtered.map((p) => (
+            <li key={p.id}>
+              <button
+                type="button"
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  handleSelect(p);
+                }}
+                className="block w-full px-3 py-1.5 text-left text-sm hover:bg-zinc-100 dark:hover:bg-zinc-800"
+              >
+                <span className="font-mono text-[11px] text-zinc-500">
+                  {p.code || "—"}
+                </span>{" "}
+                {p.name || "(이름 없음)"}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+      {focused && !selected && filtered.length === 0 && query && (
+        <div className="absolute left-0 right-0 top-full z-10 mt-1 rounded-md border border-zinc-200 bg-white px-3 py-2 text-xs text-zinc-500 shadow-lg dark:border-zinc-700 dark:bg-zinc-900">
+          검색 결과가 없습니다.
+        </div>
+      )}
+    </div>
   );
 }
