@@ -1,26 +1,29 @@
 "use client";
 
 /**
- * 계약서 상세 + 편집 drawer — PR-FH/2~3.
+ * 계약서 상세 + 편집 drawer — PR-FH/2~3 / PR-FI/5 (발주처·금액 경고).
  *
  * 3개 sub-section (펼침 토글):
- *   1. 계약 메타 — PATCH (제목/날짜/금액/VAT/메모)
- *   2. 계약 분담 — 프로젝트 페이지로 link (별도 PR에서 ContractItemsEditor embed)
+ *   1. 계약 메타 — PATCH (제목/발주처/날짜/금액/VAT/메모) + 프로젝트 다를 시 경고
+ *   2. 계약 분담 — 프로젝트 페이지로 link
  *   3. 계약서 파일 — 다운로드 / 업로드 / 삭제
  */
 
 import Link from "next/link";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 
+import { ClientSearchSelect } from "@/components/contracts/ContractCreateModal";
 import { Field, inputCls } from "@/components/project/_shared";
 import Modal from "@/components/ui/Modal";
 import {
   deleteContract,
   deleteContractFile,
   patchContract,
+  updateProject,
   uploadContractFile,
 } from "@/lib/api";
 import type { Contract } from "@/lib/domain";
+import { useClients, useProject } from "@/lib/hooks";
 
 interface Props {
   contract: Contract | null;
@@ -61,6 +64,7 @@ function Body({
   onChanged: () => void;
 }) {
   const [title, setTitle] = useState(contract.title);
+  const [clientId, setClientId] = useState(contract.client_id ?? "");
   const [signedDate, setSignedDate] = useState(contract.signed_date ?? "");
   const [startDate, setStartDate] = useState(contract.start_date ?? "");
   const [endDate, setEndDate] = useState(contract.end_date ?? "");
@@ -69,9 +73,30 @@ function Body({
   );
   const [vatIncluded, setVatIncluded] = useState(contract.vat_included);
   const [note, setNote] = useState(contract.note);
+  const [updateProjectClient, setUpdateProjectClient] = useState(false);
+  const [updateProjectAmount, setUpdateProjectAmount] = useState(false);
   const [savingMeta, setSavingMeta] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // PR-FI/5: 프로젝트 발주처·계약금액과 다를 시 경고용.
+  const { data: project } = useProject(contract.project_id);
+  const { data: clientsData } = useClients(true);
+  const projectClientId = project?.client_relation_ids?.[0] ?? "";
+  const projectAmount = project?.contract_amount ?? null;
+  const effectiveClientId = clientId || projectClientId;
+  const clientDiffers = !!(
+    effectiveClientId && projectClientId && effectiveClientId !== projectClientId
+  );
+  const amountNum = amount ? parseInt(amount, 10) : null;
+  const amountDiffers = !!(
+    amountNum != null && projectAmount != null && amountNum !== projectAmount
+  );
+  const projectClientName = useMemo(
+    () =>
+      clientsData?.items.find((c) => c.id === projectClientId)?.name ?? "—",
+    [clientsData, projectClientId],
+  );
 
   // 펼침/접힘 상태 — 메타 default 펼침, 분담/파일 default 접힘.
   const [openMeta, setOpenMeta] = useState(true);
@@ -84,13 +109,34 @@ function Body({
     try {
       await patchContract(contract.id, {
         title: title.trim(),
+        client_id: clientId || null,
         signed_date: signedDate || null,
         start_date: startDate || null,
         end_date: endDate || null,
-        amount: amount ? parseInt(amount, 10) : null,
+        amount: amountNum,
         vat_included: vatIncluded,
         note,
       });
+      // PR-FI/5: 사용자 체크 시 프로젝트도 즉시 update.
+      const projectPatch: {
+        client_relation_ids?: string[];
+        contract_amount?: number;
+      } = {};
+      if (updateProjectClient && clientDiffers && effectiveClientId) {
+        projectPatch.client_relation_ids = [effectiveClientId];
+      }
+      if (updateProjectAmount && amountDiffers && amountNum != null) {
+        projectPatch.contract_amount = amountNum;
+      }
+      if (Object.keys(projectPatch).length > 0) {
+        try {
+          await updateProject(contract.project_id, projectPatch);
+        } catch (err) {
+          console.warn("프로젝트 update 실패:", err);
+        }
+      }
+      setUpdateProjectClient(false);
+      setUpdateProjectAmount(false);
       onChanged();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -192,6 +238,22 @@ function Body({
               className={inputCls}
             />
           </Field>
+          <Field label="발주처">
+            <ClientSearchSelect
+              clients={clientsData?.items ?? []}
+              value={clientId}
+              onChange={setClientId}
+              placeholder="프로젝트 발주처와 동일 시 비워두세요"
+            />
+            {clientDiffers && (
+              <DiffWarning
+                text={`프로젝트 발주처와 다릅니다 (현재: ${projectClientName})`}
+                checked={updateProjectClient}
+                onToggle={() => setUpdateProjectClient((v) => !v)}
+                confirmLabel="이 계약서 발주처로 프로젝트도 업데이트"
+              />
+            )}
+          </Field>
           <div className="grid grid-cols-3 gap-3">
             <Field label="체결일">
               <input
@@ -239,6 +301,14 @@ function Body({
               </span>
             </label>
           </div>
+          {amountDiffers && (
+            <DiffWarning
+              text={`프로젝트 계약금액과 다릅니다 (현재: ${(projectAmount ?? 0).toLocaleString("ko-KR")}원)`}
+              checked={updateProjectAmount}
+              onToggle={() => setUpdateProjectAmount((v) => !v)}
+              confirmLabel="이 계약서 금액으로 프로젝트도 업데이트"
+            />
+          )}
           <Field label="메모">
             <textarea
               value={note}
@@ -353,6 +423,28 @@ function Body({
           닫기
         </button>
       </div>
+    </div>
+  );
+}
+
+function DiffWarning({
+  text,
+  checked,
+  onToggle,
+  confirmLabel,
+}: {
+  text: string;
+  checked: boolean;
+  onToggle: () => void;
+  confirmLabel: string;
+}) {
+  return (
+    <div className="mt-1 rounded-md border border-amber-500/40 bg-amber-500/5 px-3 py-2 text-xs">
+      <p className="text-amber-700 dark:text-amber-300">⚠ {text}</p>
+      <label className="mt-1 flex items-center gap-2">
+        <input type="checkbox" checked={checked} onChange={onToggle} />
+        <span className="text-zinc-700 dark:text-zinc-300">{confirmLabel}</span>
+      </label>
     </div>
   );
 }

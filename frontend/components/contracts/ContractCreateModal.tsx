@@ -1,16 +1,19 @@
 "use client";
 
 /**
- * 계약서 신규 생성 모달 — PR-FH/2 / PR-FI/2 (프로젝트 검색 typeahead).
- * 프로젝트 선택 + 메타 입력. 파일 업로드는 생성 후 상세 drawer에서 별도 수행.
+ * 계약서 신규 생성 모달 — PR-FH/2 / PR-FI/2 (프로젝트 typeahead) / PR-FI/5 (발주처·금액 경고).
+ *
+ * 프로젝트 선택 시 그 프로젝트의 발주처·계약금액을 자동 prefill.
+ * 사용자가 다른 발주처/금액을 입력하면 amber 경고 + 「프로젝트도 업데이트」 옵션.
  */
 
 import { useMemo, useState } from "react";
 
 import { Field, inputCls } from "@/components/project/_shared";
 import Modal from "@/components/ui/Modal";
-import { createContract } from "@/lib/api";
-import type { Project } from "@/lib/domain";
+import { createContract, updateProject } from "@/lib/api";
+import type { Client, Project } from "@/lib/domain";
+import { useClients } from "@/lib/hooks";
 import { cn } from "@/lib/utils";
 
 interface Props {
@@ -27,6 +30,7 @@ export default function ContractCreateModal({
   onCreated,
 }: Props) {
   const [projectId, setProjectId] = useState("");
+  const [clientId, setClientId] = useState("");
   const [title, setTitle] = useState("원계약서");
   const [signedDate, setSignedDate] = useState("");
   const [startDate, setStartDate] = useState("");
@@ -34,11 +38,41 @@ export default function ContractCreateModal({
   const [amount, setAmount] = useState<string>("");
   const [vatIncluded, setVatIncluded] = useState(false);
   const [note, setNote] = useState("");
+  const [updateProjectClient, setUpdateProjectClient] = useState(false);
+  const [updateProjectAmount, setUpdateProjectAmount] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const { data: clientsData } = useClients(open);
+
+  const selectedProject = useMemo(
+    () => (projectId ? projects.find((p) => p.id === projectId) ?? null : null),
+    [projectId, projects],
+  );
+
+  const projectClientId = selectedProject?.client_relation_ids?.[0] ?? "";
+  const projectAmount = selectedProject?.contract_amount ?? null;
+
+  // PR-FI/5: 프로젝트 선택 변경 시 발주처/금액 자동 prefill. effect 대신 onChange
+  // handler에서 직접 set — set-state-in-effect lint 회피 (사용자 정책).
+  const handleSelectProject = (id: string): void => {
+    setProjectId(id);
+    setUpdateProjectClient(false);
+    setUpdateProjectAmount(false);
+    if (!id) {
+      setClientId("");
+      setAmount("");
+      return;
+    }
+    const p = projects.find((x) => x.id === id);
+    if (!p) return;
+    setClientId(p.client_relation_ids?.[0] ?? "");
+    setAmount(p.contract_amount != null ? String(p.contract_amount) : "");
+  };
+
   const reset = (): void => {
     setProjectId("");
+    setClientId("");
     setTitle("원계약서");
     setSignedDate("");
     setStartDate("");
@@ -46,6 +80,8 @@ export default function ContractCreateModal({
     setAmount("");
     setVatIncluded(false);
     setNote("");
+    setUpdateProjectClient(false);
+    setUpdateProjectAmount(false);
     setError(null);
   };
 
@@ -54,6 +90,18 @@ export default function ContractCreateModal({
     reset();
     onClose();
   };
+
+  // 발주처 다름 검증 — 사용자가 명시 선택 후 차이가 있을 때만 경고.
+  const clientDiffers = !!(
+    selectedProject && clientId && projectClientId && clientId !== projectClientId
+  );
+  const amountNum = amount ? parseInt(amount, 10) : null;
+  const amountDiffers = !!(
+    selectedProject &&
+    amountNum != null &&
+    projectAmount != null &&
+    amountNum !== projectAmount
+  );
 
   const handleSubmit = async (e: React.FormEvent): Promise<void> => {
     e.preventDefault();
@@ -70,14 +118,33 @@ export default function ContractCreateModal({
     try {
       await createContract({
         project_id: projectId,
+        client_id: clientId || null,
         title: title.trim(),
         signed_date: signedDate || null,
         start_date: startDate || null,
         end_date: endDate || null,
-        amount: amount ? parseInt(amount, 10) : null,
+        amount: amountNum,
         vat_included: vatIncluded,
         note: note.trim(),
       });
+
+      // PR-FI/5: 사용자가 체크한 경우 프로젝트 발주처/금액도 즉시 update.
+      const projectPatch: { client_relation_ids?: string[]; contract_amount?: number } = {};
+      if (updateProjectClient && clientDiffers && clientId) {
+        projectPatch.client_relation_ids = [clientId];
+      }
+      if (updateProjectAmount && amountDiffers && amountNum != null) {
+        projectPatch.contract_amount = amountNum;
+      }
+      if (Object.keys(projectPatch).length > 0) {
+        try {
+          await updateProject(projectId, projectPatch);
+        } catch (err) {
+          // contract 저장은 이미 성공 — 프로젝트 update 실패는 경고만.
+          console.warn("프로젝트 update 실패:", err);
+        }
+      }
+
       reset();
       onCreated();
     } catch (err) {
@@ -94,8 +161,30 @@ export default function ContractCreateModal({
           <ProjectSearchSelect
             projects={projects}
             value={projectId}
-            onChange={setProjectId}
+            onChange={handleSelectProject}
           />
+        </Field>
+        <Field label="발주처">
+          <ClientSearchSelect
+            clients={clientsData?.items ?? []}
+            value={clientId}
+            onChange={setClientId}
+            placeholder={
+              projectClientId
+                ? "프로젝트 발주처 자동 적용됨 — 다른 발주처 선택 가능"
+                : "발주처 검색…"
+            }
+          />
+          {clientDiffers && (
+            <ProjectDiffWarning
+              text={`프로젝트 발주처와 다릅니다 (현재: ${
+                clientsData?.items.find((c) => c.id === projectClientId)?.name ?? "—"
+              })`}
+              checked={updateProjectClient}
+              onToggle={() => setUpdateProjectClient((v) => !v)}
+              confirmLabel="이 계약서 발주처로 프로젝트도 업데이트"
+            />
+          )}
         </Field>
         <Field label="계약서명" required>
           <input
@@ -154,6 +243,14 @@ export default function ContractCreateModal({
             </span>
           </label>
         </div>
+        {amountDiffers && (
+          <ProjectDiffWarning
+            text={`프로젝트 계약금액과 다릅니다 (현재: ${(projectAmount ?? 0).toLocaleString("ko-KR")}원)`}
+            checked={updateProjectAmount}
+            onToggle={() => setUpdateProjectAmount((v) => !v)}
+            confirmLabel="이 계약서 금액으로 프로젝트도 업데이트"
+          />
+        )}
         <Field label="메모">
           <textarea
             value={note}
@@ -192,7 +289,7 @@ export default function ContractCreateModal({
   );
 }
 
-/** PR-FI/2: 프로젝트 검색 typeahead — 운영 N=수백 대응. */
+/** PR-FI/2: 프로젝트 검색 typeahead. */
 function ProjectSearchSelect({
   projects,
   value,
@@ -210,12 +307,10 @@ function ProjectSearchSelect({
     [value, projects],
   );
 
-  // 선택된 프로젝트가 있으면 input에는 그 표시. 사용자가 다시 검색하려면 X(clear) 클릭.
   const display = selected
     ? `${selected.code ? `[${selected.code}] ` : ""}${selected.name || "(이름 없음)"}`
     : query;
 
-  // 결과 필터 — CODE / 이름 부분일치 (case-insensitive). 결과 ≤ 30개.
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q) return projects.slice(0, 30);
@@ -227,17 +322,6 @@ function ProjectSearchSelect({
       .slice(0, 30);
   }, [projects, query]);
 
-  const handleClear = (): void => {
-    onChange("");
-    setQuery("");
-  };
-
-  const handleSelect = (p: Project): void => {
-    onChange(p.id);
-    setQuery("");
-    setFocused(false);
-  };
-
   return (
     <div className="relative">
       <div className="relative">
@@ -245,7 +329,6 @@ function ProjectSearchSelect({
           type="text"
           value={display}
           onChange={(e) => {
-            // 입력 시 기존 선택 해제 (사용자가 검색을 새로 함)
             if (selected) onChange("");
             setQuery(e.target.value);
           }}
@@ -257,7 +340,10 @@ function ProjectSearchSelect({
         {selected && (
           <button
             type="button"
-            onClick={handleClear}
+            onClick={() => {
+              onChange("");
+              setQuery("");
+            }}
             className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200"
             aria-label="선택 해제"
           >
@@ -273,7 +359,9 @@ function ProjectSearchSelect({
                 type="button"
                 onMouseDown={(e) => {
                   e.preventDefault();
-                  handleSelect(p);
+                  onChange(p.id);
+                  setQuery("");
+                  setFocused(false);
                 }}
                 className="block w-full px-3 py-1.5 text-left text-sm hover:bg-zinc-100 dark:hover:bg-zinc-800"
               >
@@ -291,6 +379,117 @@ function ProjectSearchSelect({
           검색 결과가 없습니다.
         </div>
       )}
+    </div>
+  );
+}
+
+/** PR-FI/5: 발주처 검색 typeahead. ProjectSearchSelect와 유사한 패턴. */
+export function ClientSearchSelect({
+  clients,
+  value,
+  onChange,
+  placeholder,
+}: {
+  clients: Client[];
+  value: string;
+  onChange: (id: string) => void;
+  placeholder?: string;
+}) {
+  const [query, setQuery] = useState("");
+  const [focused, setFocused] = useState(false);
+
+  const selected = useMemo(
+    () => (value ? clients.find((c) => c.id === value) : null),
+    [value, clients],
+  );
+
+  const display = selected ? selected.name : query;
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return clients.slice(0, 30);
+    return clients
+      .filter((c) => c.name.toLowerCase().includes(q))
+      .slice(0, 30);
+  }, [clients, query]);
+
+  return (
+    <div className="relative">
+      <div className="relative">
+        <input
+          type="text"
+          value={display}
+          onChange={(e) => {
+            if (selected) onChange("");
+            setQuery(e.target.value);
+          }}
+          onFocus={() => setFocused(true)}
+          onBlur={() => setTimeout(() => setFocused(false), 150)}
+          placeholder={placeholder ?? "발주처 검색…"}
+          className={cn(inputCls, selected && "pr-8")}
+        />
+        {selected && (
+          <button
+            type="button"
+            onClick={() => {
+              onChange("");
+              setQuery("");
+            }}
+            className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200"
+            aria-label="선택 해제"
+          >
+            ✕
+          </button>
+        )}
+      </div>
+      {focused && !selected && filtered.length > 0 && (
+        <ul className="absolute left-0 right-0 top-full z-10 mt-1 max-h-64 overflow-y-auto rounded-md border border-zinc-200 bg-white shadow-lg dark:border-zinc-700 dark:bg-zinc-900">
+          {filtered.map((c) => (
+            <li key={c.id}>
+              <button
+                type="button"
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  onChange(c.id);
+                  setQuery("");
+                  setFocused(false);
+                }}
+                className="block w-full px-3 py-1.5 text-left text-sm hover:bg-zinc-100 dark:hover:bg-zinc-800"
+              >
+                {c.name}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+      {focused && !selected && filtered.length === 0 && query && (
+        <div className="absolute left-0 right-0 top-full z-10 mt-1 rounded-md border border-zinc-200 bg-white px-3 py-2 text-xs text-zinc-500 shadow-lg dark:border-zinc-700 dark:bg-zinc-900">
+          검색 결과가 없습니다.
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** PR-FI/5: 프로젝트와 다를 때 amber 경고 + 「프로젝트도 업데이트」 체크박스. */
+function ProjectDiffWarning({
+  text,
+  checked,
+  onToggle,
+  confirmLabel,
+}: {
+  text: string;
+  checked: boolean;
+  onToggle: () => void;
+  confirmLabel: string;
+}) {
+  return (
+    <div className="mt-1 rounded-md border border-amber-500/40 bg-amber-500/5 px-3 py-2 text-xs">
+      <p className="text-amber-700 dark:text-amber-300">⚠ {text}</p>
+      <label className="mt-1 flex items-center gap-2">
+        <input type="checkbox" checked={checked} onChange={onToggle} />
+        <span className="text-zinc-700 dark:text-zinc-300">{confirmLabel}</span>
+      </label>
     </div>
   );
 }

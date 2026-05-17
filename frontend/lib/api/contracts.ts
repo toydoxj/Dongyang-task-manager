@@ -12,6 +12,7 @@ export interface ContractCreateRequest {
   amount?: number | null;
   vat_included?: boolean;
   note?: string;
+  client_id?: string | null;  // PR-FI/4
 }
 
 export interface ContractUpdateRequest {
@@ -22,6 +23,7 @@ export interface ContractUpdateRequest {
   amount?: number | null;
   vat_included?: boolean;
   note?: string;
+  client_id?: string | null;  // PR-FI/4
 }
 
 export interface ContractListFilters {
