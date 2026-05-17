@@ -371,8 +371,25 @@ async def _collect_overdue_seals(notion: NotionService, today: date) -> ActionIt
     db_id = s.notion_db_seal_requests
     if not db_id:
         return ActionItem(count=0)
+    # PR-EW (PR-CR 4순위): notion filter push down — 상태 IN {1차/2차 검토중} +
+    # 제출예정일 < today. 옛 방식은 전량 fetch 후 Python filter라 admin/manager의
+    # /api/dashboard/actions 호출(30초 cache가 만료될 때마다) 시 notion 전체 페이지
+    # 로드 부하 발생. notion 서버 단에서 매칭 페이지만 반환받음.
+    # 상태 type은 select (notion_schema). Python loop는 그대로 유지 — title 추출
+    # + schema 변경 시 안전망.
+    overdue_filter = {
+        "and": [
+            {
+                "or": [
+                    {"property": "상태", "select": {"equals": "1차검토 중"}},
+                    {"property": "상태", "select": {"equals": "2차검토 중"}},
+                ]
+            },
+            {"property": "제출예정일", "date": {"before": today.isoformat()}},
+        ]
+    }
     try:
-        pages = await notion.query_all(db_id)
+        pages = await notion.query_all(db_id, filter=overdue_filter)
     except Exception:  # noqa: BLE001
         logger.exception("overdue seals 조회 실패")
         return ActionItem(count=0)
