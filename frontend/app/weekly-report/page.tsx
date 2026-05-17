@@ -102,7 +102,11 @@ export default function WeeklyReportPage() {
   };
 
   // 마지막 발행 로그 기반 자동 lastWeekStart 셋팅 + 최근 발행 정보 보관 (mount 1회).
-  // 발행된 일지의 week_end + 1일 = 다음 일지의 last_week_start (저번주 시작 기준).
+  // 발행된 일지의 week_end 다음 날이 속한 주의 월요일 = 다음 일지의 last_week_start.
+  //
+  // 옛 로직(`week_end + 1`)은 단순 +1일이라 발행 종료가 금요일이면 토요일이 되어
+  // 지난주 cover 범위가 토~일 2일로 축소 (backend last_week_end = week_start - 1 일요일).
+  // mondayOf로 강제해 정확히 직전 월~일 7일치를 cover.
   useEffect(() => {
     if (!user) return;
     void fetchLastPublishedWeeklyReport()
@@ -114,9 +118,9 @@ export default function WeeklyReportPage() {
           publishedAt: info.published_at ?? null,
         });
         if (!lastWeekStartAuto) return;
-        const nextLws = new Date(`${info.week_end}T00:00:00`);
-        nextLws.setDate(nextLws.getDate() + 1);
-        setLastWeekStart(toIsoDate(nextLws));
+        const nextDay = new Date(`${info.week_end}T00:00:00`);
+        nextDay.setDate(nextDay.getDate() + 1);
+        setLastWeekStart(toIsoDate(mondayOf(nextDay)));
       })
       .catch(() => {
         /* 발행 이력 없거나 실패 — 무시 */
