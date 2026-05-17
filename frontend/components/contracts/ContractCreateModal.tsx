@@ -13,7 +13,7 @@ import { Field, inputCls } from "@/components/project/_shared";
 import Modal from "@/components/ui/Modal";
 import { createContract, updateProject } from "@/lib/api";
 import type { Client, Project } from "@/lib/domain";
-import { useClients } from "@/lib/hooks";
+import { useClients, useContracts } from "@/lib/hooks";
 import { cn } from "@/lib/utils";
 
 interface Props {
@@ -59,6 +59,13 @@ export default function ContractCreateModal({
   const [error, setError] = useState<string | null>(null);
 
   const { data: clientsData } = useClients(open);
+  // PR-FK (사용자 요청): 같은 프로젝트에 이미 등록된 계약서 수 알림.
+  // 차단은 안 함 — 변경계약/부속합의 등 다중 계약서 등록은 정상 케이스.
+  const { data: existingContractsData } = useContracts(
+    projectId ? { project_id: projectId } : undefined,
+    open && !!projectId,
+  );
+  const existingCount = existingContractsData?.items.length ?? 0;
 
   const selectedProject = useMemo(
     () => (projectId ? projects.find((p) => p.id === projectId) ?? null : null),
@@ -183,6 +190,12 @@ export default function ContractCreateModal({
             value={projectId}
             onChange={handleSelectProject}
           />
+          {existingCount > 0 && (
+            <p className="mt-1 rounded-md border border-blue-500/40 bg-blue-500/5 px-3 py-2 text-xs text-blue-700 dark:text-blue-300">
+              ℹ 이 프로젝트에 이미 <b>{existingCount}건</b>의 계약서가 등록되어
+              있습니다. 변경계약·부속합의면 그대로 진행하세요.
+            </p>
+          )}
         </Field>
         <Field label="발주처">
           <ClientSearchSelect
