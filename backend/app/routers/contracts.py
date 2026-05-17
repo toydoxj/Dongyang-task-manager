@@ -1,12 +1,19 @@
-"""계약서 라우터 — PR-FH/1 (계약서 관리 본격 구성).
+"""계약서 라우터 — PR-FH/1 (도메인 신설) + PR-FI/1 (프로젝트 연동).
 
 권한:
 - GET: 로그인 사용자 누구나 (열람)
 - POST/PATCH/DELETE / file CRUD: require_editor (admin / team_lead / manager)
 
-파일 저장: NAVER WORKS Drive `[계약서]/{프로젝트 CODE}/{원본 filename}`.
-- `[계약서]` 폴더 + `{CODE}` 하위 폴더 모두 첫 업로드 시 자동 생성 (`create_folder` idempotent).
+파일 저장 (PR-FI/1): 프로젝트별 자체 폴더의 "6. 계약서" sub-folder에 PDF 저장.
+경로: `[CODE]프로젝트명/6. 계약서/{원본 filename}` (sso_drive.SUB_FOLDERS 표준).
+- 프로젝트 root + 7개 sub-folder는 ensure_project_folder가 idempotent 보장.
 - DB row update 실패 시 Drive 파일 즉시 삭제(rollback)로 고아 파일 방지.
+
+Contract ↔ Project 동기화 (PR-FI/1):
+- Contract create/update/delete 후 해당 project의 모든 contracts를 aggregate.
+- `contract_signed=True` (한 번이라도 signed_date 있으면, 삭제 후에도 True 유지).
+- `contract_start = min(non-null start_date)`, `contract_end = max(non-null end_date)`.
+- mirror_projects + 노션 양쪽 update (Codex 협의: 동기 호출 + 부분 성공 허용).
 """
 from __future__ import annotations
 
@@ -18,7 +25,6 @@ from fastapi import (
     APIRouter,
     Depends,
     File,
-    Form,
     HTTPException,
     Query,
     UploadFile,
@@ -39,12 +45,14 @@ from app.models.contract import (
 from app.models.mirror import MirrorClient, MirrorProject
 from app.security import get_current_user, require_editor
 from app.services import sso_drive
+from app.services.notion import NotionService, get_notion
+from app.services.sync import get_sync
 
 logger = logging.getLogger("contracts")
 
 router = APIRouter(prefix="/contracts", tags=["contracts"])
 
-_CONTRACTS_FOLDER_NAME = "[계약서]"
+_CONTRACTS_SUB_FOLDER = "6. 계약서"
 # 파일 형식 allow-list (한국 계약 관행). 확장자(소문자) 기준.
 _ALLOWED_EXT = {".pdf", ".doc", ".docx", ".hwp", ".hwpx"}
 # Drive upload 최대 사이즈 (30MB).
@@ -69,7 +77,6 @@ def _enrich_with_project(
         db.query(MirrorProject).filter(MirrorProject.page_id.in_(project_ids)).all()
     )
     project_map = {p.page_id: p for p in projects}
-    # client lookup — mirror_projects.client_relation_ids[0] 사용
     client_ids = set()
     for p in projects:
         if p.client_relation_ids:
@@ -99,11 +106,8 @@ def _enrich_with_project(
 
 
 def _validate_file_ext(file_name: str) -> str:
-    """확장자 lower-case 반환 + allow-list 검증."""
     if "." not in file_name:
-        raise HTTPException(
-            status_code=400, detail="파일 확장자가 없습니다"
-        )
+        raise HTTPException(status_code=400, detail="파일 확장자가 없습니다")
     ext = "." + file_name.rsplit(".", 1)[-1].lower()
     if ext not in _ALLOWED_EXT:
         raise HTTPException(
@@ -113,24 +117,24 @@ def _validate_file_ext(file_name: str) -> str:
     return ext
 
 
-async def _resolve_contracts_root_folder() -> str:
-    """[계약서] root 폴더 file_id 반환 — 없으면 sharedrive root에 자동 생성."""
-    settings = sso_drive.get_settings()
-    if not settings.works_drive_root_folder_id:
-        raise sso_drive.DriveError("WORKS_DRIVE_ROOT_FOLDER_ID 미설정")
-    meta = await sso_drive.create_folder(
-        settings, settings.works_drive_root_folder_id, _CONTRACTS_FOLDER_NAME
+async def _resolve_project_contract_folder(
+    db: Session, project_id: str
+) -> str:
+    """프로젝트별 자체 폴더의 "6. 계약서" sub-folder file_id 반환 (PR-FI/1).
+
+    `ensure_project_folder + find_child_folder` 조합으로 idempotent 보장.
+    누락 시 self-heal (재생성).
+    """
+    proj = db.get(MirrorProject, project_id)
+    if proj is None:
+        raise sso_drive.DriveError(f"프로젝트 {project_id} 를 찾을 수 없음")
+    if not proj.code or not proj.name:
+        raise sso_drive.DriveError(
+            f"프로젝트 {project_id} 의 code/name 비어있음 (Drive 폴더 생성 불가)"
+        )
+    return await sso_drive.find_or_create_project_subfolder(
+        proj.code, proj.name, _CONTRACTS_SUB_FOLDER
     )
-    return meta.get("file", {}).get("fileId") or meta.get("fileId") or ""
-
-
-async def _resolve_project_subfolder(project_code: str) -> str:
-    """[계약서]/{project_code} 하위 폴더 file_id 반환 — 없으면 생성."""
-    settings = sso_drive.get_settings()
-    root_id = await _resolve_contracts_root_folder()
-    sub_name = (project_code or "_unknown").strip() or "_unknown"
-    meta = await sso_drive.create_folder(settings, root_id, sub_name)
-    return meta.get("file", {}).get("fileId") or meta.get("fileId") or ""
 
 
 def _get_project_code(db: Session, project_id: str) -> str:
@@ -150,12 +154,89 @@ def _ensure_project_exists(db: Session, project_id: str) -> None:
 
 
 def _list_project_ids_by_client(db: Session, client_id: str) -> list[str]:
-    """발주처 page_id → 프로젝트 page_id 리스트 (mirror_projects.client_relation_ids 매칭)."""
     return [
         p.page_id
         for p in db.query(MirrorProject).all()
         if p.client_relation_ids and client_id in p.client_relation_ids
     ]
+
+
+def _aggregate_project_contract_state(
+    db: Session, project_id: str
+) -> tuple[bool, date | None, date | None]:
+    """프로젝트의 모든 contracts를 aggregate.
+
+    반환: (has_any_signed, min_start, max_end). null 날짜는 무시 (Codex 협의).
+    """
+    contracts = (
+        db.query(Contract).filter(Contract.project_id == project_id).all()
+    )
+    has_signed = any(c.signed_date is not None for c in contracts)
+    starts = [c.start_date for c in contracts if c.start_date is not None]
+    ends = [c.end_date for c in contracts if c.end_date is not None]
+    return (
+        has_signed,
+        min(starts) if starts else None,
+        max(ends) if ends else None,
+    )
+
+
+async def _sync_project_contract_fields(
+    db: Session, notion: NotionService, project_id: str
+) -> None:
+    """Contract CUD 후 mirror_projects + 노션 Project 페이지의 계약 필드 sync.
+
+    - `Project.contract_signed = True` (한 번이라도 signed_date 있으면, True 유지 정책)
+    - `Project.contract_start = min(start_date)`, `Project.contract_end = max(end_date)`
+    - 노션 컬럼명: "계약" (checkbox) / "계약기간" (date range).
+
+    실패는 silent log (부분 성공 — Contract 저장은 이미 commit, Codex 협의).
+    """
+    try:
+        has_signed, start, end = _aggregate_project_contract_state(
+            db, project_id
+        )
+        proj = db.get(MirrorProject, project_id)
+        if proj is None:
+            return  # 프로젝트 자체가 없으면 skip
+
+        # 현재 contract_signed 상태 확인 (True 유지 정책)
+        current_signed = bool(
+            (proj.properties or {}).get("계약", {}).get("checkbox", False)
+        )
+        new_signed = current_signed or has_signed
+
+        props: dict[str, Any] = {}
+        if new_signed and not current_signed:
+            props["계약"] = {"checkbox": True}
+
+        # 기간 sync — start/end 둘 다 없으면 update skip (Project 기존 값 유지).
+        if start or end:
+            props["계약기간"] = {
+                "date": {
+                    "start": start.isoformat() if start else None,
+                    "end": end.isoformat() if end else None,
+                }
+            }
+
+        if not props:
+            return
+
+        page = await notion.update_page(project_id, props)
+        get_sync().upsert_page("projects", page)
+        logger.info(
+            "contract sync: project=%s signed=%s start=%s end=%s",
+            project_id,
+            new_signed,
+            start,
+            end,
+        )
+    except Exception as e:  # noqa: BLE001
+        logger.warning(
+            "contract sync 실패 (project=%s): %s — 부분 성공 (Contract row는 저장됨)",
+            project_id,
+            e,
+        )
 
 
 # ── Endpoints ────────────────────────────────────────────────────────────
@@ -216,10 +297,11 @@ def get_contract(
 @router.post(
     "", response_model=ContractOut, status_code=status.HTTP_201_CREATED
 )
-def create_contract(
+async def create_contract(
     body: ContractCreate,
     user: User = Depends(require_editor),
     db: Session = Depends(get_db),
+    notion: NotionService = Depends(get_notion),
 ) -> ContractOut:
     _ensure_project_exists(db, body.project_id)
     if (
@@ -244,15 +326,17 @@ def create_contract(
     db.add(row)
     db.commit()
     db.refresh(row)
+    await _sync_project_contract_fields(db, notion, body.project_id)
     return _enrich_with_project(db, [row])[0]
 
 
 @router.patch("/{contract_id}", response_model=ContractOut)
-def update_contract(
+async def update_contract(
     contract_id: int,
     body: ContractUpdate,
     _user: User = Depends(require_editor),
     db: Session = Depends(get_db),
+    notion: NotionService = Depends(get_notion),
 ) -> ContractOut:
     row = db.get(Contract, contract_id)
     if row is None:
@@ -281,6 +365,7 @@ def update_contract(
         )
     db.commit()
     db.refresh(row)
+    await _sync_project_contract_fields(db, notion, row.project_id)
     return _enrich_with_project(db, [row])[0]
 
 
@@ -289,10 +374,12 @@ async def delete_contract(
     contract_id: int,
     _user: User = Depends(require_editor),
     db: Session = Depends(get_db),
+    notion: NotionService = Depends(get_notion),
 ) -> None:
     row = db.get(Contract, contract_id)
     if row is None:
         raise HTTPException(status_code=404, detail="계약서를 찾을 수 없습니다")
+    project_id = row.project_id
     # Drive 파일 동반 삭제 — 실패해도 row 삭제는 진행 (warn log)
     if row.drive_file_id:
         try:
@@ -301,6 +388,8 @@ async def delete_contract(
             logger.warning("delete_contract: Drive 삭제 실패 %s — %s", row.drive_file_id, e)
     db.delete(row)
     db.commit()
+    # 삭제 후에도 contract_signed=True 유지 (사용자 정책). 기간은 남은 contracts 기준 재계산.
+    await _sync_project_contract_fields(db, notion, project_id)
 
 
 @router.post("/{contract_id}/file", response_model=ContractOut)
@@ -310,9 +399,9 @@ async def upload_contract_file(
     user: User = Depends(require_editor),
     db: Session = Depends(get_db),
 ) -> ContractOut:
-    """multipart 파일 업로드 → Drive 저장 + Contract row 메타 업데이트.
+    """multipart 파일 업로드 → 프로젝트별 "6. 계약서" 폴더에 저장 + 메타 update.
 
-    기존 파일이 있으면 새 파일 업로드 성공 후 옛 Drive 파일 삭제(replace).
+    기존 파일 있으면 새 파일 업로드 성공 후 옛 Drive 파일 삭제(replace).
     Drive 업로드 성공 후 DB update 실패 시 새 파일 즉시 삭제(rollback).
     """
     row = db.get(Contract, contract_id)
@@ -333,9 +422,8 @@ async def upload_contract_file(
             detail=f"파일 크기 한도 초과 ({_MAX_FILE_SIZE // 1024 // 1024}MB)",
         )
 
-    project_code = _get_project_code(db, row.project_id)
     try:
-        sub_folder_id = await _resolve_project_subfolder(project_code)
+        sub_folder_id = await _resolve_project_contract_folder(db, row.project_id)
         upload_result = await sso_drive.upload_file(
             sub_folder_id,
             raw_name,
@@ -361,7 +449,6 @@ async def upload_contract_file(
         db.commit()
         db.refresh(row)
     except Exception as e:
-        # DB update 실패 — 방금 올린 Drive 파일 삭제(rollback)
         logger.error("upload_contract_file: DB update 실패 — Drive rollback")
         try:
             await sso_drive.delete_file(new_file_id)
@@ -369,14 +456,12 @@ async def upload_contract_file(
             logger.error("rollback Drive 삭제 실패: %s", drive_e)
         raise HTTPException(status_code=500, detail=f"DB update 실패: {e}")
 
-    # 옛 파일 삭제 — 실패는 warn (replace 성공이 우선)
     if old_file_id and old_file_id != new_file_id:
         try:
             await sso_drive.delete_file(old_file_id)
         except sso_drive.DriveError as e:
             logger.warning("upload_contract_file: 옛 파일 삭제 실패 %s — %s", old_file_id, e)
 
-    # 사용자 created_by 보강 (메타만 만들고 파일 업로드한 사람과 다를 수 있음 — created_by 유지)
     _ = user
     return _enrich_with_project(db, [row])[0]
 

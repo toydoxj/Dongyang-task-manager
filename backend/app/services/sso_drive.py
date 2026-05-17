@@ -369,6 +369,44 @@ def _extract_url(meta: dict[str, Any]) -> str:
     return ""
 
 
+async def find_or_create_project_subfolder(
+    code: str,
+    project_name: str,
+    sub_name: str,
+    *,
+    settings: Settings | None = None,
+) -> str:
+    """`[CODE]프로젝트명/{sub_name}` sub-folder의 file_id를 반환.
+
+    1. `ensure_project_folder`로 프로젝트 root 폴더 보장 (없으면 7 sub와 함께 생성).
+    2. `find_child_folder`로 sub-folder 검색.
+    3. 누락된 경우 self-heal — 경고 로그 + `create_folder`로 재생성.
+
+    PR-FI/1: 「계약서 관리」가 프로젝트별 자체 폴더의 "6. 계약서"에 PDF 저장.
+    """
+    s = settings or get_settings()
+    project_root_id, _ = await ensure_project_folder(
+        s, code=code, project_name=project_name
+    )
+    sub_meta = await find_child_folder(s, project_root_id, sub_name)
+    if sub_meta is not None:
+        sub_id = _extract_id(sub_meta)
+        if sub_id:
+            return sub_id
+    logger.warning(
+        "find_or_create_project_subfolder: sub '%s' 누락 — 자가복구 (project=%s)",
+        sub_name,
+        code,
+    )
+    meta = await create_folder(s, project_root_id, sub_name)
+    sub_id = _extract_id(meta)
+    if not sub_id:
+        raise DriveError(
+            f"sub-folder '{sub_name}' 자가복구 실패 (project={code})"
+        )
+    return sub_id
+
+
 async def ensure_project_folder(
     settings: Settings | None,
     *,

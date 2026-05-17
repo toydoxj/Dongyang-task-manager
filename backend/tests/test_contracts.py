@@ -23,6 +23,8 @@ from app.security import create_token
 
 # 테스트 격리용 — 프로젝트 정보 stub (SQLite에서 mirror_* 미지원 회피).
 _PROJECT_REGISTRY: dict[str, dict[str, str]] = {}
+# PR-FI/1: contract sync helper 호출 횟수 추적.
+_SYNC_CALL_LOG: list[str] = []
 
 
 @pytest.fixture(autouse=True)
@@ -52,6 +54,15 @@ def _stub_mirror_projects(monkeypatch):
     def stub_get_code(db, project_id):
         return _PROJECT_REGISTRY.get(project_id, {}).get("code", "")
 
+    async def stub_resolve_folder(db, project_id):
+        # 테스트에서는 Drive helper 자체를 monkeypatch하므로 호출되지 않음.
+        # 그래도 fallback으로 stub 등록.
+        return f"sub-folder-{project_id}"
+
+    async def stub_sync_project(db, notion, project_id):
+        # 노션 sync는 별 fixture에서 호출 횟수만 추적 — 여기서는 no-op.
+        _SYNC_CALL_LOG.append(project_id)
+
     def stub_enrich(db, rows):
         out = []
         for r in rows:
@@ -77,6 +88,15 @@ def _stub_mirror_projects(monkeypatch):
     monkeypatch.setattr(
         "app.routers.contracts._list_project_ids_by_client", stub_list_by_client
     )
+    monkeypatch.setattr(
+        "app.routers.contracts._resolve_project_contract_folder",
+        stub_resolve_folder,
+    )
+    monkeypatch.setattr(
+        "app.routers.contracts._sync_project_contract_fields",
+        stub_sync_project,
+    )
+    _SYNC_CALL_LOG.clear()
     yield
 
 
@@ -316,10 +336,6 @@ def test_upload_file_and_delete_file_with_mock(db, monkeypatch) -> None:
 
     fake_calls: list[str] = []
 
-    async def fake_create_folder(settings, parent_id, name):
-        fake_calls.append(f"create_folder:{parent_id}:{name}")
-        return {"file": {"fileId": f"folder-{name}"}}
-
     async def fake_upload_file(parent_id, file_name, content, *, content_type=None, settings=None):
         fake_calls.append(f"upload:{parent_id}:{file_name}:{len(content)}")
         return {"fileId": "drive-file-1", "fileUrl": "https://drive/file/1"}
@@ -327,11 +343,8 @@ def test_upload_file_and_delete_file_with_mock(db, monkeypatch) -> None:
     async def fake_delete_file(file_id, *, settings=None):
         fake_calls.append(f"delete:{file_id}")
 
-    class FakeSettings:
-        works_drive_root_folder_id = "root-fid"
-
-    monkeypatch.setattr("app.routers.contracts.sso_drive.get_settings", lambda: FakeSettings())
-    monkeypatch.setattr("app.routers.contracts.sso_drive.create_folder", fake_create_folder)
+    # PR-FI/1: _resolve_project_contract_folder는 autouse fixture가 이미 stub.
+    # 여기서는 sso_drive 직접 호출(upload/delete)만 mock.
     monkeypatch.setattr("app.routers.contracts.sso_drive.upload_file", fake_upload_file)
     monkeypatch.setattr("app.routers.contracts.sso_drive.delete_file", fake_delete_file)
 
@@ -356,10 +369,11 @@ def test_upload_file_and_delete_file_with_mock(db, monkeypatch) -> None:
         assert body["drive_file_id"] == "drive-file-1"
         assert body["file_name"] == "계약서.pdf"
         assert body["uploaded_at"] is not None
-        # 폴더 2개 + 업로드 1개 (root '[계약서]' + sub 'P-005' + upload)
-        assert any(c.startswith("create_folder") and "[계약서]" in c for c in fake_calls)
-        assert any(c.startswith("create_folder") and "P-005" in c for c in fake_calls)
-        assert any(c.startswith("upload") for c in fake_calls)
+        # PR-FI/1: resolve_folder는 stub_resolve_folder가 가짜 id 반환 → upload 1회만.
+        upload_calls = [c for c in fake_calls if c.startswith("upload")]
+        assert len(upload_calls) == 1
+        assert "proj-005" in upload_calls[0]
+        assert "계약서.pdf" in upload_calls[0]
 
         # 파일 삭제
         r = client.delete(
