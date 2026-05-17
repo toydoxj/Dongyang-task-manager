@@ -7,7 +7,7 @@ from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import literal, select, union_all
 from sqlalchemy.orm import Session
 
 from app.db import get_db
@@ -68,6 +68,52 @@ def _resolve_contract_item_labels(
             e.contract_item_label = label_map.get(e.contract_item_id) or None
 
 
+def _resolve_cashflow_labels_batch(
+    db: Session, items: list[CashflowEntry]
+) -> None:
+    """PR-ER (PR-CR 진단 2순위): list 경로용 — payer + contract_item label을
+    `UNION ALL` 1 round-trip으로 조회. 단일 entry endpoint(POST/PATCH)는 기존
+    _resolve_* 두 함수 유지 (item 1개라 효과 없음, 단순성 우선).
+    """
+    payer_ids: set[str] = {rid for e in items for rid in e.payer_relation_ids if rid}
+    ci_ids: set[str] = {e.contract_item_id for e in items if e.contract_item_id}
+    if not payer_ids and not ci_ids:
+        return
+    queries = []
+    if payer_ids:
+        queries.append(
+            select(
+                literal("c").label("kind"),
+                M.MirrorClient.page_id.label("pid"),
+                M.MirrorClient.name.label("label"),
+            ).where(M.MirrorClient.page_id.in_(payer_ids))
+        )
+    if ci_ids:
+        queries.append(
+            select(
+                literal("ci").label("kind"),
+                M.MirrorContractItem.page_id.label("pid"),
+                M.MirrorContractItem.label.label("label"),
+            ).where(M.MirrorContractItem.page_id.in_(ci_ids))
+        )
+    stmt = queries[0] if len(queries) == 1 else union_all(*queries)
+    rows = db.execute(stmt).all()
+    name_map: dict[str, str] = {}
+    label_map: dict[str, str] = {}
+    for kind, pid, label in rows:
+        if kind == "c":
+            name_map[pid] = label
+        else:
+            label_map[pid] = label
+    for e in items:
+        if e.payer_relation_ids:
+            e.payer_names = [
+                name_map[rid] for rid in e.payer_relation_ids if rid in name_map
+            ]
+        if e.contract_item_id:
+            e.contract_item_label = label_map.get(e.contract_item_id) or None
+
+
 @router.get("", response_model=CashflowResponse)
 def get_cashflow(
     project_id: str | None = Query(default=None),
@@ -98,8 +144,8 @@ def get_cashflow(
     rows = db.execute(stmt).scalars().all()
     items = [cashflow_from_mirror(r) for r in rows]
 
-    _resolve_payer_names(db, items)
-    _resolve_contract_item_labels(db, items)
+    # PR-ER: payer + contract_item label batch — UNION ALL 1 round-trip.
+    _resolve_cashflow_labels_batch(db, items)
 
     inc = sum(e.amount for e in items if e.type == "income")
     exp = sum(e.amount for e in items if e.type == "expense")
