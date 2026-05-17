@@ -112,18 +112,55 @@ export default function MyPage() {
   );
 
   // team_lead는 본인 팀 직원만, admin은 전체.
+  // 정렬 순서는 /operations/employee-work 와 동일: 팀 → sort_order → 직급 → 이름.
   const switchTargets = useMemo<string[]>(() => {
     if (!canSwitchView || !empListData) return [];
-    const all = empListData.items
-      .map((e) => e.name)
-      .filter((n): n is string => !!n && n !== user?.name);
-    if (user?.role === "admin") return all.sort((a, b) => a.localeCompare(b));
-    // team_lead — teamsMap 기준 본인 팀과 같은 직원만
+    const TEAM_ORDER = [
+      "본부",
+      "구조1팀",
+      "구조2팀",
+      "구조3팀",
+      "구조4팀",
+      "진단팀",
+      "관리팀",
+    ];
+    const POSITION_ORDER = [
+      "사장",
+      "부사장",
+      "전무",
+      "상무",
+      "이사",
+      "실장",
+      "차장",
+      "과장",
+      "대리",
+      "기사",
+      "사원",
+    ];
+    const orderOf = (arr: readonly string[], v: string): number => {
+      const i = arr.indexOf(v);
+      return i === -1 ? arr.length : i;
+    };
     const myTeam = user?.name ? empTeamsMap?.[user.name] : undefined;
-    if (!myTeam) return [];
-    return all
-      .filter((n) => empTeamsMap?.[n] === myTeam)
-      .sort((a, b) => a.localeCompare(b));
+    const filtered = empListData.items.filter((e) => {
+      if (!e.name || e.name === user?.name) return false;
+      if (user?.role === "admin") return true;
+      if (!myTeam) return false;
+      return empTeamsMap?.[e.name] === myTeam;
+    });
+    filtered.sort((a, b) => {
+      const t =
+        orderOf(TEAM_ORDER, a.team ?? "") - orderOf(TEAM_ORDER, b.team ?? "");
+      if (t !== 0) return t;
+      const s = (a.sort_order ?? 0) - (b.sort_order ?? 0);
+      if (s !== 0) return s;
+      const p =
+        orderOf(POSITION_ORDER, a.position ?? "") -
+        orderOf(POSITION_ORDER, b.position ?? "");
+      if (p !== 0) return p;
+      return a.name.localeCompare(b.name, "ko");
+    });
+    return filtered.map((e) => e.name);
   }, [canSwitchView, empListData, empTeamsMap, user]);
 
   const onSwitchView = (target: string): void => {
