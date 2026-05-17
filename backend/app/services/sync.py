@@ -37,6 +37,7 @@ SyncKind = Literal[
     "contract_items",
     "sales",
     "seal_requests",
+    "suggestions",
 ]
 ALL_KINDS: tuple[SyncKind, ...] = (
     "projects",
@@ -48,6 +49,7 @@ ALL_KINDS: tuple[SyncKind, ...] = (
     "contract_items",
     "sales",
     "seal_requests",
+    "suggestions",
 )
 
 # incremental query lookback. since를 sync 시작 시각으로 박아도 노션 인덱싱
@@ -274,6 +276,7 @@ class NotionSyncService:
             "contract_items": s.notion_db_contract_items,
             "sales": s.notion_db_sales,
             "seal_requests": s.notion_db_seal_requests,
+            "suggestions": s.notion_db_suggestions,
         }[kind]
 
     def _upsert_one(self, db: Session, kind: SyncKind, page: dict) -> None:
@@ -295,6 +298,8 @@ class NotionSyncService:
             self._upsert_sale(db, page)
         elif kind == "seal_requests":
             self._upsert_seal_request(db, page)
+        elif kind == "suggestions":
+            self._upsert_suggestion(db, page)
 
     def _archive_one(self, db: Session, kind: SyncKind, page_id: str) -> None:
         table = self._table_for(kind)
@@ -315,6 +320,7 @@ class NotionSyncService:
             "contract_items": M.MirrorContractItem,
             "sales": M.MirrorSales,
             "seal_requests": M.MirrorSealRequest,
+            "suggestions": M.MirrorSuggestion,
         }.get(kind)
 
     def _mark_missing_archived(
@@ -701,6 +707,70 @@ class NotionSyncService:
                     status=stmt.excluded.status,
                     requester=stmt.excluded.requester,
                     project_ids=stmt.excluded.project_ids,
+                    created_time=stmt.excluded.created_time,
+                    last_edited_time=stmt.excluded.last_edited_time,
+                    synced_at=stmt.excluded.synced_at,
+                    archived=stmt.excluded.archived,
+                ),
+            )
+        )
+
+    def _upsert_suggestion(self, db: Session, page: dict) -> None:
+        """PR-EX/2 (PR-CR 2순위): 건의사항 mirror upsert.
+
+        SuggestionItem._from_notion_page와 동일 매핑 — title("내용" 또는 dynamic
+        title type), content="방안" rich_text, author="작성자" multi_select 첫
+        옵션, categories="구분" multi_select, status="진행상황"(status/select 둘
+        다 fallback), resolution="조치내용" rich_text.
+        """
+        page_id = page.get("id", "")
+        if not page_id:
+            return
+        props = page.get("properties", {})
+
+        # title은 운영 schema "내용" / "제목" / "Name" 어느 쪽이든 첫 title type 컬럼
+        title_text = ""
+        for prop in props.values():
+            if isinstance(prop, dict) and prop.get("type") == "title":
+                title_text = "".join(
+                    seg.get("plain_text", "")
+                    for seg in (prop.get("title") or [])
+                ).strip()
+                break
+
+        # author: multi_select 첫 옵션 우선, fallback rich_text
+        author_list = P.multi_select_names(props, "작성자")
+        author = author_list[0] if author_list else P.rich_text(props, "작성자")
+        # status: status type 우선, fallback select
+        status_text = (
+            P.status_name(props, "진행상황")
+            or P.select_name(props, "진행상황")
+            or ""
+        )
+
+        stmt = pg_insert(M.MirrorSuggestion).values(
+            page_id=page_id,
+            title=title_text,
+            content=P.rich_text(props, "방안"),
+            author=author or "",
+            categories=list(P.multi_select_names(props, "구분")),
+            status=status_text,
+            resolution=P.rich_text(props, "조치내용"),
+            created_time=_parse_iso(page.get("created_time")),
+            last_edited_time=_parse_iso(page.get("last_edited_time")),
+            synced_at=_utcnow(),
+            archived=bool(page.get("archived", False)),
+        )
+        db.execute(
+            stmt.on_conflict_do_update(
+                index_elements=["page_id"],
+                set_=dict(
+                    title=stmt.excluded.title,
+                    content=stmt.excluded.content,
+                    author=stmt.excluded.author,
+                    categories=stmt.excluded.categories,
+                    status=stmt.excluded.status,
+                    resolution=stmt.excluded.resolution,
                     created_time=stmt.excluded.created_time,
                     last_edited_time=stmt.excluded.last_edited_time,
                     synced_at=stmt.excluded.synced_at,
