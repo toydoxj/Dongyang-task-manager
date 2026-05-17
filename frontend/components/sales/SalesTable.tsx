@@ -2,16 +2,31 @@
 
 import { useMemo } from "react";
 
-import type { Sale } from "@/lib/domain";
+import { BID_STAGES, type Sale } from "@/lib/domain";
 import { formatDate } from "@/lib/format";
 import { useClients } from "@/lib/hooks";
 import { cn } from "@/lib/utils";
+
+/** PR-FC: 정렬 가능 컬럼 7개 (사용자 결정 — 핵심 6 + 담당). */
+export type SalesSortKey =
+  | "stage"
+  | "estimated_amount"
+  | "probability"
+  | "expected_revenue"
+  | "submission_date"
+  | "client"
+  | "assignees";
+export type SortDir = "asc" | "desc";
 
 interface Props {
   sales: Sale[];
   onClickRow: (sale: Sale) => void;
   /** kind/stage 모두 표시할지 — /me의 sub-section처럼 kind 필터된 상태에서는 false */
   showKindColumn?: boolean;
+  /** 정렬 상태. 외부에서 관리 — header click이 onSortChange로 위임. */
+  sortKey?: SalesSortKey | null;
+  sortDir?: SortDir;
+  onSortChange?: (key: SalesSortKey) => void;
 }
 
 const KRW = (n: number | null | undefined): string => {
@@ -43,10 +58,48 @@ const stageBadgeColor = (stage: string): string => {
   }
 };
 
+/** 정렬 가능 header. 정렬 안 됨이면 회색 ⇅, asc=▲, desc=▼. */
+function SortableTh({
+  k,
+  label,
+  align = "left",
+  sortKey,
+  sortDir,
+  onSortChange,
+}: {
+  k: SalesSortKey;
+  label: string;
+  align?: "left" | "right";
+  sortKey?: SalesSortKey | null;
+  sortDir?: SortDir;
+  onSortChange?: (k: SalesSortKey) => void;
+}): React.ReactElement {
+  const active = sortKey === k;
+  const arrow = active ? (sortDir === "asc" ? "▲" : "▼") : "⇅";
+  return (
+    <th
+      className={cn(
+        "select-none px-2 py-2",
+        align === "right" && "text-right",
+        onSortChange && "cursor-pointer hover:text-zinc-700 dark:hover:text-zinc-200",
+      )}
+      onClick={onSortChange ? () => onSortChange(k) : undefined}
+    >
+      {label}
+      <span className={cn("ml-1 text-[9px]", !active && "text-zinc-300 dark:text-zinc-600")}>
+        {arrow}
+      </span>
+    </th>
+  );
+}
+
 export default function SalesTable({
   sales,
   onClickRow,
   showKindColumn = true,
+  sortKey = null,
+  sortDir = "desc",
+  onSortChange,
 }: Props) {
   // client_id → 발주처 이름 lookup. useClients()가 자체 cache를 가지므로 추가 비용 없음.
   const { data: clientsData } = useClients(true);
@@ -55,6 +108,50 @@ export default function SalesTable({
     for (const c of clientsData?.items ?? []) map.set(c.id, c.name);
     return map;
   }, [clientsData]);
+
+  // PR-FC: client-side 정렬. sortKey 미지정이면 backend 정렬 순서(created_time DESC) 유지.
+  const sorted = useMemo(() => {
+    if (!sortKey) return sales;
+    const dir = sortDir === "asc" ? 1 : -1;
+    const stageOrder = (s: string): number => {
+      const i = (BID_STAGES as readonly string[]).indexOf(s);
+      return i === -1 ? BID_STAGES.length : i;
+    };
+    const cmp = (a: Sale, b: Sale): number => {
+      switch (sortKey) {
+        case "stage":
+          return (stageOrder(a.stage) - stageOrder(b.stage)) * dir;
+        case "estimated_amount":
+          return (
+            ((a.estimated_amount ?? -Infinity) -
+              (b.estimated_amount ?? -Infinity)) *
+            dir
+          );
+        case "probability":
+          return ((a.probability ?? -Infinity) - (b.probability ?? -Infinity)) * dir;
+        case "expected_revenue":
+          return ((a.expected_revenue || 0) - (b.expected_revenue || 0)) * dir;
+        case "submission_date": {
+          // null은 항상 맨 뒤 (asc/desc 무관)
+          if (!a.submission_date && !b.submission_date) return 0;
+          if (!a.submission_date) return 1;
+          if (!b.submission_date) return -1;
+          return a.submission_date.localeCompare(b.submission_date) * dir;
+        }
+        case "client": {
+          const an = a.client_id ? clientNameById.get(a.client_id) ?? "" : "";
+          const bn = b.client_id ? clientNameById.get(b.client_id) ?? "" : "";
+          return an.localeCompare(bn, "ko") * dir;
+        }
+        case "assignees": {
+          const an = a.assignees.join(",");
+          const bn = b.assignees.join(",");
+          return an.localeCompare(bn, "ko") * dir;
+        }
+      }
+    };
+    return [...sales].sort(cmp);
+  }, [sales, sortKey, sortDir, clientNameById]);
 
   if (sales.length === 0) {
     return (
@@ -66,6 +163,8 @@ export default function SalesTable({
 
   const totalExpected = sales.reduce((s, x) => s + (x.expected_revenue || 0), 0);
 
+  const thSort = { sortKey, sortDir, onSortChange };
+
   return (
     <div className="overflow-x-auto">
       <table className="w-full min-w-[920px] text-sm">
@@ -73,18 +172,18 @@ export default function SalesTable({
           <tr className="border-b border-zinc-200 text-left text-[11px] uppercase text-zinc-500 dark:border-zinc-800">
             <th className="px-2 py-2">CODE</th>
             <th className="px-2 py-2">용역명</th>
-            <th className="px-2 py-2">발주처</th>
+            <SortableTh k="client" label="발주처" {...thSort} />
             {showKindColumn && <th className="px-2 py-2">유형</th>}
-            <th className="px-2 py-2">단계</th>
-            <th className="px-2 py-2 text-right">견적금액</th>
-            <th className="px-2 py-2 text-right">확률</th>
-            <th className="px-2 py-2 text-right">기대매출</th>
-            <th className="px-2 py-2">담당</th>
-            <th className="px-2 py-2">제출일</th>
+            <SortableTh k="stage" label="단계" {...thSort} />
+            <SortableTh k="estimated_amount" label="견적금액" align="right" {...thSort} />
+            <SortableTh k="probability" label="확률" align="right" {...thSort} />
+            <SortableTh k="expected_revenue" label="기대매출" align="right" {...thSort} />
+            <SortableTh k="assignees" label="담당" {...thSort} />
+            <SortableTh k="submission_date" label="제출일" {...thSort} />
           </tr>
         </thead>
         <tbody>
-          {sales.map((s) => (
+          {sorted.map((s) => (
             <tr
               key={s.id}
               className="cursor-pointer border-b border-zinc-100 hover:bg-zinc-50 dark:border-zinc-900 dark:hover:bg-zinc-800/50"

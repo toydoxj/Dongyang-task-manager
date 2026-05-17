@@ -6,10 +6,13 @@ import { useMemo, useState } from "react";
 import { useRoleGuard } from "@/lib/useRoleGuard";
 import UnauthorizedRedirect from "@/components/UnauthorizedRedirect";
 import SalesEditModal from "@/components/sales/SalesEditModal";
-import SalesTable from "@/components/sales/SalesTable";
+import SalesTable, {
+  type SalesSortKey,
+  type SortDir,
+} from "@/components/sales/SalesTable";
 import LoadingState from "@/components/ui/LoadingState";
 import { BID_STAGES, type Sale } from "@/lib/domain";
-import { useSales } from "@/lib/hooks";
+import { useClients, useSales } from "@/lib/hooks";
 
 const KIND_FILTERS = [
   { label: "전체", value: "" },
@@ -26,6 +29,10 @@ export default function SalesPage() {
   const { user, allowed } = useRoleGuard(["admin", "team_lead", "manager"]);
   const [kindFilter, setKindFilter] = useState<string>("");
   const [stageFilter, setStageFilter] = useState<string>("");
+  // PR-FC: client-side 검색 + 정렬 state.
+  const [searchQuery, setSearchQuery] = useState<string>("");
+  const [sortKey, setSortKey] = useState<SalesSortKey | null>(null);
+  const [sortDir, setSortDir] = useState<SortDir>("desc");
   // 두 source를 통합해 modal에 전달:
   //   ① URL ?sale={id} (외부 진입 — 주간보고/프로젝트 상세 등 referrer)
   //   ② 사용자가 list row 클릭
@@ -42,6 +49,42 @@ export default function SalesPage() {
     ...(stageFilter ? { stage: stageFilter } : {}),
   };
   const { data, error } = useSales(filters, allowed);
+
+  // PR-FC: 검색은 client-side filter — code/name/발주처 이름/담당자.
+  // SalesTable 내부에서도 useClients() 호출하지만 SWR cache 공유라 추가 비용 0.
+  const { data: clientsData } = useClients(allowed);
+  const clientNameById = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const c of clientsData?.items ?? []) map.set(c.id, c.name);
+    return map;
+  }, [clientsData]);
+
+  const filteredSales = useMemo(() => {
+    const items = data?.items ?? [];
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return items;
+    return items.filter((s) => {
+      const haystack = [
+        s.code,
+        s.name,
+        s.client_id ? clientNameById.get(s.client_id) ?? "" : "",
+        s.assignees.join(" "),
+      ]
+        .join(" ")
+        .toLowerCase();
+      return haystack.includes(q);
+    });
+  }, [data, searchQuery, clientNameById]);
+
+  /** PR-FC: 정렬 헤더 click — 같은 키 재클릭 시 방향 toggle, 다른 키면 desc 시작. */
+  const handleSortChange = (k: SalesSortKey): void => {
+    if (sortKey === k) {
+      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setSortKey(k);
+      setSortDir("desc");
+    }
+  };
 
   const queriedSaleId = searchParams.get("sale");
   const editing = useMemo<Sale | null>(() => {
@@ -133,10 +176,34 @@ export default function SalesPage() {
         </div>
       )}
 
+      {/* PR-FC: 검색 input + 결과 개수 */}
+      <div className="flex items-center gap-2">
+        <input
+          type="search"
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          placeholder="CODE / 용역명 / 발주처 / 담당자 검색"
+          className="flex-1 rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+        />
+        {data && (
+          <span className="shrink-0 text-[11px] text-zinc-500">
+            {searchQuery
+              ? `${filteredSales.length} / ${data.items.length} 건`
+              : `${data.items.length} 건`}
+          </span>
+        )}
+      </div>
+
       {data == null ? (
         <LoadingState message="영업 목록 불러오는 중" height="h-32" />
       ) : (
-        <SalesTable sales={data.items} onClickRow={setClickedSale} />
+        <SalesTable
+          sales={filteredSales}
+          onClickRow={setClickedSale}
+          sortKey={sortKey}
+          sortDir={sortDir}
+          onSortChange={handleSortChange}
+        />
       )}
 
       {(editing != null || creating) && (
