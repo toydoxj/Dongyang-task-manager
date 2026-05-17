@@ -16,7 +16,6 @@ from sqlalchemy.orm import Session
 from app.db import get_db
 from app.models.auth import User
 from app.security import get_current_user
-from app.services import notion_props as P
 from app.services.notion import NotionService, get_notion
 from app.settings import get_settings
 
@@ -58,16 +57,21 @@ async def list_seal_requests(
             status_code=403,
             detail="일반직원은 날인요청 페이지를 직접 조회할 수 없습니다",
         )
+    # PR-EQ (PR-CR Step 4): project_id 있으면 notion filter로 push down.
+    # 옛 방식: query_all 전체(최대 200 페이지) fetch + Python in-memory filter.
+    # 새 방식: notion relation contains filter → 노션 서버가 매칭 페이지만 반환.
+    # 영향: 프로젝트 상세에서 진입(빈번)할 때 fetch 데이터/대기 시간 대폭 감소.
+    notion_filter: dict | None = None
+    if project_id:
+        notion_filter = {
+            "property": "프로젝트",
+            "relation": {"contains": project_id},
+        }
     pages = await notion.query_all(
         _db_id(),
+        filter=notion_filter,
         sorts=[{"timestamp": "created_time", "direction": "descending"}],
     )
-    if project_id:
-        pages = [
-            p
-            for p in pages
-            if project_id in P.relation_ids(p.get("properties", {}), "프로젝트")
-        ]
     pages = _filter_accessible(user, pages, db)
     items = [_from_notion_page(p) for p in pages]
     items = _sort_items_by_role(items, user.role or "member")
