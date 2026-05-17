@@ -1,12 +1,29 @@
 "use client";
 
+import { useSearchParams } from "next/navigation";
 import { useState } from "react";
 
 import AuthGuard from "./AuthGuard";
+import ProjectDetailModal from "./common/ProjectDetailModal";
 import Sidebar from "./Sidebar";
 
 export default function AppShell({ children }: { children: React.ReactNode }) {
   const [navOpen, setNavOpen] = useState(false);
+  // PR-FQ: ?popup=1 query가 있으면 사이드바·모바일 헤더 없는 chromeless layout.
+  // openInPopup에서 자동 부착 — 사용자가 직접 URL 입력해도 동일 동작.
+  const sp = useSearchParams();
+  const isPopup = sp?.get("popup") === "1";
+
+  if (isPopup) {
+    return (
+      <AuthGuard>
+        <main className="min-h-screen bg-zinc-50 p-4 text-zinc-900 dark:bg-zinc-950 dark:text-zinc-100 sm:p-6">
+          {children}
+        </main>
+        <ProjectDetailModal />
+      </AuthGuard>
+    );
+  }
 
   return (
     <AuthGuard>
@@ -55,6 +72,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           </main>
         </div>
       </div>
+      <ProjectDetailModal />
     </AuthGuard>
   );
 }

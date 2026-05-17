@@ -46,7 +46,14 @@ function BackButton({ onClick }: { onClick: () => void }) {
   );
 }
 
-export default function ProjectClient({ id }: { id: string }) {
+export default function ProjectClient({
+  id,
+  onCloseOverride,
+}: {
+  id: string;
+  /** PR-FR — modal context에서 닫기 버튼 동작을 가로채기. router.back 대신 modal close. */
+  onCloseOverride?: () => void;
+}) {
   const router = useRouter();
   const { mutate } = useSWRConfig();
   const { user } = useAuth();
@@ -67,7 +74,12 @@ export default function ProjectClient({ id }: { id: string }) {
   >(null);
 
   // 어디서 왔든 그 페이지로 돌아가기. history 없으면 /projects로 fallback.
+  // PR-FR: modal로 mount된 경우 onCloseOverride 우선 (router 호출 회피).
   const goBack = (): void => {
+    if (onCloseOverride) {
+      onCloseOverride();
+      return;
+    }
     if (typeof window !== "undefined" && window.history.length > 1) {
       router.back();
     } else {

@@ -13,14 +13,24 @@
 
 import type React from "react";
 
+import { openProjectModal } from "@/lib/stores/detailModal";
 import { cn } from "@/lib/utils";
 
 // PR-FP fix: features에 noopener/noreferrer가 있으면 Chrome이 popup 무시 + 새 탭 처리.
 // 별도 features만 두고, opener는 결과 window에서 수동 null 처리 (security 동일).
 const POPUP_FEATURES = "popup=1,width=1200,height=900";
 
+/** PR-FQ: URL에 popup=1 query를 추가해 AppShell이 사이드바·헤더 숨김. hash 분리 처리. */
+function withPopupParam(href: string): string {
+  const [base, hash] = href.split("#");
+  const sep = base.includes("?") ? "&" : "?";
+  const withParam = `${base}${sep}popup=1`;
+  return hash ? `${withParam}#${hash}` : withParam;
+}
+
 export function openInPopup(href: string): void {
-  const w = window.open(href, "_blank", POPUP_FEATURES);
+  const finalHref = withPopupParam(href);
+  const w = window.open(finalHref, "_blank", POPUP_FEATURES);
   if (w) {
     try {
       w.opener = null;
@@ -28,8 +38,8 @@ export function openInPopup(href: string): void {
       // cross-origin 또는 이미 null — 무시.
     }
   } else {
-    // 팝업 차단 시 새 탭으로 fallback.
-    window.open(href, "_blank", "noopener,noreferrer");
+    // 팝업 차단 시 새 탭으로 fallback (이 경우엔 popup=1 query 그대로 유지 — 사이드바 안 보임).
+    window.open(finalHref, "_blank", "noopener,noreferrer");
   }
 }
 
@@ -57,6 +67,8 @@ export function ProjectPopupLink({
   stopPropagation = true,
 }: ProjectPopupLinkProps) {
   if (!id) return <>{children}</>;
+  // PR-FR: 별도 윈도우 팝업 대신 글로벌 모달 store로 표시. href는 SEO/접근성용.
+  // suffix(예: "#tasks")는 modal context에선 deeplink 의미가 약해 일단 무시.
   const href = `/projects/${encodeURIComponent(id)}${suffix ?? ""}`;
   return (
     <a
@@ -64,7 +76,7 @@ export function ProjectPopupLink({
       onClick={(e) => {
         if (stopPropagation) e.stopPropagation();
         e.preventDefault();
-        openInPopup(href);
+        openProjectModal(id);
         onAfterClick?.();
       }}
       className={cn(

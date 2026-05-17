@@ -2,10 +2,10 @@
 
 import { useRouter } from "next/navigation";
 
-import { openInPopup } from "@/components/common/PopupLinks";
 import StageBadge from "@/components/ui/StageBadge";
 import type { Project } from "@/lib/domain";
 import { formatDate, formatPercent, formatWon } from "@/lib/format";
+import { openProjectModal } from "@/lib/stores/detailModal";
 import { cn } from "@/lib/utils";
 
 // PROJ-002 — 상태 태그 (페이지에서 계산해 tags prop으로 전달).
@@ -56,8 +56,7 @@ export default function ProjectCard({
       ? project.collection_rate
       : null;
 
-  // PR-FO: 카드 전체 click 시 팝업 윈도우로 상세 열기.
-  const href = `/projects/${project.id}`;
+  // PR-FR: 카드 전체 click 시 글로벌 모달로 상세 열기 (별도 윈도우 폐기).
   return (
     <div
       role="button"
@@ -65,12 +64,12 @@ export default function ProjectCard({
       onClick={(e) => {
         // QuickActionChip 등 nested clickable은 자체 onClick + stopPropagation.
         e.preventDefault();
-        openInPopup(href);
+        openProjectModal(project.id);
       }}
       onKeyDown={(e) => {
         if (e.key === "Enter" || e.key === " ") {
           e.preventDefault();
-          openInPopup(href);
+          openProjectModal(project.id);
         }
       }}
       className="group block cursor-pointer rounded-xl border border-zinc-200 bg-white p-4 transition-colors hover:border-zinc-300 hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900 dark:hover:border-zinc-700 dark:hover:bg-zinc-800"
