@@ -21,11 +21,14 @@ import useSWR from "swr";
 import UnauthorizedRedirect from "@/components/UnauthorizedRedirect";
 import LoadingState from "@/components/ui/LoadingState";
 import { getAuthChannelStats } from "@/lib/api";
+import {
+  GO_THRESHOLD,
+  type VerdictMeta,
+  verdictForRatio,
+} from "@/lib/authStatsVerdict";
 import { useRoleGuard } from "@/lib/useRoleGuard";
 
 const REFRESH_INTERVAL_MS = 30_000;
-const GO_THRESHOLD = 0.99;
-const WATCH_THRESHOLD = 0.95;
 
 function formatTime(iso: string | null): string {
   if (!iso) return "—";
@@ -56,41 +59,6 @@ function relativeFrom(iso: string | null): string {
   if (diffHr < 24) return `${diffHr}시간`;
   const diffDay = Math.floor(diffHr / 24);
   return `${diffDay}일`;
-}
-
-interface VerdictMeta {
-  label: string;
-  tone: "go" | "watch" | "no-go" | "idle";
-  detail: string;
-}
-
-function verdict(ratio: number, total: number): VerdictMeta {
-  if (total === 0) {
-    return {
-      label: "데이터 없음",
-      tone: "idle",
-      detail: "아직 인증 호출이 누적되지 않았습니다. 사용자 활동 후 다시 확인.",
-    };
-  }
-  if (ratio >= GO_THRESHOLD) {
-    return {
-      label: "GO — 5차 재시도 안전",
-      tone: "go",
-      detail: `cookie 비율 ${(ratio * 100).toFixed(2)}% ≥ ${(GO_THRESHOLD * 100).toFixed(0)}% 임계 초과.`,
-    };
-  }
-  if (ratio >= WATCH_THRESHOLD) {
-    return {
-      label: "관찰 지속",
-      tone: "watch",
-      detail: `cookie 비율 ${(ratio * 100).toFixed(2)}% — 95% 도달, 99% 수렴 대기.`,
-    };
-  }
-  return {
-    label: "NO-GO — header fallback 의존 잔존",
-    tone: "no-go",
-    detail: `cookie 비율 ${(ratio * 100).toFixed(2)}% < ${(WATCH_THRESHOLD * 100).toFixed(0)}%. PR-EM/EN 재시도 시 회귀 위험.`,
-  };
 }
 
 const TONE_CLASS: Record<VerdictMeta["tone"], string> = {
@@ -130,7 +98,7 @@ export default function AdminAuthStatsPage() {
     );
   }
 
-  const v = verdict(data.cookie_ratio, data.total);
+  const v = verdictForRatio(data.cookie_ratio, data.total);
   const headerPct = data.total > 0 ? (data.header / data.total) * 100 : 0;
   const cookiePct = data.total > 0 ? (data.cookie / data.total) * 100 : 0;
 
