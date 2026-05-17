@@ -192,7 +192,7 @@
 - 지출/계약서는 추후 페이지 추가 예정 (현재 placeholder)
 
 ### 9.3 시스템 관리 (admin only) — 펼침/접힘
-- 공지/교육 관리, 직원 관리, 사용자 관리, **Sync 관리** (PR-AR), Drive 연결
+- 공지/교육 관리, 직원 관리, 사용자 관리, **Sync 관리** (PR-AR), **인증 채널 모니터** (PR-ET), Drive 연결
 
 ### 9.4 「Sync 관리」 (`/admin/sync`)
 노션 미러 동기화 — 정기 cron은 **업무시간(KST 06~20시) 회피** (KST 20~06시에만 실행).
@@ -201,6 +201,15 @@
 - **전체 sync (full reconcile)** — archive된 row 정리까지 (시간 길어짐)
 - **kind별 sync 버튼** — projects / tasks / clients / master / cashflow / expense / contract_items / sales 개별 실행
 - 표가 10초마다 자동 갱신 — 마지막 시각·건수·에러 확인
+
+### 9.5 「인증 채널 모니터」 (`/admin/auth-stats`)
+Phase 4-G 5차 재시도(cookie 단독 인증 전환) 안전성 판단용 (PR-ES/ET).
+backend in-memory 누적 카운터 — Render restart 시 reset되므로 `since` 표기 확인 필수:
+- **GO** (`cookie_ratio ≥ 0.99`) — 5차 재시도 안전
+- **관찰** (`0.95 ≤ ratio < 0.99`) — 표본 더 모은 후 판단
+- **NO-GO** (`ratio < 0.95`) — cookie 미발급 사용자 잔존, header fallback 의존 → 재시도 시 401 무한 회귀 위험 (PR-EM/EN 4차 사고 패턴)
+- 30초 자동 갱신, since 짧으면(수십 분) 표본 부족 → 운영 1주 이상 관찰 권장
+- 같은 사용자가 자주 호출하면 ratio 왜곡 — 다양한 사용자 활동 패턴 누적이 필요
 
 ## 10. 문의
 
