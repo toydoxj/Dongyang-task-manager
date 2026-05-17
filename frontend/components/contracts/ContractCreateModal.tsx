@@ -43,8 +43,9 @@ export default function ContractCreateModal({
   );
   const [title, setTitle] = useState("원계약서");
   const [signedDate, setSignedDate] = useState("");
-  const [startDate, setStartDate] = useState("");
-  const [endDate, setEndDate] = useState("");
+  // PR-FI/6 fix: 프로젝트 계약기간(contract_start/end)도 prefill — 가상 row에서 등록 시 자주 사용.
+  const [startDate, setStartDate] = useState(initialProject?.contract_start ?? "");
+  const [endDate, setEndDate] = useState(initialProject?.contract_end ?? "");
   const [amount, setAmount] = useState<string>(
     initialProject?.contract_amount != null
       ? String(initialProject.contract_amount)
@@ -76,12 +77,17 @@ export default function ContractCreateModal({
     if (!id) {
       setClientId("");
       setAmount("");
+      setStartDate("");
+      setEndDate("");
       return;
     }
     const p = projects.find((x) => x.id === id);
     if (!p) return;
     setClientId(p.client_relation_ids?.[0] ?? "");
     setAmount(p.contract_amount != null ? String(p.contract_amount) : "");
+    // PR-FI/6 fix: 프로젝트 계약기간도 prefill (수동 변경 가능).
+    setStartDate(p.contract_start ?? "");
+    setEndDate(p.contract_end ?? "");
   };
 
   const reset = (): void => {
