@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 
+import EnsureProjectFolderButton from "@/components/common/EnsureProjectFolderButton";
 import { Field, inputCls } from "@/components/project/_shared";
 import Modal from "@/components/ui/Modal";
 import {
@@ -9,7 +10,7 @@ import {
   updateSealRequest,
   type SealRequestItem,
 } from "@/lib/api";
-import { useClients } from "@/lib/hooks";
+import { useClients, useProject } from "@/lib/hooks";
 
 interface Props {
   item: SealRequestItem;
@@ -88,10 +89,13 @@ export default function SealRequestEditModal({ item, onClose, onSaved }: Props) 
     item.seal_type === "구조도면";
   const isReview = item.seal_type === "구조검토서";
   const isEtc = item.seal_type === "기타";
+  // PR-FW: 프로젝트 폴더 부재 시 만들기 버튼 노출용.
+  const { data: project } = useProject(item.project_ids[0] ?? null);
 
   return (
     <Modal open onClose={onClose} title={`수정 / 재요청 — ${item.seal_type}`} size="md">
       <div className="space-y-3">
+        <EnsureProjectFolderButton project={project} />
         <Field label="검토구분">
           <p className="rounded-md border border-zinc-200 bg-zinc-50 px-2.5 py-1.5 text-sm dark:border-zinc-800 dark:bg-zinc-900">
             {item.seal_type}

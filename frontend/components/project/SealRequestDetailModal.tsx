@@ -8,8 +8,9 @@
  * 일반 직원(member)도 본인 프로젝트의 날인 진행 상황을 확인 가능.
  */
 
+import EnsureProjectFolderButton from "@/components/common/EnsureProjectFolderButton";
 import Modal from "@/components/ui/Modal";
-import { useClients } from "@/lib/hooks";
+import { useClients, useProject } from "@/lib/hooks";
 import type { SealRequestItem } from "@/lib/api";
 import { formatDate, formatDateTime } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -38,10 +39,13 @@ export default function SealRequestDetailModal({
     ? (clients.find((c) => c.id === item.real_source_id)?.name ??
        item.real_source_id)
     : "";
+  // PR-FW: 프로젝트 폴더 부재 시 만들기 버튼 노출용. project_ids 중 첫 element.
+  const { data: project } = useProject(item.project_ids[0] ?? null);
 
   return (
     <Modal open onClose={onClose} title={item.title || "(제목 없음)"} size="lg">
       <div className="space-y-3 text-sm">
+        <EnsureProjectFolderButton project={project} />
         <div className="grid grid-cols-2 gap-3">
           <Info label="날인유형" value={item.seal_type} />
           <Info label="상태">

@@ -13,6 +13,7 @@ import { useMemo, useState } from "react";
 
 import { ProjectPopupLink } from "@/components/common/PopupLinks";
 
+import EnsureProjectFolderButton from "@/components/common/EnsureProjectFolderButton";
 import { ClientSearchSelect } from "@/components/contracts/ContractCreateModal";
 import { Field, inputCls } from "@/components/project/_shared";
 import Modal from "@/components/ui/Modal";
@@ -336,6 +337,8 @@ function Body({
         onToggle={() => setOpenFile((v) => !v)}
       >
         <div className="space-y-2">
+          {/* PR-FW: 프로젝트 폴더 없으면 업로드 전에 만들기 버튼 노출 */}
+          <EnsureProjectFolderButton project={project} />
           {contract.drive_url ? (
             <div className="flex items-center justify-between rounded-md border border-zinc-200 bg-white p-2 text-xs dark:border-zinc-800 dark:bg-zinc-950">
               <div className="min-w-0">
