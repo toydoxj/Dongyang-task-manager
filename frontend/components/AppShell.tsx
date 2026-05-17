@@ -80,6 +80,7 @@ function ShellBody({ children }: { children: React.ReactNode }) {
         </div>
       </div>
       <ProjectDetailModal />
+      <SaleDetailModal />
     </>
   );
 }
