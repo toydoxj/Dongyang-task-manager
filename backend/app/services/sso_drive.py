@@ -469,7 +469,7 @@ async def find_review_folder(
     *,
     settings: Settings | None = None,
 ) -> tuple[str, str] | None:
-    """0.검토자료/YYYYMMDD 폴더가 이미 있으면 (id, url) 반환. 없으면 None.
+    """0. 검토자료/YYYYMMDD 폴더가 이미 있으면 (id, url) 반환. 없으면 None.
 
     생성하지 않음 — 사용자가 [폴더생성] 버튼을 명시 클릭한 경우에만
     ensure_review_folder로 생성. 그 외엔 조회만.
@@ -478,13 +478,14 @@ async def find_review_folder(
     if not project_root_file_id or not ymd:
         return None
     try:
-        # 1) 프로젝트 root 자식 중 "0.검토자료" 찾기
+        # 1) 프로젝트 root 자식 중 "0. 검토자료" 찾기 (구 "0.검토자료" 폴더도 backward-find)
         root_children = await list_children(project_root_file_id, settings=s)
         review = next(
             (
                 f
                 for f in (root_children.get("files") or [])
-                if f.get("fileType") == "FOLDER" and f.get("fileName") == "0.검토자료"
+                if f.get("fileType") == "FOLDER"
+                and f.get("fileName") in ("0. 검토자료", "0.검토자료")
             ),
             None,
         )
@@ -493,7 +494,7 @@ async def find_review_folder(
         review_id = _extract_id(review)
         if not review_id:
             return None
-        # 2) 0.검토자료 자식 중 ymd 폴더 찾기
+        # 2) 0. 검토자료 자식 중 ymd 폴더 찾기
         day_children = await list_children(review_id, settings=s)
         day = next(
             (
@@ -553,7 +554,7 @@ async def ensure_review_folder(
 ) -> tuple[str, str]:
     """프로젝트 폴더 → '0. 검토자료' → 'YYYYMMDD' idempotent 생성.
 
-    docs/request.md: 날인요청 첨부는 `0.검토자료\\YYYYMMDD\\` 하위에 저장.
+    docs/request.md: 날인요청 첨부는 `0. 검토자료\\YYYYMMDD\\` 하위에 저장.
     하루에 여러 요청이 오면 같은 일자 폴더 재사용.
 
     반환: (day_folder_id, day_folder_web_url) — upload_file의 parent로 사용.
@@ -563,8 +564,9 @@ async def ensure_review_folder(
         raise DriveError("project_root_file_id 미지정")
     if not ymd:
         raise DriveError("ymd 미지정")
-    # docs/request.md: 폴더명 정확히 "0.검토자료" (공백 없음)
-    review = await create_folder(s, project_root_file_id, "0.검토자료")
+    # PR-FU: 폴더명 "0. 검토자료" (점 뒤 공백). 옛 "0.검토자료"(공백 없음) 폴더는
+    # find_review_folder가 backward 검색하지만 신규 생성은 신 표기로 통일.
+    review = await create_folder(s, project_root_file_id, "0. 검토자료")
     review_id = _extract_id(review)
     if not review_id:
         raise DriveError("0. 검토자료 폴더 fileId 추출 실패")

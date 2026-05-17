@@ -68,7 +68,7 @@ class DriveChildrenResponse(BaseModel):
 
 
 class ReviewFolderState(BaseModel):
-    """프로젝트의 오늘 날짜 검토자료(0.검토자료/YYYYMMDD) 폴더 상태."""
+    """프로젝트의 오늘 날짜 검토자료(0. 검토자료/YYYYMMDD) 폴더 상태."""
 
     ymd: str  # YYYYMMDD
     exists: bool  # day 폴더 존재 여부 (생성하지 않고 조회만)
@@ -141,7 +141,7 @@ async def create_review_folder(
     _user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> ReviewFolderState:
-    """[폴더생성] 버튼 — 0.검토자료/오늘날짜 폴더 ensure (idempotent).
+    """[폴더생성] 버튼 — 0. 검토자료/오늘날짜 폴더 ensure (idempotent).
 
     프로젝트 root 폴더가 없으면 502.
     """
