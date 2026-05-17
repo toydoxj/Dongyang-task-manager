@@ -11,6 +11,7 @@ import { useAuth } from "@/components/AuthGuard";
 import ExternalQuoteForm, {
   type ExternalQuoteDraft,
 } from "@/components/sales/ExternalQuoteForm";
+import TaskKanban from "@/components/project/TaskKanban";
 import ProjectLinkPicker from "@/components/sales/ProjectLinkPicker";
 import QuoteForm from "@/components/sales/QuoteForm";
 import { Field, TabButton, inputCls } from "@/components/sales/_shared";
@@ -46,7 +47,7 @@ import {
   type Sale,
   type SaleCreateRequest,
 } from "@/lib/domain";
-import { keys, useClients } from "@/lib/hooks";
+import { keys, useClients, useTasks } from "@/lib/hooks";
 import { cn } from "@/lib/utils";
 
 interface Props {
@@ -130,6 +131,15 @@ export default function SalesEditModal({
   const [clientAdding, setClientAdding] = useState(false);
   // 탭 시스템 — 수정 모드도 quote_form_data가 있으면 견적서 탭 활성 (수정/재제출)
   const [activeTab, setActiveTab] = useState<"info" | "quote">("info");
+  // PR-FE: 영업 정보 탭 하단 "관련 TASK" 펼침/접힘. 기본 접힘 — 자주 안 보면 공간 절약.
+  // 신규 등록 모드(sale 없음)에서는 useTasks fetch skip.
+  const [tasksCollapsed, setTasksCollapsed] = useState(true);
+  const saleIdForTasks = sale?.id ?? null;
+  const { data: saleTasksData, mutate: mutateSaleTasks } = useTasks(
+    saleIdForTasks ? { sale_id: saleIdForTasks } : undefined,
+    Boolean(saleIdForTasks),
+  );
+  const saleTasks = saleTasksData?.items ?? [];
   const [quoteInput, setQuoteInput] = useState<QuoteInput>({
     type_rate: 1.0,
     structure_rate: 1.0,
@@ -1337,6 +1347,31 @@ export default function SalesEditModal({
               현재 기대매출: <strong>{sale.expected_revenue.toLocaleString("ko-KR")}원</strong>
               <span className="ml-1 text-[10px] text-zinc-500">(견적금액 × 수주확률/100)</span>
             </div>
+          )}
+
+          {/* PR-FE: 관련 TASK — 펼침/접힘 가능. 영업 page_id를 sale_id 필터로 task fetch.
+              SaleTaskRow와 동일 패턴(TaskKanban). 신규 등록 모드에서는 표시 안 함. */}
+          {isEdit && sale && (
+            <section className="rounded-md border border-emerald-200/70 bg-emerald-50/30 dark:border-emerald-900/40 dark:bg-emerald-950/20">
+              <button
+                type="button"
+                onClick={() => setTasksCollapsed((v) => !v)}
+                className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs font-medium text-emerald-900 hover:bg-emerald-100/40 dark:text-emerald-100 dark:hover:bg-emerald-900/20"
+                aria-expanded={!tasksCollapsed}
+              >
+                <span className="text-zinc-400">{tasksCollapsed ? "▶" : "▼"}</span>
+                <span>관련 TASK</span>
+                <span className="text-[10px] text-zinc-500">{saleTasks.length}건</span>
+              </button>
+              {!tasksCollapsed && (
+                <div className="border-t border-emerald-200/70 p-3 dark:border-emerald-900/40">
+                  <TaskKanban
+                    tasks={saleTasks}
+                    onChanged={() => void mutateSaleTasks()}
+                  />
+                </div>
+              )}
+            </section>
           )}
             </>
           )}
