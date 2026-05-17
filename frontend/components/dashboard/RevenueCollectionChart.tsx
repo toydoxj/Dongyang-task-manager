@@ -48,38 +48,19 @@ function shortWon(v: number): string {
   return "";
 }
 
-function linearRegression(values: number[]): {
-  slope: number;
-  intercept: number;
-} {
-  const n = values.length;
-  if (n === 0) return { slope: 0, intercept: 0 };
-  let sumX = 0;
-  let sumY = 0;
-  let sumXY = 0;
-  let sumX2 = 0;
-  for (let i = 0; i < n; i++) {
-    sumX += i;
-    sumY += values[i];
-    sumXY += i * values[i];
-    sumX2 += i * i;
-  }
-  const denom = n * sumX2 - sumX * sumX;
-  if (denom === 0) return { slope: 0, intercept: sumY / n };
-  const slope = (n * sumXY - sumX * sumY) / denom;
-  const intercept = (sumY - slope * sumX) / n;
-  return { slope, intercept };
-}
-
 function buildBuckets(
   projects: Project[],
   incomes: CashflowEntry[],
   expenses: CashflowEntry[],
   monthsBack: number,
 ): MonthBucket[] {
+  // PR-FJ (사용자 요청, 2026-05-17): 추세선을 선형회귀 → rolling 12개월 평균으로 변경.
+  // 정확한 trailing average를 위해 데이터 윈도우를 2배(24개월)로 만들고 trend 계산 후
+  // 차트에는 마지막 monthsBack(=12)개월만 표시. 가장 옛 월도 직전 12개월 평균 사용 가능.
   const now = new Date();
+  const windowSize = monthsBack * 2;
   const keys: string[] = [];
-  for (let i = monthsBack - 1; i >= 0; i--) {
+  for (let i = windowSize - 1; i >= 0; i--) {
     const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
     keys.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`);
   }
@@ -112,21 +93,19 @@ function buildBuckets(
     if (b) b.expense += e.amount;
   }
 
-  // 선형회귀 — 시리즈별로 12개월 전체를 회귀해 trend 값을 계산
+  // Rolling 12개월 평균 — 각 월 시점의 그 월 포함 직전 monthsBack개월 평균.
+  // 윈도우의 첫 monthsBack-1 월은 차트에 표시 안 됨 (trend 계산 source로만 사용).
   const ordered = keys.map((k) => idx.get(k)!);
-  const revenues = ordered.map((b) => b.revenue);
-  const collections = ordered.map((b) => b.collection);
-  const expensesArr = ordered.map((b) => b.expense);
-  const r = linearRegression(revenues);
-  const c = linearRegression(collections);
-  const x = linearRegression(expensesArr);
   ordered.forEach((b, i) => {
-    // 회귀선은 음수도 그대로 — 하락 추세를 사실대로 표현
-    b.revenueTrend = r.intercept + r.slope * i;
-    b.collectionTrend = c.intercept + c.slope * i;
-    b.expenseTrend = x.intercept + x.slope * i;
+    const start = Math.max(0, i - monthsBack + 1);
+    const slice = ordered.slice(start, i + 1);
+    const n = slice.length;
+    b.revenueTrend = slice.reduce((s, x) => s + x.revenue, 0) / n;
+    b.collectionTrend = slice.reduce((s, x) => s + x.collection, 0) / n;
+    b.expenseTrend = slice.reduce((s, x) => s + x.expense, 0) / n;
   });
-  return ordered;
+  // 차트 표시는 마지막 monthsBack 월만 (앞 monthsBack 월은 trend 계산 보조).
+  return ordered.slice(-monthsBack);
 }
 
 export default function RevenueCollectionChart({
@@ -143,7 +122,7 @@ export default function RevenueCollectionChart({
         <div>
           <h3 className="text-sm font-semibold">월별 수주 / 수금 / 지출 추이</h3>
           <p className="text-[11px] text-zinc-500">
-            막대 = 월별 실적, 점선 = 12개월 선형회귀 추세선
+            막대 = 월별 실적, 점선 = 직전 12개월 rolling 평균
           </p>
         </div>
         <span className="text-[11px] text-zinc-500">최근 {monthsBack}개월</span>
