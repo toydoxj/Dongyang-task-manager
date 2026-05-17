@@ -30,7 +30,11 @@ export default function MySalesSection({
   const [editing, setEditing] = useState<Sale | null>(null);
   const [creating, setCreating] = useState(false);
 
-  const sales = data?.items ?? [];
+  // PR-FI/10 (사용자 요청): 완료·종결 영업은 /me 화면에서 제외.
+  // 운영 list (/sales)와 영업 상세는 별도 — 거기서는 그대로 보임.
+  const sales = (data?.items ?? []).filter(
+    (s) => s.stage !== "완료" && s.stage !== "종결",
+  );
   const bid = sales.filter((s) => s.kind === "수주영업");
   const presales = sales.filter((s) => s.kind === "기술지원");
   const other = sales.filter(
