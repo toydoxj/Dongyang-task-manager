@@ -50,3 +50,6 @@ export * from "./api/adminSync";
 
 // ── 대시보드 집계 (PR-BJ Phase 4-F — lib/api/dashboard.ts)
 export * from "./api/dashboard";
+
+// ── 인증 채널 모니터링 (PR-ES Phase 4-G 5차 — lib/api/authStats.ts)
+export * from "./api/authStats";
