@@ -5,6 +5,7 @@ import { Suspense, useState } from "react";
 
 import AuthGuard from "./AuthGuard";
 import ProjectDetailModal from "./common/ProjectDetailModal";
+import SaleDetailModal from "./common/SaleDetailModal";
 import Sidebar from "./Sidebar";
 
 /**
@@ -26,6 +27,7 @@ function ShellBody({ children }: { children: React.ReactNode }) {
           {children}
         </main>
         <ProjectDetailModal />
+        <SaleDetailModal />
       </>
     );
   }

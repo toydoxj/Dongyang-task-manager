@@ -290,6 +290,16 @@
   - **개선 필요한 graceful fallback 설계** — verifyAndHydrateFromMe가 401 vs network을 호출처에 구별 전달하도록 시그니처 보강 (`{user: UserInfo | null, reason: 'ok' | 'unauthorized' | 'network'}`). AuthGuard는 401이면 silent SSO trigger, network이면 stale user 유지. 다음 재시도 전 PR-CY 패턴 보강이 선행돼야 함
 - 추적: PR-EN revert `b752a40` / PR-EM revert `7ea0824` / 누적 4차 시도 회귀(PR-BI / PR-BP/BQ / 이번 PR-EM/EN)
 
+### 2026-05-17 — AppShell root에서 `useSearchParams()` 호출 → `/_not-found` prerender CSR bailout
+- 컨텍스트: PR-FQ에서 popup window가 사이드바 없이 표시되도록 AppShell에 `useSearchParams()?.get("popup")` 분기 추가. PR-FR(글로벌 프로젝트 모달)과 함께 commit `41a41ab`로 origin/main에 push
+- 증상: Vercel build 실패 — `useSearchParams() should be wrapped in a suspense boundary at page "/404". Read more: https://nextjs.org/docs/messages/missing-suspense-with-csr-bailout` + `Error occurred prerendering page "/_not-found"` → `Export encountered an error on /_not-found/page` → `Command "npm run build" exited with 1`
+- 원인: Next.js 16의 `useSearchParams()`는 prerender 시 Suspense boundary 안에 있어야 함. AppShell이 root layout에서 children을 wrap하므로, AppShell 직접 호출은 모든 static page 경로(`/_not-found` 포함)의 prerender를 CSR로 bail out → static export 자체 차단. local `npm run dev`로는 발견 못 함 — production build에서만 노출됨
+- 해결: AppShell의 useSearchParams 사용 부분을 `ShellBody` inner 컴포넌트로 분리하고 `<Suspense fallback={...}><ShellBody>{children}</ShellBody></Suspense>`로 wrap (`b68d02b`). fallback은 빈 배경 div — 대다수 진입에서 popup query가 없으므로 깜빡임 미미. local `npm run build`로 27 페이지 export 정상 재현 후 push
+- 재발 방지:
+  - **layout/AppShell처럼 모든 페이지를 감싸는 root 컴포넌트에서 `useSearchParams()`/`usePathname()`/`useParams()`를 직접 호출 금지.** 사용해야 한다면 항상 Suspense로 격리된 inner 컴포넌트로 분리
+  - **새 root-level dynamic hook 추가 시 push 전에 `npm run build` 1회 실행 필수.** dev 서버는 prerender 단계를 거치지 않아 이 카테고리 에러가 감춰짐 (CI에 `npm run build`가 없으면 더 위험)
+  - Next.js 16 docs `missing-suspense-with-csr-bailout` 페이지 참조
+
 ### 2026-05-06 — Render Blueprint(`render.yaml`)의 `plan` 필드가 dashboard 변경을 덮어씀
 - 컨텍스트: 운영자가 backend hang 진단 도중 dashboard에서 `dy-task-backend`의 plan을 starter → standard로 변경. 이후 무관한 backend 코드 fix(`e235eaa`: cron 분산 + slow request 미들웨어)를 push했더니 운영자가 "render.yaml이 standard를 starter로 되돌리고 있는 거 아닌가?" 발견
 - 증상: dashboard 변경이 사용자 모르게 매 deploy 시 원복. 운영자 불신 + plan 변경이 무효화되는 silent 문제

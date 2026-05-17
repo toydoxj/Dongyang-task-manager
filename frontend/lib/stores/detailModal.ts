@@ -14,39 +14,69 @@
 import { useSyncExternalStore } from "react";
 
 let _projectId: string | null = null;
-const listeners = new Set<() => void>();
+let _saleId: string | null = null;
+const projectListeners = new Set<() => void>();
+const saleListeners = new Set<() => void>();
 
-function subscribe(cb: () => void): () => void {
-  listeners.add(cb);
+function subscribeProject(cb: () => void): () => void {
+  projectListeners.add(cb);
   return () => {
-    listeners.delete(cb);
+    projectListeners.delete(cb);
+  };
+}
+function subscribeSale(cb: () => void): () => void {
+  saleListeners.add(cb);
+  return () => {
+    saleListeners.delete(cb);
   };
 }
 
-function getSnapshot(): string | null {
+function getProjectSnapshot(): string | null {
   return _projectId;
+}
+function getSaleSnapshot(): string | null {
+  return _saleId;
 }
 
 function getServerSnapshot(): string | null {
   return null;
 }
 
-function notify(): void {
-  for (const l of listeners) l();
+function notifyProject(): void {
+  for (const l of projectListeners) l();
+}
+function notifySale(): void {
+  for (const l of saleListeners) l();
 }
 
 export function openProjectModal(id: string): void {
   if (!id) return;
   _projectId = id;
-  notify();
+  notifyProject();
 }
 
 export function closeProjectModal(): void {
   _projectId = null;
-  notify();
+  notifyProject();
 }
 
 /** 현재 열린 프로젝트 모달 id (없으면 null). */
 export function useProjectModalId(): string | null {
-  return useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
+  return useSyncExternalStore(subscribeProject, getProjectSnapshot, getServerSnapshot);
+}
+
+export function openSaleModal(id: string): void {
+  if (!id) return;
+  _saleId = id;
+  notifySale();
+}
+
+export function closeSaleModal(): void {
+  _saleId = null;
+  notifySale();
+}
+
+/** 현재 열린 영업 모달 id (없으면 null). */
+export function useSaleModalId(): string | null {
+  return useSyncExternalStore(subscribeSale, getSaleSnapshot, getServerSnapshot);
 }

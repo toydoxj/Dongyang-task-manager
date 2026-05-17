@@ -13,7 +13,7 @@
 
 import type React from "react";
 
-import { openProjectModal } from "@/lib/stores/detailModal";
+import { openProjectModal, openSaleModal } from "@/lib/stores/detailModal";
 import { cn } from "@/lib/utils";
 
 // PR-FP fix: features에 noopener/noreferrer가 있으면 Chrome이 popup 무시 + 새 탭 처리.
@@ -112,6 +112,8 @@ export function SalePopupLink({
   stopPropagation = true,
 }: SalePopupLinkProps) {
   if (!id) return <>{children}</>;
+  // PR-FS: 별도 윈도우 팝업 대신 글로벌 모달 store로 표시. href는 SEO/접근성용.
+  // from referrer는 modal context에선 의미가 약해 일단 무시.
   const fromPath = from ?? "/";
   const href = `/sales?sale=${encodeURIComponent(id)}&from=${encodeURIComponent(fromPath)}`;
   return (
@@ -120,7 +122,7 @@ export function SalePopupLink({
       onClick={(e) => {
         if (stopPropagation) e.stopPropagation();
         e.preventDefault();
-        openInPopup(href);
+        openSaleModal(id);
         onAfterClick?.();
       }}
       className={cn(
