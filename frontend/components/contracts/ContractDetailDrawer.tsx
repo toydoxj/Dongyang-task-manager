@@ -81,6 +81,8 @@ function Body({
   const [savingMeta, setSavingMeta] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // PR-FZ: 드래그 시 dropzone 시각 강조용.
+  const [dragOver, setDragOver] = useState(false);
 
   // PR-FI/5: 프로젝트 발주처·계약금액과 다를 시 경고용.
   const { data: project } = useProject(contract.project_id);
@@ -148,11 +150,8 @@ function Body({
     }
   };
 
-  const handleUpload = async (
-    e: React.ChangeEvent<HTMLInputElement>,
-  ): Promise<void> => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  // PR-FZ: input change + drag&drop 공통 업로드 코어.
+  const uploadFile = async (file: File): Promise<void> => {
     setBusy(true);
     setError(null);
     try {
@@ -162,8 +161,28 @@ function Body({
       setError(err instanceof Error ? err.message : String(err));
     } finally {
       setBusy(false);
-      e.target.value = "";
     }
+  };
+
+  const handleUpload = async (
+    e: React.ChangeEvent<HTMLInputElement>,
+  ): Promise<void> => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    await uploadFile(file);
+    e.target.value = "";
+  };
+
+  // PR-FZ: 드래그 업로드 — dropzone 위에 파일 드롭 시 즉시 업로드.
+  const handleDrop = async (
+    e: React.DragEvent<HTMLLabelElement>,
+  ): Promise<void> => {
+    e.preventDefault();
+    setDragOver(false);
+    if (busy) return;
+    const file = e.dataTransfer.files?.[0];
+    if (!file) return;
+    await uploadFile(file);
   };
 
   const handleDeleteFile = async (): Promise<void> => {
@@ -370,11 +389,20 @@ function Body({
             <p className="text-xs text-zinc-500">첨부된 파일이 없습니다.</p>
           )}
           {/* PR-FY: 시인성 강화 — 브라우저 기본 file input 대신 점선 dropzone 버튼. */}
+          {/* PR-FZ: 드래그 앤 드롭 업로드 지원 (label 위에 파일 떨굼). */}
           <label
+            onDragOver={(e) => {
+              e.preventDefault();
+              if (!busy) setDragOver(true);
+            }}
+            onDragLeave={() => setDragOver(false)}
+            onDrop={handleDrop}
             className={cn(
               "flex cursor-pointer items-center justify-center gap-2 rounded-md border-2 border-dashed px-4 py-3 text-sm transition-colors",
               busy
                 ? "cursor-wait border-zinc-300 bg-zinc-50 text-zinc-400 dark:border-zinc-700 dark:bg-zinc-900"
+                : dragOver
+                ? "border-blue-500 bg-blue-100 text-blue-800 dark:border-blue-400 dark:bg-blue-950/50 dark:text-blue-200"
                 : "border-zinc-300 bg-zinc-50 text-zinc-700 hover:border-blue-400 hover:bg-blue-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200 dark:hover:border-blue-500 dark:hover:bg-blue-950/30",
             )}
           >
@@ -393,9 +421,11 @@ function Body({
             <span>
               {busy
                 ? "업로드 중…"
+                : dragOver
+                ? "여기에 놓아 업로드"
                 : contract.drive_url
-                ? "새 파일 업로드 (기존 파일 교체)"
-                : "파일 업로드 (클릭하여 선택)"}
+                ? "클릭 또는 파일을 드래그해 업로드 (기존 파일 교체)"
+                : "클릭 또는 파일을 드래그해 업로드"}
             </span>
             <input
               type="file"
