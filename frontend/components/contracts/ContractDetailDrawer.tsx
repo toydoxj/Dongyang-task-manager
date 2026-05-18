@@ -116,7 +116,7 @@ function Body({
     setSavingMeta(true);
     setError(null);
     try {
-      await patchContract(contract.id, {
+      const updated = await patchContract(contract.id, {
         title: title.trim(),
         client_id: clientId || null,
         signed_date: signedDate || null,
@@ -146,7 +146,8 @@ function Body({
       }
       setUpdateProjectClient(false);
       setUpdateProjectAmount(false);
-      onChanged();
+      // PR-GD: 갱신된 contract 전달 — modal stale view 회피.
+      onChanged(updated);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -196,8 +197,11 @@ function Body({
     setBusy(true);
     setError(null);
     try {
-      await deleteContractFile(contract.id);
-      onChanged();
+      // PR-GD: deleteContractFile 응답으로 갱신 contract 받아 onChanged에 전달.
+      // 이전엔 onChanged()만 호출해 list mutate는 됐지만 editing state는 stale →
+      // modal에 「다운로드」 버튼이 그대로 보여 사용자가 새로고침해야 반영되는 회귀.
+      const updated = await deleteContractFile(contract.id);
+      onChanged(updated);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
