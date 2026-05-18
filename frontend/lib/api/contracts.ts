@@ -91,6 +91,14 @@ export async function deleteContract(id: number): Promise<void> {
   }
 }
 
+/** PR-GE: 임시 signed URL 받아오기 (NAVER WORKS Drive 권한 우회). */
+export async function getContractDownloadUrl(
+  id: number,
+): Promise<{ url: string; name: string }> {
+  const res = await authFetch(`/api/contracts/${id}/file/download`);
+  return jsonOrThrow<{ url: string; name: string }>(res);
+}
+
 export async function uploadContractFile(
   id: number,
   file: File,

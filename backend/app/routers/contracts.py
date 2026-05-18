@@ -420,6 +420,31 @@ async def delete_contract(
     await _sync_project_contract_fields(db, notion, project_id)
 
 
+@router.get("/{contract_id}/file/download")
+async def get_contract_file_download_url(
+    contract_id: int,
+    _user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict[str, str]:
+    """PR-GE: 날인요청 패턴과 동일 — backend가 sso_drive.get_download_url로
+    임시 signed URL 발급 → frontend가 `<a>` 다운로드.
+
+    drive_url(share/folder 패턴)을 직접 클릭하면 NAVER WORKS Drive 권한이
+    없는 사용자는 거부됨. 이 endpoint를 거치면 temporary URL이라 권한 우회.
+    모든 로그인 사용자 read 가능 (계약 list 권한과 일관).
+    """
+    row = db.get(Contract, contract_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="계약서를 찾을 수 없습니다")
+    if not row.drive_file_id:
+        raise HTTPException(status_code=404, detail="첨부된 파일이 없습니다")
+    try:
+        url = await sso_drive.get_download_url(row.drive_file_id)
+    except sso_drive.DriveError as e:
+        raise HTTPException(status_code=500, detail=str(e)) from e
+    return {"url": url, "name": row.file_name or f"contract_{contract_id}"}
+
+
 @router.post("/{contract_id}/file", response_model=ContractOut)
 async def upload_contract_file(
     contract_id: int,

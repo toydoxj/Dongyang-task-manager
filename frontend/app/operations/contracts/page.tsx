@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 
 import UnauthorizedRedirect from "@/components/UnauthorizedRedirect";
 import LoadingState from "@/components/ui/LoadingState";
+import { getContractDownloadUrl } from "@/lib/api";
 import type { Contract } from "@/lib/domain";
 import { useClients, useContracts, useProjects } from "@/lib/hooks";
 import { useRoleGuard } from "@/lib/useRoleGuard";
@@ -402,16 +403,25 @@ export default function ContractsAdminPage() {
                     </td>
                     <td className="px-2 py-2 text-center">
                       {c.drive_url ? (
-                        <a
-                          href={c.drive_url}
-                          target="_blank"
-                          rel="noreferrer"
-                          onClick={(e) => e.stopPropagation()}
+                        <button
+                          type="button"
+                          onClick={async (e) => {
+                            e.stopPropagation();
+                            try {
+                              const r = await getContractDownloadUrl(c.id);
+                              const a = document.createElement("a");
+                              a.href = r.url;
+                              a.download = r.name;
+                              a.click();
+                            } catch (err) {
+                              alert(err instanceof Error ? err.message : "다운로드 실패");
+                            }
+                          }}
                           className="rounded bg-blue-500/10 px-2 py-0.5 text-[10px] text-blue-700 hover:bg-blue-500/20 dark:text-blue-400"
                           title={c.file_name ?? ""}
                         >
                           다운로드
-                        </a>
+                        </button>
                       ) : (
                         <span className="text-[10px] text-zinc-400">
                           {isVirtual ? "미등록" : "미첨부"}

@@ -20,6 +20,7 @@ import Modal from "@/components/ui/Modal";
 import {
   deleteContract,
   deleteContractFile,
+  getContractDownloadUrl,
   patchContract,
   updateProject,
   uploadContractFile,
@@ -372,14 +373,24 @@ function Body({
           {contract.drive_url ? (
             <div className="flex items-center justify-between rounded-md border border-zinc-200 bg-white p-2 text-xs dark:border-zinc-800 dark:bg-zinc-950">
               <div className="min-w-0">
-                <a
-                  href={contract.drive_url}
-                  target="_blank"
-                  rel="noreferrer"
+                {/* PR-GE: 날인 패턴 — backend가 임시 signed URL 발급. drive_url 직접 클릭 시 NAVER Drive 권한 거부 회피. */}
+                <button
+                  type="button"
+                  onClick={async () => {
+                    try {
+                      const r = await getContractDownloadUrl(contract.id);
+                      const a = document.createElement("a");
+                      a.href = r.url;
+                      a.download = r.name;
+                      a.click();
+                    } catch (e) {
+                      alert(e instanceof Error ? e.message : "다운로드 실패");
+                    }
+                  }}
                   className="font-medium text-blue-600 hover:underline dark:text-blue-400"
                 >
                   {contract.file_name || "(파일명 없음)"}
-                </a>
+                </button>
                 {contract.uploaded_at && (
                   <p className="mt-0.5 text-[10px] text-zinc-500">
                     업로드: {contract.uploaded_at.slice(0, 10)}
