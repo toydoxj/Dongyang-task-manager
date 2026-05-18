@@ -290,6 +290,19 @@
   - **개선 필요한 graceful fallback 설계** — verifyAndHydrateFromMe가 401 vs network을 호출처에 구별 전달하도록 시그니처 보강 (`{user: UserInfo | null, reason: 'ok' | 'unauthorized' | 'network'}`). AuthGuard는 401이면 silent SSO trigger, network이면 stale user 유지. 다음 재시도 전 PR-CY 패턴 보강이 선행돼야 함
 - 추적: PR-EN revert `b752a40` / PR-EM revert `7ea0824` / 누적 4차 시도 회귀(PR-BI / PR-BP/BQ / 이번 PR-EM/EN)
 
+### 2026-05-18 — 계약서 업로드 후 drive_url 빈 문자열 — NAVER WORKS Drive 응답에 fileUrl/webUrl 키 없음
+- 컨텍스트: 계약서 PDF 업로드 (PR-FH/1). backend POST /api/contracts/{id}/file이 200 + Drive 저장 성공, frontend는 modal stale 진단으로 PR-GA(setEditing) + PR-GB(force-remount key) 두 차례 수정해도 그대로
+- 증상: modal에 「첨부된 파일이 없습니다」 그대로. backend log POST 200 + 875바이트 응답. 사용자 "drive_url이 안 보여"
+- 원인: NAVER WORKS Drive API는 list_children/upload 응답에 `fileUrl`/`webUrl` 키를 안 줌 (별도 `_extract_url` 또는 `build_file_web_url`로 share URL 패턴 조립해야). 그런데 `upload_contract_file`이 `upload_result.get("fileUrl") or upload_result.get("webUrl") or ""`로만 추출 → 항상 빈 문자열 → DB에 drive_url="" 저장 → frontend `contract.drive_url ? (...)` falsy 처리로 「첨부 없음」 표시
+- 해결:
+  1) upload_contract_file의 new_file_url에 `sso_drive.build_file_web_url(new_file_id, upload_result.get("resourceLocation"))` fallback 추가
+  2) `_backfill_drive_url(row)` helper — 옛 row의 drive_url이 빈 문자열이고 drive_file_id가 있으면 응답 직전 in-memory 조립 (DB UPDATE는 안 함). `_enrich_with_project`가 매 row마다 호출 → 운영 기존 contract도 자동 회복
+  3) PR-GA/GB의 frontend stale fix는 결과적으로 무용지물이었지만 일반적인 patch라 유지
+- 재발 방지:
+  - NAVER WORKS Drive API 패턴 — 모든 file/folder 응답엔 webUrl/fileUrl 없음. 항상 sso_drive의 `_extract_url` (폴더) 또는 `build_file_web_url` (파일/폴더 ID 기반)로 조립
+  - "내가 만든 컬럼이 빈 문자열로 저장됐는데 truthy 체크"라는 패턴은 항상 의심. backend response body JSON을 직접 확인하는 게 frontend 디버깅보다 우선 (Network 탭 또는 curl)
+  - upload 같은 외부 API integration은 PoC에서 응답 구조를 dump해서 docs/api_notes 같은 곳에 기록 → 추측 회피
+
 ### 2026-05-17 — AppShell root에서 `useSearchParams()` 호출 → `/_not-found` prerender CSR bailout
 - 컨텍스트: PR-FQ에서 popup window가 사이드바 없이 표시되도록 AppShell에 `useSearchParams()?.get("popup")` 분기 추가. PR-FR(글로벌 프로젝트 모달)과 함께 commit `41a41ab`로 origin/main에 push
 - 증상: Vercel build 실패 — `useSearchParams() should be wrapped in a suspense boundary at page "/404". Read more: https://nextjs.org/docs/messages/missing-suspense-with-csr-bailout` + `Error occurred prerendering page "/_not-found"` → `Export encountered an error on /_not-found/page` → `Command "npm run build" exited with 1`

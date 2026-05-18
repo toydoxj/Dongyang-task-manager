@@ -66,6 +66,16 @@ def _utcnow() -> datetime:
     return datetime.now(timezone.utc)
 
 
+def _backfill_drive_url(row: Contract) -> None:
+    """PR-GC: 옛 row의 drive_url이 비어있고 drive_file_id가 있으면 URL 조립.
+
+    이전 코드는 upload 시 drive_url을 빈 문자열로 저장하는 버그가 있었음.
+    응답 직전에 in-memory로 조립 (DB UPDATE는 안 함 — 다음 upload나 별도 backfill에 위임).
+    """
+    if not row.drive_url and row.drive_file_id:
+        row.drive_url = sso_drive.build_file_web_url(row.drive_file_id, None)
+
+
 def _enrich_with_project(
     db: Session, rows: list[Contract]
 ) -> list[ContractOut]:
@@ -97,6 +107,8 @@ def _enrich_with_project(
 
     out: list[ContractOut] = []
     for r in rows:
+        # PR-GC: 옛 row(drive_url 빈 문자열) backfill — in-memory만, DB 변경 없음.
+        _backfill_drive_url(r)
         item = ContractOut.model_validate(r)
         proj = project_map.get(r.project_id)
         if proj is not None:
@@ -454,7 +466,14 @@ async def upload_contract_file(
         or upload_result.get("file", {}).get("fileId")
         or ""
     )
-    new_file_url = upload_result.get("fileUrl") or upload_result.get("webUrl") or ""
+    # PR-GC fix: NAVER WORKS Drive 응답엔 fileUrl/webUrl 키가 없음 — share URL 패턴
+    # 으로 직접 조립 (sso_drive.build_file_web_url). 이전엔 빈 문자열로 저장되어
+    # frontend가 falsy 처리 → 「첨부 없음」 표시되는 회귀.
+    new_file_url = (
+        upload_result.get("fileUrl")
+        or upload_result.get("webUrl")
+        or sso_drive.build_file_web_url(new_file_id, upload_result.get("resourceLocation"))
+    )
 
     old_file_id = row.drive_file_id
     try:
