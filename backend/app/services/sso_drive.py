@@ -515,6 +515,11 @@ async def find_review_folder(
         return None
 
 
+# PR-GI/3: 견적서 year folder in-memory cache. process 단위, key=(sharedrive_id, root_folder_id, year).
+# 1년에 1번 생성되므로 process restart 시 reset로 충분 (invalidate 안 함).
+_QUOTE_YEAR_FOLDER_CACHE: dict[tuple[str, str, int], tuple[str, str]] = {}
+
+
 async def ensure_quote_year_folder(
     year_yyyy: int,
     *,
@@ -524,6 +529,9 @@ async def ensure_quote_year_folder(
 
     settings.works_drive_quote_root_folder_id ([견적서] 폴더 fileId) 아래에
     "{YYYY}년" 폴더를 만들거나 기존 것을 재사용 — create_folder의 409 fallback.
+
+    PR-GI/3: in-memory cache — 동일 process에서 두 번째 호출부터 NAVER round-trip
+    회피 (~1초 절감/upload).
 
     반환: (year_folder_id, year_folder_web_url) — upload_file의 parent로 사용.
     """
@@ -536,6 +544,15 @@ async def ensure_quote_year_folder(
         raise DriveError(
             "WORKS_DRIVE_QUOTE_ROOT_FOLDER_ID 미설정 — [견적서] 폴더 fileId 필요"
         )
+    cache_key = (
+        s.works_drive_sharedrive_id,
+        s.works_drive_quote_root_folder_id,
+        year_yyyy,
+    )
+    cached = _QUOTE_YEAR_FOLDER_CACHE.get(cache_key)
+    if cached:
+        logger.info("quote year folder cache HIT year=%s", year_yyyy)
+        return cached
     folder_name = f"{year_yyyy}년"
     year_meta = await create_folder(
         s, s.works_drive_quote_root_folder_id, folder_name
@@ -543,7 +560,10 @@ async def ensure_quote_year_folder(
     year_id = _extract_id(year_meta)
     if not year_id:
         raise DriveError(f"{folder_name} 폴더 fileId 추출 실패")
-    return year_id, _extract_url(year_meta)
+    result = (year_id, _extract_url(year_meta))
+    _QUOTE_YEAR_FOLDER_CACHE[cache_key] = result
+    logger.info("quote year folder cache MISS year=%s folder_id=%s", year_yyyy, year_id)
+    return result
 
 
 async def ensure_review_folder(
@@ -670,7 +690,11 @@ async def upload_file(
     sd = s.works_drive_sharedrive_id
     file_size = len(content)
 
+    # PR-GI/4: 측정 로깅 — 각 단계 elapsed 추적. 운영 deploy 후 cache 효과 검증.
+    import time as _time
+
     # 1단계: 메타 등록 → uploadUrl
+    t1 = _time.monotonic()
     body = await _api(
         s,
         "POST",
@@ -681,11 +705,13 @@ async def upload_file(
             "suffixOnDuplicate": True,
         },
     )
+    step1_elapsed = _time.monotonic() - t1
     upload_url = body.get("uploadUrl") if isinstance(body, dict) else None
     if not upload_url:
         raise DriveError(f"업로드 1단계 응답에 uploadUrl 없음: {file_name}")
 
     # 2단계: uploadUrl에 raw bytes PUT (Bearer 헤더 필수)
+    t2 = _time.monotonic()
     token = await _get_valid_access_token(s)
     headers = {
         "Authorization": f"Bearer {token}",
@@ -705,9 +731,11 @@ async def upload_file(
             put_resp.text[:300],
         )
         raise DriveError(f"파일 업로드 실패 ({put_resp.status_code})")
+    step2_elapsed = _time.monotonic() - t2
 
     # 3단계: 메타 추출은 어렵 (suffixOnDuplicate 시 이름 변경됨). list로 가장 최근 매칭 시도.
     # 이름 prefix 매칭으로 추정. 실패해도 OK (UI는 list 갱신만 하면 됨)
+    t3 = _time.monotonic()
     try:
         listing = await list_children(parent_file_id, settings=s, count=200)
         items = listing.get("files") or []
@@ -721,12 +749,31 @@ async def upload_file(
                 and it["fileName"].startswith(file_name.rsplit(".", 1)[0])
             )
         ]
+        step3_elapsed = _time.monotonic() - t3
+        logger.info(
+            "upload_file timing file=%s size=%d step1=%.2fs step2=%.2fs step3=%.2fs total=%.2fs",
+            file_name,
+            file_size,
+            step1_elapsed,
+            step2_elapsed,
+            step3_elapsed,
+            step1_elapsed + step2_elapsed + step3_elapsed,
+        )
         if candidates:
             return max(
                 candidates, key=lambda it: it.get("modifiedTime", "") or ""
             )
     except DriveError:
-        pass
+        step3_elapsed = _time.monotonic() - t3
+        logger.info(
+            "upload_file timing file=%s size=%d step1=%.2fs step2=%.2fs step3=%.2fs(failed) total=%.2fs",
+            file_name,
+            file_size,
+            step1_elapsed,
+            step2_elapsed,
+            step3_elapsed,
+            step1_elapsed + step2_elapsed + step3_elapsed,
+        )
     return {"fileName": file_name, "fileSize": file_size}
 
 

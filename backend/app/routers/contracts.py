@@ -18,6 +18,7 @@ Contract ↔ Project 동기화 (PR-FI/1):
 from __future__ import annotations
 
 import logging
+import time
 from datetime import date, datetime, timezone
 from typing import Any
 
@@ -151,6 +152,9 @@ async def _resolve_project_contract_folder(
 
     `ensure_project_folder + find_child_folder` 조합으로 idempotent 보장.
     누락 시 self-heal (재생성).
+
+    PR-GI/2: mirror_projects.contract_folder_id 캐시 적용 — cache hit 시
+    list_children 1회 회피(~2초 절감). miss/empty 시 sso_drive로 resolve 후 set.
     """
     proj = db.get(MirrorProject, project_id)
     if proj is None:
@@ -159,9 +163,30 @@ async def _resolve_project_contract_folder(
         raise sso_drive.DriveError(
             f"프로젝트 {project_id} 의 code/name 비어있음 (Drive 폴더 생성 불가)"
         )
-    return await sso_drive.find_or_create_project_subfolder(
+    # cache hit
+    if proj.contract_folder_id:
+        logger.info(
+            "contract sub-folder cache HIT project=%s folder_id=%s",
+            project_id,
+            proj.contract_folder_id,
+        )
+        return proj.contract_folder_id
+    # cache miss → resolve + persist
+    t0 = time.monotonic()
+    sub_id = await sso_drive.find_or_create_project_subfolder(
         proj.code, proj.name, _CONTRACTS_SUB_FOLDER
     )
+    elapsed = time.monotonic() - t0
+    if sub_id:
+        proj.contract_folder_id = sub_id
+        db.commit()
+    logger.info(
+        "contract sub-folder cache MISS project=%s folder_id=%s resolve_elapsed=%.2fs",
+        project_id,
+        sub_id,
+        elapsed,
+    )
+    return sub_id
 
 
 def _get_project_code(db: Session, project_id: str) -> str:
