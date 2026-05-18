@@ -438,6 +438,11 @@ export default function ContractsAdminPage() {
         }}
       />
       <ContractDetailDrawer
+        // PR-GB: contract.drive_url을 key에 포함 → 파일 업로드/삭제 시 modal 자체
+        //   force-remount. Body 내부 useState 초기값이 prop을 받는 패턴이라
+        //   prop 갱신만으론 일부 cell이 stale로 남는 케이스 방어.
+        //   사용자가 메타 편집 중 업로드하면 입력값 reset되지만 (드물고 직관적).
+        key={editing ? `${editing.id}-${editing.drive_url ?? "no"}` : "closed"}
         contract={editing}
         onClose={() => setEditing(null)}
         onChanged={(updated) => {
