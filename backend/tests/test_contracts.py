@@ -59,8 +59,8 @@ def _stub_mirror_projects(monkeypatch):
         # 그래도 fallback으로 stub 등록.
         return f"sub-folder-{project_id}"
 
-    async def stub_sync_project(db, notion, project_id):
-        # 노션 sync는 별 fixture에서 호출 횟수만 추적 — 여기서는 no-op.
+    async def stub_sync_project(db, project_id):
+        # PR-GF: notion 인자 제거 (lazy 획득으로 변경됨). 호출 횟수만 추적.
         _SYNC_CALL_LOG.append(project_id)
 
     def stub_enrich(db, rows):

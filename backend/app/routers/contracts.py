@@ -45,7 +45,7 @@ from app.models.contract import (
 from app.models.mirror import MirrorClient, MirrorProject
 from app.security import get_current_user, require_editor
 from app.services import sso_drive
-from app.services.notion import NotionService, get_notion
+from app.services.notion import get_notion
 from app.services.sync import get_sync
 
 logger = logging.getLogger("contracts")
@@ -206,7 +206,7 @@ def _aggregate_project_contract_state(
 
 
 async def _sync_project_contract_fields(
-    db: Session, notion: NotionService, project_id: str
+    db: Session, project_id: str
 ) -> None:
     """Contract CUD 후 mirror_projects + 노션 Project 페이지의 계약 필드 sync.
 
@@ -215,6 +215,8 @@ async def _sync_project_contract_fields(
     - 노션 컬럼명: "계약" (checkbox) / "계약기간" (date range).
 
     실패는 silent log (부분 성공 — Contract 저장은 이미 commit, Codex 협의).
+    PR-GF: notion service를 함수 내부에서 lazy 얻음. Depends(get_notion)으로 받으면
+    NOTION_API_KEY 없는 환경(CI/test)에서 endpoint 진입 자체가 502로 차단됨.
     """
     try:
         has_signed, start, end = _aggregate_project_contract_state(
@@ -246,6 +248,8 @@ async def _sync_project_contract_fields(
         if not props:
             return
 
+        # PR-GF: 노션 service lazy 획득 (NOTION_API_KEY 없으면 NotionApiError → 아래 except로).
+        notion = get_notion()
         page = await notion.update_page(project_id, props)
         get_sync().upsert_page("projects", page)
         logger.info(
@@ -325,7 +329,6 @@ async def create_contract(
     body: ContractCreate,
     user: User = Depends(require_editor),
     db: Session = Depends(get_db),
-    notion: NotionService = Depends(get_notion),
 ) -> ContractOut:
     _ensure_project_exists(db, body.project_id)
     if (
@@ -351,7 +354,7 @@ async def create_contract(
     db.add(row)
     db.commit()
     db.refresh(row)
-    await _sync_project_contract_fields(db, notion, body.project_id)
+    await _sync_project_contract_fields(db,body.project_id)
     return _enrich_with_project(db, [row])[0]
 
 
@@ -361,7 +364,6 @@ async def update_contract(
     body: ContractUpdate,
     _user: User = Depends(require_editor),
     db: Session = Depends(get_db),
-    notion: NotionService = Depends(get_notion),
 ) -> ContractOut:
     row = db.get(Contract, contract_id)
     if row is None:
@@ -393,7 +395,7 @@ async def update_contract(
         )
     db.commit()
     db.refresh(row)
-    await _sync_project_contract_fields(db, notion, row.project_id)
+    await _sync_project_contract_fields(db,row.project_id)
     return _enrich_with_project(db, [row])[0]
 
 
@@ -402,7 +404,6 @@ async def delete_contract(
     contract_id: int,
     _user: User = Depends(require_editor),
     db: Session = Depends(get_db),
-    notion: NotionService = Depends(get_notion),
 ) -> None:
     row = db.get(Contract, contract_id)
     if row is None:
@@ -417,7 +418,7 @@ async def delete_contract(
     db.delete(row)
     db.commit()
     # 삭제 후에도 contract_signed=True 유지 (사용자 정책). 기간은 남은 contracts 기준 재계산.
-    await _sync_project_contract_fields(db, notion, project_id)
+    await _sync_project_contract_fields(db,project_id)
 
 
 @router.get("/{contract_id}/file/download")

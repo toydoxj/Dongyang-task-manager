@@ -1,6 +1,6 @@
 "use client";
 
-import { useSearchParams } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 import { Suspense, useState } from "react";
 
 import AuthGuard from "./AuthGuard";
@@ -19,6 +19,11 @@ function ShellBody({ children }: { children: React.ReactNode }) {
   // openInPopup에서 자동 부착 — 사용자가 직접 URL 입력해도 동일 동작.
   const sp = useSearchParams();
   const isPopup = sp?.get("popup") === "1";
+  // PR-GF: SSO callback path에서는 글로벌 modal mount 차단 — modal 내부 SWR
+  // hook이 인증 mock 안 된 e2e 환경에서 ErrorBoundary 트리거하는 회귀 방어.
+  // 운영에선 callback이 즉시 redirect라 영향 없음.
+  const pathname = usePathname();
+  const skipModals = pathname?.startsWith("/auth/works/callback") ?? false;
 
   if (isPopup) {
     return (
@@ -26,8 +31,8 @@ function ShellBody({ children }: { children: React.ReactNode }) {
         <main className="min-h-screen bg-zinc-50 p-4 text-zinc-900 dark:bg-zinc-950 dark:text-zinc-100 sm:p-6">
           {children}
         </main>
-        <ProjectDetailModal />
-        <SaleDetailModal />
+        {!skipModals && <ProjectDetailModal />}
+        {!skipModals && <SaleDetailModal />}
       </>
     );
   }
@@ -79,8 +84,8 @@ function ShellBody({ children }: { children: React.ReactNode }) {
           </main>
         </div>
       </div>
-      <ProjectDetailModal />
-      <SaleDetailModal />
+      {!skipModals && <ProjectDetailModal />}
+      {!skipModals && <SaleDetailModal />}
     </>
   );
 }
