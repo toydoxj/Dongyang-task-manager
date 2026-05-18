@@ -12,7 +12,7 @@ import { useMemo, useState } from "react";
 import EnsureProjectFolderButton from "@/components/common/EnsureProjectFolderButton";
 import { Field, inputCls } from "@/components/project/_shared";
 import Modal from "@/components/ui/Modal";
-import { createContract, updateProject } from "@/lib/api";
+import { createContract, updateProject, uploadContractFile } from "@/lib/api";
 import type { Client, Project } from "@/lib/domain";
 import { useClients, useContracts } from "@/lib/hooks";
 import { cn } from "@/lib/utils";
@@ -58,6 +58,8 @@ export default function ContractCreateModal({
   const [updateProjectAmount, setUpdateProjectAmount] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // PR-FX: 등록 시 PDF 동시 업로드 (선택). 없어도 메타만 등록 가능.
+  const [file, setFile] = useState<File | null>(null);
 
   const { data: clientsData } = useClients(open);
   // PR-FK (사용자 요청): 같은 프로젝트에 이미 등록된 계약서 수 알림.
@@ -110,6 +112,7 @@ export default function ContractCreateModal({
     setNote("");
     setUpdateProjectClient(false);
     setUpdateProjectAmount(false);
+    setFile(null);
     setError(null);
   };
 
@@ -144,7 +147,7 @@ export default function ContractCreateModal({
     setSubmitting(true);
     setError(null);
     try {
-      await createContract({
+      const created = await createContract({
         project_id: projectId,
         client_id: clientId || null,
         title: title.trim(),
@@ -155,6 +158,23 @@ export default function ContractCreateModal({
         vat_included: vatIncluded,
         note: note.trim(),
       });
+
+      // PR-FX: 파일이 선택돼 있으면 등록 직후 업로드. 실패해도 contract row는 유지.
+      if (file) {
+        try {
+          await uploadContractFile(created.id, file);
+        } catch (err) {
+          setError(
+            `계약서는 등록됐으나 파일 업로드 실패: ${
+              err instanceof Error ? err.message : String(err)
+            }. 상세 화면에서 다시 시도하세요.`,
+          );
+          // submit 실패로 처리 — modal 유지하고 사용자가 인지하도록.
+          setSubmitting(false);
+          onCreated();
+          return;
+        }
+      }
 
       // PR-FI/5: 사용자가 체크한 경우 프로젝트 발주처/금액도 즉시 update.
       const projectPatch: { client_relation_ids?: string[]; contract_amount?: number } = {};
@@ -295,6 +315,19 @@ export default function ContractCreateModal({
             className={inputCls}
           />
         </Field>
+        {/* PR-FX: 등록 시 PDF 동시 업로드 — 프로젝트 폴더 없으면 EnsureProjectFolderButton으로 먼저 생성 필요. */}
+        <Field label="계약서 파일 (선택)">
+          <input
+            type="file"
+            accept=".pdf,.doc,.docx,.hwp,.hwpx,application/pdf"
+            onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+            className="text-xs"
+          />
+          <p className="mt-1 text-[10px] text-zinc-500">
+            허용 형식: PDF, DOC, DOCX, HWP, HWPX · 최대 30MB. 비워두면 메타만
+            등록되고 파일은 나중에 상세에서 업로드할 수 있습니다.
+          </p>
+        </Field>
         {error && (
           <p className="rounded-md border border-red-500/40 bg-red-500/5 px-3 py-2 text-xs text-red-500">
             {error}
@@ -314,12 +347,9 @@ export default function ContractCreateModal({
             disabled={submitting}
             className="rounded-md bg-zinc-900 px-3 py-1.5 text-sm text-white hover:bg-zinc-700 disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300"
           >
-            {submitting ? "등록 중…" : "등록"}
+            {submitting ? (file ? "등록·업로드 중…" : "등록 중…") : "등록"}
           </button>
         </div>
-        <p className="text-[10px] text-zinc-500">
-          PDF 파일은 등록 후 상세에서 업로드합니다.
-        </p>
       </form>
     </Modal>
   );
