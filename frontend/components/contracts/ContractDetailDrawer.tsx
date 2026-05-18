@@ -26,6 +26,7 @@ import {
 } from "@/lib/api";
 import type { Contract } from "@/lib/domain";
 import { useClients, useProject } from "@/lib/hooks";
+import { cn } from "@/lib/utils";
 
 interface Props {
   contract: Contract | null;
@@ -368,19 +369,44 @@ function Body({
           ) : (
             <p className="text-xs text-zinc-500">첨부된 파일이 없습니다.</p>
           )}
-          <label className="flex items-center gap-2">
+          {/* PR-FY: 시인성 강화 — 브라우저 기본 file input 대신 점선 dropzone 버튼. */}
+          <label
+            className={cn(
+              "flex cursor-pointer items-center justify-center gap-2 rounded-md border-2 border-dashed px-4 py-3 text-sm transition-colors",
+              busy
+                ? "cursor-wait border-zinc-300 bg-zinc-50 text-zinc-400 dark:border-zinc-700 dark:bg-zinc-900"
+                : "border-zinc-300 bg-zinc-50 text-zinc-700 hover:border-blue-400 hover:bg-blue-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200 dark:hover:border-blue-500 dark:hover:bg-blue-950/30",
+            )}
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              className="h-4 w-4"
+            >
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+              <polyline points="17 8 12 3 7 8" />
+              <line x1="12" y1="3" x2="12" y2="15" />
+            </svg>
+            <span>
+              {busy
+                ? "업로드 중…"
+                : contract.drive_url
+                ? "새 파일 업로드 (기존 파일 교체)"
+                : "파일 업로드 (클릭하여 선택)"}
+            </span>
             <input
               type="file"
               accept=".pdf,.doc,.docx,.hwp,.hwpx,application/pdf"
               onChange={handleUpload}
               disabled={busy}
-              className="text-xs"
+              className="hidden"
             />
-            {busy && <span className="text-[11px] text-zinc-500">업로드 중…</span>}
           </label>
           <p className="text-[10px] text-zinc-500">
-            허용 형식: PDF, DOC, DOCX, HWP, HWPX · 최대 30MB. 새 파일을
-            업로드하면 기존 파일은 자동 교체됩니다.
+            허용 형식: PDF, DOC, DOCX, HWP, HWPX · 최대 30MB.
           </p>
         </div>
       </Section>
