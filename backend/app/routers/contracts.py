@@ -21,6 +21,7 @@ import logging
 from datetime import date, datetime, timezone
 from typing import Any
 
+import httpx
 from fastapi import (
     APIRouter,
     Depends,
@@ -30,6 +31,8 @@ from fastapi import (
     UploadFile,
     status,
 )
+from fastapi.responses import StreamingResponse
+from starlette.background import BackgroundTask
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
@@ -422,28 +425,91 @@ async def delete_contract(
 
 
 @router.get("/{contract_id}/file/download")
-async def get_contract_file_download_url(
+async def download_contract_file(
     contract_id: int,
     _user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
-) -> dict[str, str]:
-    """PR-GE: 날인요청 패턴과 동일 — backend가 sso_drive.get_download_url로
-    임시 signed URL 발급 → frontend가 `<a>` 다운로드.
+) -> StreamingResponse:
+    """PR-GG: backend가 NAVER WORKS Drive에서 파일을 stream forward.
 
-    drive_url(share/folder 패턴)을 직접 클릭하면 NAVER WORKS Drive 권한이
-    없는 사용자는 거부됨. 이 endpoint를 거치면 temporary URL이라 권한 우회.
-    모든 로그인 사용자 read 가능 (계약 list 권한과 일관).
+    이전 PR-GE는 signed URL을 frontend에 전달했으나 NAVER 응답 URL이
+    `auth=OPEN` 패턴이라 외부 redirect 시 401 "Authentication failed" 발생.
+    projects/drive.py의 stream_drive_file 패턴 동일 적용 — backend가 Bearer로
+    NAVER 다운로드 → raw bytes를 attachment로 forward. NAVER 측 인증 우회.
+
+    httpx의 cross-domain redirect는 default로 Authorization 헤더를 strip하므로
+    event_hook으로 매 outbound request에 Bearer 재부착 (apis-storage 도메인에서
+    401 발생 방지).
     """
     row = db.get(Contract, contract_id)
     if row is None:
         raise HTTPException(status_code=404, detail="계약서를 찾을 수 없습니다")
     if not row.drive_file_id:
         raise HTTPException(status_code=404, detail="첨부된 파일이 없습니다")
+
+    s = sso_drive.get_settings()
+    if not s.works_drive_enabled:
+        raise HTTPException(status_code=503, detail="WORKS Drive 비활성")
+    sd = s.works_drive_sharedrive_id
+    if not sd:
+        raise HTTPException(status_code=503, detail="WORKS_DRIVE_SHAREDRIVE_ID 미설정")
+
+    bearer = await sso_drive._get_valid_access_token(s)
+    upstream_url = (
+        f"{s.works_api_base.rstrip('/')}"
+        f"/sharedrives/{sd}/files/{row.drive_file_id}/download"
+    )
+
+    async def _attach_bearer(request: httpx.Request) -> None:
+        request.headers["Authorization"] = f"Bearer {bearer}"
+
+    client = httpx.AsyncClient(
+        timeout=600.0,
+        follow_redirects=True,
+        event_hooks={"request": [_attach_bearer]},
+    )
     try:
-        url = await sso_drive.get_download_url(row.drive_file_id)
-    except sso_drive.DriveError as e:
-        raise HTTPException(status_code=500, detail=str(e)) from e
-    return {"url": url, "name": row.file_name or f"contract_{contract_id}"}
+        resp = await client.send(
+            client.build_request("GET", upstream_url),
+            stream=True,
+        )
+    except Exception:
+        await client.aclose()
+        raise
+
+    if resp.status_code >= 400:
+        body = await resp.aread()
+        await client.aclose()
+        logger.warning(
+            "contract download upstream %s: %s", resp.status_code, body[:300]
+        )
+        raise HTTPException(
+            status_code=502, detail=f"upstream {resp.status_code}"
+        )
+
+    forward_headers: dict[str, str] = {
+        "content-type": resp.headers.get("content-type", "application/octet-stream"),
+    }
+    if "content-length" in resp.headers:
+        forward_headers["content-length"] = resp.headers["content-length"]
+    safe_name = (row.file_name or f"contract_{contract_id}").replace('"', "").replace("\\", "")
+    from urllib.parse import quote
+
+    encoded = quote(safe_name, safe="")
+    forward_headers["content-disposition"] = (
+        f"attachment; filename=\"{encoded}\"; filename*=UTF-8''{encoded}"
+    )
+
+    async def _aclose() -> None:
+        await resp.aclose()
+        await client.aclose()
+
+    return StreamingResponse(
+        resp.aiter_raw(),
+        status_code=resp.status_code,
+        headers=forward_headers,
+        background=BackgroundTask(_aclose),
+    )
 
 
 @router.post("/{contract_id}/file", response_model=ContractOut)

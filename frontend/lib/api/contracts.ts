@@ -91,12 +91,29 @@ export async function deleteContract(id: number): Promise<void> {
   }
 }
 
-/** PR-GE: 임시 signed URL 받아오기 (NAVER WORKS Drive 권한 우회). */
-export async function getContractDownloadUrl(
+/** PR-GG: backend가 NAVER WORKS Drive에서 파일을 stream forward.
+ *  authFetch + Blob → object URL 생성 → <a download> 클릭으로 파일 저장.
+ */
+export async function downloadContractFile(
   id: number,
-): Promise<{ url: string; name: string }> {
+  fileName: string,
+): Promise<void> {
   const res = await authFetch(`/api/contracts/${id}/file/download`);
-  return jsonOrThrow<{ url: string; name: string }>(res);
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(text || `다운로드 실패 (${res.status})`);
+  }
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  try {
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = fileName;
+    a.click();
+  } finally {
+    // object URL 즉시 revoke하면 download dialog가 못 잡는 케이스 있어 잠깐 지연.
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
 }
 
 export async function uploadContractFile(

@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 
 import UnauthorizedRedirect from "@/components/UnauthorizedRedirect";
 import LoadingState from "@/components/ui/LoadingState";
-import { getContractDownloadUrl } from "@/lib/api";
+import { downloadContractFile } from "@/lib/api";
 import type { Contract } from "@/lib/domain";
 import { useClients, useContracts, useProjects } from "@/lib/hooks";
 import { useRoleGuard } from "@/lib/useRoleGuard";
@@ -408,11 +408,10 @@ export default function ContractsAdminPage() {
                           onClick={async (e) => {
                             e.stopPropagation();
                             try {
-                              const r = await getContractDownloadUrl(c.id);
-                              const a = document.createElement("a");
-                              a.href = r.url;
-                              a.download = r.name;
-                              a.click();
+                              await downloadContractFile(
+                                c.id,
+                                c.file_name || `contract_${c.id}`,
+                              );
                             } catch (err) {
                               alert(err instanceof Error ? err.message : "다운로드 실패");
                             }

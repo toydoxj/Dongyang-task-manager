@@ -20,7 +20,7 @@ import Modal from "@/components/ui/Modal";
 import {
   deleteContract,
   deleteContractFile,
-  getContractDownloadUrl,
+  downloadContractFile,
   patchContract,
   updateProject,
   uploadContractFile,
@@ -373,16 +373,15 @@ function Body({
           {contract.drive_url ? (
             <div className="flex items-center justify-between rounded-md border border-zinc-200 bg-white p-2 text-xs dark:border-zinc-800 dark:bg-zinc-950">
               <div className="min-w-0">
-                {/* PR-GE: 날인 패턴 — backend가 임시 signed URL 발급. drive_url 직접 클릭 시 NAVER Drive 권한 거부 회피. */}
+                {/* PR-GG: backend stream forward — NAVER Drive 인증 우회 (날인 패턴은 signed URL이라 auth=OPEN 401 문제). */}
                 <button
                   type="button"
                   onClick={async () => {
                     try {
-                      const r = await getContractDownloadUrl(contract.id);
-                      const a = document.createElement("a");
-                      a.href = r.url;
-                      a.download = r.name;
-                      a.click();
+                      await downloadContractFile(
+                        contract.id,
+                        contract.file_name || `contract_${contract.id}`,
+                      );
                     } catch (e) {
                       alert(e instanceof Error ? e.message : "다운로드 실패");
                     }
