@@ -31,7 +31,11 @@ import { cn } from "@/lib/utils";
 interface Props {
   contract: Contract | null;
   onClose: () => void;
-  onChanged: () => void;
+  /**
+   * 변경 발생 시 호출. 갱신된 Contract 객체를 전달하면 caller가 selected
+   * state를 즉시 update해 stale view 회피 가능 (PR-GA fix).
+   */
+  onChanged: (updated?: Contract) => void;
 }
 
 const KRW = (n: number | null | undefined): string => {
@@ -64,7 +68,7 @@ function Body({
 }: {
   contract: Contract;
   onClose: () => void;
-  onChanged: () => void;
+  onChanged: (updated?: Contract) => void;
 }) {
   const [title, setTitle] = useState(contract.title);
   const [clientId, setClientId] = useState(contract.client_id ?? "");
@@ -151,12 +155,14 @@ function Body({
   };
 
   // PR-FZ: input change + drag&drop 공통 업로드 코어.
+  // PR-GA: backend 응답으로 받은 갱신 Contract를 onChanged에 전달 — modal의
+  // contract prop이 즉시 새 drive_url로 교체되도록 caller가 setSelected.
   const uploadFile = async (file: File): Promise<void> => {
     setBusy(true);
     setError(null);
     try {
-      await uploadContractFile(contract.id, file);
-      onChanged();
+      const updated = await uploadContractFile(contract.id, file);
+      onChanged(updated);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {

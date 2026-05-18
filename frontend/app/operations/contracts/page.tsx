@@ -440,7 +440,11 @@ export default function ContractsAdminPage() {
       <ContractDetailDrawer
         contract={editing}
         onClose={() => setEditing(null)}
-        onChanged={() => void mutate()}
+        onChanged={(updated) => {
+          void mutate();
+          // PR-GA: 모달의 contract prop을 즉시 갱신해 drive_url 등 stale view 회피.
+          if (updated) setEditing(updated);
+        }}
       />
     </div>
   );
