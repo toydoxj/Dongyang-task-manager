@@ -29,7 +29,35 @@ export default function EnsureProjectFolderButton({ project, onCreated }: Props)
   const [error, setError] = useState<string | null>(null);
 
   if (!project) return null;
-  if (project.drive_url) return null;
+  // PR-GH: 폴더 있음을 명시적으로 표시 (사용자 요청 — 「드라이브 개설 확인」 흐름).
+  if (project.drive_url) {
+    return (
+      <div className="mt-2 flex items-center justify-between gap-2 rounded-md border border-emerald-300 bg-emerald-50 px-3 py-2 text-xs dark:border-emerald-700 dark:bg-emerald-950/40">
+        <span className="flex items-center gap-1.5 text-emerald-800 dark:text-emerald-300">
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2.5"
+            className="h-3.5 w-3.5"
+          >
+            <polyline points="20 6 9 17 4 12" />
+          </svg>
+          WORKS Drive 폴더 준비됨
+        </span>
+        <a
+          href={project.drive_url}
+          target="_blank"
+          rel="noreferrer"
+          onClick={(e) => e.stopPropagation()}
+          className="shrink-0 text-emerald-700 underline-offset-2 hover:underline dark:text-emerald-300"
+        >
+          폴더 열기 ↗
+        </a>
+      </div>
+    );
+  }
 
   const handleClick = async (): Promise<void> => {
     if (busy) return;

@@ -60,6 +60,8 @@ export default function ContractCreateModal({
   const [error, setError] = useState<string | null>(null);
   // PR-FX: 등록 시 PDF 동시 업로드 (선택). 없어도 메타만 등록 가능.
   const [file, setFile] = useState<File | null>(null);
+  // PR-GH: 드래그 시 dropzone 시각 강조용.
+  const [dragOver, setDragOver] = useState(false);
 
   const { data: clientsData } = useClients(open);
   // PR-FK (사용자 요청): 같은 프로젝트에 이미 등록된 계약서 수 알림.
@@ -315,14 +317,53 @@ export default function ContractCreateModal({
             className={inputCls}
           />
         </Field>
-        {/* PR-FX: 등록 시 PDF 동시 업로드 — 프로젝트 폴더 없으면 EnsureProjectFolderButton으로 먼저 생성 필요. */}
+        {/* PR-FX: 등록 시 PDF 동시 업로드. PR-GH: dropzone 스타일 + 드래그 지원. */}
         <Field label="계약서 파일 (선택)">
-          <input
-            type="file"
-            accept=".pdf,.doc,.docx,.hwp,.hwpx,application/pdf"
-            onChange={(e) => setFile(e.target.files?.[0] ?? null)}
-            className="text-xs"
-          />
+          <label
+            onDragOver={(e) => {
+              e.preventDefault();
+              setDragOver(true);
+            }}
+            onDragLeave={() => setDragOver(false)}
+            onDrop={(e) => {
+              e.preventDefault();
+              setDragOver(false);
+              const dropped = e.dataTransfer.files?.[0];
+              if (dropped) setFile(dropped);
+            }}
+            className={cn(
+              "flex cursor-pointer items-center justify-center gap-2 rounded-md border-2 border-dashed px-4 py-3 text-sm transition-colors",
+              dragOver
+                ? "border-blue-500 bg-blue-100 text-blue-800 dark:border-blue-400 dark:bg-blue-950/50 dark:text-blue-200"
+                : "border-zinc-300 bg-zinc-50 text-zinc-700 hover:border-blue-400 hover:bg-blue-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200 dark:hover:border-blue-500 dark:hover:bg-blue-950/30",
+            )}
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              className="h-4 w-4"
+            >
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+              <polyline points="17 8 12 3 7 8" />
+              <line x1="12" y1="3" x2="12" y2="15" />
+            </svg>
+            <span>
+              {dragOver
+                ? "여기에 놓아 첨부"
+                : file
+                ? `선택: ${file.name}`
+                : "클릭 또는 파일을 드래그해 첨부 (선택 사항)"}
+            </span>
+            <input
+              type="file"
+              accept=".pdf,.doc,.docx,.hwp,.hwpx,application/pdf"
+              onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+              className="hidden"
+            />
+          </label>
           <p className="mt-1 text-[10px] text-zinc-500">
             허용 형식: PDF, DOC, DOCX, HWP, HWPX · 최대 30MB. 비워두면 메타만
             등록되고 파일은 나중에 상세에서 업로드할 수 있습니다.
