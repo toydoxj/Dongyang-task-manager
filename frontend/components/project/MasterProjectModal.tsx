@@ -75,7 +75,10 @@ function Body({
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   async function handleFiles(files: FileList | File[]) {
-    const arr = Array.from(files).filter((f) => f.type.startsWith("image/"));
+    // HEIC는 .startsWith("image/")가 안 통과할 수도 있어 (Safari에서만 image/heic 노출) 별도 분기.
+    const arr = Array.from(files).filter(
+      (f) => f.type.startsWith("image/") || /\.(heic|heif)$/i.test(f.name),
+    );
     if (arr.length === 0) return;
     setUploading(true);
     setUploadError(null);
@@ -84,7 +87,8 @@ function Body({
     let okCount = 0;
     for (const f of arr) {
       try {
-        await uploadMasterImage(pageId, f);
+        const processed = await preprocessImage(f);
+        await uploadMasterImage(pageId, processed);
         okCount += 1;
       } catch (e) {
         failed.push({
@@ -101,6 +105,38 @@ function Body({
       setUploadError(summary);
     }
     setUploading(false);
+  }
+
+  // PR-GM: HEIC → JPEG 변환 + 20MB 초과 시 자동 리사이즈. 둘 다 dynamic import로
+  // 초기 bundle 영향 회피 (heic2any + browser-image-compression 합쳐 ~600KB).
+  async function preprocessImage(input: File): Promise<File> {
+    let working = input;
+    const isHeic =
+      working.type === "image/heic" ||
+      working.type === "image/heif" ||
+      /\.(heic|heif)$/i.test(working.name);
+    if (isHeic) {
+      const heic2any = (await import("heic2any")).default;
+      const out = (await heic2any({
+        blob: working,
+        toType: "image/jpeg",
+        quality: 0.92,
+      })) as Blob | Blob[];
+      const blob = Array.isArray(out) ? out[0] : out;
+      const newName = working.name.replace(/\.(heic|heif)$/i, ".jpg");
+      working = new File([blob], newName, { type: "image/jpeg" });
+    }
+    const MAX = 20 * 1024 * 1024;
+    if (working.size > MAX) {
+      const imageCompression = (await import("browser-image-compression")).default;
+      working = await imageCompression(working, {
+        maxSizeMB: 18, // 백엔드 20MB 한도 안전 마진
+        maxWidthOrHeight: 2400, // 4K 사진을 2.4K로
+        useWebWorker: true,
+        initialQuality: 0.85,
+      });
+    }
+    return working;
   }
 
   function onPaste(e: React.ClipboardEvent) {
@@ -160,10 +196,9 @@ function Body({
             <input
               ref={fileInputRef}
               type="file"
-              // PR-GL/E: backend whitelist(png/jpeg/gif/webp/svg)와 정렬해 OS picker
-              // 에서도 HEIC/BMP/TIFF 등 비지원 형식이 노출 안 되도록 좁힘. 사용자가
-              // 잘못된 형식 선택해 400 받는 케이스 예방.
-              accept=".png,.jpg,.jpeg,.gif,.webp,.svg,image/png,image/jpeg,image/gif,image/webp,image/svg+xml"
+              // PR-GL/E: backend whitelist(png/jpeg/gif/webp/svg)와 정렬.
+              // PR-GM: HEIC/HEIF도 허용 — frontend에서 heic2any로 JPEG 변환.
+              accept=".png,.jpg,.jpeg,.gif,.webp,.svg,.heic,.heif,image/png,image/jpeg,image/gif,image/webp,image/svg+xml,image/heic,image/heif"
               multiple
               hidden
               onChange={(e) => {
@@ -174,7 +209,7 @@ function Body({
           </div>
         </div>
         <p className="mb-2 text-[10px] text-zinc-500">
-          이 영역에서 Ctrl+V로 클립보드 이미지 붙여넣기 가능 (≤20MB)
+          이 영역에서 Ctrl+V로 클립보드 이미지 붙여넣기 가능 · HEIC(iPhone) 자동 변환 · 20MB 초과 시 자동 리사이즈
         </p>
         {uploadError && (
           <p className="mb-2 rounded border border-red-500/40 bg-red-500/5 p-2 text-[11px] text-red-400">
