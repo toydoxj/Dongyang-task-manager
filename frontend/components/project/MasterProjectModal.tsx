@@ -79,16 +79,28 @@ function Body({
     if (arr.length === 0) return;
     setUploading(true);
     setUploadError(null);
-    try {
-      for (const f of arr) {
+    // PR-GL/D: 각 파일 try/catch — 1개 fail이 나머지 막지 않음. 결과 list로 alert.
+    const failed: { name: string; reason: string }[] = [];
+    let okCount = 0;
+    for (const f of arr) {
+      try {
         await uploadMasterImage(pageId, f);
+        okCount += 1;
+      } catch (e) {
+        failed.push({
+          name: f.name || "(이름 없음)",
+          reason: e instanceof Error ? e.message : String(e),
+        });
       }
-      await mutate(masterKeys.images(pageId));
-    } catch (e) {
-      setUploadError(e instanceof Error ? e.message : "업로드 실패");
-    } finally {
-      setUploading(false);
     }
+    await mutate(masterKeys.images(pageId));
+    if (failed.length > 0) {
+      const summary =
+        `${arr.length}개 중 ${okCount}개 업로드 / ${failed.length}개 실패:\n` +
+        failed.map((x) => `• ${x.name}: ${x.reason}`).join("\n");
+      setUploadError(summary);
+    }
+    setUploading(false);
   }
 
   function onPaste(e: React.ClipboardEvent) {
@@ -148,7 +160,10 @@ function Body({
             <input
               ref={fileInputRef}
               type="file"
-              accept="image/*"
+              // PR-GL/E: backend whitelist(png/jpeg/gif/webp/svg)와 정렬해 OS picker
+              // 에서도 HEIC/BMP/TIFF 등 비지원 형식이 노출 안 되도록 좁힘. 사용자가
+              // 잘못된 형식 선택해 400 받는 케이스 예방.
+              accept=".png,.jpg,.jpeg,.gif,.webp,.svg,image/png,image/jpeg,image/gif,image/webp,image/svg+xml"
               multiple
               hidden
               onChange={(e) => {
