@@ -285,29 +285,50 @@ export async function verifyAndHydrateFromMe(): Promise<VerifyResult> {
   }
 }
 
-/** fragment(`#token=...&user=<base64>`)에서 인증 정보를 꺼내 저장. 호출 후 fragment 정리. */
+// PR-GK: React 18 strict mode + dev에서 useState lazy initializer가 두 번 호출됨.
+// 두 번째 호출에서 fragment가 이미 history.replaceState로 제거됐고 saveAuth도 끝난
+// 상태라 null 반환 → callback page가 displayError 분기로 빠져 redirect 안 일어남.
+// module-level cache로 idempotency 보장. page reload 시 module 재초기화 → cache reset.
+let _cachedConsumption:
+  | { token: string; user: UserInfo; next: string }
+  | null
+  | undefined = undefined;
+
+/** fragment(`#token=...&user=<base64>`)에서 인증 정보를 꺼내 저장. 호출 후 fragment 정리.
+ *  PR-GK: idempotent — strict mode 두 번 호출 시 같은 결과 반환. */
 export function consumeCallbackFragment(): {
   token: string;
   user: UserInfo;
   next: string;
 } | null {
   if (typeof window === "undefined") return null;
+  // 이미 한 번 consume 했으면 같은 결과 (idempotency).
+  if (_cachedConsumption !== undefined) return _cachedConsumption;
+
   const hash = window.location.hash.startsWith("#")
     ? window.location.hash.slice(1)
     : window.location.hash;
-  if (!hash) return null;
+  if (!hash) {
+    _cachedConsumption = null;
+    return null;
+  }
   const params = new URLSearchParams(hash);
   const token = params.get("token");
   const userB64 = params.get("user");
   const next = params.get("next") || "/";
-  if (!token || !userB64) return null;
+  if (!token || !userB64) {
+    _cachedConsumption = null;
+    return null;
+  }
   try {
     const user = JSON.parse(decodeBase64UrlUtf8(userB64)) as UserInfo;
     saveAuth(token, user);
     // fragment 즉시 제거 (브라우저 history 노출 회피)
     window.history.replaceState(null, "", window.location.pathname);
-    return { token, user, next };
+    _cachedConsumption = { token, user, next };
+    return _cachedConsumption;
   } catch {
+    _cachedConsumption = null;
     return null;
   }
 }
