@@ -22,13 +22,18 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
+    # PR-GI/1 fix: 직전 deploy에서 NOT NULL + DEFAULT 추가가 statement_timeout으로
+    # 취소됨 (idle-in-transaction 또는 lock wait). nullable로 완화 +
+    # statement_timeout=0 (이 migration만)으로 안전 보장.
+    # 옛 row는 NULL이 들어가도 app code가 falsy 분기(`if proj.contract_folder_id`)로
+    # cache miss 흐름 동일 — 데이터 회귀 없음.
+    op.execute("SET LOCAL statement_timeout = 0")
     op.add_column(
         "mirror_projects",
         sa.Column(
             "contract_folder_id",
             sa.String(),
-            nullable=False,
-            server_default="",
+            nullable=True,
         ),
     )
 

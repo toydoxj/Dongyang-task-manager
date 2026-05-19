@@ -41,8 +41,10 @@ class MirrorProject(Base):
     archived: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
     # PR-GI/1: WORKS Drive 「6. 계약서」 sub-folder fileId 캐시. 매 계약서 업로드
     # 시 list_children 회피 → ~2초 절감. cache miss 시 sso_drive로 resolve 후 set.
-    contract_folder_id: Mapped[str] = mapped_column(
-        String, default="", server_default="", nullable=False
+    # nullable — ALTER TABLE NOT NULL이 운영 lock wait로 timeout된 case 회피.
+    # 옛 row는 NULL이지만 falsy 분기로 cache miss 흐름 동일.
+    contract_folder_id: Mapped[str | None] = mapped_column(
+        String, default=None, nullable=True
     )
 
 
