@@ -67,10 +67,14 @@ async def list_seal_requests(
             "property": "프로젝트",
             "relation": {"contains": project_id},
         }
+    # PR-FK: user-facing path → 짧은 SDK timeout(4s) + 적은 retry(2회) + wallclock budget(5s).
+    # 노션 hang(2026-05-22 사고) 시 분 단위 hang 대신 NotionApiError로 fail-fast.
+    # weekly_report._build_seal_log는 이 예외를 잡아 빈 배열로 degrade.
     pages = await notion.query_all(
         _db_id(),
         filter=notion_filter,
         sorts=[{"timestamp": "created_time", "direction": "descending"}],
+        user_facing=True,
     )
     pages = _filter_accessible(user, pages, db)
     items = [_from_notion_page(p) for p in pages]

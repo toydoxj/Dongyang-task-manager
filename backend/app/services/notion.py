@@ -35,6 +35,19 @@ _RETRY_BASE_DELAY_S = 0.5
 _RETRY_MAX_DELAY_S = 8.0
 # 한 호출의 retry 누적 한계 — read는 60초로 충분, raw httpx upload는 호출자가 별도 deadline.
 _RETRY_DEADLINE_S = 60.0
+# notion-client `ClientOptions.timeout_ms` 기본값 60_000ms (SDK 1회 호출 timeout).
+# background sync는 그대로 유지, user-facing은 별도 짧은 client 사용 (PR-FK).
+_BG_SDK_TIMEOUT_MS = 60_000
+
+# PR-FK (Phase 0, 옵션 C 본격): user-facing 흐름의 노션 호출 안전망.
+# INCIDENT.md 2026-05-22 사고 — `weekly_report._build_seal_log` / `seal_requests/list_endpoint`
+# 같은 user-facing path가 노션 hang 시 DB pool 점유한 채 분 단위로 응답 못 함 → backend 전체 cascade.
+# 시스템 원칙(노션=백업/관리용)대로 user-facing 흐름에선 노션 호출 자체를 제거하는 게 정공법(옵션 A).
+# A 전환까지 남는 노션 호출 + write-back 흐름의 안전망으로 짧은 deadline + 적은 retry + 짧은 SDK timeout.
+# SDK timeout(4s)이 우리 deadline(5s)보다 짧아야 SDK 1회가 deadline check 발동 전에 결판남.
+_USER_RETRY_DEADLINE_S = 5.0
+_USER_MAX_ATTEMPTS = 2
+_USER_SDK_TIMEOUT_MS = 4_000
 
 
 def _retry_backoff_delay(attempt: int) -> float:
@@ -110,13 +123,23 @@ class TTLCache:
 
 
 class NotionService:
-    """노션 API 호출의 유일한 진입점."""
+    """노션 API 호출의 유일한 진입점.
+
+    PR-FK: 두 Client 인스턴스로 분리.
+    - `_client`: background sync / write-back (SDK timeout 60s, retry 4회, deadline 60s)
+    - `_client_user`: user-facing 흐름 (SDK timeout 4s, retry 2회, deadline 5s)
+    각 메서드에 `user_facing=True`를 넘기면 짧은 client + 짧은 정책 사용.
+    """
 
     def __init__(self, api_key: str) -> None:
         self._api_key = api_key
-        self._client = Client(auth=api_key)
+        self._client = Client(auth=api_key, timeout_ms=_BG_SDK_TIMEOUT_MS)
+        self._client_user = Client(auth=api_key, timeout_ms=_USER_SDK_TIMEOUT_MS)
         self._limiter = RateLimiter(_MIN_INTERVAL_S)
         self._cache = TTLCache(_CACHE_TTL_S)
+
+    def _pick_client(self, user_facing: bool) -> Client:
+        return self._client_user if user_facing else self._client
 
     # ── 내부 호출 헬퍼 ──
 
@@ -126,20 +149,42 @@ class NotionService:
         *,
         cache_key: str | None = None,
         op_name: str = "notion",
+        user_facing: bool = False,
     ) -> Any:
         """notion-client SDK 호출 + transient retry.
 
         429/502/503/504 + Timeout/Network 오류에 대해 exponential backoff + jitter로
         max_attempts 회 retry. retry/실패는 구조화 로그로 남김. 404는 NotFoundError.
+
+        user_facing=True: 짧은 deadline(5s) + 적은 retry(2회). 호출자는 미리 짧은
+        SDK timeout이 적용된 client를 fn lambda 안에서 사용해야 함 (`_pick_client`).
         """
+        deadline_s = _USER_RETRY_DEADLINE_S if user_facing else _RETRY_DEADLINE_S
+        max_attempts = _USER_MAX_ATTEMPTS if user_facing else _RETRY_MAX_ATTEMPTS
         if cache_key is not None:
             cached = self._cache.get(cache_key)
             if cached is not None:
                 return cached
         start = time.monotonic()
         last_exc: BaseException | None = None
-        for attempt in range(1, _RETRY_MAX_ATTEMPTS + 1):
+        for attempt in range(1, max_attempts + 1):
+            # PR-FK codex 자문: limiter 대기 후에도 deadline 재검사 — background
+            # 호출이 limiter를 잡고 있어 user-facing이 5초 deadline 안에 못 들어가는 경우 회피.
+            elapsed = time.monotonic() - start
+            if elapsed >= deadline_s:
+                logger.warning(
+                    "notion deadline before attempt op=%s attempt=%d elapsed=%.2fs",
+                    op_name, attempt, elapsed,
+                )
+                break
             await self._limiter.wait()
+            elapsed = time.monotonic() - start
+            if elapsed >= deadline_s:
+                logger.warning(
+                    "notion deadline after limiter op=%s attempt=%d elapsed=%.2fs",
+                    op_name, attempt, elapsed,
+                )
+                break
             try:
                 result = await asyncio.to_thread(fn)
             except APIResponseError as exc:
@@ -165,17 +210,17 @@ class NotionService:
                 if attempt > 1:
                     logger.info(
                         "notion recovered op=%s attempt=%d/%d elapsed=%.2fs",
-                        op_name, attempt, _RETRY_MAX_ATTEMPTS,
+                        op_name, attempt, max_attempts,
                         time.monotonic() - start,
                     )
                 return result
 
             # retry 결정 — 다음 시도 시간/예산 점검
             elapsed = time.monotonic() - start
-            if attempt >= _RETRY_MAX_ATTEMPTS:
+            if attempt >= max_attempts:
                 break
             delay = _retry_backoff_delay(attempt)
-            if elapsed + delay > _RETRY_DEADLINE_S:
+            if elapsed + delay > deadline_s:
                 logger.warning(
                     "notion retry deadline op=%s attempt=%d elapsed=%.1fs status=%s",
                     op_name, attempt, elapsed,
@@ -184,7 +229,7 @@ class NotionService:
                 break
             logger.warning(
                 "notion retry op=%s attempt=%d/%d status=%s delay=%.2fs elapsed=%.1fs",
-                op_name, attempt, _RETRY_MAX_ATTEMPTS,
+                op_name, attempt, max_attempts,
                 getattr(last_exc, "status", type(last_exc).__name__),
                 delay, elapsed,
             )
@@ -193,7 +238,7 @@ class NotionService:
         # 모든 시도 실패 — NotionApiError로 정규화
         logger.error(
             "notion give up op=%s attempts=%d elapsed=%.1fs last=%s",
-            op_name, _RETRY_MAX_ATTEMPTS,
+            op_name, max_attempts,
             time.monotonic() - start,
             repr(last_exc),
         )
@@ -210,27 +255,37 @@ class NotionService:
     #
     # 사용자 코드는 db_id 만 알면 되고, data_source_id 변환은 내부 처리.
 
-    async def get_database(self, db_id: str) -> dict[str, Any]:
+    async def get_database(
+        self, db_id: str, *, user_facing: bool = False
+    ) -> dict[str, Any]:
         """원시 database 객체 (data_sources 목록 포함, properties는 없음)."""
+        client = self._pick_client(user_facing)
         return await self._call(
-            lambda: self._client.databases.retrieve(database_id=db_id),
+            lambda: client.databases.retrieve(database_id=db_id),
             cache_key=f"db:{db_id}",
+            user_facing=user_facing,
         )
 
-    async def _resolve_data_source_id(self, db_id: str) -> str:
+    async def _resolve_data_source_id(
+        self, db_id: str, *, user_facing: bool = False
+    ) -> str:
         """db_id 를 첫 번째 data_source_id 로 변환 (단일 소스 가정)."""
-        db = await self.get_database(db_id)
+        db = await self.get_database(db_id, user_facing=user_facing)
         sources = db.get("data_sources") or []
         if not sources:
             raise NotionApiError(f"DB {db_id} 에 data_source가 없습니다")
         return sources[0]["id"]
 
-    async def get_data_source(self, db_id: str) -> dict[str, Any]:
+    async def get_data_source(
+        self, db_id: str, *, user_facing: bool = False
+    ) -> dict[str, Any]:
         """db_id 입력 → properties 포함된 data source 객체 반환."""
-        ds_id = await self._resolve_data_source_id(db_id)
+        ds_id = await self._resolve_data_source_id(db_id, user_facing=user_facing)
+        client = self._pick_client(user_facing)
         return await self._call(
-            lambda: self._client.data_sources.retrieve(data_source_id=ds_id),
+            lambda: client.data_sources.retrieve(data_source_id=ds_id),
             cache_key=f"ds:{ds_id}",
+            user_facing=user_facing,
         )
 
     async def query_database(
@@ -241,8 +296,9 @@ class NotionService:
         sorts: list[dict[str, Any]] | None = None,
         page_size: int = 100,
         start_cursor: str | None = None,
+        user_facing: bool = False,
     ) -> dict[str, Any]:
-        ds_id = await self._resolve_data_source_id(db_id)
+        ds_id = await self._resolve_data_source_id(db_id, user_facing=user_facing)
         opts: dict[str, Any] = {"data_source_id": ds_id, "page_size": page_size}
         if filter is not None:
             opts["filter"] = filter
@@ -251,8 +307,11 @@ class NotionService:
         if start_cursor is not None:
             opts["start_cursor"] = start_cursor
         cache_key = f"query:{ds_id}:{json.dumps(opts, sort_keys=True, default=str)}"
+        client = self._pick_client(user_facing)
         return await self._call(
-            lambda: self._client.data_sources.query(**opts), cache_key=cache_key
+            lambda: client.data_sources.query(**opts),
+            cache_key=cache_key,
+            user_facing=user_facing,
         )
 
     async def query_all(
@@ -262,6 +321,8 @@ class NotionService:
         filter: dict[str, Any] | None = None,
         sorts: list[dict[str, Any]] | None = None,
         max_pages: int = 200,
+        user_facing: bool = False,
+        total_budget_s: float | None = None,
     ) -> list[dict[str, Any]]:
         """페이지네이션 자동 처리, 모든 결과 누적 (backward compat).
 
@@ -272,15 +333,49 @@ class NotionService:
 
         부분 결과 truncate는 silent 데이터 불일치 위험이라 fail-fast 선택
         (codex 자문). 진짜 큰 DB는 호출처에서 iter_query_pages로 전환.
+
+        PR-FK: user_facing=True면 짧은 SDK timeout + 적은 retry 적용. multi-page
+        호출이라 누적 시간이 길어질 수 있어 `total_budget_s` wallclock budget도
+        지정 가능(default: user-facing은 5s, background는 무한). 초과 시 부분반환
+        없이 NotionApiError로 fail-fast (codex 자문 — 조용한 데이터 누락 방지).
         """
+        if total_budget_s is None and user_facing:
+            total_budget_s = _USER_RETRY_DEADLINE_S
+        start = time.monotonic()
         results: list[dict[str, Any]] = []
         cursor: str | None = None
         seen_cursors: set[str] = set()
         for page_no in range(1, max_pages + 1):
+            if total_budget_s is not None:
+                elapsed = time.monotonic() - start
+                if elapsed > total_budget_s:
+                    logger.warning(
+                        "query_all budget 초과 — fail-fast (db=%s pages=%d elapsed=%.1fs budget=%.1fs)",
+                        db_id, page_no - 1, elapsed, total_budget_s,
+                    )
+                    raise NotionApiError(
+                        f"query_all: total_budget_s={total_budget_s}s 초과 "
+                        f"(db={db_id}, fetched_pages={page_no - 1})"
+                    )
             page = await self.query_database(
-                db_id, filter=filter, sorts=sorts, start_cursor=cursor
+                db_id, filter=filter, sorts=sorts, start_cursor=cursor,
+                user_facing=user_facing,
             )
             results.extend(page.get("results", []))
+            # PR-FK codex 자문: page fetch 후에도 budget 재검사 — 단일 페이지 지연 시
+            # 다음 페이지 진입 전(루프 상단 check) 외 page 종료 시점에도 cut.
+            if total_budget_s is not None and page.get("has_more"):
+                elapsed = time.monotonic() - start
+                if elapsed > total_budget_s:
+                    logger.warning(
+                        "query_all budget 초과 (page fetch 직후) — fail-fast "
+                        "(db=%s pages=%d elapsed=%.1fs budget=%.1fs)",
+                        db_id, page_no, elapsed, total_budget_s,
+                    )
+                    raise NotionApiError(
+                        f"query_all: total_budget_s={total_budget_s}s 초과 "
+                        f"(db={db_id}, fetched_pages={page_no})"
+                    )
             if not page.get("has_more"):
                 return results
             next_cursor = page.get("next_cursor")
@@ -337,32 +432,42 @@ class NotionService:
 
     # ── 페이지 ──
 
-    async def get_page(self, page_id: str) -> dict[str, Any]:
+    async def get_page(
+        self, page_id: str, *, user_facing: bool = False
+    ) -> dict[str, Any]:
+        client = self._pick_client(user_facing)
         return await self._call(
-            lambda: self._client.pages.retrieve(page_id=page_id),
+            lambda: client.pages.retrieve(page_id=page_id),
             cache_key=f"page:{page_id}",
+            user_facing=user_facing,
         )
 
     async def create_page(
-        self, db_id: str, properties: dict[str, Any]
+        self, db_id: str, properties: dict[str, Any],
+        *, user_facing: bool = False,
     ) -> dict[str, Any]:
-        ds_id = await self._resolve_data_source_id(db_id)
+        ds_id = await self._resolve_data_source_id(db_id, user_facing=user_facing)
+        client = self._pick_client(user_facing)
         result = await self._call(
-            lambda: self._client.pages.create(
+            lambda: client.pages.create(
                 parent={"data_source_id": ds_id}, properties=properties
             ),
+            user_facing=user_facing,
         )
         # 새 페이지 추가 → 해당 data source query 캐시 무효화
         self._cache.invalidate(f"query:{ds_id}")
         return result
 
     async def update_page(
-        self, page_id: str, properties: dict[str, Any]
+        self, page_id: str, properties: dict[str, Any],
+        *, user_facing: bool = False,
     ) -> dict[str, Any]:
+        client = self._pick_client(user_facing)
         result = await self._call(
-            lambda: self._client.pages.update(
+            lambda: client.pages.update(
                 page_id=page_id, properties=properties
             ),
+            user_facing=user_facing,
         )
         # 캐시 무효화: 해당 페이지 + 모든 query (어느 DB 소속인지 확실하지 않으므로 전체)
         self._cache.invalidate(f"page:{page_id}")

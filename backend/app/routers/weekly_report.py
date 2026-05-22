@@ -29,6 +29,7 @@ from app.models.employee import Employee
 from app.models.weekly_publish import WeeklyReportPublishLog
 from app.security import get_current_user, require_admin
 from app.services import sso_drive, sso_works_bot
+from app.exceptions import NotionApiError
 from app.services.notion import NotionService, get_notion
 from app.services.weekly_report import (
     SealLogItem,
@@ -160,6 +161,12 @@ async def _build_seal_log(
             )
         except HTTPException as e:
             logger.warning("날인대장 조회 실패: %s", e.detail)
+            return []
+        except NotionApiError as e:
+            # PR-FK: 노션 hang/장애 시 user-facing path는 fail-fast (5s deadline).
+            # 주간일지는 noton 응답이 늦어도 mirror 기반 본문을 보여주는 게 중요.
+            # 날인대장만 빈 배열로 degrade (codex 자문 — degrade 정책 명시).
+            logger.warning("날인대장 노션 조회 실패 — 빈 배열로 degrade: %s", e)
             return []
     finally:
         if need_swap:

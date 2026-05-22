@@ -340,6 +340,7 @@ curl https://dy-task-backend.onrender.com/api/health/db
 - PR-DB (health endpoint 확장): 0a6f663
 - PR-DB (alembic file alembic_version 포함, 운영 일치): 3e388c9
 - 검증 시점: 2026-05-15. 운영 `/api/health/db` 응답 `"5min"` 확인.
+- **🚨 2026-05-22 재검증 결과: 운영 `/api/health/db` 응답이 `"0"`으로 회귀** — 5회 연속 호출 모두 `"0"`. PR-DA event listener(`connect` 시점 `SET idle_in_transaction_session_timeout='300s'`)가 실제 운영 connection에 적용되지 않은 상태. 가설: Supavisor Session mode pooler가 SET을 backend에 propagate 안 하거나 pool checkin 시 reset함. 영향: 2026-05-22 backend hang 사고에서 DB-side 안전망이 작동 안 했을 가능성. **추적 항목**: (a) BEGIN/COMMIT 명시 transaction으로 SET 감싸기 / (b) 매 query 전 `SET LOCAL` 전환 / (c) cluster-wide `ALTER DATABASE` (INCIDENT.md 본 entry에서 의도적으로 회피했던 옵션 — Codex 상의 후 결정). PR-DB의 SHOW 노출 덕분에 회귀가 표면화된 점은 안전망 설계 검증 사례.
 
 ---
 
@@ -383,3 +384,79 @@ uv run python -c "from app.db import Base, engine; from app.models import auth, 
 - **alembic_version은 head라도 schema 실제 일치는 보장 안 됨** — `alembic upgrade head`가 "이미 head"라고 판단하면 skip. 실제 DDL 적용 여부 별도 검증 필요.
 - **500 응답 + CORS 헤더 누락 = 브라우저 CORS 차단 메시지** — CORS 메시지 보이면 actual response (status + body)부터 확인. backend log 1줄이 진단의 90%를 결정.
 - **`Base.metadata.create_all(checkfirst=True)`는 운영 복구용 안전한 수단** — alembic 외 우회 경로로도 누락된 테이블 채울 수 있음.
+
+---
+
+## 2026-05-22 — backend hang(분 단위) → /api/health/db 503 → Render auto-restart (PR-DY 안전망 첫 발동)
+
+### 증상
+
+- 사용자가 `/weekly-report` 진입 시 브라우저 console에 CORS 차단 메시지:
+  ```
+  Access to fetch at 'https://dy-task-backend.onrender.com/api/seal-requests/pending-count'
+  from origin 'https://task.dyce.kr' has been blocked by CORS policy:
+  No 'Access-Control-Allow-Origin' header is present on the requested resource.
+  ```
+- 직접 curl로는 preflight 200 + GET 401 모두 CORS 헤더 정상 — 사고 후 시점엔 정상화돼 재현 안 됨.
+- **사용자 보고**: "중간중간 계속 딜레이가 되는 현상이 많아" — 본 사고가 단발성이 아니라 만성 hang의 한 표면화임을 시사.
+
+### Render 로그 — 사고 윈도우
+
+```
+slow GET /api/health/db — 20001ms (status=503)
+[GET] /api/projects?assignee=... responseTimeMS=3287073   ← 약 55분
+[GET] /api/projects?mine=true   responseTimeMS=3022196   ← 약 50분
+[GET] /api/tasks?mine=true      responseTimeMS=4029162   ← 약 67분
+[GET] /api/tasks?mine=true      responseTimeMS=4197076   ← 약 70분
+==> Instance srv-d7mu51vavr4c73f9q960-b2g2h restarted
+... (재부팅)
+노션 schema 보강 중 예외 (무시)
+httpx.HTTPStatusError: Server error '502 Bad Gateway' for url
+  'https://api.notion.com/v1/data_sources/31de8498-6c86-8029-b4e2-000bf5992d7d'
+slow GET /api/health/db — 1426ms (status=200)   ← 회복 진행
+```
+
+### 원인 (가설 — Codex MCP 검증 반영 2026-05-22)
+
+1. **노션 API 측 일시 장애** — 재부팅 직후 `api.notion.com` `502 Bad Gateway` 직접 관찰. 노션 SDK 1회 호출은 자체 60s timeout. `_RETRY_DEADLINE_S=60s`이므로 timeout류는 보통 1회에서 deadline 소진 (4 attempts × 60s = 240s 가 아님 — 초기 작성 시 부정확했던 부분 정정).
+2. **진짜 hang 진원지** — 사용자 facing 라우터 중 노션을 await하면서 `Depends(get_db)` DB session도 같이 잡고 있는 곳: `weekly_report.py:228 _build_full_report` / `weekly_report.py:128 _build_seal_log` / `seal_requests/list_endpoint.py:70 list_seal_requests`. `/weekly-report` 진입이 이 endpoint들을 동시 호출 → 워커당 connection 동시 점유.
+3. **`/api/projects?mine` / `/api/tasks?mine`의 분 단위 hang은 endpoint 자체 문제가 아니라 2차 피해** — `projects.py:198` / `tasks.py:55`는 **mirror-only**(노션 호출 없음). 노션 hang으로 DB pool/워커가 고갈된 동안 줄서서 fail하면서 응답 시간이 분 단위로 표시된 것. 초기 작성 시 진원지로 잘못 분류했던 부분 정정.
+4. **추가 위험: async 라우터에서 sync SQLAlchemy 직접 호출** — pool 대기 시 워커 이벤트 루프 자체가 막힘. cascade 가속 메커니즘. (Codex MCP 신규 식별)
+5. **DB connection pool 고갈 cascade** — 위 진원지 endpoint들이 노션 hang 동안 connection 점유 → 워커당 15개 pool 빠르게 소진 → health check가 pool에서 connection 못 얻어 20초 timeout → 503.
+6. **사용자의 CORS 에러는 hang의 외부 증상** — backend가 응답 못 하는 동안 Render LB가 timeout 503/connection drop을 자동 반환. CORSMiddleware를 거치지 않은 응답이라 헤더 부재 → 브라우저는 CORS 차단으로 표시 (INCIDENT.md 2026-05-12 / 2026-05-17 동일 메커니즘).
+
+### 조치
+
+- **자동 복구** — `render.yaml healthCheckPath: /api/health/db`(PR-DY)가 의도대로 동작. health check 503 → Render auto-restart trigger → 정상화. **PR-DY 안전망의 첫 실전 발동.**
+- 재부팅 후 정상 응답 복귀 확인 (`slow GET /api/health/db — 1426ms (status=200)` → 평시 latency).
+- 즉시 사용자 영향 종료. 추가 수동 조치 불필요.
+
+### 교훈
+
+- **PR-DY 안전망은 작동했지만 사용자 경험은 여전히 나쁨** — auto-restart까지 사용자는 몇 분 hang을 직접 겪음. health check timeout(20초) + Render restart sequence(수십 초) 누적. 만성 hang 자체를 줄이지 않으면 안전망만으론 부족.
+- **노션 API 응답성에 backend가 노출돼 있음** — 노션 retry deadline 60초 × 4회 = 240초 hang. 단일 endpoint hang이 노션을 쓰지 않는 endpoint(`pending-count`는 mirror DB SELECT만)까지 영향 줄 만큼 DB pool 압박 발생.
+- **사용자가 "계속 딜레이"라고 말하면 단발 사고가 아닌 capacity/resilience 문제로 재분류해야 함** — 본 사고는 documented 사례 1건이지만 사용자 체감은 빈번. 만성 hang root cause 추적 필요.
+
+### 추적 항목 (Codex MCP 상의 반영 — 별도 cycle 진행)
+
+**즉시 (다음 배포)**
+- [ ] **옵션 C: user-facing 노션 호출 deadline 단축** — 현재 60s deadline + 4 attempts를 사용자 응답 path에선 **3~5초 deadline + 0~1회 retry**로 축소. context별 deadline 주입 인터페이스 도입. 효과: 전역 hang 차단. 위험: 노션 잠깐 느릴 때 502가 사용자에게 더 자주 노출.
+- [ ] **옵션 B: DB session lifecycle 분리** — `_build_full_report` / `_build_seal_log` / `list_seal_requests` 등 노션 await 전에 `db.close()` (또는 짧은 세션 스코프). connection 점유 차단. 위험: object detached / 세션 재사용 패턴 가이드 필요.
+
+**다음 스프린트**
+- [ ] **옵션 A: weekly-report/dashboard user-facing GET에서 노션 fallback 제거** — mirror DB만 SELECT. stale(최대 5분) 사용자 노출 허용. seal/suggestion mirror 이미 존재해 전환 여지 큼.
+- [ ] **Circuit Breaker / Bulkhead 도입** — 노션 502 연속 시 일정 시간 fallback fast-fail. 동시 노션 호출 수 제한. (Codex 신규 제안)
+
+**조건부 / 모니터링**
+- [ ] **옵션 D: background sync 풀 분리** — `render.yaml:47` cron이 separate process인지 운영 확인 필요. same-process면 우선도↑, 이미 분리면 우선도↓.
+- [ ] **async/sync 정합성 정리** — async 라우터에서 sync SQLAlchemy I/O 직접 호출 패턴 축소. 큰 안건, 별도 cycle.
+- [ ] **`/api/health/db` `idle_in_transaction_session_timeout: "0"` 별건 진단** — PR-DA event listener가 health check connection에 적용 안 됨 의심. 본 사고에서 DB-side 안전망이 정상이었다면 backend hang이 더 일찍 정리됐을 가능성.
+- [ ] **만성 딜레이 telemetry** — slow request middleware(`main.py:97`) 임계값 이상 요청 daily 집계. 사용자 "중간중간 계속 딜레이" 보고와 cross-check 가능하게.
+- [ ] **노션 API 가용성 모니터링** — `api.notion.com` 502/timeout 발생률 로깅. 노션 측 장애 vs backend 측 문제 구분.
+- [ ] **운영 환경 확정** — Render plan(starter/standard) + cron 분리 여부 한 번 확인. 우선순위 정확도 상승.
+
+### 참고
+
+- 본 사고는 INCIDENT.md 2026-05-12(connection leak), 2026-05-17(500 + CORS 헤더 누락)의 안전망(PR-DA / PR-DB / PR-DY)이 모두 작동한 첫 케이스.
+- 코드 변경 없이 자동 복구됐으므로 즉시 PR 불필요.
+- 진단/우선순위는 Codex MCP 상의 결과 반영 (2026-05-22). 권장 조합: **C + B 즉시 배포, 다음 스프린트 A + circuit breaker**.

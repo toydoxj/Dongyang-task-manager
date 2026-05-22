@@ -319,3 +319,23 @@
 - 원인: Render Blueprint는 `services[].plan`이 명시되어 있으면 그것을 source-of-truth로 강제 — dashboard에서 manual 변경해도 다음 Blueprint sync에서 yaml 값으로 되돌림. `render.yaml`에 7개 service 모두 `plan: starter`로 박혀 있었음
 - 해결: `dy-task-backend`만 `plan: standard`로 yaml 수정, cron 6개는 starter 유지 (`88743d9`)
 - 재발 방지: Render dashboard에서 plan/region/scaling 같은 service-level 필드를 변경하기 전에 반드시 `render.yaml`의 동일 필드를 먼저 또는 동시에 수정. yaml에 `plan` 필드가 명시된 service는 dashboard 변경이 영구화되지 않는다. yaml에서 plan 필드를 제거하면 dashboard 우선이 되지만 코드에 plan 정보가 남지 않아 향후 재배포 시 헷갈리므로 명시 권장
+
+### 2026-05-22 — 브라우저 CORS 에러는 backend 5xx의 위장 (3번째 사례)
+- 컨텍스트: 사용자가 `/weekly-report` 진입 시 console에 `Access to fetch ... has been blocked by CORS policy: No 'Access-Control-Allow-Origin' header is present` 에러 발생. `/api/seal-requests/pending-count` 등 endpoint 호출 모두 CORS 차단으로 표시
+- 증상: 브라우저 console은 CORS 차단으로 표시되지만, 직접 curl로 호출해보면 preflight 200 + 본 요청도 CORS 헤더 정상. 즉 backend 측 CORS 설정은 정상
+- 원인: backend hang(노션 API 502 + DB pool 고갈 cascade)으로 `/api/health/db`가 20초 hang → 503 → Render auto-restart 진행. 그 사이 사용자 요청이 Render LB의 timeout 503/connection drop을 받음 → CORSMiddleware를 거치지 않은 응답은 CORS 헤더가 없음 → 브라우저는 CORS 차단으로 표시
+- 해결: PR-DY(`render.yaml healthCheckPath: /api/health/db`) auto-restart 안전망이 작동해 자동 복구. 사용자 안내: 새로고침으로 정상화 확인
+- 재발 방지:
+  - **CORS 에러 보고를 받으면 backend CORS 설정 의심 전에 backend의 status code부터 확인.** preflight + 본 요청 둘 다 curl로 직접 호출해 CORS 헤더 정상이면 backend는 정상, 사용자 시점에 5xx/timeout이 있었던 것
+  - INCIDENT.md 2026-05-12, 2026-05-17, 2026-05-22 모두 동일 패턴 (3번째 사례). 이제 "CORS 에러" 보고는 가장 먼저 Render Logs의 5xx/hang 흔적부터 검색
+  - 진단 1순위 명령: `curl -sv -X OPTIONS -H "Origin: https://task.dyce.kr" -H "Access-Control-Request-Method: GET" https://dy-task-backend.onrender.com/api/<path>` — preflight 정상이면 CORS는 무관
+
+### 2026-05-22 — PR-DA `SET idle_in_transaction_session_timeout` 운영 미적용 (회귀)
+- 컨텍스트: INCIDENT.md 2026-05-15 사고 후 PR-DA로 `app/db.py`에 `connect` event listener로 `SET idle_in_transaction_session_timeout = '300s'` 적용. PR-DB로 `/api/health/db`에 `SHOW`를 노출해 검증 endpoint 마련. 검증 시점(2026-05-15)에는 `"5min"` 응답 확인됨
+- 증상: 2026-05-22 재검증 시 `/api/health/db` 응답이 `"idle_in_transaction_session_timeout":"0"`. 5회 연속 호출 모두 동일. PR-DA가 적용되지 않은 상태로 회귀
+- 원인 (가설): Supavisor Session mode pooler가 client connection의 SET을 backend session에 propagate 안 하거나, pool checkin 시 session reset으로 SET이 무효화. 또는 cursor scope에서만 적용되고 connection scope에 살아남지 않음. 정확한 원인 미확정
+- 해결: 미적용. 진단/추적 항목만 INCIDENT.md 2026-05-15 entry에 기록. 후보: (a) BEGIN/COMMIT 명시 transaction으로 SET 감싸기 / (b) 매 query 전 `SET LOCAL` 전환 / (c) cluster-wide `ALTER DATABASE`
+- 재발 방지:
+  - **DB 안전망 설정은 적용 직후뿐 아니라 정기 검증 필요.** `/api/health/db`의 SHOW 노출이 회귀를 표면화한 만큼, 운영 dashboard/모니터링에 이 값을 daily 체크 항목으로 등록 권장
+  - **Supavisor 같은 pooler 경유 환경에선 connection-level SET이 reset될 수 있음.** PR-DA 같은 안전망은 transaction-scope (`SET LOCAL`) 또는 cluster-default (`ALTER DATABASE`)로 강도 차이 검토
+  - 안전망 설정이 의도대로 살아있는지 검증 endpoint를 항상 동반 (`/api/health/db`의 SHOW가 좋은 선례)
