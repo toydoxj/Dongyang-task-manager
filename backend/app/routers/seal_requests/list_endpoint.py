@@ -31,16 +31,50 @@ from app.services.notion import NotionService, get_notion
 from app.routers.seal_requests import SealListResponse  # noqa: E402
 
 
+def _synth_props_from_minimal(row: M.MirrorSealRequest) -> dict:
+    """PR-FL fallback: properties=NULL인 옛 row를 위해 minimal mirror 필드를
+    노션 raw properties 형식으로 재구성. _from_notion_page가 정상 추출 가능.
+
+    풍부한 필드(due_date / attachments / note / real_source_id 등)는 빈 값으로
+    degrade — backfill(full sync) 후 자연 채워짐.
+    """
+    title_arr = [{"plain_text": row.title}] if row.title else []
+    requester_arr = (
+        [{"plain_text": row.requester}] if row.requester else []
+    )
+    return {
+        "제목": {"type": "title", "title": title_arr},
+        "상태": {
+            "type": "select",
+            "select": {"name": row.status} if row.status else None,
+        },
+        "날인유형": {
+            "type": "select",
+            "select": {"name": row.seal_type} if row.seal_type else None,
+        },
+        "요청자": {"type": "rich_text", "rich_text": requester_arr},
+        "프로젝트": {
+            "type": "relation",
+            "relation": [{"id": pid} for pid in (row.project_ids or [])],
+        },
+    }
+
+
 def _mirror_row_to_notion_page(row: M.MirrorSealRequest) -> dict:
     """mirror row → _from_notion_page가 기대하는 page-like dict.
 
     PR-FL: sync.py가 노션 page.properties 통째 저장하므로 page 재구성은 fields만
     재조립. _from_notion_page는 properties dict의 노션 raw 형식(date_range/relation/...)을
     그대로 읽어 SealRequestItem 응답 생성.
+
+    PR-FL fallback: properties=NULL (옛 row, backfill 전)이면 mirror minimal
+    필드(title/status/seal_type/requester/project_ids)를 노션 raw 형식으로
+    재구성. "제목 없음" 빈 화면 회피.
     """
+    props = row.properties or _synth_props_from_minimal(row)
     return {
         "id": row.page_id,
-        "properties": row.properties or {},
+        "properties": props,
         "created_time": row.created_time.isoformat() if row.created_time else None,
         "last_edited_time": (
             row.last_edited_time.isoformat() if row.last_edited_time else None

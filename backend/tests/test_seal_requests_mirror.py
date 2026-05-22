@@ -75,12 +75,27 @@ def test_mirror_row_to_notion_page_shape() -> None:
     assert "T" in page["created_time"]
 
 
-def test_mirror_row_to_notion_page_null_properties() -> None:
-    """옛 row가 properties=NULL이면 falsy 분기로 빈 dict 처리."""
-    row = _make_mirror_row(properties={})
+def test_mirror_row_to_notion_page_null_properties_fallback() -> None:
+    """옛 row가 properties=NULL이면 mirror minimal 필드로 fallback 재구성.
+
+    "제목 없음" 빈 화면 회피용 degrade. backfill 전에도 title/status/seal_type/
+    requester/project_ids는 즉시 표시.
+    """
+    row = _make_mirror_row(
+        page_id="legacy-row",
+        title="옛 row 제목",
+        requester="옛 요청자",
+        project_ids=["proj-1"],
+        properties={},
+    )
     row.properties = None  # type: ignore[assignment]
     page = _mirror_row_to_notion_page(row)
-    assert page["properties"] == {}
+    # fallback이 minimal 필드를 재구성했는지 검증
+    assert page["properties"]["제목"]["title"][0]["plain_text"] == "옛 row 제목"
+    assert page["properties"]["요청자"]["rich_text"][0]["plain_text"] == "옛 요청자"
+    assert page["properties"]["상태"]["select"]["name"] == "1차검토 중"
+    assert page["properties"]["날인유형"]["select"]["name"] == "구조검토서"
+    assert page["properties"]["프로젝트"]["relation"][0]["id"] == "proj-1"
 
 
 @pytest.mark.asyncio
