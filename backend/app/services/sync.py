@@ -693,6 +693,9 @@ class NotionSyncService:
             status=status or "",
             requester=requester or "",
             project_ids=list(project_ids),
+            # PR-FL Phase 1.1: list endpoint 응답을 mirror에서 직접 생성하려고
+            # 노션 page.properties dict 통째 저장. _from_notion_page 재사용.
+            properties=props or {},
             created_time=_parse_iso(page.get("created_time")),
             last_edited_time=_parse_iso(page.get("last_edited_time")),
             synced_at=_utcnow(),
@@ -707,6 +710,7 @@ class NotionSyncService:
                     status=stmt.excluded.status,
                     requester=stmt.excluded.requester,
                     project_ids=stmt.excluded.project_ids,
+                    properties=stmt.excluded.properties,
                     created_time=stmt.excluded.created_time,
                     last_edited_time=stmt.excluded.last_edited_time,
                     synced_at=stmt.excluded.synced_at,

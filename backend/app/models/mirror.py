@@ -209,12 +209,13 @@ class MirrorSales(Base):
 
 
 class MirrorSealRequest(Base):
-    """날인요청 미러 (PR-CL).
+    """날인요청 미러 (PR-CL → PR-FL Phase 1.1).
 
-    당장은 status 카운트(pending-count)만 빠르게 처리하기 위한 최소 schema.
-    상세 endpoint(create/approve/preview 등)는 여전히 노션 직접 호출 — 추후 확장.
+    PR-CL 시점엔 pending-count 처리 목적 minimal schema. PR-FL에서 list endpoint
+    응답까지 mirror에서 처리(사용자 facing 노션 호출 제거)하려고 properties JSONB
+    추가 — 다른 mirror들(MirrorProject/Client/Sales/...) 패턴과 일관.
 
-    sync.py가 5분마다 incremental upsert. write 흐름은 별도 PR에서 즉시 upsert.
+    sync.py가 5분마다 incremental upsert. write 흐름은 즉시 upsert (PR-CQ).
     """
 
     __tablename__ = "mirror_seal_requests"
@@ -225,6 +226,10 @@ class MirrorSealRequest(Base):
     status: Mapped[str] = mapped_column(String, default="", index=True)  # 정규화된 status
     requester: Mapped[str] = mapped_column(String, default="", index=True)
     project_ids: Mapped[list[str]] = mapped_column(ARRAY(String), default=list)
+    # PR-FL: 노션 페이지 properties dict 통째 저장. list endpoint에서 _from_notion_page
+    # 재사용해 20+ 필드 응답 생성. nullable=True (옛 row backfill 전 NULL 허용 —
+    # app code는 `r.properties or {}` falsy 분기).
+    properties: Mapped[dict] = mapped_column(JSONB, default=dict, nullable=True)
     created_time: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
