@@ -274,20 +274,21 @@ def sale_update_to_props(req: SaleUpdateRequest) -> dict[str, Any]:
     """SaleUpdateRequest → 노션 properties dict.
 
     None이 아닌 필드만 변환. 빈 문자열은 'clear' 신호로 select=None 등 처리.
+
+    PR-FV (2026-05-25): 필수 필드(name/code/kind/stage) 빈 string 무시.
+    frontend SalesEditModal이 form 전체를 PATCH 전송하므로, 어떤 이유로 prefill이
+    빈 string인 경우 backend가 노션/mirror에 빈 값을 저장하는 cascade 방지.
+    이 4개 필드는 clear 의도 없음 (필수). 다른 필드(note/location/...)는 빈 string clear 허용.
     """
     props: dict[str, Any] = {}
-    if req.name is not None:
+    if req.name is not None and req.name.strip():
         props["견적서명"] = _title(req.name)
-    if req.code is not None:
+    if req.code is not None and req.code.strip():
         props["영업코드"] = _rich_text(req.code)
-    if req.kind is not None:
-        props["유형"] = (
-            {"select": None} if req.kind == "" else {"select": {"name": req.kind}}
-        )
-    if req.stage is not None:
-        props["단계"] = (
-            {"select": None} if req.stage == "" else {"select": {"name": req.stage}}
-        )
+    if req.kind is not None and req.kind.strip():
+        props["유형"] = {"select": {"name": req.kind}}
+    if req.stage is not None and req.stage.strip():
+        props["단계"] = {"select": {"name": req.stage}}
     if req.category is not None:
         props["업무내용"] = _multi_select(req.category)
     if req.estimated_amount is not None:
