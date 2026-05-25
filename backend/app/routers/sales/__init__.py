@@ -922,8 +922,6 @@ async def update_sale(
             op=OP_UPDATE, payload=props, notion_page_id=page_id,
         )
         db.commit()
-    # PR-FT/2 hotfix: 이중 upsert 제거. upsert_in_session이 이미 mirror 반영함.
-    # 별도 SessionLocal() + commit 호출이 ~500ms~1s 추가 latency 발생시켰음.
     page = _sale_page_from_mirror_with_update(row, props) if props else {
         "id": page_id,
         "properties": row.properties or {},
@@ -932,6 +930,7 @@ async def update_sale(
             row.last_edited_time.isoformat() if row.last_edited_time else None
         ),
     }
+    get_sync().upsert_page("sales", page)  # legacy path 유지 (quote_form_data 처리 위해)
 
     # quote_form_data는 노션에 저장 불가 (JSONB) — mirror_sales에만 별도 UPDATE.
     # 단일 schema는 list-wrapped로 변환 (POST 흐름과 동일 — stable form id 보장).
