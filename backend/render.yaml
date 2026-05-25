@@ -93,157 +93,22 @@ services:
       - key: WORKS_SHARED_CALENDAR_ID
         sync: false
 
-  # ── kind별 incremental sync — web worker 격리 ──
-  # 이전: 외부 cron이 web /api/cron/sync 호출 → web worker 안에서 sync 진행.
-  #       사용자 API 응답이 sync 시간만큼 지연되는 문제(502/timeout) 발생.
-  # 새:   별도 cron container에서 `python -m app.scripts.sync_once`를 직접 실행.
-  #       web service는 사용자 API만 처리, 자원 완전 격리.
-  # kind별 빈도 차등 + schedule 분산으로 동시 부하 회피.
-  # web service의 SYNC_ENABLED는 dashboard에서 false로 설정 — 내부 APScheduler 비활성.
-  - type: cron
-    name: dy-task-sync-projects
-    runtime: python
-    region: singapore
-    plan: starter
-    rootDir: backend
-    # 업무시간(KST 06~20시) 회피 — UTC 11~21시만 실행 (KST 20~06시).
-    # cron 부담 줄임 + 업무 중 노션 미러 read 자원 최우선.
-    # 필요 시 admin /admin/sync 페이지에서 즉시 트리거 가능.
-    schedule: "*/5 11-21 * * *"      # 매 5분 :00 (UTC 11~21시 = KST 20~06시)
-    buildCommand: |
-      pip install --upgrade pip uv
-      env -u VIRTUAL_ENV uv sync --frozen --no-dev
-    startCommand: env -u VIRTUAL_ENV uv run python -m app.scripts.sync_once --kind projects
-    envVars:
-      - key: PYTHON_VERSION
-        value: 3.12.7
-      # 각 cron service에 backend web과 동일한 값으로 dashboard에서 입력 필요.
-      # (Render Blueprint는 cron type에서 fromService env share 미지원)
-      - key: DATABASE_URL
-        sync: false
-      - key: NOTION_API_KEY
-        sync: false
-      - key: NOTION_DB_PROJECTS
-        sync: false
-      - key: NOTION_DB_TASKS
-        sync: false
-      - key: NOTION_DB_CASHFLOW
-        sync: false
-      - key: NOTION_DB_EXPENSE
-        sync: false
-      - key: NOTION_DB_CLIENTS
-        sync: false
-      - key: NOTION_DB_MASTER
-        sync: false
-
-  - type: cron
-    name: dy-task-sync-tasks
-    runtime: python
-    region: singapore
-    plan: starter
-    rootDir: backend
-    schedule: "2-59/5 11-21 * * *"   # 매 5분 :02 (UTC 11~21시 = KST 20~06시)
-    buildCommand: |
-      pip install --upgrade pip uv
-      env -u VIRTUAL_ENV uv sync --frozen --no-dev
-    startCommand: env -u VIRTUAL_ENV uv run python -m app.scripts.sync_once --kind tasks
-    envVars:
-      - key: PYTHON_VERSION
-        value: 3.12.7
-      # 각 cron service에 backend web과 동일한 값으로 dashboard에서 입력 필요.
-      # (Render Blueprint는 cron type에서 fromService env share 미지원)
-      - key: DATABASE_URL
-        sync: false
-      - key: NOTION_API_KEY
-        sync: false
-      - key: NOTION_DB_PROJECTS
-        sync: false
-      - key: NOTION_DB_TASKS
-        sync: false
-      - key: NOTION_DB_CASHFLOW
-        sync: false
-      - key: NOTION_DB_EXPENSE
-        sync: false
-      - key: NOTION_DB_CLIENTS
-        sync: false
-      - key: NOTION_DB_MASTER
-        sync: false
-
-  - type: cron
-    name: dy-task-sync-master
-    runtime: python
-    region: singapore
-    plan: starter
-    rootDir: backend
-    schedule: "3,33 11-21 * * *"     # 30분 :03/:33 (UTC 11~21시 = KST 20~06시)
-    buildCommand: |
-      pip install --upgrade pip uv
-      env -u VIRTUAL_ENV uv sync --frozen --no-dev
-    startCommand: env -u VIRTUAL_ENV uv run python -m app.scripts.sync_once --kind master
-    envVars:
-      - key: PYTHON_VERSION
-        value: 3.12.7
-      # 각 cron service에 backend web과 동일한 값으로 dashboard에서 입력 필요.
-      # (Render Blueprint는 cron type에서 fromService env share 미지원)
-      - key: DATABASE_URL
-        sync: false
-      - key: NOTION_API_KEY
-        sync: false
-      - key: NOTION_DB_PROJECTS
-        sync: false
-      - key: NOTION_DB_TASKS
-        sync: false
-      - key: NOTION_DB_CASHFLOW
-        sync: false
-      - key: NOTION_DB_EXPENSE
-        sync: false
-      - key: NOTION_DB_CLIENTS
-        sync: false
-      - key: NOTION_DB_MASTER
-        sync: false
-
-  - type: cron
-    name: dy-task-sync-others
-    runtime: python
-    region: singapore
-    plan: starter
-    rootDir: backend
-    schedule: "15,45 11-21 * * *"    # 30분 :15/:45 (UTC 11~21시 = KST 20~06시)
-    buildCommand: |
-      pip install --upgrade pip uv
-      env -u VIRTUAL_ENV uv sync --frozen --no-dev
-    startCommand: |
-      env -u VIRTUAL_ENV uv run python -m app.scripts.sync_once --kind clients && \
-      env -u VIRTUAL_ENV uv run python -m app.scripts.sync_once --kind cashflow && \
-      env -u VIRTUAL_ENV uv run python -m app.scripts.sync_once --kind expense && \
-      env -u VIRTUAL_ENV uv run python -m app.scripts.sync_once --kind contract_items
-    envVars:
-      - key: PYTHON_VERSION
-        value: 3.12.7
-      # 각 cron service에 backend web과 동일한 값으로 dashboard에서 입력 필요.
-      # (Render Blueprint는 cron type에서 fromService env share 미지원)
-      - key: DATABASE_URL
-        sync: false
-      - key: NOTION_API_KEY
-        sync: false
-      - key: NOTION_DB_PROJECTS
-        sync: false
-      - key: NOTION_DB_TASKS
-        sync: false
-      - key: NOTION_DB_CASHFLOW
-        sync: false
-      - key: NOTION_DB_EXPENSE
-        sync: false
-      - key: NOTION_DB_CLIENTS
-        sync: false
-      - key: NOTION_DB_MASTER
-        sync: false
-      - key: NOTION_DB_CONTRACT_ITEMS
-        sync: false
-
-  # ── 새벽 full reconcile (archive 정리) ──
-  # incremental 5분 cron은 변경분만 처리 — 노션에서 archive된 row를 mirror에서
-  # 정리(_mark_missing_archived)하지 않음. 매일 새벽 1회 full sync로 보강.
+  # ── 노션 동기화 정책 (PR-FN Phase 2, 2026-05-25) ──
+  # 시스템 원칙: 노션 = 백업/관리용. 모든 운영 DB는 mirror.
+  # write-through(create/update/approve/reject)로 frontend 변경은 즉시 mirror 반영.
+  # 노션에서 직접 변경하는 경우만 새벽까지 lag (운영자 합의).
+  #
+  # 옛 구성(2026-05-25 제거): 5분 incremental 4 cron (projects/tasks/master/others)
+  #   업무시간(KST 06-20) 회피해서 KST 20-06시 새벽만 실행 중이긴 했음.
+  #   사용자 facing 흐름이 mirror-only로 전환됐으니(PR-FK/FL/FM) 이 빈도도 과도.
+  # 새 구성: 새벽 KST 03:00 full reconcile 1회 + admin /admin/sync 필요 시 manual.
+  #
+  # 필요 시 admin이 frontend `/admin/sync` 페이지 또는
+  # `POST /api/admin/sync/run {"kind":"<kind>","full":true}` 호출.
+  #
+  # ── 새벽 full reconcile (모든 kind + archive 정리) ──
+  # incremental은 변경분만 처리 — 노션에서 archive된 row를 mirror에서 정리
+  # (_mark_missing_archived)하지 않음. full sync 1회로 모든 정합성 확보.
   - type: cron
     name: dy-task-sync-full
     runtime: python
