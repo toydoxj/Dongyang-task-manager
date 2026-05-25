@@ -52,6 +52,14 @@ def task_from_mirror(row: M.MirrorTask) -> Task:
 
 
 def sale_from_mirror(row: M.MirrorSales) -> Sale:
+    """mirror row → Sale.
+
+    PR-FU (2026-05-25): 정규화 컬럼 우선, properties fallback.
+    옛 PR-FT 회귀 — properties dict에 "견적서명"/"영업코드" 키 누락된 row가 있으면
+    Sale.from_notion_page가 빈 값 반환 → 모달 prefill 빈 string → 사용자 저장 시
+    빈 값으로 PATCH → mirror 영구 손실 cascade.
+    정규화 컬럼(row.code/name)은 sync._upsert_sale_inner가 추출해 저장한 신뢰값.
+    """
     sale = Sale.from_notion_page(
         _as_page(
             page_id=row.page_id,
@@ -60,6 +68,15 @@ def sale_from_mirror(row: M.MirrorSales) -> Sale:
             last_edited_time=row.last_edited_time,
         )
     )
+    # 정규화 컬럼 우선 (mirror.code/name이 빈 값일 때만 properties 결과 사용)
+    if row.code:
+        sale.code = row.code
+    if row.name:
+        sale.name = row.name
+    if row.kind:
+        sale.kind = row.kind
+    if row.stage:
+        sale.stage = row.stage
     # quote_form_data는 노션에 저장하지 않고 mirror_sales에만 보관 — 응답에 직접 주입
     sale.quote_form_data = row.quote_form_data or {}
     return sale
