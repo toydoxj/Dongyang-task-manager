@@ -622,6 +622,20 @@ class NotionSyncService:
         )
 
     def _upsert_sale(self, db: Session, page: dict) -> None:
+        # PR-FT Phase 1.3.6 reconcile guard
+        from app.services.notion_outbox import has_active
+
+        page_id = page.get("id", "")
+        if page_id and has_active(db, "sales", page_id):
+            logger.debug(
+                "skip sale upsert — outbox active row 존재 (page_id=%s)",
+                page_id,
+            )
+            return
+        # ── 실제 upsert (원본 로직) ──
+        self._upsert_sale_inner(db, page)
+
+    def _upsert_sale_inner(self, db: Session, page: dict) -> None:
         s = Sale.from_notion_page(page)
         # quote_form_data는 노션 column으로 표현 불가 (JSONB) → mirror 전용 필드.
         # sync는 quote_doc_number만 다루고 form_data는 라우터에서 별도 UPDATE.
