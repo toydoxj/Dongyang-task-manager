@@ -1,7 +1,13 @@
-"""/api/projects — read는 mirror, write는 노션 + write-through."""
+"""/api/projects — read는 mirror, write는 mirror direct + outbox enqueue.
+
+PR-FS Phase 1.3.5: write 흐름이 노션 호출을 사용자 응답 path에서 제거.
+mirror direct update + outbox enqueue 같은 transaction. drain worker가 background
+에서 노션 push. _log_assign_change는 BackgroundTasks로 이관 — 사용자 응답 즉시.
+"""
 from __future__ import annotations
 
 import logging
+from datetime import datetime, timezone
 
 from fastapi import (
     APIRouter,
@@ -19,6 +25,7 @@ from app.db import get_db
 from app.exceptions import NotFoundError
 from app.models import mirror as M
 from app.models.auth import User
+from app.models.notion_outbox import OP_UPDATE
 from app.models.project import (
     Project,
     ProjectCreateRequest,
@@ -32,9 +39,29 @@ from app.services import notion_props as P
 from app.services import sso_drive
 from app.services.mirror_dto import project_from_mirror
 from app.services.notion import NotionService, get_notion
+from app.services.notion_outbox import enqueue
 from app.services.project_stage_sync import reconcile_project_stage
 from app.services.sync import get_sync
 from app.settings import get_settings
+
+
+def _project_page_from_mirror_with_update(
+    row: M.MirrorProject, update_props: dict
+) -> dict:
+    """mirror row + update_props 병합 → 노션 page-like dict (sync._upsert_project용).
+
+    PR-FS Phase 1.3.5: write endpoint이 mirror direct update + outbox enqueue 시,
+    mirror 정규화 필드 동기화를 sync._upsert_project로 재사용. 같은 패턴 PR-FR.
+    """
+    merged_props = {**(row.properties or {}), **update_props}
+    return {
+        "id": row.page_id,
+        "properties": merged_props,
+        "url": row.url or "",
+        "created_time": None,  # MirrorProject에 created_time 없음 (last_edited만)
+        "last_edited_time": datetime.now(timezone.utc).isoformat(),
+        "archived": False,
+    }
 
 logger = logging.getLogger("projects")
 router = APIRouter(prefix="/projects", tags=["projects"])
@@ -257,7 +284,10 @@ async def create_project(
     if target_name and target_name not in body.assignees:
         body = body.model_copy(update={"assignees": [*body.assignees, target_name]})
 
-    page = await notion.create_page(db_id, project_create_to_props(body))
+    # PR-FS: user_facing=True — 5초 deadline + SDK timeout 4s.
+    page = await notion.create_page(
+        db_id, project_create_to_props(body), user_facing=True
+    )
     get_sync().upsert_page("projects", page)
     # Drive 폴더 자동 생성 (실패해도 응답엔 영향 없음)
     background.add_task(
@@ -316,9 +346,9 @@ async def get_project(
         project = project_from_mirror(row)
         _resolve_names(db, [project])
         return project
-    # mirror miss → 노션 fallback + upsert
+    # mirror miss → 노션 fallback + upsert (PR-FS: user_facing=True)
     try:
-        page = await notion.get_page(page_id)
+        page = await notion.get_page(page_id, user_facing=True)
     except NotFoundError as exc:
         raise HTTPException(status_code=404, detail=exc.message) from exc
     get_sync().upsert_page("projects", page)
@@ -330,6 +360,7 @@ async def get_project(
 @router.post("/{page_id}/assign", response_model=Project)
 async def assign_me(
     page_id: str,
+    background: BackgroundTasks,
     set_to_waiting: bool = Query(
         default=False,
         description="True면 진행단계가 '진행중'이 아닐 때 '대기'로 변경 (가져오기 시 사용)",
@@ -340,7 +371,9 @@ async def assign_me(
     ),
     user: User = Depends(get_current_user),
     notion: NotionService = Depends(get_notion),
+    db: Session = Depends(get_db),
 ) -> Project:
+    """PR-FS: mirror direct + outbox enqueue. _log_assign_change는 BackgroundTasks."""
     # for_user 지정 시 권한 체크
     target_name: str
     if for_user:
@@ -358,28 +391,24 @@ async def assign_me(
             )
         target_name = user.name
 
-    try:
-        page = await notion.get_page(page_id)
-    except NotFoundError as exc:
-        raise HTTPException(status_code=404, detail=exc.message) from exc
+    row = db.get(M.MirrorProject, page_id)
+    if row is None or row.archived:
+        raise HTTPException(status_code=404, detail="프로젝트를 찾을 수 없습니다")
 
-    props = page.get("properties", {})
+    props = row.properties or {}
     current = P.multi_select_names(props, "담당자")
     current_stage = P.select_name(props, "진행단계")
     current_completed = P.checkbox(props, "완료")
     prev_end_date = P.date_range(props, "완료일")[0] or ""
     needs_assign = target_name not in current
     needs_stage = set_to_waiting and current_stage != "진행중"
-    # 부정합 healing — stage가 활성(진행중/대기)인데 completed=true 면
-    # 사용자가 '재활성화' 클릭한 의도가 완료 체크박스 클리어임. me 필터의
-    # !p.completed 때문에 진행중 임에도 목록에서 안 보이는 갇힘 상태 해소.
     needs_data_heal = (
         current_stage in {"진행중", "대기"} and current_completed
     )
     needs_clear_completed = (needs_stage and current_completed) or needs_data_heal
 
     if not needs_assign and not needs_stage and not needs_data_heal:
-        return Project.from_notion_page(page)
+        return project_from_mirror(row)
 
     update_props: dict = {}
     if needs_assign:
@@ -389,17 +418,25 @@ async def assign_me(
         }
     if needs_stage:
         update_props["진행단계"] = {"select": {"name": "대기"}}
-    # 가져오기로 다시 활성화 — '완료' 표시·'완료일' 해제. 이전 완료일은
-    # assign log 에 보존. needs_data_heal 케이스도 동일 처리.
     if needs_clear_completed:
         update_props["완료"] = {"checkbox": False}
         update_props["완료일"] = {"date": None}
 
-    updated = await notion.update_page(page_id, update_props)
-    get_sync().upsert_page("projects", updated)
-    project = Project.from_notion_page(updated)
+    page_like = _project_page_from_mirror_with_update(row, update_props)
+    sync = get_sync()
+    sync.upsert_in_session(db, "projects", page_like)
+    enqueue(
+        db, aggregate_type="projects", aggregate_id=page_id,
+        op=OP_UPDATE, payload=update_props, notion_page_id=page_id,
+    )
+    db.commit()
+    project = Project.from_notion_page(page_like)
+
+    # assign log는 별도 노션 DB (mirror 없음) — BackgroundTasks로 이관.
+    # 사용자 응답에 영향 없음. 노션 hang 시에도 응답 즉시.
     if needs_assign:
-        await _log_assign_change(
+        background.add_task(
+            _log_assign_change,
             notion,
             project_id=page_id,
             project_name=project.name,
@@ -407,9 +444,9 @@ async def assign_me(
             target=target_name,
             action="담당 추가",
         )
-    # 완료 해제(재활성화) 이벤트도 동일 assign log에 기록 — 이전 완료일 보존용
     if needs_clear_completed:
-        await _log_assign_change(
+        background.add_task(
+            _log_assign_change,
             notion,
             project_id=page_id,
             project_name=(
@@ -427,20 +464,31 @@ async def update_project(
     page_id: str,
     body: ProjectUpdateRequest,
     _user: User = Depends(require_editor),
-    notion: NotionService = Depends(get_notion),
+    notion: NotionService = Depends(get_notion),  # noqa: ARG001
+    db: Session = Depends(get_db),
 ) -> Project:
-    """프로젝트 부분 갱신 (편집 모달용). admin/team_lead/manager."""
+    """프로젝트 부분 갱신 (편집 모달용). admin/team_lead/manager.
+
+    PR-FS: mirror direct + outbox enqueue. 사용자 응답 즉시 (~50ms baseline).
+    """
+    _ = notion  # signature backward compat
     props = project_update_to_props(body)
     if not props:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail="갱신할 필드가 없습니다"
         )
-    try:
-        page = await notion.update_page(page_id, props)
-    except NotFoundError as exc:
-        raise HTTPException(status_code=404, detail=exc.message) from exc
-    get_sync().upsert_page("projects", page)
-    return Project.from_notion_page(page)
+    row = db.get(M.MirrorProject, page_id)
+    if row is None or row.archived:
+        raise HTTPException(status_code=404, detail="프로젝트를 찾을 수 없습니다")
+    page_like = _project_page_from_mirror_with_update(row, props)
+    sync = get_sync()
+    sync.upsert_in_session(db, "projects", page_like)
+    enqueue(
+        db, aggregate_type="projects", aggregate_id=page_id,
+        op=OP_UPDATE, payload=props, notion_page_id=page_id,
+    )
+    db.commit()
+    return Project.from_notion_page(page_like)
 
 
 VALID_STAGES = {"진행중", "대기", "보류", "완료", "타절", "종결", "이관"}
@@ -451,9 +499,14 @@ async def set_project_stage(
     page_id: str,
     stage: str = Query(..., description="대기/보류/완료/타절/종결/이관 중 하나"),
     _admin: User = Depends(require_admin),
-    notion: NotionService = Depends(get_notion),
+    notion: NotionService = Depends(get_notion),  # noqa: ARG001
+    db: Session = Depends(get_db),
 ) -> Project:
-    """대시보드 칸반 드래그용 — admin 전용. '진행중'은 자동 결정이라 강제 변경 불가."""
+    """대시보드 칸반 드래그용 — admin 전용. '진행중'은 자동 결정이라 강제 변경 불가.
+
+    PR-FS: mirror direct + outbox enqueue.
+    """
+    _ = notion
     if stage not in VALID_STAGES:
         raise HTTPException(status_code=400, detail=f"잘못된 stage: {stage}")
     if stage == "진행중":
@@ -461,27 +514,34 @@ async def set_project_stage(
             status_code=400,
             detail="'진행중'은 금주 TASK 활동으로 자동 결정됩니다. 수동 변경 불가",
         )
-    try:
-        page = await notion.update_page(
-            page_id, {"진행단계": {"select": {"name": stage}}}
-        )
-    except NotFoundError as exc:
-        raise HTTPException(status_code=404, detail=exc.message) from exc
-    get_sync().upsert_page("projects", page)
-    return Project.from_notion_page(page)
+    row = db.get(M.MirrorProject, page_id)
+    if row is None or row.archived:
+        raise HTTPException(status_code=404, detail="프로젝트를 찾을 수 없습니다")
+    props = {"진행단계": {"select": {"name": stage}}}
+    page_like = _project_page_from_mirror_with_update(row, props)
+    sync = get_sync()
+    sync.upsert_in_session(db, "projects", page_like)
+    enqueue(
+        db, aggregate_type="projects", aggregate_id=page_id,
+        op=OP_UPDATE, payload=props, notion_page_id=page_id,
+    )
+    db.commit()
+    return Project.from_notion_page(page_like)
 
 
 @router.delete("/{page_id}/assign", response_model=Project)
 async def unassign_me(
     page_id: str,
+    background: BackgroundTasks,
     for_user: str | None = Query(
         default=None,
         description="admin/team_lead가 다른 직원의 담당을 해제할 때 사용",
     ),
     user: User = Depends(get_current_user),
     notion: NotionService = Depends(get_notion),
+    db: Session = Depends(get_db),
 ) -> Project:
-    # for_user 지정 시 권한 체크 (assign_me 와 대칭)
+    """PR-FS: mirror direct + outbox enqueue. _log_assign_change BackgroundTasks."""
     target_name: str
     if for_user:
         if user.role not in {"admin", "team_lead"}:
@@ -498,23 +558,27 @@ async def unassign_me(
             )
         target_name = user.name
 
-    try:
-        page = await notion.get_page(page_id)
-    except NotFoundError as exc:
-        raise HTTPException(status_code=404, detail=exc.message) from exc
+    row = db.get(M.MirrorProject, page_id)
+    if row is None or row.archived:
+        raise HTTPException(status_code=404, detail="프로젝트를 찾을 수 없습니다")
 
-    current = P.multi_select_names(page.get("properties", {}), "담당자")
+    current = P.multi_select_names(row.properties or {}, "담당자")
     if target_name not in current:
-        return Project.from_notion_page(page)
+        return project_from_mirror(row)
 
     new_assignees = [n for n in current if n != target_name]
-    updated = await notion.update_page(
-        page_id,
-        {"담당자": {"multi_select": [{"name": n} for n in new_assignees]}},
+    update_props = {"담당자": {"multi_select": [{"name": n} for n in new_assignees]}}
+    page_like = _project_page_from_mirror_with_update(row, update_props)
+    sync = get_sync()
+    sync.upsert_in_session(db, "projects", page_like)
+    enqueue(
+        db, aggregate_type="projects", aggregate_id=page_id,
+        op=OP_UPDATE, payload=update_props, notion_page_id=page_id,
     )
-    get_sync().upsert_page("projects", updated)
-    project = Project.from_notion_page(updated)
-    await _log_assign_change(
+    db.commit()
+    project = Project.from_notion_page(page_like)
+    background.add_task(
+        _log_assign_change,
         notion,
         project_id=page_id,
         project_name=project.name,
@@ -557,8 +621,11 @@ async def get_project_log(
         "relation": {"contains": page_id},
     }
     sorts = [{"timestamp": "created_time", "direction": "ascending"}]
+    # PR-FS: user_facing=True — 5초 wallclock budget. 노션 hang 시 fail-fast → 빈 응답.
     try:
-        pages = await notion.query_all(db_id, filter=filt, sorts=sorts)
+        pages = await notion.query_all(
+            db_id, filter=filt, sorts=sorts, user_facing=True
+        )
     except Exception:  # noqa: BLE001
         logger.exception("assign log 조회 실패 page_id=%s", page_id)
         return ProjectLogResponse(items=[], count=0)

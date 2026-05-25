@@ -367,6 +367,18 @@ class NotionSyncService:
     # ── 도메인별 upsert ──
 
     def _upsert_project(self, db: Session, page: dict) -> None:
+        # PR-FS Phase 1.3.5 reconcile guard: active outbox row 있는 entity는
+        # 노션→mirror overwrite skip. mirror commit된 변경이 stale 노션 데이터로
+        # 덮이는 race 회피.
+        from app.services.notion_outbox import has_active
+
+        page_id = page.get("id", "")
+        if page_id and has_active(db, "projects", page_id):
+            logger.debug(
+                "skip project upsert — outbox active row 존재 (page_id=%s)",
+                page_id,
+            )
+            return
         p = Project.from_notion_page(page)
         stmt = pg_insert(M.MirrorProject).values(
             page_id=p.id,
