@@ -662,12 +662,24 @@ class NotionSyncService:
 
         SL.normalize_status로 status 정규화 (호환 enum '요청'/'팀장승인' → 신 enum).
         pending-count 등 mirror count에 사용.
+
+        PR-FP Phase 1.3.2 reconcile guard: 해당 page_id에 active outbox row(=mirror
+        write가 commit됐지만 노션에 아직 push 안 됨)가 있으면 노션→mirror overwrite
+        skip. 사용자가 방금 mirror에 commit한 변경이 노션 stale data로 덮여 손실
+        되는 race 회피.
         """
         # lazy import — services.seal_logic이 router 의존성을 가지지 않도록.
         from app.services import seal_logic as SL
+        from app.services.notion_outbox import has_active
 
         page_id = page.get("id", "")
         if not page_id:
+            return
+        if has_active(db, "seal_requests", page_id):
+            logger.debug(
+                "skip seal_request upsert — outbox active row 존재 (page_id=%s)",
+                page_id,
+            )
             return
         props = page.get("properties", {})
         # title은 "제목" / "Name" / db마다 다름 — files() 같은 simple read 대신

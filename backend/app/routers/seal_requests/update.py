@@ -4,6 +4,9 @@ PR-CJ (Phase 4-J 8단계): seal_requests/__init__.py에서 update + redo 분리.
 - PATCH /:id — 재요청용 텍스트 필드 update + 반려→1차검토 복구
 - POST /:id/redo — 재날인요청 (같은 row 새 사이클 덮어쓰기)
 
+PR-FP Phase 1.3.2: 노션 호출 제거 → mirror direct update + outbox enqueue.
+사용자 응답 ~50ms. drain worker가 노션 push.
+
 `SealUpdateBody` + `SealRedoBody` model도 함께 이동 (이 endpoint들에서만 사용).
 다른 helper는 함수 안 lazy import.
 `SealRequestItem`은 decorator(`response_model`)에 필요해 module-level lazy import.
@@ -20,18 +23,36 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.db import get_db
-from app.exceptions import NotFoundError
+from app.models import mirror as M
 from app.models.auth import User
+from app.models.notion_outbox import OP_UPDATE
 from app.security import get_current_user
 from app.services import notion_props as P
 from app.services import seal_logic as SL
 from app.services.notion import NotionService, get_notion
-from app.services.sync import get_sync  # PR-CQ: write 즉시 mirror sync
+from app.services.notion_outbox import enqueue
+from app.services.seal_request_mirror import apply_update_to_mirror
 
 router = APIRouter()
 
 # module-level lazy import — sub-router include가 파일 끝(__init__.py fully loaded 후).
 from app.routers.seal_requests import SealRequestItem  # noqa: E402
+
+
+def _fetch_mirror_or_404(db: Session, page_id: str) -> M.MirrorSealRequest:
+    """mirror row 가져오기. 없으면 404."""
+    row = db.get(M.MirrorSealRequest, page_id)
+    if row is None or row.archived:
+        raise HTTPException(status_code=404, detail="날인요청을 찾을 수 없습니다")
+    return row
+
+
+def _row_to_item(row: M.MirrorSealRequest) -> SealRequestItem:
+    """mirror row → SealRequestItem (PR-FL helper 재사용)."""
+    from app.routers.seal_requests import _from_notion_page
+    from app.routers.seal_requests.list_endpoint import _mirror_row_to_notion_page
+
+    return _from_notion_page(_mirror_row_to_notion_page(row))
 
 
 class SealUpdateBody(BaseModel):
@@ -79,8 +100,9 @@ async def update_seal_request(
     notion: NotionService = Depends(get_notion),
     db: Session = Depends(get_db),
 ):
-    """재요청용 텍스트 필드 update. 본인 또는 admin/team_lead만,
-    상태가 '반려' 또는 '1차검토 중'(아직 처리 전)일 때만 허용.
+    """재요청용 텍스트 필드 update — mirror direct + outbox (PR-FP). 사용자 응답 즉시.
+
+    본인 또는 admin/team_lead만, 상태가 '반려' 또는 '1차검토 중'(아직 처리 전)일 때만 허용.
     상태가 '반려'였으면 '1차검토 중'으로 복구 + Bot 알림 재발송.
     """
     from app.routers.seal_requests import (
@@ -89,35 +111,40 @@ async def update_seal_request(
         _create_seal_task_bg,
         _find_admins,
         _find_team_lead,
-        _from_notion_page,
-        _get_title_prop_name,
         _resolve_works_id,
         _spawn_task,
     )
 
-    try:
-        page = await notion.get_page(page_id)
-    except NotFoundError as exc:
-        raise HTTPException(status_code=404, detail=exc.message) from exc
-    if not _can_access(user, page, db):
+    row = _fetch_mirror_or_404(db, page_id)
+    # _can_access는 page dict를 받으므로 mirror row → page-like dict 변환
+    from app.routers.seal_requests.list_endpoint import _mirror_row_to_notion_page
+
+    page_like = _mirror_row_to_notion_page(row)
+    if not _can_access(user, page_like, db):
         raise HTTPException(status_code=403, detail="접근 권한이 없습니다")
-    props = page.get("properties", {})
-    requester = P.rich_text(props, "요청자")
+
+    requester = row.requester
     is_owner = (user.name or user.username) == requester
     is_lead_admin = user.role in {"admin", "team_lead"}
     if not (is_owner or is_lead_admin):
         raise HTTPException(status_code=403, detail="본인 요청만 수정 가능")
-    cur_status = SL.normalize_status(P.select_name(props, "상태"))
+    cur_status = row.status
     if cur_status not in {"1차검토 중", "반려"}:
         raise HTTPException(
             status_code=400,
             detail=f"수정 가능 상태가 아님 (현재: {cur_status or '미정'})",
         )
 
+    # title prop은 노션 DB마다 이름 다를 수 있어 mirror.properties에서 찾기
+    title_prop_name = "제목"
+    for k, v in (row.properties or {}).items():
+        if isinstance(v, dict) and v.get("type") == "title":
+            title_prop_name = k
+            break
+
     update_props: dict[str, Any] = {}
     if body.title is not None:
-        title_prop = await _get_title_prop_name(notion)
-        update_props[title_prop] = {
+        update_props[title_prop_name] = {
             "title": [{"text": {"content": body.title}}]
         }
     if body.real_source_id is not None:
@@ -127,25 +154,17 @@ async def update_seal_request(
             else {"relation": [{"id": body.real_source_id}]}
         )
     if body.purpose is not None:
-        update_props["용도"] = {
-            "rich_text": [{"text": {"content": body.purpose}}]
-        }
+        update_props["용도"] = {"rich_text": [{"text": {"content": body.purpose}}]}
     if body.revision is not None:
         update_props["Revision"] = {"number": int(body.revision)}
     if body.with_safety_cert is not None:
         update_props["안전확인서포함"] = {"checkbox": bool(body.with_safety_cert)}
     if body.summary is not None:
-        update_props["내용요약"] = {
-            "rich_text": [{"text": {"content": body.summary}}]
-        }
+        update_props["내용요약"] = {"rich_text": [{"text": {"content": body.summary}}]}
     if body.doc_kind is not None:
-        update_props["문서종류"] = {
-            "rich_text": [{"text": {"content": body.doc_kind}}]
-        }
+        update_props["문서종류"] = {"rich_text": [{"text": {"content": body.doc_kind}}]}
     if body.note is not None:
-        update_props["비고"] = {
-            "rich_text": [{"text": {"content": body.note}}]
-        }
+        update_props["비고"] = {"rich_text": [{"text": {"content": body.note}}]}
     if body.due_date is not None:
         update_props["제출예정일"] = (
             {"date": None} if body.due_date == "" else {"date": {"start": body.due_date}}
@@ -158,12 +177,16 @@ async def update_seal_request(
         update_props["팀장처리일"] = {"date": None}
 
     if update_props:
-        await notion.update_page(page_id, update_props)
+        apply_update_to_mirror(row, update_props)
+        enqueue(
+            db, aggregate_type="seal_requests", aggregate_id=page_id,
+            op=OP_UPDATE, payload=update_props, notion_page_id=page_id,
+        )
+        db.commit()
 
-    # 반려 → 재요청이면 알림 재발송 + 1차 검토자 TASK 재생성 (이전 반려 시 완료됨)
+    # ── fire-and-forget (사용자 응답 path 외) ──
     if cur_status == "반려":
-        item = _from_notion_page(page)
-        # 새 1차 검토자 결정 — 등록 흐름과 동일 규칙
+        item = _row_to_item(row)
         new_lead_name = ""
         if user.role == "member":
             lead = _find_team_lead(db, requester_name=requester)
@@ -190,10 +213,7 @@ async def update_seal_request(
                 )
             )
 
-        msg = (
-            f"[날인 재요청] {body.title or item.title}"
-            f"\n요청자: {requester}"
-        )
+        msg = f"[날인 재요청] {body.title or item.title}\n요청자: {requester}"
         if user.role == "member":
             lead = _find_team_lead(db, requester_name=requester)
             if lead:
@@ -202,13 +222,10 @@ async def update_seal_request(
                 for adm in _find_admins(db):
                     _bot_send(_resolve_works_id(adm), msg)
         else:
-            # team_lead 또는 admin이 재요청 → admin 전원 (본인 포함)
             for adm in _find_admins(db):
                 _bot_send(_resolve_works_id(adm), msg)
 
-    updated = await notion.get_page(page_id)
-    get_sync().upsert_page("seal_requests", updated)  # PR-CQ
-    return _from_notion_page(updated)
+    return _row_to_item(row)
 
 
 @router.post("/{page_id}/redo", response_model=SealRequestItem)
@@ -219,7 +236,7 @@ async def redo_seal_request(
     notion: NotionService = Depends(get_notion),
     db: Session = Depends(get_db),
 ):
-    """재날인요청 — 같은 노션 row를 update해 새 1차검토 사이클 시작.
+    """재날인요청 — mirror direct update + outbox (PR-FP). 사용자 응답 즉시.
 
     docs/request.md 정책:
     - DB row는 새로 만들지 않고 기존 row 덮어쓰기.
@@ -234,22 +251,19 @@ async def redo_seal_request(
         _create_seal_task_bg,
         _find_admins,
         _find_team_lead,
-        _from_notion_page,
-        _get_title_prop_name,
         _project_summary_from_db,
         _resolve_works_id,
         _spawn_task,
     )
+    from app.routers.seal_requests.list_endpoint import _mirror_row_to_notion_page
 
-    try:
-        page = await notion.get_page(page_id)
-    except NotFoundError as exc:
-        raise HTTPException(status_code=404, detail=exc.message) from exc
-    if not _can_access(user, page, db):
+    row = _fetch_mirror_or_404(db, page_id)
+    page_like = _mirror_row_to_notion_page(row)
+    if not _can_access(user, page_like, db):
         raise HTTPException(status_code=403, detail="접근 권한이 없습니다")
-    props = page.get("properties", {})
-    requester = P.rich_text(props, "요청자") or (user.name or user.username)
-    project_ids = P.relation_ids(props, "프로젝트")
+
+    requester = row.requester or (user.name or user.username)
+    project_ids = list(row.project_ids or [])
     if not project_ids:
         raise HTTPException(status_code=400, detail="프로젝트 relation 누락")
     project_id = project_ids[0]
@@ -266,42 +280,45 @@ async def redo_seal_request(
     today = date.today()
     today_iso = today.isoformat()
 
-    # 1) 검토구분별 필드 정리. 구조검토서 문서번호는 기존 값 유지.
+    # 1) 검토구분별 필드 정리. 구조검토서 문서번호는 기존 값 유지 — mirror.properties에서 추출.
+    existing_props = row.properties or {}
     fields: dict[str, Any] = {}
     if seal_type == "구조계산서":
         fields = {"revision": body.revision, "용도": body.purpose}
     elif seal_type in {"구조안전확인서", "구조도면"}:
         fields = {"용도": body.purpose}
     elif seal_type == "구조검토서":
-        existing_doc_no = P.rich_text(props, "문서번호").strip()
+        existing_doc_no = P.rich_text(existing_props, "문서번호").strip()
         fields = {"문서번호": existing_doc_no, "내용요약": body.summary}
     elif seal_type == "기타":
         fields = {"문서종류": body.doc_kind}
 
-    # 2) 자동 제목 (사용자 입력 우선) — 새 등록과 동일 빌더
+    # 2) 자동 제목 — mirror에서 title prop 키 탐색
     code, project_name, _drive_url, _root_folder_id = _project_summary_from_db(
         db, project_id
     )
     auto_title = (body.title or "").strip() or SL.build_title(
         code=code, seal_type=seal_type, fields=fields
     )
+    title_prop_name = "제목"
+    for k, v in existing_props.items():
+        if isinstance(v, dict) and v.get("type") == "title":
+            title_prop_name = k
+            break
 
-    # 3) 기존 row 덮어쓰기 — 모든 prop + 상태/처리자 reset
-    title_prop = await _get_title_prop_name(notion)
+    # 3) 덮어쓰기 props — 노션 raw format
     update_props: dict[str, Any] = {
-        title_prop: {"title": [{"text": {"content": auto_title}}]},
+        title_prop_name: {"title": [{"text": {"content": auto_title}}]},
         "날인유형": {"select": {"name": seal_type}},
         "상태": {"select": {"name": "1차검토 중"}},
         "요청일": {"date": {"start": today_iso}},
         "제출예정일": {"date": {"start": due_iso}},
         "비고": {"rich_text": [{"text": {"content": body.note}}]},
-        # 이전 사이클 처리/반려 정보 reset
         "팀장처리자": {"rich_text": [{"text": {"content": ""}}]},
         "팀장처리일": {"date": None},
         "관리자처리자": {"rich_text": [{"text": {"content": ""}}]},
         "관리자처리일": {"date": None},
         "반려사유": {"rich_text": [{"text": {"content": ""}}]},
-        # 새 사이클 — 검토자 TASK ID는 비워두고 새 task 생성 후 채움
         "1차검토TASK": {"rich_text": [{"text": {"content": ""}}]},
         "2차검토TASK": {"rich_text": [{"text": {"content": ""}}]},
     }
@@ -319,7 +336,6 @@ async def redo_seal_request(
             "rich_text": [{"text": {"content": str(fields["용도"] or "")}}]
         }
     if seal_type == "구조검토서":
-        # 문서번호는 그대로 두지만 명시적으로 다시 set (idempotent)
         update_props["문서번호"] = {
             "rich_text": [{"text": {"content": str(fields.get("문서번호", ""))}}]
         }
@@ -331,8 +347,14 @@ async def redo_seal_request(
             "rich_text": [{"text": {"content": body.doc_kind.strip()}}]
         }
 
-    await notion.update_page(page_id, update_props)
+    apply_update_to_mirror(row, update_props)
+    enqueue(
+        db, aggregate_type="seal_requests", aggregate_id=page_id,
+        op=OP_UPDATE, payload=update_props, notion_page_id=page_id,
+    )
+    db.commit()
 
+    # ── fire-and-forget ──
     # 4) 자동 TASK 새로 생성 — 요청자 + 1차 검토자
     _spawn_task(
         _create_seal_task_bg(
@@ -389,6 +411,4 @@ async def redo_seal_request(
         for adm in _find_admins(db):
             _bot_send(_resolve_works_id(adm), msg)
 
-    final = await notion.get_page(page_id)
-    get_sync().upsert_page("seal_requests", final)  # PR-CQ
-    return _from_notion_page(final)
+    return _row_to_item(row)

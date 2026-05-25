@@ -5,6 +5,9 @@ PR-CI (Phase 4-J 7단계): seal_requests/__init__.py에서 status 전이 3 endpo
 - PATCH /:id/approve-admin — 2차 승인 (admin only)
 - PATCH /:id/reject — 반려 (1차는 team_lead/admin, 2차는 admin only)
 
+PR-FP Phase 1.3.2: 노션 호출 제거 → mirror direct update + outbox enqueue.
+사용자 응답 ~50ms (이전 1~2초). drain worker가 노션 push.
+
 `_set_status_with_handler` helper + `RejectBody` model도 함께 이동
 (이 endpoint들에서만 사용).
 
@@ -23,13 +26,13 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.db import get_db
-from app.exceptions import NotFoundError
+from app.models import mirror as M
 from app.models.auth import User
+from app.models.notion_outbox import OP_UPDATE
 from app.security import require_admin, require_admin_or_lead
-from app.services import notion_props as P
-from app.services import seal_logic as SL
 from app.services.notion import NotionService, get_notion
-from app.services.sync import get_sync  # PR-CQ: write 즉시 mirror sync
+from app.services.notion_outbox import enqueue
+from app.services.seal_request_mirror import apply_update_to_mirror
 
 router = APIRouter()
 
@@ -42,23 +45,35 @@ class RejectBody(BaseModel):
     reason: str = ""
 
 
-async def _set_status_with_handler(
-    notion: NotionService,
-    page_id: str,
+def _status_change_props(
     new_status: str,
     handler_field: str,
     handler_date_field: str,
     handler_name: str,
 ) -> dict[str, Any]:
+    """status 전이 update_props 빌더 (mirror + outbox 공통 payload)."""
     today = date.today().isoformat()
-    return await notion.update_page(
-        page_id,
-        {
-            "상태": {"select": {"name": new_status}},
-            handler_field: {"rich_text": [{"text": {"content": handler_name}}]},
-            handler_date_field: {"date": {"start": today}},
-        },
-    )
+    return {
+        "상태": {"select": {"name": new_status}},
+        handler_field: {"rich_text": [{"text": {"content": handler_name}}]},
+        handler_date_field: {"date": {"start": today}},
+    }
+
+
+def _fetch_mirror_or_404(db: Session, page_id: str) -> M.MirrorSealRequest:
+    """mirror row 가져오기. 없으면 404 (sync lag 또는 잘못된 page_id)."""
+    row = db.get(M.MirrorSealRequest, page_id)
+    if row is None or row.archived:
+        raise HTTPException(status_code=404, detail="날인요청을 찾을 수 없습니다")
+    return row
+
+
+def _row_to_item(row: M.MirrorSealRequest) -> SealRequestItem:
+    """mirror row → SealRequestItem (PR-FL helper 재사용)."""
+    from app.routers.seal_requests import _from_notion_page
+    from app.routers.seal_requests.list_endpoint import _mirror_row_to_notion_page
+
+    return _from_notion_page(_mirror_row_to_notion_page(row))
 
 
 @router.patch("/{page_id}/approve-lead", response_model=SealRequestItem)
@@ -68,37 +83,40 @@ async def approve_lead(
     notion: NotionService = Depends(get_notion),
     db: Session = Depends(get_db),
 ):
+    """1차 승인 — mirror direct update + outbox enqueue (PR-FP). 사용자 응답 즉시."""
     from app.routers.seal_requests import (
         _bot_send,
         _create_seal_task_bg,
         _find_admins,
-        _from_notion_page,
         _resolve_works_id,
         _spawn_task,
         _sync_linked_task,
     )
 
-    try:
-        page = await notion.get_page(page_id)
-    except NotFoundError as exc:
-        raise HTTPException(status_code=404, detail=exc.message) from exc
-    cur = SL.normalize_status(P.select_name(page.get("properties", {}), "상태"))
-    if cur != "1차검토 중":
+    row = _fetch_mirror_or_404(db, page_id)
+    if row.status != "1차검토 중":
         raise HTTPException(
             status_code=400,
-            detail=f"현재 상태가 '1차검토 중'이 아닙니다 (현재: {cur or '미정'})",
+            detail=f"현재 상태가 '1차검토 중'이 아닙니다 (현재: {row.status or '미정'})",
         )
     handler = user.name or user.username
-    item = _from_notion_page(page)
+    item_before = _row_to_item(row)  # 사전 lead_task_id 캡처 (post-update 시 동일)
 
-    await _set_status_with_handler(
-        notion, page_id, "2차검토 중", "팀장처리자", "팀장처리일", handler
+    update_props = _status_change_props(
+        "2차검토 중", "팀장처리자", "팀장처리일", handler
     )
+    apply_update_to_mirror(row, update_props)
+    enqueue(
+        db, aggregate_type="seal_requests", aggregate_id=page_id,
+        op=OP_UPDATE, payload=update_props, notion_page_id=page_id,
+    )
+    db.commit()  # mirror + outbox 원자성
 
-    # 1차 검토자 TASK 완료 + 2차 검토자(admin) TASK 생성
-    if item.lead_task_id:
-        await _sync_linked_task(notion, item.lead_task_id, target="완료")
-    project_id_for_task = item.project_ids[0] if item.project_ids else ""
+    # ── 이하 fire-and-forget (사용자 응답 path 외) ──
+    # 1차 검토자 TASK 완료 + 2차 검토자(admin) TASK 생성 (tasks 도메인 — PR-FP+1로 분리)
+    if item_before.lead_task_id:
+        _spawn_task(_sync_linked_task(notion, item_before.lead_task_id, target="완료"))
+    project_id_for_task = item_before.project_ids[0] if item_before.project_ids else ""
     admins = _find_admins(db)
     admin_reviewer_name = (admins[0].name or "") if admins else ""
     if project_id_for_task and admin_reviewer_name:
@@ -108,7 +126,7 @@ async def approve_lead(
                 seal_page_id=page_id,
                 seal_link_prop="2차검토TASK",
                 project_id=project_id_for_task,
-                title=f"[날인 2차검토] {item.title}",
+                title=f"[날인 2차검토] {item_before.title}",
                 assignee_name=admin_reviewer_name,
                 today_iso=date.today().isoformat(),
             )
@@ -116,15 +134,13 @@ async def approve_lead(
 
     # Bot 알림 — admin 전원 (본인 포함)
     msg = (
-        f"[2차검토 요청] {item.title}"
-        f"\n1차검토자: {handler} / 요청자: {item.requester} / 제출예정일: {item.due_date or '-'}"
+        f"[2차검토 요청] {item_before.title}"
+        f"\n1차검토자: {handler} / 요청자: {item_before.requester} / 제출예정일: {item_before.due_date or '-'}"
     )
     for adm in _find_admins(db):
         _bot_send(_resolve_works_id(adm), msg)
 
-    updated = await notion.get_page(page_id)
-    get_sync().upsert_page("seal_requests", updated)  # PR-CQ
-    return _from_notion_page(updated)
+    return _row_to_item(row)
 
 
 @router.patch("/{page_id}/approve-admin", response_model=SealRequestItem)
@@ -134,51 +150,49 @@ async def approve_admin(
     notion: NotionService = Depends(get_notion),
     db: Session = Depends(get_db),
 ):
+    """2차 승인 — mirror direct update + outbox enqueue (PR-FP). 사용자 응답 즉시."""
     from app.routers.seal_requests import (
         _bot_send,
         _find_user_by_name,
-        _from_notion_page,
         _resolve_works_id,
+        _spawn_task,
         _sync_linked_task,
     )
 
-    try:
-        page = await notion.get_page(page_id)
-    except NotFoundError as exc:
-        raise HTTPException(status_code=404, detail=exc.message) from exc
-    cur = SL.normalize_status(P.select_name(page.get("properties", {}), "상태"))
-    if cur not in {"2차검토 중", "1차검토 중"}:
+    row = _fetch_mirror_or_404(db, page_id)
+    if row.status not in {"2차검토 중", "1차검토 중"}:
         raise HTTPException(
             status_code=400,
-            detail=f"승인 가능 상태가 아님 (현재: {cur or '미정'})",
+            detail=f"승인 가능 상태가 아님 (현재: {row.status or '미정'})",
         )
     handler = user.name or user.username
-    item = _from_notion_page(page)
+    item_before = _row_to_item(row)
 
-    await _set_status_with_handler(
-        notion, page_id, "승인", "관리자처리자", "관리자처리일", handler
+    update_props = _status_change_props(
+        "승인", "관리자처리자", "관리자처리일", handler
     )
+    apply_update_to_mirror(row, update_props)
+    enqueue(
+        db, aggregate_type="seal_requests", aggregate_id=page_id,
+        op=OP_UPDATE, payload=update_props, notion_page_id=page_id,
+    )
+    db.commit()
 
-    # 2차 검토자 TASK 완료 + (1차 검토자 TASK가 1차 미경유 케이스로 남아있으면 함께 완료)
-    # + 요청자 TASK 완료
-    if item.admin_task_id:
-        await _sync_linked_task(notion, item.admin_task_id, target="완료")
-    if item.lead_task_id:
-        # 1차 미경유로 admin이 바로 승인한 경우 lead task가 진행 중일 수 있어 같이 완료
-        await _sync_linked_task(notion, item.lead_task_id, target="완료")
-    if item.linked_task_id:
-        await _sync_linked_task(notion, item.linked_task_id, target="완료")
+    # ── fire-and-forget (사용자 응답 path 외) ──
+    # 2차 + 1차(미경유 케이스) + 요청자 TASK 완료
+    if item_before.admin_task_id:
+        _spawn_task(_sync_linked_task(notion, item_before.admin_task_id, target="완료"))
+    if item_before.lead_task_id:
+        _spawn_task(_sync_linked_task(notion, item_before.lead_task_id, target="완료"))
+    if item_before.linked_task_id:
+        _spawn_task(_sync_linked_task(notion, item_before.linked_task_id, target="완료"))
 
     # Bot 알림 — 요청자에게
-    requester_user = _find_user_by_name(db, item.requester)
-    msg = (
-        f"[승인 완료] {item.title}\n처리자: {handler}"
-    )
+    requester_user = _find_user_by_name(db, item_before.requester)
+    msg = f"[승인 완료] {item_before.title}\n처리자: {handler}"
     _bot_send(_resolve_works_id(requester_user), msg)
 
-    updated = await notion.get_page(page_id)
-    get_sync().upsert_page("seal_requests", updated)  # PR-CQ
-    return _from_notion_page(updated)
+    return _row_to_item(row)
 
 
 @router.patch("/{page_id}/reject", response_model=SealRequestItem)
@@ -189,25 +203,22 @@ async def reject_seal_request(
     notion: NotionService = Depends(get_notion),
     db: Session = Depends(get_db),
 ):
+    """반려 — mirror direct update + outbox enqueue (PR-FP). 사용자 응답 즉시."""
     from app.routers.seal_requests import (
         _bot_send,
         _find_user_by_name,
-        _from_notion_page,
         _resolve_works_id,
+        _spawn_task,
         _sync_linked_task,
     )
 
-    try:
-        page = await notion.get_page(page_id)
-    except NotFoundError as exc:
-        raise HTTPException(status_code=404, detail=exc.message) from exc
-    cur = SL.normalize_status(P.select_name(page.get("properties", {}), "상태"))
+    row = _fetch_mirror_or_404(db, page_id)
+    cur = row.status
     if cur not in {"1차검토 중", "2차검토 중"}:
         raise HTTPException(
             status_code=400,
             detail=f"반려 가능 상태가 아님 (현재: {cur or '미정'})",
         )
-    # 정책: 팀장은 1차검토 단계에서만 반려 가능. 2차검토 중인 항목의 반려는 admin only.
     if cur == "2차검토 중" and user.role != "admin":
         raise HTTPException(
             status_code=403,
@@ -215,6 +226,8 @@ async def reject_seal_request(
         )
     rejector = user.name or user.username
     reason = (body.reason or "").strip()
+    item_before = _row_to_item(row)
+
     update_props: dict[str, Any] = {
         "상태": {"select": {"name": "반려"}},
         "반려사유": {
@@ -223,24 +236,24 @@ async def reject_seal_request(
             ]
         },
     }
-    await notion.update_page(page_id, update_props)
+    apply_update_to_mirror(row, update_props)
+    enqueue(
+        db, aggregate_type="seal_requests", aggregate_id=page_id,
+        op=OP_UPDATE, payload=update_props, notion_page_id=page_id,
+    )
+    db.commit()
 
-    # 현재 단계 검토자 TASK 완료 (반려도 검토 완료로 간주). 요청자 TASK는
-    # 그대로 진행 — 사용자가 재요청하면 다시 1차검토 중으로 돌아감.
-    item_for_task = _from_notion_page(page)
-    if cur == "1차검토 중" and item_for_task.lead_task_id:
-        await _sync_linked_task(notion, item_for_task.lead_task_id, target="완료")
-    elif cur == "2차검토 중" and item_for_task.admin_task_id:
-        await _sync_linked_task(notion, item_for_task.admin_task_id, target="완료")
+    # ── fire-and-forget ──
+    if cur == "1차검토 중" and item_before.lead_task_id:
+        _spawn_task(_sync_linked_task(notion, item_before.lead_task_id, target="완료"))
+    elif cur == "2차검토 중" and item_before.admin_task_id:
+        _spawn_task(_sync_linked_task(notion, item_before.admin_task_id, target="완료"))
 
-    item = _from_notion_page(page)
-    requester_user = _find_user_by_name(db, item.requester)
+    requester_user = _find_user_by_name(db, item_before.requester)
     msg = (
-        f"[반려] {item.title}"
+        f"[반려] {item_before.title}"
         f"\n사유: {reason or '(미기재)'} / 처리자: {rejector}"
     )
     _bot_send(_resolve_works_id(requester_user), msg)
 
-    updated = await notion.get_page(page_id)
-    get_sync().upsert_page("seal_requests", updated)  # PR-CQ
-    return _from_notion_page(updated)
+    return _row_to_item(row)
