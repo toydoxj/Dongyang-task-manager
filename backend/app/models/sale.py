@@ -281,18 +281,18 @@ def sale_update_to_props(req: SaleUpdateRequest) -> dict[str, Any]:
     (필수 필드라 빈 값 의도 없음).
     """
     props: dict[str, Any] = {}
+    # PR-FU/2: 필수 필드(name/code/kind/stage) 빈 string 무시.
+    # frontend form 전체 PATCH 패턴 + 빈 prefill → mirror cascade 손실 방지.
+    # 이 4개 필드는 빈 string clear 의도 없음 (필수). 다른 필드(note/location/...)는
+    # 빈 string clear 허용 정책 유지.
     if req.name is not None and req.name.strip():
         props["견적서명"] = _title(req.name)
     if req.code is not None and req.code.strip():
         props["영업코드"] = _rich_text(req.code)
-    if req.kind is not None:
-        props["유형"] = (
-            {"select": None} if req.kind == "" else {"select": {"name": req.kind}}
-        )
-    if req.stage is not None:
-        props["단계"] = (
-            {"select": None} if req.stage == "" else {"select": {"name": req.stage}}
-        )
+    if req.kind is not None and req.kind.strip():
+        props["유형"] = {"select": {"name": req.kind}}
+    if req.stage is not None and req.stage.strip():
+        props["단계"] = {"select": {"name": req.stage}}
     if req.category is not None:
         props["업무내용"] = _multi_select(req.category)
     if req.estimated_amount is not None:
