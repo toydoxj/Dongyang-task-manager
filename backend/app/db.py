@@ -103,13 +103,37 @@ def _sql_after(
 # idle in transaction 잔존 (TCP fin 인지 늦음). 5분 안에 PostgreSQL이 자동
 # rollback + connection close → leak 자동 회수. ALTER lock wait 사고 회피.
 # database-wide ALTER DATABASE 대신 우리 connection만 적용 (다른 사용자 무관).
+#
+# PR-DA/2 (2026-05-25, INCIDENT.md 2026-05-22 재검증 결과 반영):
+# 운영 /api/health/db SHOW가 "0" 반환 — connect 시점 SET이 Supavisor Session
+# mode pooler의 pool checkin 시점에 reset됨. backend code는 SET을 실행하지만
+# 다음 query 시 새 connection으로 swap되어 사라짐. after_begin event로 매
+# transaction 시작 시점 SET LOCAL 추가 (transaction scope — Supavisor reset에
+# 영향받지 않음).
 @event.listens_for(engine, "connect")
 def _set_session_params(dbapi_conn: Any, _conn_rec: Any) -> None:
     if _is_sqlite:
         return
     with dbapi_conn.cursor() as cur:
         # 5분 idle in transaction → 자동 rollback + connection 종료
+        # (Supavisor reset 회피는 after_begin event로 보강 — PR-DA/2)
         cur.execute("SET idle_in_transaction_session_timeout = '300s'")
+
+
+# PR-DA/2: 매 transaction 시작 시 SET LOCAL — Supavisor pool reset에도 살아남음.
+# SessionLocal(sessionmaker)이 만드는 모든 Session 인스턴스의 after_begin event에
+# listen. autobegin(첫 query 시 자동 트랜잭션 시작) + explicit begin() 모두 cover.
+# SET LOCAL은 transaction scope — commit/rollback 시 자동 무효화되지만 매 transaction
+# 마다 다시 적용되어 항상 살아있음.
+@event.listens_for(SessionLocal, "after_begin")
+def _set_local_session_params(
+    _session: Any, _transaction: Any, connection: Any
+) -> None:
+    if _is_sqlite:
+        return
+    connection.exec_driver_sql(
+        "SET LOCAL idle_in_transaction_session_timeout = '300s'"
+    )
 
 
 @event.listens_for(engine, "checkout")
