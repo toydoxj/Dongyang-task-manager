@@ -157,6 +157,10 @@ async def drain_once(batch_size: int = _BATCH_SIZE_DEFAULT) -> dict:
             return stats
 
         stats["picked"] = len(rows)
+        # PR-FP/2: commit 후 row 객체가 detached됨. r.id 등 attribute access가
+        # expire load를 트리거해 DetachedInstanceError 발생. ids는 commit 전에
+        # 미리 추출 (PK라 이미 set돼 있음). 이후 루프는 detached row를 사용 안 함.
+        row_ids = [r.id for r in rows]
         # status='processing' + lock 표시
         for r in rows:
             r.status = STATUS_PROCESSING
@@ -166,7 +170,7 @@ async def drain_once(batch_size: int = _BATCH_SIZE_DEFAULT) -> dict:
 
     # 2. 락 해제 후 노션 호출 (각 row 별도 transaction)
     notion = get_notion()
-    for r_id in [r.id for r in rows]:
+    for r_id in row_ids:
         with SessionLocal() as db:
             r = db.get(NotionOutbox, r_id)
             if r is None:
