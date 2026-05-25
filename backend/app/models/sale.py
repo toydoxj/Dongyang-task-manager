@@ -274,16 +274,11 @@ def sale_update_to_props(req: SaleUpdateRequest) -> dict[str, Any]:
     """SaleUpdateRequest → 노션 properties dict.
 
     None이 아닌 필드만 변환. 빈 문자열은 'clear' 신호로 select=None 등 처리.
-
-    PR-FU (2026-05-25): 필수 필드(name/code)는 빈 string 무시.
-    frontend SalesEditModal이 form 전체를 PATCH 전송하므로, prefill이 어떤 이유로
-    빈 string인 경우 mirror 영구 손실 cascade 회피. 의도적 clear는 불가능
-    (필수 필드라 빈 값 의도 없음).
     """
     props: dict[str, Any] = {}
-    if req.name is not None and req.name.strip():
+    if req.name is not None:
         props["견적서명"] = _title(req.name)
-    if req.code is not None and req.code.strip():
+    if req.code is not None:
         props["영업코드"] = _rich_text(req.code)
     if req.kind is not None:
         props["유형"] = (
