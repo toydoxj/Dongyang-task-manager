@@ -361,19 +361,14 @@ async def save_quote_pdf_to_drive(
         update_props["제출일"] = {"date": {"start": today_kst}}
 
     if update_props:
-        # PR-FT: 노션 update 제거 → mirror direct + outbox enqueue.
-        from app.models.notion_outbox import OP_UPDATE
-        from app.routers.sales import _sale_page_from_mirror_with_update
-        from app.services.notion_outbox import enqueue
-
-        page_like = _sale_page_from_mirror_with_update(row, update_props)
-        sync = get_sync()
-        sync.upsert_in_session(db, "sales", page_like)
-        enqueue(
-            db, aggregate_type="sales", aggregate_id=page_id,
-            op=OP_UPDATE, payload=update_props, notion_page_id=page_id,
-        )
-        db.commit()
+        try:
+            updated = await notion.update_page(page_id, update_props)
+            get_sync().upsert_page("sales", updated)
+        except Exception:  # noqa: BLE001
+            logger.exception(
+                "Drive 업로드 후 노션 갱신 실패 — 운영 수동 보정 필요 (keys=%s)",
+                list(update_props.keys()),
+            )
 
     row = db.get(M.MirrorSales, page_id)
     return sale_from_mirror(row) if row else Sale.from_notion_page({"id": page_id})
@@ -495,21 +490,14 @@ async def save_quote_bundle_pdf_to_drive(
         }
 
     if update_props:
-        # PR-FT: 노션 update 제거 → mirror direct + outbox enqueue.
-        from app.models.notion_outbox import OP_UPDATE
-        from app.routers.sales import _sale_page_from_mirror_with_update
-        from app.services.notion_outbox import enqueue
-
-        sale_row = db.get(M.MirrorSales, page_id)
-        if sale_row is not None:
-            page_like = _sale_page_from_mirror_with_update(sale_row, update_props)
-            sync = get_sync()
-            sync.upsert_in_session(db, "sales", page_like)
-            enqueue(
-                db, aggregate_type="sales", aggregate_id=page_id,
-                op=OP_UPDATE, payload=update_props, notion_page_id=page_id,
+        try:
+            updated = await notion.update_page(page_id, update_props)
+            get_sync().upsert_page("sales", updated)
+        except Exception:  # noqa: BLE001
+            logger.exception(
+                "통합 PDF 업로드 후 노션 갱신 실패 — 운영 수동 보정 필요 (keys=%s)",
+                list(update_props.keys()),
             )
-            db.commit()
 
     sale = db.get(M.MirrorSales, page_id)
     return sale_from_mirror(sale) if sale else Sale.from_notion_page({"id": page_id})

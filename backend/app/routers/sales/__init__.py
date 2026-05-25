@@ -21,7 +21,6 @@ from app.db import get_db
 from app.models import mirror as M
 # Employee import는 PR-CE에서 pdf.py로 이동
 from app.models.auth import User
-from app.models.notion_outbox import OP_UPDATE
 # Project 관련 import는 PR-CD에서 link.py로 이동
 from app.models.sale import (
     Sale,
@@ -35,25 +34,6 @@ from app.security import get_current_user, require_admin
 from app.services import sso_drive
 from app.services.mirror_dto import sale_from_mirror
 from app.services.notion import NotionService, get_notion
-from app.services.notion_outbox import enqueue
-
-
-def _sale_page_from_mirror_with_update(
-    row: M.MirrorSales, update_props: dict
-) -> dict:
-    """PR-FT: mirror row + update_props → 노션 page-like dict (sync._upsert_sale 재사용).
-
-    PR-FS의 _project_page_from_mirror_with_update 패턴 동일.
-    """
-    merged_props = {**(row.properties or {}), **update_props}
-    return {
-        "id": row.page_id,
-        "properties": merged_props,
-        "url": row.url or "",
-        "created_time": None,
-        "last_edited_time": datetime.now(timezone.utc).isoformat(),
-        "archived": False,
-    }
 from app.services.quote_calculator import (
     QuoteInput,
     QuoteType,
@@ -281,10 +261,7 @@ async def create_sale(
             update={"quote_doc_number": next_quote_doc_number(db, qtype_val)}
         )
 
-    # PR-FT: user_facing=True — 5초 deadline + SDK timeout 4s.
-    page = await notion.create_page(
-        db_id, sale_create_to_props(body), user_facing=True
-    )
+    page = await notion.create_page(db_id, sale_create_to_props(body))
     get_sync().upsert_page("sales", page)
 
     # quote_form_data는 노션에 저장 불가 (JSONB). mirror_sales에만 별도 UPDATE.
@@ -434,14 +411,17 @@ async def _sync_sale_estimated_amount(
         .where(M.MirrorSales.page_id == page_id)
         .values(estimated_amount=float(total))
     )
-    # PR-FT: 노션 update를 outbox에 enqueue (락 release 전, 같은 transaction).
-    # drain worker가 background에서 노션 push.
-    enqueue(
-        db, aggregate_type="sales", aggregate_id=page_id,
-        op=OP_UPDATE, payload={"견적금액": {"number": total}},
-        notion_page_id=page_id,
-    )
-    db.commit()  # 락 release + outbox 원자성
+    db.commit()  # 락 release. 노션 update는 별도 트랜잭션 외부.
+
+    try:
+        updated = await notion.update_page(
+            page_id, {"견적금액": {"number": total}}
+        )
+        get_sync().upsert_page("sales", updated)
+    except Exception:  # noqa: BLE001
+        logger.exception(
+            "견적금액 노션 sync 실패 — 운영 수동 보정 필요 (page_id=%s)", page_id
+        )
 
 
 @router.get("/{page_id}/quotes", response_model=list[QuoteFormResponse])
@@ -901,36 +881,10 @@ async def update_sale(
     body: SaleUpdateRequest,
     _user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
-    notion: NotionService = Depends(get_notion),  # noqa: ARG001
+    notion: NotionService = Depends(get_notion),
 ) -> Sale:
-    """PR-FT: mirror direct + outbox enqueue. 응답 ~50ms baseline."""
-    _ = notion  # signature backward compat
-    props = sale_update_to_props(body)
-    if not props and body.quote_form_data is None:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail="갱신할 필드가 없습니다"
-        )
-    row = db.get(M.MirrorSales, page_id)
-    if row is None or row.archived:
-        raise HTTPException(status_code=404, detail="영업을 찾을 수 없습니다")
-    if props:
-        page_like = _sale_page_from_mirror_with_update(row, props)
-        sync = get_sync()
-        sync.upsert_in_session(db, "sales", page_like)
-        enqueue(
-            db, aggregate_type="sales", aggregate_id=page_id,
-            op=OP_UPDATE, payload=props, notion_page_id=page_id,
-        )
-        db.commit()
-    page = _sale_page_from_mirror_with_update(row, props) if props else {
-        "id": page_id,
-        "properties": row.properties or {},
-        "url": row.url or "",
-        "last_edited_time": (
-            row.last_edited_time.isoformat() if row.last_edited_time else None
-        ),
-    }
-    get_sync().upsert_page("sales", page)  # legacy path 유지 (quote_form_data 처리 위해)
+    page = await notion.update_page(page_id, sale_update_to_props(body))
+    get_sync().upsert_page("sales", page)
 
     # quote_form_data는 노션에 저장 불가 (JSONB) — mirror_sales에만 별도 UPDATE.
     # 단일 schema는 list-wrapped로 변환 (POST 흐름과 동일 — stable form id 보장).

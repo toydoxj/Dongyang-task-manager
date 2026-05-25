@@ -87,10 +87,8 @@ async def convert_to_project(
         assignees=list(sale.assignees),
         contract_amount=sale.estimated_amount,
     )
-    # PR-FT: user_facing=True — 5초 deadline.
     new_page = await notion.create_page(
-        settings.notion_db_projects, project_create_to_props(project_req),
-        user_facing=True,
+        settings.notion_db_projects, project_create_to_props(project_req)
     )
     get_sync().upsert_page("projects", new_page)
     new_project_id = new_page.get("id", "")
@@ -110,25 +108,8 @@ async def convert_to_project(
             "단계": {"select": {"name": "완료"}},
             "전환된 프로젝트": {"relation": [{"id": new_project_id}]},
         }
-        # PR-FT: 노션 update 제거 → mirror direct + outbox enqueue.
-        from app.models.notion_outbox import OP_UPDATE
-        from app.routers.sales import _sale_page_from_mirror_with_update
-        from app.services.notion_outbox import enqueue
-
-        sale_row_for_update = db.get(M.MirrorSales, page_id)
-        if sale_row_for_update is None:
-            raise RuntimeError(f"sale mirror row 사라짐 (page_id={page_id})")
-        page_like = _sale_page_from_mirror_with_update(
-            sale_row_for_update, update_props
-        )
-        sync = get_sync()
-        sync.upsert_in_session(db, "sales", page_like)
-        enqueue(
-            db, aggregate_type="sales", aggregate_id=page_id,
-            op=OP_UPDATE, payload=update_props, notion_page_id=page_id,
-        )
-        db.commit()
-        updated_sale_page = page_like  # 변수명 유지 (다음 코드와 backward compat)
+        updated_sale_page = await notion.update_page(page_id, update_props)
+        get_sync().upsert_page("sales", updated_sale_page)
     except Exception as exc:  # noqa: BLE001
         logger.exception(
             "sale 갱신 실패 — 새 프로젝트는 생성됨. 운영자 수동 연결 필요. "
@@ -225,25 +206,11 @@ async def link_to_existing_project(
         "단계": {"select": {"name": "완료"}},
         "전환된 프로젝트": {"relation": [{"id": body.project_id}]},
     }
-    # PR-FT: 노션 update 제거 → mirror direct + outbox enqueue.
-    from app.models.notion_outbox import OP_UPDATE
-    from app.routers.sales import _sale_page_from_mirror_with_update
-    from app.services.notion_outbox import enqueue
-
-    sale_row = db.get(M.MirrorSales, page_id)
-    if sale_row is None:
-        raise HTTPException(status_code=404, detail="영업을 찾을 수 없습니다")
-    page_like = _sale_page_from_mirror_with_update(sale_row, update_props)
-    sync = get_sync()
-    sync.upsert_in_session(db, "sales", page_like)
-    enqueue(
-        db, aggregate_type="sales", aggregate_id=page_id,
-        op=OP_UPDATE, payload=update_props, notion_page_id=page_id,
-    )
-    db.commit()
+    updated_page = await notion.update_page(page_id, update_props)
+    get_sync().upsert_page("sales", updated_page)
     logger.info(
         "sale → 기존 프로젝트 연결: sale=%s project=%s",
         page_id[:8],
         body.project_id[:8],
     )
-    return Sale.from_notion_page(page_like)
+    return Sale.from_notion_page(updated_page)
