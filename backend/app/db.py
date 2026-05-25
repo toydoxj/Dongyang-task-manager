@@ -167,13 +167,14 @@ def init_db() -> None:
         employee,
         mirror,
         notice,  # PR-W (공지/교육/휴일)
+        notion_outbox,  # PR-FO Phase 1.3.1 (Transactional Outbox)
         snapshot,
         weekly_publish,
     )
 
     if _is_sqlite:
         # ARRAY/JSONB 사용 테이블은 SQLite 호환 안 됨
-        skip_tables = {"project_snapshots"}
+        skip_tables = {"project_snapshots", "notion_outbox"}
         tables = [
             t
             for t in Base.metadata.tables.values()

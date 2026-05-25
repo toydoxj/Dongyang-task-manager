@@ -109,3 +109,32 @@ async def run_sync(
 
     background.add_task(_run)
     return SyncRunResponse(status="started", kind=body.kind, full=body.full)
+
+
+# ── PR-FO Phase 1.3.1 Outbox monitoring ──
+
+
+class OutboxStatusEntry(BaseModel):
+    status: str  # pending | processing | retry | sent | dead
+    count: int
+    oldest_created_at: str | None = None
+
+
+class OutboxStatusResponse(BaseModel):
+    items: list[OutboxStatusEntry]
+
+
+@router.get("/outbox", response_model=OutboxStatusResponse)
+def outbox_status(
+    db: Session = Depends(get_db),
+    _admin: User = Depends(require_admin),
+) -> OutboxStatusResponse:
+    """notion_outbox 상태별 카운트 + 가장 오래된 row created_at.
+
+    인프라 깔린 후 모니터링. pending count가 계속 늘면 drain worker가 안 돌거나
+    노션 API 장애. dead count > 0이면 수동 점검 필요.
+    """
+    from app.services.notion_outbox import status_summary
+
+    items = [OutboxStatusEntry(**row) for row in status_summary(db)]
+    return OutboxStatusResponse(items=items)
