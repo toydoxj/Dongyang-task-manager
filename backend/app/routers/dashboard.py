@@ -365,55 +365,36 @@ class DashboardActions(BaseModel):
     stuck_tasks: ActionItem  # 시작 전 + 60일 이상
 
 
-async def _collect_overdue_seals(notion: NotionService, today: date) -> ActionItem:
-    """1차/2차 검토중 + 제출예정일(due_date)이 today보다 이전. 가장 오래된 것 preview."""
-    s = get_settings()
-    db_id = s.notion_db_seal_requests
-    if not db_id:
-        return ActionItem(count=0)
-    # PR-EW (PR-CR 4순위): notion filter push down — 상태 IN {1차/2차 검토중} +
-    # 제출예정일 < today. 옛 방식은 전량 fetch 후 Python filter라 admin/manager의
-    # /api/dashboard/actions 호출(30초 cache가 만료될 때마다) 시 notion 전체 페이지
-    # 로드 부하 발생. notion 서버 단에서 매칭 페이지만 반환받음.
-    # 상태 type은 select (notion_schema). Python loop는 그대로 유지 — title 추출
-    # + schema 변경 시 안전망.
-    overdue_filter = {
-        "and": [
-            {
-                "or": [
-                    {"property": "상태", "select": {"equals": "1차검토 중"}},
-                    {"property": "상태", "select": {"equals": "2차검토 중"}},
-                ]
-            },
-            {"property": "제출예정일", "date": {"before": today.isoformat()}},
-        ]
-    }
-    try:
-        pages = await notion.query_all(db_id, filter=overdue_filter)
-    except Exception:  # noqa: BLE001
-        logger.exception("overdue seals 조회 실패")
-        return ActionItem(count=0)
+def _collect_overdue_seals(db: Session, today: date) -> ActionItem:
+    """1차/2차 검토중 + 제출예정일(due_date)이 today보다 이전. 가장 오래된 것 preview.
+
+    PR-FM Phase 1.2: mirror SELECT 전환. PR-EW의 notion filter push down은
+    제거 — mirror.status 인덱스 + Python loop로 동등 효율 + 노션 의존 0건.
+    /api/dashboard/actions 운영 6.4초 병목 해소. mirror.properties=NULL인
+    옛 row(PR-FL 직후)는 due_date 추출 불가 → skip (degrade 안전).
+    """
+    from app.models import mirror as M
+
+    stmt = select(
+        M.MirrorSealRequest.title,
+        M.MirrorSealRequest.properties,
+    ).where(
+        M.MirrorSealRequest.archived.is_(False),
+        M.MirrorSealRequest.status.in_(_PENDING_SEAL_STATUSES),
+    )
+    rows = db.execute(stmt).all()
 
     overdue: list[tuple[str, str]] = []  # (due_date, title)
     today_iso = today.isoformat()
-    for p in pages:
-        props = p.get("properties", {})
-        if not isinstance(props, dict):
-            continue
-        status_obj = props.get("상태")
-        if not isinstance(status_obj, dict):
-            continue
-        inner = status_obj.get("select") or status_obj.get("status")
-        if not isinstance(inner, dict):
-            continue
-        if inner.get("name") not in _PENDING_SEAL_STATUSES:
+    for title_col, props in rows:
+        if not isinstance(props, dict) or not props:
             continue
         # due_date 노션 property는 "제출예정일" date.start
         due = _extract_date(props, "제출예정일")
         if due is None or due.isoformat() >= today_iso:
             continue
-        # title 추출 (날인요청 DB의 첫 title property)
-        title = _extract_title(props)
+        # title: mirror.title 우선, fallback으로 properties dict에서 추출
+        title = title_col or _extract_title(props)
         overdue.append((due.isoformat(), title))
     overdue.sort(key=lambda x: x[0])
     return ActionItem(
@@ -623,9 +604,11 @@ async def get_dashboard_actions(
             preview=(stuck_filtered[0][0] or "") if stuck_filtered else "",
         )
 
-    # 2 — 승인 지연 날인 (notion 호출 — 운영 6.4초 병목. scope='all'만 호출)
+    # 2 — 승인 지연 날인 (PR-FM Phase 1.2: 노션 호출 제거 → mirror SELECT.
+    # 옛 PR-EW의 운영 6.4초 병목 해소 + 사용자 facing 흐름에서 노션 의존 제거.
+    # scope='all'만 호출 (옛 정책 유지).
     if scope == "all":
-        overdue_seal_item = await _collect_overdue_seals(notion, today)
+        overdue_seal_item = _collect_overdue_seals(db, today)
     else:
         overdue_seal_item = ActionItem(count=0)
 
