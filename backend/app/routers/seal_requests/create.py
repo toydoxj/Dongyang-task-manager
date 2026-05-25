@@ -1,8 +1,12 @@
 """날인요청 create endpoint (POST /).
 
 PR-CW (Phase 4-J 12단계): seal_requests/__init__.py에서 create_seal_request 분리.
-가장 큰 endpoint(~165 lines). 흐름: 노션 page 생성 → Drive 업로드 → 첨부메타 update
-→ 자동 TASK 생성 → Bot 알림 → final fetch + mirror upsert.
+
+PR-FQ Phase 1.3.3: 응답 path에서 노션 호출 2개 제거.
+- notion.update_page(첨부메타) → outbox enqueue (background)
+- notion.get_page(final reload) → mirror 기반 응답 build (PR-FP 패턴)
+- notion.create_page은 응답 path 유지 (page_id 필요), user_facing=True로 5초 cap
+- 결과: 5.4초 → ~1.5초
 
 list와 동일하게 path가 ""라 sub-router로 mount 불가 → 함수만 export →
 __init__.py에서 add_api_route로 직접 등록.
@@ -20,11 +24,13 @@ from sqlalchemy.orm import Session
 
 from app.db import get_db
 from app.models.auth import User
+from app.models.notion_outbox import OP_UPDATE
 from app.security import get_current_user
 from app.services import notion_props as P  # noqa: F401  (호환 import)
 from app.services import seal_logic as SL
 from app.services import sso_drive
 from app.services.notion import NotionService, get_notion
+from app.services.notion_outbox import enqueue
 from app.services.sync import get_sync
 from app.settings import get_settings
 
@@ -148,7 +154,8 @@ async def create_seal_request(
             "rich_text": [{"text": {"content": doc_kind.strip()}}]
         }
 
-    page = await notion.create_page(_db_id(), init_props)
+    # PR-FQ: user_facing=True — 5초 deadline + SDK timeout 4s. 노션 hang 시 fail-fast.
+    page = await notion.create_page(_db_id(), init_props, user_facing=True)
     page_id = page["id"]
 
     # 4) 검토자료 폴더 — 사용자가 모달에서 [폴더생성]으로 미리 만든 폴더만 사용.
@@ -197,6 +204,9 @@ async def create_seal_request(
                 failed.append(f"{fname}: {exc}")
 
     # 5) 첨부메타 + 폴더 URL + 비고(실패 기록) update
+    # PR-FQ: notion.update_page를 사용자 응답 path에서 제거 → outbox enqueue.
+    # drain worker가 background에서 노션 push. mirror에는 init_props + update_props
+    # 통합본으로 즉시 upsert (다음 final fetch가 없어도 응답이 mirror 기반).
     update_props: dict[str, Any] = {
         "첨부메타": {
             "rich_text": [
@@ -211,15 +221,6 @@ async def create_seal_request(
         update_props["비고"] = {
             "rich_text": [{"text": {"content": (note or "") + fail_note}}]
         }
-    # PR-CA: notion update 최종 실패 시 partial_errors로 노출.
-    try:
-        await notion.update_page(page_id, update_props)
-    except Exception as exc:  # noqa: BLE001
-        logger.exception(
-            "seal_request 첨부메타 노션 update 실패 — Drive 파일은 존재 (page=%s)",
-            page_id,
-        )
-        failed.append(f"노션 첨부메타 업데이트 실패: {exc}")
 
     # 6) 자동 TASK 생성 — fire-and-forget. 요청자 + 1차 검토자.
     _spawn_task(
@@ -277,12 +278,22 @@ async def create_seal_request(
         for adm in _find_admins(db):
             _bot_send(_resolve_works_id(adm), msg)
 
-    # 응답 — 자동 TASK는 background라 페이지에 아직 미반영. final fetch는 첨부메타/
-    # 폴더URL 변경분을 정확한 read 형식으로 가져오기 위해 한 번만 호출.
-    final = await notion.get_page(page_id)
-    # PR-CQ: mirror_seal_requests 즉시 sync (5분 cron lag 회피).
-    get_sync().upsert_page("seal_requests", final)
-    item = _from_notion_page(final)
-    # PR-BX/CA: failed[](텍스트) → partial_errors(정형) 분류.
+    # PR-FQ: final notion.get_page 제거 + 첨부메타 update를 outbox로.
+    # 응답은 init_props + update_props 통합본으로 mirror 직접 insert + 기반 build.
+    # 1) mirror 직접 upsert — 노션 create로 받은 page에 update_props 병합
+    merged_page = {
+        "id": page_id,
+        "properties": {**page.get("properties", {}), **update_props},
+        "created_time": page.get("created_time"),
+        "last_edited_time": page.get("last_edited_time"),
+    }
+    get_sync().upsert_page("seal_requests", merged_page)
+    # 2) outbox enqueue — drain worker가 background에서 update_props 노션 push
+    enqueue(
+        db, aggregate_type="seal_requests", aggregate_id=page_id,
+        op=OP_UPDATE, payload=update_props, notion_page_id=page_id,
+    )
+    db.commit()
+    item = _from_notion_page(merged_page)
     item.partial_errors = [_failed_to_partial(msg) for msg in failed]
     return item
