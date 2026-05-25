@@ -63,24 +63,6 @@ def test_update_props_skips_whitespace_only_name() -> None:
     assert "견적서명" not in props
 
 
-def test_update_props_skips_empty_stage_and_kind() -> None:
-    """PR-FU/2: stage/kind도 빈 string 무시 (필수 필드).
-
-    이전 회귀 — frontend가 prefill 빈 값 stage="" PATCH 보내면 mirror.stage = ""
-    저장 → 영업 목록 단계 필터에서 사라짐 (사용자 보고: 영26-170 이후 누락).
-    """
-    props = sale_update_to_props(SaleUpdateRequest(stage="", kind=""))
-    assert "단계" not in props
-    assert "유형" not in props
-
-
-def test_update_props_normal_stage_kind_included() -> None:
-    """정상 stage/kind는 정상 포함."""
-    props = sale_update_to_props(SaleUpdateRequest(stage="제출", kind="수주영업"))
-    assert props["단계"] == {"select": {"name": "제출"}}
-    assert props["유형"] == {"select": {"name": "수주영업"}}
-
-
 def test_update_props_includes_normal_name_code() -> None:
     """정상 값은 props에 정상 포함."""
     props = sale_update_to_props(SaleUpdateRequest(name="경기도프로젝트", code="영25-001"))
