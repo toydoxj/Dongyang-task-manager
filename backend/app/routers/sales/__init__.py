@@ -922,16 +922,9 @@ async def update_sale(
             op=OP_UPDATE, payload=props, notion_page_id=page_id,
         )
         db.commit()
-    # PR-FT/2 hotfix: 이중 upsert 제거. upsert_in_session이 이미 mirror 반영함.
-    # 별도 SessionLocal() + commit 호출이 ~500ms~1s 추가 latency 발생시켰음.
-    page = _sale_page_from_mirror_with_update(row, props) if props else {
-        "id": page_id,
-        "properties": row.properties or {},
-        "url": row.url or "",
-        "last_edited_time": (
-            row.last_edited_time.isoformat() if row.last_edited_time else None
-        ),
-    }
+        # PR-FT/3: session에 보유된 row instance를 fresh load — upsert_in_session이
+        # raw SQL update라 ORM cache 안 갱신됨.
+        db.refresh(row)
 
     # quote_form_data는 노션에 저장 불가 (JSONB) — mirror_sales에만 별도 UPDATE.
     # 단일 schema는 list-wrapped로 변환 (POST 흐름과 동일 — stable form id 보장).
@@ -940,9 +933,7 @@ async def update_sale(
 
         raw_fd = body.quote_form_data
         if "forms" not in raw_fd and "input" in raw_fd:
-            # 영업 row의 기존 quote_doc_number 가져와 legacy_doc_number로 사용
-            row_for_doc = db.get(M.MirrorSales, page_id)
-            legacy_doc = row_for_doc.quote_doc_number if row_for_doc else ""
+            legacy_doc = row.quote_doc_number if row else ""
             wrapped = pack_quote_forms([
                 {
                     "id": next_form_id(),
@@ -960,15 +951,12 @@ async def update_sale(
             .values(quote_form_data=wrapped)
         )
         db.commit()
+        db.refresh(row)
 
-    sale = Sale.from_notion_page(page)
-    # 응답에도 갱신된 quote_form_data 포함 (frontend가 즉시 prefill)
-    if body.quote_form_data is not None:
-        sale.quote_form_data = body.quote_form_data
-    else:
-        row = db.get(M.MirrorSales, page_id)
-        if row is not None:
-            sale.quote_form_data = row.quote_form_data or {}
+    # PR-FT/3: 응답을 mirror row 정규화 컬럼 기반으로 build (mirror_dto).
+    # Sale.from_notion_page(page_like)는 mirror.properties dict 키 의존이라 sync 시점에
+    # 일부 노션 prop key가 누락된 row에서 빈 값 반환 가능. 정규화 컬럼은 항상 신뢰.
+    sale = sale_from_mirror(row)
     return sale
 
 
