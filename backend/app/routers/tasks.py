@@ -1,7 +1,13 @@
-"""/api/tasks — 통합 업무TASK CRUD. read는 mirror, write는 노션 + write-through."""
+"""/api/tasks — 통합 업무TASK CRUD.
+
+PR-FR Phase 1.3.4: update/archive는 mirror direct + outbox enqueue (사용자 응답
+즉시). create는 page_id 필요해 노션 응답 path 유지 + user_facing=True. read는
+이미 mirror only.
+"""
 from __future__ import annotations
 
 import asyncio
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
 from sqlalchemy import func, select
@@ -11,6 +17,7 @@ from app.db import get_db
 from app.exceptions import NotFoundError
 from app.models import mirror as M
 from app.models.auth import User
+from app.models.notion_outbox import OP_DELETE, OP_UPDATE
 from app.models.task import (
     Task,
     TaskCreateRequest,
@@ -23,6 +30,7 @@ from app.security import get_current_user
 from app.services import task_calendar_sync
 from app.services.mirror_dto import task_from_mirror
 from app.services.notion import NotionService, get_notion
+from app.services.notion_outbox import enqueue
 from app.services.project_stage_sync import reconcile_projects_for_task
 from app.services.sync import get_sync
 from app.settings import get_settings
@@ -140,7 +148,8 @@ async def create_task(
         body.end_date = body.start_date
     db_id = get_settings().notion_db_tasks
     props = task_create_to_props(body)
-    page = await notion.create_page(db_id, props)
+    # PR-FR: user_facing=True — 5초 deadline + SDK timeout 4s.
+    page = await notion.create_page(db_id, props, user_facing=True)
     get_sync().upsert_page("tasks", page)  # write-through
     task = Task.from_notion_page(page)
     # WORKS Calendar 단방향 동기화 (best-effort, 실패해도 응답 영향 없음)
@@ -219,9 +228,28 @@ async def update_task(
             status_code=status.HTTP_400_BAD_REQUEST, detail="갱신할 필드가 없습니다"
         )
 
-    page = await notion.update_page(page_id, props)
-    get_sync().upsert_page("tasks", page)  # write-through
-    task = Task.from_notion_page(page)
+    # PR-FR: 노션 호출 제거 → mirror direct + outbox enqueue (같은 transaction).
+    # 응답은 mirror 기반 build. 노션은 drain worker가 background에서 push.
+    if prev_row is None:
+        raise HTTPException(status_code=404, detail="task를 찾을 수 없습니다")
+    merged_props = {**(prev_row.properties or {}), **props}
+    page_like = {
+        "id": page_id,
+        "properties": merged_props,
+        "created_time": (
+            prev_row.created_time.isoformat() if prev_row.created_time else None
+        ),
+        "last_edited_time": datetime.now(timezone.utc).isoformat(),
+        "archived": False,
+    }
+    sync = get_sync()
+    sync.upsert_in_session(db, "tasks", page_like)
+    enqueue(
+        db, aggregate_type="tasks", aggregate_id=page_id,
+        op=OP_UPDATE, payload=props, notion_page_id=page_id,
+    )
+    db.commit()
+    task = Task.from_notion_page(page_like)
     background.add_task(task_calendar_sync.sync_task, task)
     # 프로젝트 진행단계 자동 동기화 — 이전+신규 project_ids union
     affected = list({*prev_project_ids, *task.project_ids})
@@ -235,17 +263,27 @@ async def archive_task(
     background: BackgroundTasks,
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
-    notion: NotionService = Depends(get_notion),
+    notion: NotionService = Depends(get_notion),  # noqa: ARG001  signature 유지
 ) -> dict[str, str]:
-    """노션은 영구 삭제 대신 archive 사용."""
+    """노션은 영구 삭제 대신 archive 사용.
+
+    PR-FR: 노션 archive 호출 제거 → mirror direct archive + outbox enqueue.
+    drain worker가 background에서 노션에 archived=True 호출.
+    """
+    _ = notion  # signature backward compat
     prev_row = db.get(M.MirrorTask, page_id)
     _ensure_can_modify_task(
         user, list(prev_row.assignees) if prev_row else None
     )
-    await asyncio.to_thread(
-        notion._client.pages.update, page_id=page_id, archived=True
+    if prev_row is None:
+        # mirror 미존재 → 노션에도 없을 가능성 — 404
+        raise HTTPException(status_code=404, detail="task를 찾을 수 없습니다")
+    sync = get_sync()
+    sync.archive_in_session(db, "tasks", page_id)
+    enqueue(
+        db, aggregate_type="tasks", aggregate_id=page_id,
+        op=OP_DELETE, payload={}, notion_page_id=page_id,
     )
-    notion.clear_cache()
-    get_sync().archive_page("tasks", page_id)
+    db.commit()
     background.add_task(task_calendar_sync.unsync_task, page_id)
     return {"status": "archived", "page_id": page_id}

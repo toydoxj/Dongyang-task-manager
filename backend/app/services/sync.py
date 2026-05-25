@@ -203,10 +203,26 @@ class NotionSyncService:
             self._upsert_one(db, kind, page)
             db.commit()
 
+    def upsert_in_session(
+        self, db: Session, kind: SyncKind, page: dict
+    ) -> None:
+        """PR-FR: 호출자 transaction 안에서 mirror upsert.
+
+        outbox enqueue와 같은 transaction에 묶어 원자성 보장이 필요한 write
+        endpoint(tasks/projects/sales 등)에서 사용. db.commit()은 호출자 책임.
+        """
+        self._upsert_one(db, kind, page)
+
     def archive_page(self, kind: SyncKind, page_id: str) -> None:
         with self.session_factory() as db:
             self._archive_one(db, kind, page_id)
             db.commit()
+
+    def archive_in_session(
+        self, db: Session, kind: SyncKind, page_id: str
+    ) -> None:
+        """PR-FR: 호출자 transaction 안에서 mirror archive=True 표시."""
+        self._archive_one(db, kind, page_id)
 
     # ── 마스터 페이지 본문(이미지 등) ──
 
@@ -392,6 +408,18 @@ class NotionSyncService:
         )
 
     def _upsert_task(self, db: Session, page: dict) -> None:
+        # PR-FR Phase 1.3.4 reconcile guard: active outbox row 있는 entity는
+        # 노션→mirror overwrite skip. write 후 mirror commit된 변경이 stale
+        # 노션 데이터로 덮이는 race 회피.
+        from app.services.notion_outbox import has_active
+
+        page_id = page.get("id", "")
+        if page_id and has_active(db, "tasks", page_id):
+            logger.debug(
+                "skip task upsert — outbox active row 존재 (page_id=%s)",
+                page_id,
+            )
+            return
         t = Task.from_notion_page(page)
         stmt = pg_insert(M.MirrorTask).values(
             page_id=t.id,
