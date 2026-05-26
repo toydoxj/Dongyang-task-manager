@@ -224,6 +224,9 @@ export default function SalesEditModal({
     setClientUserEdited(false);
     if (sale) {
       setForm({
+        // PR-FW: name은 SaleCreateRequest의 required field라 빈 string 유지.
+        // submit handler에서 빈 string은 SaleUpdateRequest로 변환 시 undefined로
+        // omit (cascade 방지).
         name: sale.name,
         code: sale.code || undefined,
         kind: sale.kind || undefined,
@@ -521,11 +524,21 @@ export default function SalesEditModal({
     setBusy(true);
     setErr(null);
     try {
+      // PR-FW: 필수 필드(name/code/kind/stage) 빈 string을 undefined로 변환 →
+      // JSON.stringify가 omit → backend req.X = None → props 안 변경.
+      // backend PR-FV의 strip 가드와 일관. frontend도 안전망으로 cascade 방지.
+      const formForApi = { ...form };
+      for (const key of ["name", "code", "kind", "stage"] as const) {
+        const v = formForApi[key];
+        if (typeof v === "string" && v.trim() === "") {
+          (formForApi as Record<string, unknown>)[key] = undefined;
+        }
+      }
       if (isEdit && sale) {
-        const updated = await updateSale(sale.id, form);
+        const updated = await updateSale(sale.id, formForApi);
         setSale(updated);
       } else {
-        const created = await createSale(form);
+        const created = await createSale(formForApi);
         setSale(created);
       }
       refreshSales();
