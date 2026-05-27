@@ -1,8 +1,7 @@
 """/api/cashflow — 수금 + 지출 통합 시계열 (mirror 조회) + 수금 CRUD (admin/manager)."""
 from __future__ import annotations
 
-import asyncio
-from datetime import date as Date
+from datetime import date as Date, datetime, timezone
 from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -14,9 +13,11 @@ from app.db import get_db
 from app.models import mirror as M
 from app.models.auth import User
 from app.models.cashflow import CashflowEntry, CashflowResponse
+from app.models.notion_outbox import OP_DELETE, OP_UPDATE
 from app.security import get_current_user, require_admin_or_manager
 from app.services.mirror_dto import cashflow_from_mirror
 from app.services.notion import NotionService, get_notion
+from app.services.notion_outbox import enqueue
 from app.services.sync import get_sync
 from app.settings import get_settings
 
@@ -260,16 +261,31 @@ async def update_income(
     body: IncomeUpdateRequest,
     _user: User = Depends(require_admin_or_manager),
     db: Session = Depends(get_db),
-    notion: NotionService = Depends(get_notion),
 ) -> CashflowEntry:
     props = _income_update_props(body)
     if not props:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail="변경할 필드가 없습니다"
         )
-    page = await notion.update_page(page_id, properties=props)
-    get_sync().upsert_page("cashflow", page)
-    entry = CashflowEntry.from_income_page(page)
+    # PR-GA: 노션 동기 호출 제거 → mirror direct + outbox enqueue (PR-FZ 패턴).
+    prev_row = db.get(M.MirrorCashflow, page_id)
+    if prev_row is None or prev_row.archived:
+        raise HTTPException(status_code=404, detail="수금 항목을 찾을 수 없습니다")
+    merged_props = {**(prev_row.properties or {}), **props}
+    page_like = {
+        "id": page_id,
+        "properties": merged_props,
+        "last_edited_time": datetime.now(timezone.utc).isoformat(),
+        "archived": False,
+    }
+    sync = get_sync()
+    sync.upsert_in_session(db, "cashflow", page_like)
+    enqueue(
+        db, aggregate_type="cashflow", aggregate_id=page_id,
+        op=OP_UPDATE, payload=props, notion_page_id=page_id,
+    )
+    db.commit()
+    entry = CashflowEntry.from_income_page(page_like)
     _resolve_payer_names(db, [entry])
     _resolve_contract_item_labels(db, [entry])
     return entry
@@ -280,14 +296,19 @@ async def delete_income(
     page_id: str,
     _user: User = Depends(require_admin_or_manager),
     db: Session = Depends(get_db),
-    notion: NotionService = Depends(get_notion),
 ) -> None:
-    """노션 페이지 archive(in_trash) + mirror archive 마킹."""
-    await asyncio.to_thread(
-        notion._client.pages.update, page_id=page_id, archived=True
-    )
-    db.query(M.MirrorCashflow).filter(M.MirrorCashflow.page_id == page_id).update(
-        {"archived": True}, synchronize_session=False
+    """mirror archive 마킹 + outbox enqueue. 노션 archive는 drain이 background 처리.
+
+    PR-GA: 노션 동기 호출 제거 → mirror direct archive + outbox (PR-FZ 패턴).
+    """
+    prev_row = db.get(M.MirrorCashflow, page_id)
+    if prev_row is None or prev_row.archived:
+        raise HTTPException(status_code=404, detail="수금 항목을 찾을 수 없습니다")
+    sync = get_sync()
+    sync.archive_in_session(db, "cashflow", page_id)
+    enqueue(
+        db, aggregate_type="cashflow", aggregate_id=page_id,
+        op=OP_DELETE, payload={}, notion_page_id=page_id,
     )
     db.commit()
     return None

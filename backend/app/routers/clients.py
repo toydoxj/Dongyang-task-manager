@@ -1,7 +1,7 @@
 """/api/clients — 협력업체(발주처) 목록 + CRUD."""
 from __future__ import annotations
 
-import asyncio
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
@@ -11,9 +11,11 @@ from sqlalchemy.orm import Session
 from app.db import get_db
 from app.models import mirror as M
 from app.models.auth import User
+from app.models.notion_outbox import OP_DELETE, OP_UPDATE
 from app.security import get_current_user, require_admin
 from app.services import notion_props as P
 from app.services.notion import NotionService, get_notion
+from app.services.notion_outbox import enqueue
 from app.services.sync import get_sync
 from app.settings import get_settings
 
@@ -126,7 +128,6 @@ async def update_client(
     body: ClientUpdateRequest,
     _user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
-    notion: NotionService = Depends(get_notion),
 ) -> Client:
     props: dict = {}
     if body.name is not None:
@@ -159,13 +160,28 @@ async def update_client(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail="변경할 필드가 없습니다"
         )
-    page = await notion.update_page(page_id, properties=props)
-    get_sync().upsert_page("clients", page)
-    page_props = page.get("properties", {})
+    # PR-GA: 노션 동기 호출 제거 → mirror direct + outbox enqueue (PR-FZ 패턴).
+    prev_row = db.get(M.MirrorClient, page_id)
+    if prev_row is None or prev_row.archived:
+        raise HTTPException(status_code=404, detail="발주처를 찾을 수 없습니다")
+    merged_props = {**(prev_row.properties or {}), **props}
+    page_like = {
+        "id": page_id,
+        "properties": merged_props,
+        "last_edited_time": datetime.now(timezone.utc).isoformat(),
+        "archived": False,
+    }
+    sync = get_sync()
+    sync.upsert_in_session(db, "clients", page_like)
+    enqueue(
+        db, aggregate_type="clients", aggregate_id=page_id,
+        op=OP_UPDATE, payload=props, notion_page_id=page_id,
+    )
+    db.commit()
     return Client(
-        id=page.get("id", page_id),
-        name=P.title(page_props, "이름"),
-        category=P.select_name(page_props, "구분"),
+        id=page_id,
+        name=P.title(merged_props, "이름"),
+        category=P.select_name(merged_props, "구분"),
     )
 
 
@@ -174,12 +190,13 @@ async def delete_client(
     page_id: str,
     _admin: User = Depends(require_admin),
     db: Session = Depends(get_db),
-    notion: NotionService = Depends(get_notion),
 ) -> None:
     """발주처 페이지 archive(노션 휴지통). 기존 relation은 그대로 유지된다.
 
-    삭제 전 사용처 검사: 활성 프로젝트의 발주처 또는 수금의 실지급으로
-    아직 참조 중이면 409. 회계상 흔적은 보존하기 위함.
+    삭제 전 사용처 검사: 활성 프로젝트의 발주처로 아직 참조 중이면 409.
+    회계상 흔적은 보존하기 위함.
+
+    PR-GA: 노션 동기 호출 제거 → mirror direct archive + outbox (PR-FZ 패턴).
     """
     used_in_project = db.execute(
         select(M.MirrorProject.page_id)
@@ -195,11 +212,14 @@ async def delete_client(
             detail="아직 프로젝트에서 발주처로 사용 중입니다. 먼저 프로젝트의 발주처를 변경하세요.",
         )
 
-    await asyncio.to_thread(
-        notion._client.pages.update, page_id=page_id, archived=True
-    )
-    db.query(M.MirrorClient).filter(M.MirrorClient.page_id == page_id).update(
-        {"archived": True}, synchronize_session=False
+    prev_row = db.get(M.MirrorClient, page_id)
+    if prev_row is None or prev_row.archived:
+        raise HTTPException(status_code=404, detail="발주처를 찾을 수 없습니다")
+    sync = get_sync()
+    sync.archive_in_session(db, "clients", page_id)
+    enqueue(
+        db, aggregate_type="clients", aggregate_id=page_id,
+        op=OP_DELETE, payload={}, notion_page_id=page_id,
     )
     db.commit()
     return None
