@@ -5,7 +5,7 @@ read는 인증된 사용자 모두, 생성/수정/삭제는 admin/team_lead/mana
 """
 from __future__ import annotations
 
-import asyncio
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select
@@ -22,9 +22,11 @@ from app.models.contract_item import (
     contract_item_create_props,
     contract_item_update_props,
 )
+from app.models.notion_outbox import OP_DELETE, OP_UPDATE
 from app.security import get_current_user, require_editor
 from app.services.mirror_dto import contract_item_from_mirror
 from app.services.notion import NotionService, get_notion
+from app.services.notion_outbox import enqueue
 from app.services.sync import get_sync
 from app.settings import get_settings
 
@@ -98,16 +100,32 @@ async def update_contract_item(
     body: ContractItemUpdateRequest,
     _user: User = Depends(require_editor),
     db: Session = Depends(get_db),
-    notion: NotionService = Depends(get_notion),
 ) -> ContractItem:
     props = contract_item_update_props(body)
     if not props:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail="변경할 필드가 없습니다"
         )
-    page = await notion.update_page(page_id, properties=props)
-    get_sync().upsert_page("contract_items", page)
-    item = ContractItem.from_notion_page(page)
+    # PR-FZ: 노션 동기 호출 제거 → mirror direct + outbox enqueue (tasks 패턴).
+    # 응답은 mirror 기반 build, 노션 push는 drain worker가 background 처리.
+    prev_row = db.get(M.MirrorContractItem, page_id)
+    if prev_row is None or prev_row.archived:
+        raise HTTPException(status_code=404, detail="계약 항목을 찾을 수 없습니다")
+    merged_props = {**(prev_row.properties or {}), **props}
+    page_like = {
+        "id": page_id,
+        "properties": merged_props,
+        "last_edited_time": datetime.now(timezone.utc).isoformat(),
+        "archived": False,
+    }
+    sync = get_sync()
+    sync.upsert_in_session(db, "contract_items", page_like)
+    enqueue(
+        db, aggregate_type="contract_items", aggregate_id=page_id,
+        op=OP_UPDATE, payload=props, notion_page_id=page_id,
+    )
+    db.commit()
+    item = ContractItem.from_notion_page(page_like)
     _resolve_client_names(db, [item])
     return item
 
@@ -117,18 +135,21 @@ async def delete_contract_item(
     page_id: str,
     _user: User = Depends(require_editor),
     db: Session = Depends(get_db),
-    notion: NotionService = Depends(get_notion),
 ) -> None:
-    """노션 archived + mirror archived 마킹.
+    """mirror archived 마킹 + outbox enqueue. 노션 archive는 drain이 background 처리.
 
+    PR-FZ: 노션 동기 호출 제거 → mirror direct archive + outbox (tasks 패턴).
     이 항목을 참조하는 수금 row가 있어도 archive는 허용 (수금 흔적 보존).
     참조가 끊긴 row는 legacy 모드로 미수금 계산되도록 frontend가 fallback.
     """
-    await asyncio.to_thread(
-        notion._client.pages.update, page_id=page_id, archived=True
+    prev_row = db.get(M.MirrorContractItem, page_id)
+    if prev_row is None or prev_row.archived:
+        raise HTTPException(status_code=404, detail="계약 항목을 찾을 수 없습니다")
+    sync = get_sync()
+    sync.archive_in_session(db, "contract_items", page_id)
+    enqueue(
+        db, aggregate_type="contract_items", aggregate_id=page_id,
+        op=OP_DELETE, payload={}, notion_page_id=page_id,
     )
-    db.query(M.MirrorContractItem).filter(
-        M.MirrorContractItem.page_id == page_id
-    ).update({"archived": True}, synchronize_session=False)
     db.commit()
     return None
