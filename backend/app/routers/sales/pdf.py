@@ -22,11 +22,13 @@ from app.db import get_db
 from app.models import mirror as M
 from app.models.auth import User
 from app.models.employee import Employee
+from app.models.notion_outbox import OP_UPDATE
 from app.models.sale import Sale
+from app.routers.sales import _sale_page_from_mirror_with_update
 from app.security import get_current_user
 from app.services import sso_drive
 from app.services.mirror_dto import sale_from_mirror
-from app.services.notion import NotionService, get_notion
+from app.services.notion_outbox import enqueue
 from app.services.quote_forms import format_doc_full, normalize_quote_forms
 from app.services.quote_pdf import (
     build_quote_bundle_pdf,
@@ -44,6 +46,15 @@ _KST = timezone(timedelta(hours=9))
 
 
 # ── helpers ──
+
+
+def _sale_response_from_page_like(
+    row: M.MirrorSales, page_like: dict
+) -> Sale:
+    """page-like 응답에 mirror 전용 quote_form_data를 보존해 붙인다."""
+    sale = Sale.from_notion_page(page_like)
+    sale.quote_form_data = row.quote_form_data or {}
+    return sale
 
 
 def _resolve_target_form(forms: list[dict], quote_id: str) -> dict | None:
@@ -248,7 +259,6 @@ async def save_quote_pdf_to_drive(
     quote_id: str = "",
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
-    notion: NotionService = Depends(get_notion),
 ) -> Sale:
     """단일 견적 PDF → `공용 드라이브\\[견적서]\\{YYYY}년\\` 업로드 →
     노션 sale의 `견적서첨부` 컬럼에 web url 저장.
@@ -342,7 +352,8 @@ async def save_quote_pdf_to_drive(
             status_code=502, detail=f"WORKS Drive 업로드 실패: {exc}"
         ) from exc
 
-    # 4. 노션 sale 갱신 — 견적서첨부 + 제출일 자동 채움
+    # 4. sale 갱신 — 견적서첨부 + 제출일 자동 채움.
+    # 사용자 응답 path에서는 Notion update 대신 mirror direct + outbox enqueue.
     file_id = meta.get("fileId") or ""
     web_url = sso_drive.build_file_web_url(file_id, meta.get("resourceLocation"))
     update_props: dict = {}
@@ -361,14 +372,15 @@ async def save_quote_pdf_to_drive(
         update_props["제출일"] = {"date": {"start": today_kst}}
 
     if update_props:
-        try:
-            updated = await notion.update_page(page_id, update_props)
-            get_sync().upsert_page("sales", updated)
-        except Exception:  # noqa: BLE001
-            logger.exception(
-                "Drive 업로드 후 노션 갱신 실패 — 운영 수동 보정 필요 (keys=%s)",
-                list(update_props.keys()),
-            )
+        page_like = _sale_page_from_mirror_with_update(row, update_props)
+        sync = get_sync()
+        sync.upsert_in_session(db, "sales", page_like)
+        enqueue(
+            db, aggregate_type="sales", aggregate_id=page_id,
+            op=OP_UPDATE, payload=update_props, notion_page_id=page_id,
+        )
+        db.commit()
+        return _sale_response_from_page_like(row, page_like)
 
     row = db.get(M.MirrorSales, page_id)
     return sale_from_mirror(row) if row else Sale.from_notion_page({"id": page_id})
@@ -383,7 +395,6 @@ async def save_quote_bundle_pdf_to_drive(
     show_total: bool = True,
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
-    notion: NotionService = Depends(get_notion),
 ) -> Sale:
     """영업 1건의 견적 N개를 묶은 통합 PDF → `[견적서]\\{YYYY}년\\` 업로드 →
     노션 `통합견적서첨부` 컬럼에 web url 저장. 단일 견적 PDF (`견적서첨부`)는
@@ -474,7 +485,7 @@ async def save_quote_bundle_pdf_to_drive(
             status_code=502, detail=f"WORKS Drive 업로드 실패: {exc}"
         ) from exc
 
-    # 4. parent 노션 row의 통합견적서첨부 컬럼 갱신
+    # 4. parent sale row의 통합견적서첨부 컬럼 갱신
     file_id = meta.get("fileId") or ""
     web_url = sso_drive.build_file_web_url(file_id, meta.get("resourceLocation"))
     update_props: dict = {}
@@ -490,14 +501,15 @@ async def save_quote_bundle_pdf_to_drive(
         }
 
     if update_props:
-        try:
-            updated = await notion.update_page(page_id, update_props)
-            get_sync().upsert_page("sales", updated)
-        except Exception:  # noqa: BLE001
-            logger.exception(
-                "통합 PDF 업로드 후 노션 갱신 실패 — 운영 수동 보정 필요 (keys=%s)",
-                list(update_props.keys()),
-            )
+        page_like = _sale_page_from_mirror_with_update(sale, update_props)
+        sync = get_sync()
+        sync.upsert_in_session(db, "sales", page_like)
+        enqueue(
+            db, aggregate_type="sales", aggregate_id=page_id,
+            op=OP_UPDATE, payload=update_props, notion_page_id=page_id,
+        )
+        db.commit()
+        return _sale_response_from_page_like(sale, page_like)
 
     sale = db.get(M.MirrorSales, page_id)
     return sale_from_mirror(sale) if sale else Sale.from_notion_page({"id": page_id})

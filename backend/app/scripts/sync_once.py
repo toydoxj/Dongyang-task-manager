@@ -31,6 +31,8 @@ _KIND_ENV = {
     "expense": "NOTION_DB_EXPENSE",
     "contract_items": "NOTION_DB_CONTRACT_ITEMS",
     "sales": "NOTION_DB_SALES",
+    "seal_requests": "NOTION_DB_SEAL_REQUESTS",
+    "suggestions": "NOTION_DB_SUGGESTIONS",
 }
 
 
@@ -55,6 +57,8 @@ def _bootstrap_env_from_settings() -> None:
         ("NOTION_DB_EXPENSE", s.notion_db_expense),
         ("NOTION_DB_CONTRACT_ITEMS", s.notion_db_contract_items),
         ("NOTION_DB_SALES", s.notion_db_sales),
+        ("NOTION_DB_SEAL_REQUESTS", s.notion_db_seal_requests),
+        ("NOTION_DB_SUGGESTIONS", s.notion_db_suggestions),
     ]
     for env_key, val in pairs:
         if val and not os.environ.get(env_key):
@@ -84,7 +88,7 @@ async def main() -> int:
     parser.add_argument(
         "--kind",
         default="",
-        help="projects/tasks/clients/master/cashflow/expense. 비우면 sync_all",
+        help="projects/tasks/clients/master/cashflow/expense/contract_items/sales/seal_requests/suggestions. 비우면 sync_all",
     )
     parser.add_argument(
         "--full",

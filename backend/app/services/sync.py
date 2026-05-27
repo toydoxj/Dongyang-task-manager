@@ -197,10 +197,23 @@ class NotionSyncService:
 
     # ── 단건 write-through (라우터에서 호출) ──
 
-    def upsert_page(self, kind: SyncKind, page: dict) -> None:
-        """라우터의 write 핸들러가 update/create 후 즉시 호출."""
+    def upsert_page(
+        self,
+        kind: SyncKind,
+        page: dict,
+        *,
+        skip_active_outbox: bool = True,
+    ) -> None:
+        """단건 page를 mirror에 반영.
+
+        기본값은 노션 pull/fallback sync와 동일하게 active outbox guard를 적용한다.
+        방금 성공한 Notion write-through를 반드시 mirror에 반영해야 하는 호출자는
+        `skip_active_outbox=False`를 명시한다.
+        """
         with self.session_factory() as db:
-            self._upsert_one(db, kind, page)
+            self._upsert_one(
+                db, kind, page, skip_active_outbox=skip_active_outbox
+            )
             db.commit()
 
     def upsert_in_session(
@@ -211,7 +224,7 @@ class NotionSyncService:
         outbox enqueue와 같은 transaction에 묶어 원자성 보장이 필요한 write
         endpoint(tasks/projects/sales 등)에서 사용. db.commit()은 호출자 책임.
         """
-        self._upsert_one(db, kind, page)
+        self._upsert_one(db, kind, page, skip_active_outbox=False)
 
     def archive_page(self, kind: SyncKind, page_id: str) -> None:
         with self.session_factory() as db:
@@ -295,9 +308,45 @@ class NotionSyncService:
             "suggestions": s.notion_db_suggestions,
         }[kind]
 
-    def _upsert_one(self, db: Session, kind: SyncKind, page: dict) -> None:
+    def _active_outbox_aggregate_type(self, kind: SyncKind) -> str | None:
+        """stale 노션 pull 방지 guard를 적용할 outbox aggregate type."""
+        if kind in {
+            "projects",
+            "tasks",
+            "clients",
+            "contract_items",
+            "sales",
+            "seal_requests",
+        }:
+            return kind
+        if kind == "cashflow":
+            return "cashflow"
+        if kind == "expense":
+            return "expense"
+        return None
+
+    def _upsert_one(
+        self,
+        db: Session,
+        kind: SyncKind,
+        page: dict,
+        *,
+        skip_active_outbox: bool = True,
+    ) -> None:
         # mirror 저장 직전 정규화 — mirror-direct write의 write 포맷 properties에
         # plain_text 보강 (제목·코드·비고 소실 cascade 차단). 노션 read-포맷엔 idempotent.
+        page_id = page.get("id", "")
+        aggregate_type = self._active_outbox_aggregate_type(kind)
+        if skip_active_outbox and page_id and aggregate_type:
+            from app.services.notion_outbox import has_active
+
+            if has_active(db, aggregate_type, page_id):
+                logger.debug(
+                    "skip %s upsert — outbox active row 존재 (page_id=%s)",
+                    aggregate_type,
+                    page_id,
+                )
+                return
         props = page.get("properties")
         if props:
             normalized = P.normalize_properties_for_mirror(props)
@@ -374,18 +423,6 @@ class NotionSyncService:
     # ── 도메인별 upsert ──
 
     def _upsert_project(self, db: Session, page: dict) -> None:
-        # PR-FS Phase 1.3.5 reconcile guard: active outbox row 있는 entity는
-        # 노션→mirror overwrite skip. mirror commit된 변경이 stale 노션 데이터로
-        # 덮이는 race 회피.
-        from app.services.notion_outbox import has_active
-
-        page_id = page.get("id", "")
-        if page_id and has_active(db, "projects", page_id):
-            logger.debug(
-                "skip project upsert — outbox active row 존재 (page_id=%s)",
-                page_id,
-            )
-            return
         p = Project.from_notion_page(page)
         stmt = pg_insert(M.MirrorProject).values(
             page_id=p.id,
@@ -427,18 +464,6 @@ class NotionSyncService:
         )
 
     def _upsert_task(self, db: Session, page: dict) -> None:
-        # PR-FR Phase 1.3.4 reconcile guard: active outbox row 있는 entity는
-        # 노션→mirror overwrite skip. write 후 mirror commit된 변경이 stale
-        # 노션 데이터로 덮이는 race 회피.
-        from app.services.notion_outbox import has_active
-
-        page_id = page.get("id", "")
-        if page_id and has_active(db, "tasks", page_id):
-            logger.debug(
-                "skip task upsert — outbox active row 존재 (page_id=%s)",
-                page_id,
-            )
-            return
         t = Task.from_notion_page(page)
         stmt = pg_insert(M.MirrorTask).values(
             page_id=t.id,
@@ -717,16 +742,8 @@ class NotionSyncService:
         """
         # lazy import — services.seal_logic이 router 의존성을 가지지 않도록.
         from app.services import seal_logic as SL
-        from app.services.notion_outbox import has_active
-
         page_id = page.get("id", "")
         if not page_id:
-            return
-        if has_active(db, "seal_requests", page_id):
-            logger.debug(
-                "skip seal_request upsert — outbox active row 존재 (page_id=%s)",
-                page_id,
-            )
             return
         props = page.get("properties", {})
         # title은 "제목" / "Name" / db마다 다름 — files() 같은 simple read 대신

@@ -18,17 +18,28 @@ from sqlalchemy.orm import Session
 from app.db import get_db
 from app.models import mirror as M
 from app.models.auth import User
+from app.models.notion_outbox import OP_UPDATE
 from app.models.project import Project, ProjectCreateRequest, project_create_to_props
 from app.models.sale import Sale
+from app.routers.sales import _sale_page_from_mirror_with_update
 from app.security import get_current_user
 from app.services.mirror_dto import sale_from_mirror
 from app.services.notion import NotionService, get_notion
+from app.services.notion_outbox import enqueue
 from app.services.sales_probability import CONVERTIBLE_STAGES
 from app.services.sync import get_sync
 from app.settings import get_settings
 
 logger = logging.getLogger("api.sales.link")
 router = APIRouter()
+
+
+def _sale_project_link_props(project_id: str) -> dict:
+    """영업을 프로젝트에 연결할 때 사용하는 Notion props."""
+    return {
+        "단계": {"select": {"name": "완료"}},
+        "전환된 프로젝트": {"relation": [{"id": project_id}]},
+    }
 
 
 # ── 수주 전환 ──
@@ -90,30 +101,34 @@ async def convert_to_project(
     new_page = await notion.create_page(
         settings.notion_db_projects, project_create_to_props(project_req)
     )
-    get_sync().upsert_page("projects", new_page)
     new_project_id = new_page.get("id", "")
-    logger.info(
-        "sale → project 전환: 새 프로젝트 생성 sale=%s project=%s name=%s",
-        page_id[:8],
-        new_project_id[:8],
-        sale.name,
-    )
 
-    # 영업 건 갱신: 단계=완료, 전환된 프로젝트 = new_project_id.
-    # 부분 실패 — 새 프로젝트는 만들었는데 여기서 실패하면 sale의 converted_project_id가
-    # 비어 있어 멱등성이 깨짐(재시도 시 중복 프로젝트 생성). 클라이언트에 상태를 명확히
-    # 전달하고 운영자가 수동 정리할 수 있도록 502를 보내며 new_project_id를 노출한다.
     try:
-        update_props: dict = {
-            "단계": {"select": {"name": "완료"}},
-            "전환된 프로젝트": {"relation": [{"id": new_project_id}]},
-        }
-        updated_sale_page = await notion.update_page(page_id, update_props)
-        get_sync().upsert_page("sales", updated_sale_page)
+        get_sync().upsert_page("projects", new_page, skip_active_outbox=False)
+        logger.info(
+            "sale → project 전환: 새 프로젝트 생성 sale=%s project=%s name=%s",
+            page_id[:8],
+            new_project_id[:8],
+            sale.name,
+        )
+
+        # 영업 건 갱신: mirror direct + outbox. 새 프로젝트 create는 Notion id가
+        # 필요해 동기 유지하지만, 이후 sale update는 사용자 응답 path에서
+        # Notion 호출하지 않는다.
+        update_props = _sale_project_link_props(new_project_id)
+        page_like = _sale_page_from_mirror_with_update(row, update_props)
+        sync = get_sync()
+        sync.upsert_in_session(db, "sales", page_like)
+        enqueue(
+            db, aggregate_type="sales", aggregate_id=page_id,
+            op=OP_UPDATE, payload=update_props, notion_page_id=page_id,
+        )
+        db.commit()
     except Exception as exc:  # noqa: BLE001
+        db.rollback()
         logger.exception(
-            "sale 갱신 실패 — 새 프로젝트는 생성됨. 운영자 수동 연결 필요. "
-            "sale=%s project=%s",
+            "sale mirror/outbox 갱신 실패 — 새 프로젝트는 생성됨. "
+            "운영자 수동 연결 필요. sale=%s project=%s",
             page_id[:8],
             new_project_id[:8],
         )
@@ -121,7 +136,7 @@ async def convert_to_project(
             status_code=502,
             detail=(
                 f"새 프로젝트({new_project_id})는 생성되었으나 영업 건의 "
-                "'전환된 프로젝트' 갱신에 실패했습니다. 노션에서 수동 연결 후 "
+                "'전환된 프로젝트' 갱신 enqueue에 실패했습니다. 노션에서 수동 연결 후 "
                 "재시도하지 말고 운영자에게 알려주세요."
             ),
         ) from exc
@@ -167,7 +182,6 @@ async def link_to_existing_project(
     body: LinkProjectRequest,
     _user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
-    notion: NotionService = Depends(get_notion),
 ) -> Sale:
     """이미 진행 중인 프로젝트에 영업을 수동 연결.
 
@@ -202,15 +216,18 @@ async def link_to_existing_project(
             status_code=404, detail="대상 프로젝트를 찾을 수 없습니다"
         )
 
-    update_props: dict = {
-        "단계": {"select": {"name": "완료"}},
-        "전환된 프로젝트": {"relation": [{"id": body.project_id}]},
-    }
-    updated_page = await notion.update_page(page_id, update_props)
-    get_sync().upsert_page("sales", updated_page)
+    update_props = _sale_project_link_props(body.project_id)
+    page_like = _sale_page_from_mirror_with_update(row, update_props)
+    sync = get_sync()
+    sync.upsert_in_session(db, "sales", page_like)
+    enqueue(
+        db, aggregate_type="sales", aggregate_id=page_id,
+        op=OP_UPDATE, payload=update_props, notion_page_id=page_id,
+    )
+    db.commit()
     logger.info(
         "sale → 기존 프로젝트 연결: sale=%s project=%s",
         page_id[:8],
         body.project_id[:8],
     )
-    return Sale.from_notion_page(updated_page)
+    return Sale.from_notion_page(page_like)

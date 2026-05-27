@@ -1,11 +1,11 @@
 """영업(Sales) CRUD + 수주 전환 라우터.
 
-read는 mirror_sales 테이블에서, write는 노션 → write-through로 mirror upsert.
-사장이 운영하던 '견적서 작성 리스트' DB가 백엔드 미러링되어 있다.
+read는 mirror_sales 테이블에서 처리한다. 일반 update/archive는 mirror direct +
+outbox로 노션 push를 비동기화한다. 사장이 운영하던 '견적서 작성 리스트' DB가
+백엔드 미러링되어 있다.
 """
 from __future__ import annotations
 
-import asyncio
 import logging
 from datetime import date, datetime, timedelta, timezone
 from typing import Any
@@ -19,6 +19,7 @@ from sqlalchemy.orm import Session
 
 from app.db import get_db
 from app.models import mirror as M
+from app.models.notion_outbox import OP_DELETE, OP_UPDATE
 # Employee import는 PR-CE에서 pdf.py로 이동
 from app.models.auth import User
 # Project 관련 import는 PR-CD에서 link.py로 이동
@@ -34,6 +35,7 @@ from app.security import get_current_user, require_admin
 from app.services import sso_drive
 from app.services.mirror_dto import sale_from_mirror
 from app.services.notion import NotionService, get_notion
+from app.services.notion_outbox import enqueue
 from app.services.quote_calculator import (
     QuoteInput,
     QuoteType,
@@ -60,6 +62,25 @@ router = APIRouter(prefix="/sales", tags=["sales"])
 # attach endpoint도 사용하므로 상단으로 옮김 (PR-CE에서 PDF section을 pdf.py로
 # 이동하면서).
 _KST = timezone(timedelta(hours=9))
+
+
+def _sale_page_from_mirror_with_update(
+    row: M.MirrorSales, update_props: dict[str, Any]
+) -> dict[str, Any]:
+    """mirror row + update_props 병합 → 노션 page-like dict.
+
+    sales update/archive를 mirror direct + outbox로 전환하면서 sync._upsert_sale과
+    Sale.from_notion_page를 그대로 재사용하기 위한 공통 형태다.
+    """
+    merged_props = {**(row.properties or {}), **update_props}
+    return {
+        "id": row.page_id,
+        "properties": merged_props,
+        "url": row.url or "",
+        "created_time": row.created_time.isoformat() if row.created_time else None,
+        "last_edited_time": datetime.now(timezone.utc).isoformat(),
+        "archived": False,
+    }
 
 # PR-CC/CD/CE (Phase 4-J): sub-router include — 상위 router의 prefix(`/sales`)를
 # 그대로 상속받음. sub-module은 prefix 없이 endpoint 정의.
@@ -114,7 +135,7 @@ async def _create_quote_task_for_sale(
     try:
         page = await notion.create_page(settings.notion_db_tasks, props)
         try:
-            get_sync().upsert_page("tasks", page)
+            get_sync().upsert_page("tasks", page, skip_active_outbox=False)
         except Exception as e:  # noqa: BLE001
             logger.warning("자동 quote task mirror upsert 실패: %s", e)
     except Exception as e:  # noqa: BLE001
@@ -262,7 +283,7 @@ async def create_sale(
         )
 
     page = await notion.create_page(db_id, sale_create_to_props(body))
-    get_sync().upsert_page("sales", page)
+    get_sync().upsert_page("sales", page, skip_active_outbox=False)
 
     # quote_form_data는 노션에 저장 불가 (JSONB). mirror_sales에만 별도 UPDATE.
     # frontend가 단일 schema {input, result}로 보내면 list-wrapped로 변환 후 저장
@@ -372,17 +393,14 @@ def _form_to_response(form: dict) -> QuoteFormResponse:
 async def _sync_sale_estimated_amount(
     db: Session,
     page_id: str,
-    notion: NotionService,
 ) -> None:
     """영업 row의 estimated_amount를 모든 견적(일반+외부)의 final 합계로 갱신.
-    mirror_sales + 노션 "견적금액" 둘 다 update. 견적 add/edit/delete 후 호출.
+    mirror_sales + outbox "견적금액" update. 견적 add/edit/delete 후 호출.
 
     PR-BZ (외부 리뷰 12.x #3): row-level lock으로 동시 호출 race 차단.
     두 명이 동시에 견적을 추가/수정해도 last-write-wins이 아닌 직렬 처리.
-    노션 호출은 락 release 후 (외부 API latency가 락에 영향 X).
     """
     from sqlalchemy import select as sa_select
-    from sqlalchemy import update as sa_update
 
     # SELECT ... FOR UPDATE — 동일 page_id의 동시 _sync 호출은 락 대기 후 직렬화.
     # SQLite(test)에서는 noop이라 운영(Postgres)에만 효과. 호출처 트랜잭션 commit
@@ -406,22 +424,15 @@ async def _sync_sale_estimated_amount(
             result = f.get("result") or {}
             total += int(result.get("final") or 0)
 
-    db.execute(
-        sa_update(M.MirrorSales)
-        .where(M.MirrorSales.page_id == page_id)
-        .values(estimated_amount=float(total))
+    update_props = {"견적금액": {"number": total}}
+    page_like = _sale_page_from_mirror_with_update(row, update_props)
+    sync = get_sync()
+    sync.upsert_in_session(db, "sales", page_like)
+    enqueue(
+        db, aggregate_type="sales", aggregate_id=page_id,
+        op=OP_UPDATE, payload=update_props, notion_page_id=page_id,
     )
-    db.commit()  # 락 release. 노션 update는 별도 트랜잭션 외부.
-
-    try:
-        updated = await notion.update_page(
-            page_id, {"견적금액": {"number": total}}
-        )
-        get_sync().upsert_page("sales", updated)
-    except Exception:  # noqa: BLE001
-        logger.exception(
-            "견적금액 노션 sync 실패 — 운영 수동 보정 필요 (page_id=%s)", page_id
-        )
+    db.commit()  # 락 release + outbox enqueue commit.
 
 
 @router.get("/{page_id}/quotes", response_model=list[QuoteFormResponse])
@@ -509,7 +520,7 @@ async def add_sale_quote(
     db.commit()
     db.refresh(row)
 
-    await _sync_sale_estimated_amount(db, page_id, notion)
+    await _sync_sale_estimated_amount(db, page_id)
     # 첫 견적이면 노션 task DB에 견적서 작성 task 자동 생성 (PR-W follow-up).
     # idempotent — 이미 sales_ids 연결된 task가 있으면 skip.
     await _create_quote_task_for_sale(notion, row, db)
@@ -526,7 +537,6 @@ async def update_sale_quote(
     body: QuoteInput,
     _user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
-    notion: NotionService = Depends(get_notion),
 ) -> QuoteFormResponse:
     """기존 견적의 input·result만 수정. doc_number/suffix는 보존
     (외부 발송된 doc 변경되면 사장 운영 혼란).
@@ -560,7 +570,7 @@ async def update_sale_quote(
     )
     db.commit()
 
-    await _sync_sale_estimated_amount(db, page_id, notion)
+    await _sync_sale_estimated_amount(db, page_id)
     return _form_to_response(forms[target_idx])
 
 
@@ -627,7 +637,6 @@ async def delete_sale_quote(
     quote_id: str,
     _user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
-    notion: NotionService = Depends(get_notion),
 ) -> Response:
     """견적 삭제. suffix는 재할당 안 함 (기존 doc_number 안정성).
     삭제 후 영업 row의 견적금액 자동 sync."""
@@ -650,7 +659,7 @@ async def delete_sale_quote(
         .values(quote_form_data=pack_quote_forms(new_forms))
     )
     db.commit()
-    await _sync_sale_estimated_amount(db, page_id, notion)
+    await _sync_sale_estimated_amount(db, page_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
@@ -667,7 +676,6 @@ async def add_external_quote(
     body: ExternalQuoteRequest,
     _user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
-    notion: NotionService = Depends(get_notion),
 ) -> QuoteFormResponse:
     """외부 견적 추가 — 산출 X, 갑지에만 row로 표시.
 
@@ -705,7 +713,7 @@ async def add_external_quote(
         .values(quote_form_data=pack_quote_forms(forms))
     )
     db.commit()
-    await _sync_sale_estimated_amount(db, page_id, notion)
+    await _sync_sale_estimated_amount(db, page_id)
     return _form_to_response(new_form)
 
 
@@ -834,7 +842,6 @@ async def update_external_quote(
     body: ExternalQuoteRequest,
     _user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
-    notion: NotionService = Depends(get_notion),
 ) -> QuoteFormResponse:
     """외부 견적 service/amount 수정. 첨부 PDF는 보존. 영업 견적금액 자동 sync."""
     from sqlalchemy import update as sa_update
@@ -865,7 +872,7 @@ async def update_external_quote(
         .values(quote_form_data=pack_quote_forms(forms))
     )
     db.commit()
-    await _sync_sale_estimated_amount(db, page_id, notion)
+    await _sync_sale_estimated_amount(db, page_id)
     return _form_to_response(forms[target_idx])
 
 
@@ -881,21 +888,36 @@ async def update_sale(
     body: SaleUpdateRequest,
     _user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
-    notion: NotionService = Depends(get_notion),
 ) -> Sale:
-    page = await notion.update_page(page_id, sale_update_to_props(body))
-    get_sync().upsert_page("sales", page)
+    props = sale_update_to_props(body)
+    if not props and body.quote_form_data is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="갱신할 필드가 없습니다"
+        )
+
+    row = db.get(M.MirrorSales, page_id)
+    if row is None or row.archived:
+        raise HTTPException(status_code=404, detail="영업 건을 찾을 수 없습니다")
+
+    page_like = _sale_page_from_mirror_with_update(row, props)
+    sync = get_sync()
+    if props:
+        sync.upsert_in_session(db, "sales", page_like)
+        enqueue(
+            db, aggregate_type="sales", aggregate_id=page_id,
+            op=OP_UPDATE, payload=props, notion_page_id=page_id,
+        )
 
     # quote_form_data는 노션에 저장 불가 (JSONB) — mirror_sales에만 별도 UPDATE.
     # 단일 schema는 list-wrapped로 변환 (POST 흐름과 동일 — stable form id 보장).
+    response_quote_form_data = row.quote_form_data or {}
     if body.quote_form_data is not None:
         from sqlalchemy import update as sa_update
 
         raw_fd = body.quote_form_data
         if "forms" not in raw_fd and "input" in raw_fd:
             # 영업 row의 기존 quote_doc_number 가져와 legacy_doc_number로 사용
-            row_for_doc = db.get(M.MirrorSales, page_id)
-            legacy_doc = row_for_doc.quote_doc_number if row_for_doc else ""
+            legacy_doc = row.quote_doc_number or ""
             wrapped = pack_quote_forms([
                 {
                     "id": next_form_id(),
@@ -907,21 +929,16 @@ async def update_sale(
             ])
         else:
             wrapped = raw_fd
+        response_quote_form_data = wrapped
         db.execute(
             sa_update(M.MirrorSales)
             .where(M.MirrorSales.page_id == page_id)
             .values(quote_form_data=wrapped)
         )
-        db.commit()
+    db.commit()
 
-    sale = Sale.from_notion_page(page)
-    # 응답에도 갱신된 quote_form_data 포함 (frontend가 즉시 prefill)
-    if body.quote_form_data is not None:
-        sale.quote_form_data = body.quote_form_data
-    else:
-        row = db.get(M.MirrorSales, page_id)
-        if row is not None:
-            sale.quote_form_data = row.quote_form_data or {}
+    sale = Sale.from_notion_page(page_like)
+    sale.quote_form_data = response_quote_form_data
     return sale
 
 
@@ -930,17 +947,18 @@ async def archive_sale(
     page_id: str,
     _user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
-    notion: NotionService = Depends(get_notion),
 ) -> dict[str, str]:
-    """노션 페이지를 archive (soft delete). 노션은 영구 삭제 없음."""
+    """영업 row archive — mirror direct + outbox enqueue."""
     row = db.get(M.MirrorSales, page_id)
-    if row is None:
+    if row is None or row.archived:
         raise HTTPException(status_code=404, detail="영업 건을 찾을 수 없습니다")
-    await asyncio.to_thread(
-        notion._client.pages.update, page_id=page_id, archived=True
+    sync = get_sync()
+    sync.archive_in_session(db, "sales", page_id)
+    enqueue(
+        db, aggregate_type="sales", aggregate_id=page_id,
+        op=OP_DELETE, payload={}, notion_page_id=page_id,
     )
-    notion.clear_cache()
-    get_sync().archive_page("sales", page_id)
+    db.commit()
     return {"status": "archived", "page_id": page_id}
 
 

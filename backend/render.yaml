@@ -42,6 +42,12 @@ services:
         sync: false
       - key: NOTION_DB_CONTRACT_ITEMS
         sync: false
+      - key: NOTION_DB_SALES
+        sync: false
+      - key: NOTION_DB_SEAL_REQUESTS
+        sync: false
+      - key: NOTION_DB_SUGGESTIONS
+        sync: false
       - key: CORS_ORIGINS
         value: https://task.dyce.kr,http://localhost:3000
       # 외부 cron service들이 sync 처리하므로 web 내부 APScheduler 영구 비활성.
@@ -140,6 +146,12 @@ services:
       - key: NOTION_DB_MASTER
         sync: false
       - key: NOTION_DB_CONTRACT_ITEMS
+        sync: false
+      - key: NOTION_DB_SALES
+        sync: false
+      - key: NOTION_DB_SEAL_REQUESTS
+        sync: false
+      - key: NOTION_DB_SUGGESTIONS
         sync: false
 
   # ── PR-FO Phase 1.3.1 Outbox drain worker ──
