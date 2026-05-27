@@ -60,7 +60,9 @@ def apply_update_to_mirror(
 
     `db.commit()`은 호출자 책임 (outbox enqueue와 같은 transaction에서 묶기 위함).
     """
-    merged = merge_props(row.properties or {}, update_props)
+    # sync._upsert_one을 거치지 않는 mirror-direct 경로 — 동일하게 정규화해
+    # write 포맷 properties가 mirror에 그대로 쌓이지 않도록 한다.
+    merged = P.normalize_properties_for_mirror(merge_props(row.properties or {}, update_props))
     row.properties = merged
 
     norm = normalize_mirror_fields(merged)

@@ -18,6 +18,54 @@ def _seg_text(seg: dict[str, Any]) -> str:
     return seg.get("plain_text") or (seg.get("text") or {}).get("content", "")
 
 
+def normalize_properties_for_mirror(
+    props: dict[str, Any] | None,
+) -> dict[str, Any] | None:
+    """mirror 저장용 properties 정규화 — write 포맷 segment에 plain_text 보강.
+
+    mirror-direct write(PR-FR)가 저장하는 write 포맷({"text": {"content": v}})에는
+    노션 read 응답의 `plain_text`가 없어, read helper / 자체 추출 루프가 빈 값으로
+    읽는 cascade가 발생한다 (제목·코드·비고 소실). 노션 = 백업, mirror = 작업 DB
+    원칙상 mirror에 저장되는 데이터 자체가 read 가능한 정상 포맷이어야 하므로,
+    저장 직전 top-level title/rich_text property의 각 segment에 plain_text를 보강한다.
+
+      - idempotent: 이미 plain_text가 있으면 그대로 둠 (노션 read-포맷에 무해)
+      - top-level title/rich_text 배열만 비재귀 처리 — rollup/formula/people/date 등 미손상
+      - text 키 없는 segment(mention/equation 등)는 보강하지 않음
+      - 원본 dict는 변형하지 않음 (변경분만 얕은 복사, 변경 없으면 원본 그대로 반환)
+    """
+    if not props:
+        return props
+    out: dict[str, Any] | None = None
+    for key, val in props.items():
+        if not isinstance(val, dict):
+            continue
+        kind = (
+            "title"
+            if isinstance(val.get("title"), list)
+            else ("rich_text" if isinstance(val.get("rich_text"), list) else None)
+        )
+        if kind is None:
+            continue
+        arr = val[kind]
+        new_arr: list[Any] | None = None
+        for i, seg in enumerate(arr):
+            if (
+                isinstance(seg, dict)
+                and "plain_text" not in seg
+                and isinstance(seg.get("text"), dict)
+                and "content" in seg["text"]
+            ):
+                if new_arr is None:
+                    new_arr = list(arr)
+                new_arr[i] = {**seg, "plain_text": seg["text"]["content"]}
+        if new_arr is not None:
+            if out is None:
+                out = dict(props)
+            out[key] = {**val, kind: new_arr}
+    return out if out is not None else props
+
+
 def title(props: dict[str, Any], name: str) -> str:
     arr = (props.get(name) or {}).get("title") or []
     return _seg_text(arr[0]) if arr else ""

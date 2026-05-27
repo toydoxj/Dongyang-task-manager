@@ -296,6 +296,13 @@ class NotionSyncService:
         }[kind]
 
     def _upsert_one(self, db: Session, kind: SyncKind, page: dict) -> None:
+        # mirror 저장 직전 정규화 — mirror-direct write의 write 포맷 properties에
+        # plain_text 보강 (제목·코드·비고 소실 cascade 차단). 노션 read-포맷엔 idempotent.
+        props = page.get("properties")
+        if props:
+            normalized = P.normalize_properties_for_mirror(props)
+            if normalized is not props:
+                page = {**page, "properties": normalized}
         if kind == "projects":
             self._upsert_project(db, page)
         elif kind == "tasks":

@@ -66,3 +66,65 @@ def test_task_from_notion_page_preserves_write_format() -> None:
     task = Task.from_notion_page(page)
     assert task.title == "내력검토 용역"
     assert task.note == "현장 메모"
+
+
+# ── normalize_properties_for_mirror (mirror 저장 직전 정규화) ──
+
+norm = P.normalize_properties_for_mirror
+
+
+def test_normalize_adds_plain_text_to_write_title() -> None:
+    out = norm({"내용": {"title": [{"text": {"content": "제목"}}]}})
+    assert out["내용"]["title"][0]["plain_text"] == "제목"
+
+
+def test_normalize_adds_plain_text_to_write_rich_text() -> None:
+    out = norm({"비고": {"rich_text": [{"text": {"content": "메모"}}]}})
+    assert out["비고"]["rich_text"][0]["plain_text"] == "메모"
+
+
+def test_normalize_idempotent_on_read_format() -> None:
+    """이미 plain_text 있으면 원본 그대로 반환 (변경 없음)."""
+    props = {"내용": {"title": [{"plain_text": "x", "text": {"content": "x"}}]}}
+    assert norm(props) is props
+
+
+def test_normalize_does_not_mutate_original() -> None:
+    props = {"내용": {"title": [{"text": {"content": "제목"}}]}}
+    out = norm(props)
+    assert out is not props
+    assert "plain_text" not in props["내용"]["title"][0]  # 원본 불변
+
+
+def test_normalize_skips_mention_without_text() -> None:
+    """text 키 없는 segment(mention/equation)는 보강하지 않음."""
+    props = {"내용": {"title": [{"mention": {"user": {}}}]}}
+    out = norm(props)
+    assert "plain_text" not in out["내용"]["title"][0]
+
+
+def test_normalize_ignores_non_text_properties() -> None:
+    """title/rich_text 아닌 property(date/people/rollup)는 손대지 않음."""
+    props = {
+        "기간": {"date": {"start": "2026-05-22"}},
+        "담당자": {"people": [{"id": "u1"}]},
+        "Master Code": {"rollup": {"type": "array", "array": []}},
+    }
+    assert norm(props) is props
+
+
+def test_normalize_empty() -> None:
+    assert norm({}) == {}
+    assert norm(None) is None
+
+
+def test_normalize_mixed() -> None:
+    props = {
+        "내용": {"title": [{"text": {"content": "T"}}]},
+        "비고": {"rich_text": [{"plain_text": "R", "text": {"content": "R"}}]},
+        "기간": {"date": {"start": "2026-05-22"}},
+    }
+    out = norm(props)
+    assert out["내용"]["title"][0]["plain_text"] == "T"   # write → 보강
+    assert out["비고"]["rich_text"][0]["plain_text"] == "R"  # read → 유지
+    assert out["기간"] == props["기간"]                    # date 그대로
