@@ -5,6 +5,9 @@ worker / monitoring 단위 동작 검증.
 """
 from __future__ import annotations
 
+from datetime import datetime, timezone
+from types import SimpleNamespace
+
 import pytest
 
 from app.models.notion_outbox import (
@@ -13,11 +16,17 @@ from app.models.notion_outbox import (
     OP_UPDATE,
     STATUS_DEAD,
     STATUS_PENDING,
+    STATUS_PROCESSING,
     STATUS_RETRY,
     STATUS_SENT,
     is_active_status,
 )
-from app.scripts.outbox_drain import _next_attempt_delay
+from app.scripts.outbox_drain import (
+    _is_archived_target_error,
+    _mark_stale_processing_rows_retry,
+    _next_attempt_delay,
+    _should_skip_archived_target,
+)
 
 
 def test_active_statuses() -> None:
@@ -40,6 +49,49 @@ def test_exponential_backoff_schedule() -> None:
     # cap 3600s
     assert _next_attempt_delay(8) == 3600
     assert _next_attempt_delay(20) == 3600
+
+
+def test_stale_processing_rows_are_reset_to_retry() -> None:
+    """stale processing row는 attempts 증가 없이 즉시 retry 가능 상태로 회수."""
+    now = datetime(2026, 5, 27, 14, 50, tzinfo=timezone.utc)
+    row = SimpleNamespace(
+        status=STATUS_PROCESSING,
+        locked_at=datetime(2026, 5, 25, 8, 2, tzinfo=timezone.utc),
+        lock_owner="old-worker",
+        next_attempt_at=datetime(2026, 5, 25, 8, 1, tzinfo=timezone.utc),
+        last_error="",
+    )
+
+    assert _mark_stale_processing_rows_retry([row], now) == 1
+    assert row.status == STATUS_RETRY
+    assert row.locked_at is None
+    assert row.lock_owner is None
+    assert row.next_attempt_at == now
+    assert row.last_error == "stale processing lock recovered"
+
+
+def test_archived_target_error_detection() -> None:
+    """Notion archived page/block 수정 거부 오류를 별도 분류."""
+    err = Exception("노션 API 호출 실패: Can't edit block that is archived.")
+    assert _is_archived_target_error(err) is True
+    assert _is_archived_target_error(Exception("temporary timeout")) is False
+
+
+def test_archived_target_can_be_skipped_when_mirror_is_archived() -> None:
+    """mirror가 archived이면 archived target 오류는 목표 상태 달성으로 간주."""
+    from unittest.mock import MagicMock
+
+    db = MagicMock()
+    db.get.return_value = SimpleNamespace(archived=True)
+    row = SimpleNamespace(
+        op=OP_UPDATE,
+        aggregate_type="seal_requests",
+        aggregate_id="page-1",
+        notion_page_id="page-1",
+    )
+    err = Exception("Can't edit block that is archived. You must unarchive first.")
+
+    assert _should_skip_archived_target(db, row, err) is True
 
 
 def test_op_constants_match_valid_set() -> None:

@@ -150,6 +150,32 @@ class ProjectUpdateRequest(BaseModel):
     vat: float | None = None
 
 
+def notion_date_range_prop(
+    start: str | None,
+    end: str | None,
+) -> dict[str, Any] | None:
+    """Notion date range payload를 유효한 형태로 정규화.
+
+    Notion은 `date.start = null`을 받지 않고, start가 end보다 늦은 range도
+    거부한다. end만 있는 경우는 단일 날짜(start=end)로 보낸다.
+    """
+    normalized_start = (start or "").strip() or None
+    normalized_end = (end or "").strip() or None
+    if normalized_start is None and normalized_end is None:
+        return None
+    if normalized_start is None:
+        normalized_start = normalized_end
+        normalized_end = None
+    if normalized_end is not None and normalized_start > normalized_end:
+        normalized_start, normalized_end = normalized_end, normalized_start
+    return {
+        "date": {
+            "start": normalized_start,
+            "end": normalized_end,
+        }
+    }
+
+
 def project_update_to_props(req: ProjectUpdateRequest) -> dict[str, Any]:
     """None이 아닌 필드만 노션 properties로 변환. 빈 문자열은 'clear' 신호."""
     props: dict[str, Any] = {}
@@ -187,14 +213,11 @@ def project_update_to_props(req: ProjectUpdateRequest) -> dict[str, Any]:
             # PR-CS: 계약기간을 모두 비우면 "계약" checkbox도 해제 — 일관성
             props["계약"] = {"checkbox": False}
         else:
-            props["계약기간"] = {
-                "date": {
-                    "start": req.contract_start or None,
-                    "end": req.contract_end or None,
-                }
-            }
-            # PR-CS: 계약기간이 채워지면 "계약" checkbox 자동 True (사용자 요청)
-            props["계약"] = {"checkbox": True}
+            period = notion_date_range_prop(req.contract_start, req.contract_end)
+            if period is not None:
+                props["계약기간"] = period
+                # PR-CS: 계약기간이 채워지면 "계약" checkbox 자동 True (사용자 요청)
+                props["계약"] = {"checkbox": True}
     if req.end_date is not None:
         props["완료일"] = (
             {"date": None}
@@ -238,12 +261,12 @@ def project_create_to_props(req: ProjectCreateRequest) -> dict[str, Any]:
     if req.start_date:
         props["시작일"] = {"date": {"start": req.start_date, "end": None}}
     if req.contract_start or req.contract_end:
-        props["계약기간"] = {
-            "date": {
-                "start": req.contract_start or req.start_date,
-                "end": req.contract_end,
-            }
-        }
+        period = notion_date_range_prop(
+            req.contract_start or req.start_date,
+            req.contract_end,
+        )
+        if period is not None:
+            props["계약기간"] = period
     if req.contract_amount is not None:
         props["용역비(VAT제외)"] = {"number": req.contract_amount}
     if req.vat is not None:

@@ -33,9 +33,9 @@ from fastapi import (
     status,
 )
 from fastapi.responses import StreamingResponse
-from starlette.background import BackgroundTask
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
+from starlette.background import BackgroundTask
 
 from app.db import get_db
 from app.models.auth import User
@@ -47,6 +47,7 @@ from app.models.contract import (
     ContractUpdate,
 )
 from app.models.mirror import MirrorClient, MirrorProject
+from app.models.project import notion_date_range_prop
 from app.security import get_current_user, require_editor
 from app.services import sso_drive
 from app.services.notion import get_notion
@@ -266,12 +267,12 @@ async def _sync_project_contract_fields(
 
         # 기간 sync — start/end 둘 다 없으면 update skip (Project 기존 값 유지).
         if start or end:
-            props["계약기간"] = {
-                "date": {
-                    "start": start.isoformat() if start else None,
-                    "end": end.isoformat() if end else None,
-                }
-            }
+            period = notion_date_range_prop(
+                start.isoformat() if start else None,
+                end.isoformat() if end else None,
+            )
+            if period is not None:
+                props["계약기간"] = period
 
         if not props:
             return

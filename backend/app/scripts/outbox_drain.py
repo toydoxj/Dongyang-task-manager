@@ -31,7 +31,9 @@ _BATCH_SIZE_DEFAULT = 10
 _MAX_ATTEMPTS = 8
 _RETRY_BASE_S = 30  # 1차 retry 30s 후
 _RETRY_MAX_S = 3600  # 최대 1시간 cap
+_PROCESSING_STALE_AFTER = timedelta(minutes=15)
 _LOCK_OWNER = f"{socket.gethostname()}:{os.getpid()}"
+_ARCHIVED_TARGET_ERROR = "Can't edit block that is archived"
 
 
 def _bootstrap_env_from_settings() -> None:
@@ -63,6 +65,77 @@ def _bootstrap_env_from_settings() -> None:
 def _next_attempt_delay(attempts: int) -> int:
     """exponential backoff seconds — 30s, 60s, 120s, ..., cap 3600s."""
     return min(_RETRY_BASE_S * (2 ** max(0, attempts - 1)), _RETRY_MAX_S)
+
+
+def _mark_stale_processing_rows_retry(rows, now: datetime) -> int:
+    """worker 재시작 등으로 고착된 processing row를 회수."""
+    from app.models.notion_outbox import STATUS_RETRY
+
+    count = 0
+    for row in rows:
+        row.status = STATUS_RETRY
+        row.locked_at = None
+        row.lock_owner = None
+        row.next_attempt_at = now
+        row.last_error = "stale processing lock recovered"
+        count += 1
+    return count
+
+
+def _is_archived_target_error(exc: Exception) -> bool:
+    """Notion의 archived page/block 수정 거부 오류인지 판별."""
+    return _ARCHIVED_TARGET_ERROR in str(exc)
+
+
+def _mirror_table_for_archive_check(aggregate_type: str):
+    """outbox aggregate_type에 대응하는 mirror ORM 모델."""
+    from app.models.mirror import (
+        MirrorCashflow,
+        MirrorClient,
+        MirrorContractItem,
+        MirrorMaster,
+        MirrorProject,
+        MirrorSales,
+        MirrorSealRequest,
+        MirrorSuggestion,
+        MirrorTask,
+    )
+
+    return {
+        "projects": MirrorProject,
+        "tasks": MirrorTask,
+        "clients": MirrorClient,
+        "master": MirrorMaster,
+        "cashflow": MirrorCashflow,
+        "expense": MirrorCashflow,
+        "contract_items": MirrorContractItem,
+        "sales": MirrorSales,
+        "seal_requests": MirrorSealRequest,
+        "suggestions": MirrorSuggestion,
+    }.get(aggregate_type)
+
+
+def _mirror_row_is_archived(db, row) -> bool:
+    """mirror row가 이미 archived면 Notion archived target 오류를 성공 상태로 본다."""
+    table = _mirror_table_for_archive_check(row.aggregate_type)
+    if table is None:
+        return False
+    page_id = row.aggregate_id or row.notion_page_id
+    if not page_id:
+        return False
+    mirror_row = db.get(table, page_id)
+    return bool(mirror_row is not None and mirror_row.archived)
+
+
+def _should_skip_archived_target(db, row, exc: Exception) -> bool:
+    """목표 상태가 이미 mirror에 반영된 archived target 오류인지 판별."""
+    from app.models.notion_outbox import OP_DELETE, OP_UPDATE
+
+    return (
+        row.op in (OP_UPDATE, OP_DELETE)
+        and _is_archived_target_error(exc)
+        and _mirror_row_is_archived(db, row)
+    )
 
 
 async def _push_notion_op(notion, row) -> str | None:
@@ -120,26 +193,51 @@ async def drain_once(batch_size: int = _BATCH_SIZE_DEFAULT) -> dict:
     """1회 drain — pending/retry row를 batch 만큼 처리.
 
     Returns:
-        {"picked": N, "sent": N, "failed": N, "dead": N}
+        {"picked": N, "sent": N, "failed": N, "dead": N, "recovered": N}
     """
-    from sqlalchemy import select
+    from sqlalchemy import or_, select
 
     from app.db import SessionLocal
     from app.models.notion_outbox import (
+        _ACTIVE_STATUSES,
         STATUS_DEAD,
         STATUS_PROCESSING,
         STATUS_RETRY,
         STATUS_SENT,
         NotionOutbox,
-        _ACTIVE_STATUSES,
     )
     from app.services.notion import get_notion
 
     now = datetime.now(timezone.utc)
-    stats = {"picked": 0, "sent": 0, "failed": 0, "dead": 0}
+    stats = {"picked": 0, "sent": 0, "failed": 0, "dead": 0, "recovered": 0}
 
     with SessionLocal() as db:
-        # 1. 배치 픽업 — FOR UPDATE SKIP LOCKED로 다중 worker 안전
+        # 1. stale processing 회수 — 이전 worker가 죽은 뒤 남은 lock 안전망.
+        stale_before = now - _PROCESSING_STALE_AFTER
+        stale_stmt = (
+            select(NotionOutbox)
+            .where(NotionOutbox.status == STATUS_PROCESSING)
+            .where(
+                or_(
+                    NotionOutbox.locked_at.is_(None),
+                    NotionOutbox.locked_at <= stale_before,
+                )
+            )
+            .order_by(NotionOutbox.locked_at)
+            .limit(batch_size)
+            .with_for_update(skip_locked=True)
+        )
+        stale_rows = list(db.execute(stale_stmt).scalars().all())
+        stats["recovered"] = _mark_stale_processing_rows_retry(
+            stale_rows, now
+        )
+        if stats["recovered"]:
+            logger.warning(
+                "outbox stale processing recovered — count=%d",
+                stats["recovered"],
+            )
+
+        # 2. 배치 픽업 — FOR UPDATE SKIP LOCKED로 다중 worker 안전
         stmt = (
             select(NotionOutbox)
             .where(NotionOutbox.status.in_([
@@ -154,6 +252,8 @@ async def drain_once(batch_size: int = _BATCH_SIZE_DEFAULT) -> dict:
         )
         rows = list(db.execute(stmt).scalars().all())
         if not rows:
+            if stats["recovered"]:
+                db.commit()
             return stats
 
         stats["picked"] = len(rows)
@@ -168,7 +268,7 @@ async def drain_once(batch_size: int = _BATCH_SIZE_DEFAULT) -> dict:
             r.lock_owner = _LOCK_OWNER
         db.commit()
 
-    # 2. 락 해제 후 노션 호출 (각 row 별도 transaction)
+    # 3. 락 해제 후 노션 호출 (각 row 별도 transaction)
     notion = get_notion()
     for r_id in row_ids:
         with SessionLocal() as db:
@@ -190,29 +290,41 @@ async def drain_once(batch_size: int = _BATCH_SIZE_DEFAULT) -> dict:
                     r.id, r.aggregate_type, r.op, r.aggregate_id,
                 )
             except Exception as e:  # noqa: BLE001
-                r.attempts += 1
-                r.last_error = repr(e)[:1000]
-                r.locked_at = None
-                r.lock_owner = None
-                if r.attempts >= _MAX_ATTEMPTS:
-                    r.status = STATUS_DEAD
-                    stats["dead"] += 1
-                    logger.error(
-                        "outbox DEAD — id=%d attempts=%d type=%s op=%s aggregate=%s last=%s",
-                        r.id, r.attempts, r.aggregate_type, r.op,
-                        r.aggregate_id, repr(e)[:200],
+                if _should_skip_archived_target(db, r, e):
+                    r.status = STATUS_SENT
+                    r.sent_at = datetime.now(timezone.utc)
+                    r.locked_at = None
+                    r.lock_owner = None
+                    r.last_error = "skipped: archived target already reflected in mirror"
+                    stats["sent"] += 1
+                    logger.info(
+                        "outbox skipped archived target — id=%d type=%s op=%s aggregate=%s",
+                        r.id, r.aggregate_type, r.op, r.aggregate_id,
                     )
                 else:
-                    r.status = STATUS_RETRY
-                    delay = _next_attempt_delay(r.attempts)
-                    r.next_attempt_at = datetime.now(timezone.utc) + timedelta(
-                        seconds=delay
-                    )
-                    stats["failed"] += 1
-                    logger.warning(
-                        "outbox retry — id=%d attempts=%d delay=%ds last=%s",
-                        r.id, r.attempts, delay, repr(e)[:200],
-                    )
+                    r.attempts += 1
+                    r.last_error = repr(e)[:1000]
+                    r.locked_at = None
+                    r.lock_owner = None
+                    if r.attempts >= _MAX_ATTEMPTS:
+                        r.status = STATUS_DEAD
+                        stats["dead"] += 1
+                        logger.error(
+                            "outbox DEAD — id=%d attempts=%d type=%s op=%s aggregate=%s last=%s",
+                            r.id, r.attempts, r.aggregate_type, r.op,
+                            r.aggregate_id, repr(e)[:200],
+                        )
+                    else:
+                        r.status = STATUS_RETRY
+                        delay = _next_attempt_delay(r.attempts)
+                        r.next_attempt_at = datetime.now(timezone.utc) + timedelta(
+                            seconds=delay
+                        )
+                        stats["failed"] += 1
+                        logger.warning(
+                            "outbox retry — id=%d attempts=%d delay=%ds last=%s",
+                            r.id, r.attempts, delay, repr(e)[:200],
+                        )
             db.commit()
 
     return stats
