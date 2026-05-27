@@ -223,6 +223,8 @@ function Form({
     try {
       // 빈 문자열은 명시적 'clear' 신호로 backend에 그대로 전송 (None 처리).
       // 원본과 동일하면 변경 없음으로 undefined.
+      const wasTitle = task.title ?? "";
+      const wasNote = task.note ?? "";
       const wasStart = task.start_date ?? "";
       const wasEnd = task.end_date ?? "";
       const wasActual = task.actual_end_date ?? "";
@@ -256,7 +258,7 @@ function Form({
       const isVacation = category === "휴가(연차)" || category === "휴가";
       const effectiveActual = isVacation ? (end || "").slice(0, 10) : actualEnd;
       await updateTask(task.id, {
-        title,
+        title: title === wasTitle ? undefined : title,
         status,
         start_date: start === wasStart ? undefined : start,
         end_date: end === wasEnd ? undefined : end,
@@ -270,7 +272,7 @@ function Form({
           .split(",")
           .map((s) => s.trim())
           .filter(Boolean),
-        note,
+        note: note === wasNote ? undefined : note,
         weekly_plan_text:
           weeklyPlan === (task.weekly_plan_text ?? "") ? undefined : weeklyPlan,
         project_ids: projectIdsParam,

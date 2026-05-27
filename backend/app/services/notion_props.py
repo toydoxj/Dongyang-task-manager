@@ -8,14 +8,24 @@ from __future__ import annotations
 from typing import Any
 
 
+def _seg_text(seg: dict[str, Any]) -> str:
+    """rich_text/title segment → 텍스트.
+
+    노션 API 응답은 read 전용 `plain_text`를 채워주지만, mirror-direct write
+    경로(PR-FR)에서 저장되는 write 포맷({"text": {"content": ...}})에는
+    plain_text가 없다. 두 포맷 모두 읽도록 text.content로 fallback.
+    """
+    return seg.get("plain_text") or (seg.get("text") or {}).get("content", "")
+
+
 def title(props: dict[str, Any], name: str) -> str:
     arr = (props.get(name) or {}).get("title") or []
-    return arr[0].get("plain_text", "") if arr else ""
+    return _seg_text(arr[0]) if arr else ""
 
 
 def rich_text(props: dict[str, Any], name: str) -> str:
     arr = (props.get(name) or {}).get("rich_text") or []
-    return "".join(seg.get("plain_text", "") for seg in arr)
+    return "".join(_seg_text(seg) for seg in arr)
 
 
 def select_name(props: dict[str, Any], name: str) -> str:

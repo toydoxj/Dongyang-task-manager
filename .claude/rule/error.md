@@ -339,3 +339,14 @@
   - **DB 안전망 설정은 적용 직후뿐 아니라 정기 검증 필요.** `/api/health/db`의 SHOW 노출이 회귀를 표면화한 만큼, 운영 dashboard/모니터링에 이 값을 daily 체크 항목으로 등록 권장
   - **Supavisor 같은 pooler 경유 환경에선 connection-level SET이 reset될 수 있음.** PR-DA 같은 안전망은 transaction-scope (`SET LOCAL`) 또는 cluster-default (`ALTER DATABASE`)로 강도 차이 검토
   - 안전망 설정이 의도대로 살아있는지 검증 endpoint를 항상 동반 (`/api/health/db`의 SHOW가 좋은 선례)
+
+### 2026-05-27 — mirror-direct write 포맷 / read helper 불일치로 제목·비고 cascade 소실
+- 컨텍스트: 사용자 보고 "프로젝트 상세 업무 TASK 편집 모달에서 제목 입력란은 안 건드리고 다른 필드(비고/상태)만 수정·저장하면 제목이 사라진다 / 수정이 안 된다". 프로젝트 편집도 동일 증상
+- 증상: title/rich_text 필드를 mirror에 저장한 직후 read하면 빈 값. 저장 직후 사라졌다가 outbox drain + 5분 sync로 노션 응답(plain_text 포함)이 복구되면 다시 나타나는 "일시적 소실 → 자가복구" 양상 (단 outbox push 실패 시 1시간+ 지속)
+- 원인: PR-FR로 task/project를 노션 호출 없이 mirror에 직접 write하면서, write 포맷(`{"title":[{"text":{"content":v}}]}`, `_title`/`_rich_text` 생성, **plain_text 키 없음**)이 그대로 mirror.properties에 저장됨. 그런데 read helper `notion_props.title`/`rich_text`는 노션 read 응답의 `plain_text`만 읽음 → write 포맷을 못 읽어 빈 문자열 반환. `_upsert_task`가 `Task.from_notion_page`로 mirror.title 컬럼까지 빈 값으로 저장 → cascade. frontend `TaskEditModal`이 title을 diff 없이 무조건 전송해 매 저장마다 trigger
+- 대조: sales update는 `notion.update_page` 후 **노션 응답(plain_text 포함)을 mirror에 저장**하므로 정상값은 안 사라졌고, 과거 cascade(PR-FV/FW)는 빈 string("") 케이스만이었음. task/project는 mirror-direct라 정상값도 소실되는 더 심한 변종
+- 해결: (A 근본) `notion_props.py`에 `_seg_text` helper 추가 — `plain_text` 없으면 `text.content`로 fallback. `title`/`rich_text` 둘 다 적용 → task·project 동시 해결, 모든 도메인 공통. (D 안전망) `TaskEditModal.save()`가 `title`/`note`를 `=== was ? undefined` diff 후 omit. 회귀 테스트 `tests/test_notion_props_write_format.py` 6종 추가
+- 재발 방지:
+  - **노션 write 포맷(`{"text":{"content":v}}`)과 read 포맷(`plain_text`)은 다르다.** mirror-direct write(PR-FR류)로 write 포맷을 mirror에 저장하면, read helper가 반드시 두 포맷 모두 읽어야 한다. 새 도메인을 mirror-direct로 cut-over할 때 title/rich_text 왕복(write→from_notion_page→값 보존) 테스트 필수
+  - 옵션 B(노션 `update_page`에 plain_text 포함 전송)는 비권고 — plain_text는 노션 read-only computed 필드라 API 버전별 무시/validation 오류 가능 + outbox 재시도 구조에서 리스크
+  - frontend 폼은 안 건드린 필드를 `=== was ? undefined`로 omit (sales PR-FW와 동일 패턴). 무조건 전송은 backend cascade를 매번 trigger
