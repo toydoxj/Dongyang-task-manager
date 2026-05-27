@@ -82,3 +82,24 @@ def test_project_assignee_add_pattern() -> None:
         "홍길동",
         "이순신",
     ]
+
+
+def test_retry_works_drive_no_notion_dependency() -> None:
+    """PR-GB: retry_works_drive가 노션 직접 호출 제거 → mirror-direct."""
+    import inspect
+
+    from app.routers.projects import retry_works_drive
+
+    assert "notion" not in inspect.signature(retry_works_drive).parameters
+
+
+def test_works_drive_url_merge() -> None:
+    """WORKS Drive URL update_props 병합 — 기존 properties 보존."""
+    row = _project_row()
+    update_props = {"WORKS Drive URL": {"url": "https://drive.example/folder"}}
+    page = _project_page_from_mirror_with_update(row, update_props)
+    assert (
+        page["properties"]["WORKS Drive URL"]["url"]
+        == "https://drive.example/folder"
+    )
+    assert page["properties"]["프로젝트명"]["title"][0]["plain_text"] == "테스트프로젝트"

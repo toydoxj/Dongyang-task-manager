@@ -301,11 +301,13 @@ async def retry_works_drive(
     page_id: str,
     _user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
-    notion: NotionService = Depends(get_notion),
 ) -> Project:
     """누락된/실패한 WORKS Drive 폴더 생성을 다시 시도.
 
     동기 호출 — 결과를 즉시 응답에 반영. idempotent라 폴더 있으면 URL만 다시 저장.
+
+    PR-GB: 노션 update/get 제거 → mirror direct + outbox (PR-FS 패턴). WORKS Drive
+    폴더 생성(sso_drive)은 외부 API라 동기 유지, 노션 URL 저장만 mirror-direct.
     """
     s = get_settings()
     if not s.works_drive_enabled:
@@ -325,13 +327,18 @@ async def retry_works_drive(
         )
     except sso_drive.DriveError as e:
         raise HTTPException(status_code=502, detail=str(e)) from e
-    if url:
-        await notion.update_page(
-            page_id, properties={"WORKS Drive URL": {"url": url}}
-        )
-    page = await notion.get_page(page_id)
-    get_sync().upsert_page("projects", page)
-    return Project.from_notion_page(page)
+    if not url:
+        return project  # 폴더는 확보됐으나 URL 미반환 — mirror 현재 상태 반환
+    update_props: dict = {"WORKS Drive URL": {"url": url}}
+    page_like = _project_page_from_mirror_with_update(row, update_props)
+    sync = get_sync()
+    sync.upsert_in_session(db, "projects", page_like)
+    enqueue(
+        db, aggregate_type="projects", aggregate_id=page_id,
+        op=OP_UPDATE, payload=update_props, notion_page_id=page_id,
+    )
+    db.commit()
+    return Project.from_notion_page(page_like)
 
 
 @router.get("/{page_id}", response_model=Project)
