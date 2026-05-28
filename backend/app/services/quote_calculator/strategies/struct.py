@@ -17,6 +17,7 @@ from app.services.quote_calculator import (
     QuoteInput,
     QuoteResult,
     _excel_round_half_up,
+    _resolve_final_pricing,
     _resolve_rate,
     baseline_manhours,
 )
@@ -54,18 +55,9 @@ def _calculate_struct_design(inp: QuoteInput) -> QuoteResult:
 
     # 4. 절삭 — final_override 우선, 없으면 truncate_unit으로 절삭
     adjusted_int = int(_excel_round_half_up(adjusted, 0))
-    if inp.final_override is not None:
-        final_amount = int(inp.final_override)
-        truncated = adjusted_int - final_amount  # 표시용 (음수 가능)
-    else:
-        unit = inp.truncate_unit if inp.truncate_unit > 0 else 1
-        truncated = adjusted_int % unit
-        final_amount = adjusted_int - truncated
-
-    # 6. VAT (한국 부가세 10%) — final은 항상 공급가액. UI/xlsx 표시 분기는
-    # vat_included 플래그가 결정하지만 계산값 자체는 항상 채워 응답에 일관성 유지.
-    vat_amount = int(_excel_round_half_up(final_amount * 0.1, 0))
-    final_with_vat = final_amount + vat_amount
+    final_amount, truncated, vat_amount, final_with_vat = _resolve_final_pricing(
+        inp, adjusted_int
+    )
 
     # 7. 평당 (P28, Q28)
     per_pyeong_area = inp.gross_floor_area / 3.3 if inp.gross_floor_area else 0

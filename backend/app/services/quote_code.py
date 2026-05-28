@@ -1,7 +1,7 @@
 """견적서 문서번호 자동 부여 — {YY}-{CC}-{NNN} 형식.
 
 영업코드(`영{YY}-{NNN}`)와 별개로, 견적서마다 연 단위 sequence로 부여.
-사장 운영 양식의 "26-01-007"(구조설계) "26-04-002"(정기점검) 등 형식 유지.
+사장 운영 양식의 "26-01-007"(구조설계) "26-02-002"(정기점검) 등 형식 유지.
 
 매핑 정책:
 - YY: 견적 작성일(KST) 연도 2자리
@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import re
 from datetime import datetime, timedelta, timezone
+from typing import Any
 
 from sqlalchemy import select, text
 from sqlalchemy.orm import Session
@@ -27,25 +28,23 @@ from app.models import mirror as M
 from app.services.quote_calculator import QuoteType
 
 _KST = timezone(timedelta(hours=9))
-_DOC_RE = re.compile(r"^(\d{2})-(\d{2})-(\d+)$")
+_DOC_RE = re.compile(r"^(\d{2})-(\d{2})-(\d+)(?:[A-Z]+)?$")
 
-# 견적서 종류별 분류 코드 — 사장 운영 파일명 패턴에서 reverse-engineering.
-# 운영 코드와 다르면 한 번에 수정.
+# 견적서 종류별 분류 코드 — 사용자 운영 기준.
 _CODE_MAP: dict[QuoteType, str] = {
     QuoteType.STRUCT_DESIGN: "01",
-    QuoteType.STRUCT_REVIEW: "02",
-    QuoteType.PERF_SEISMIC: "03",
-    QuoteType.INSPECTION_REGULAR: "04",
-    QuoteType.INSPECTION_DETAIL: "05",
-    QuoteType.INSPECTION_DIAGNOSIS: "06",
-    QuoteType.INSPECTION_BMA: "07",
-    QuoteType.SEISMIC_EVAL: "08",
-    QuoteType.SUPERVISION: "09",
-    QuoteType.FIELD_SUPPORT: "10",
-    # 내진평가 패키지 부속 모듈 — α 패턴 (별 영업 + 통합 PDF)
-    QuoteType.REINFORCEMENT_DESIGN: "11",
-    QuoteType.THIRD_PARTY_REVIEW: "12",
-    QuoteType.CUSTOM: "99",
+    QuoteType.STRUCT_REVIEW: "01",
+    QuoteType.PERF_SEISMIC: "01",
+    QuoteType.FIELD_SUPPORT: "01",
+    QuoteType.INSPECTION_REGULAR: "02",
+    QuoteType.INSPECTION_DETAIL: "02",
+    QuoteType.INSPECTION_DIAGNOSIS: "02",
+    QuoteType.INSPECTION_BMA: "03",
+    QuoteType.SEISMIC_EVAL: "04",
+    QuoteType.REINFORCEMENT_DESIGN: "04",
+    QuoteType.THIRD_PARTY_REVIEW: "04",
+    QuoteType.SUPERVISION: "05",
+    QuoteType.CUSTOM: "05",
 }
 
 
@@ -69,6 +68,55 @@ def _advisory_lock_key(year_yy: int, category_code: str) -> int:
     return 0x5144430000000000 + year_yy * 100 + int(category_code)
 
 
+def _iter_quote_doc_numbers(
+    quote_doc_number: str | None,
+    quote_form_data: Any,
+) -> list[str]:
+    """row 대표 문서번호와 다중 견적 form 내부 문서번호를 모두 반환."""
+    docs: list[str] = []
+    if quote_doc_number and quote_doc_number.strip():
+        docs.append(quote_doc_number.strip())
+    if not isinstance(quote_form_data, dict):
+        return docs
+
+    forms = quote_form_data.get("forms")
+    if isinstance(forms, list):
+        for form in forms:
+            if not isinstance(form, dict):
+                continue
+            doc = form.get("doc_number")
+            if isinstance(doc, str) and doc.strip():
+                docs.append(doc.strip())
+
+    legacy_doc = quote_form_data.get("doc_number")
+    if isinstance(legacy_doc, str) and legacy_doc.strip():
+        docs.append(legacy_doc.strip())
+    return docs
+
+
+def _max_sequence_from_doc_numbers(
+    docs: list[str],
+    *,
+    year_yy: int,
+    category_code: str,
+) -> int:
+    """문서번호 목록에서 해당 연도·분류의 최대 순번을 찾는다."""
+    max_n = 0
+    for doc in docs:
+        m = _DOC_RE.match(doc)
+        if not m:
+            continue
+        if int(m.group(1)) != year_yy or m.group(2) != category_code:
+            continue
+        try:
+            n = int(m.group(3))
+            if n > max_n:
+                max_n = n
+        except ValueError:
+            continue
+    return max_n
+
+
 def next_quote_doc_number(
     db: Session, quote_type: str | QuoteType | None = None
 ) -> str:
@@ -88,21 +136,15 @@ def next_quote_doc_number(
         {"k": _advisory_lock_key(year_yy, category_code)},
     )
 
-    stmt = select(M.MirrorSales.quote_doc_number).where(
-        M.MirrorSales.quote_doc_number.like(f"{prefix}%")
+    stmt = select(
+        M.MirrorSales.quote_doc_number,
+        M.MirrorSales.quote_form_data,
     )
     rows = db.execute(stmt).all()
-    max_n = 0
-    for (doc,) in rows:
-        m = _DOC_RE.match(doc or "")
-        if not m:
-            continue
-        if int(m.group(1)) != year_yy or m.group(2) != category_code:
-            continue
-        try:
-            n = int(m.group(3))
-            if n > max_n:
-                max_n = n
-        except ValueError:
-            continue
+    docs: list[str] = []
+    for quote_doc_number, quote_form_data in rows:
+        docs.extend(_iter_quote_doc_numbers(quote_doc_number, quote_form_data))
+    max_n = _max_sequence_from_doc_numbers(
+        docs, year_yy=year_yy, category_code=category_code
+    )
     return f"{prefix}{max_n + 1:03d}"

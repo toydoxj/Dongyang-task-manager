@@ -803,13 +803,19 @@ export default function QuoteForm({
                 <option value={0}>절삭 없음</option>
               </select>
             </Field>
-            <Field label="최종 금액 직접 입력 (선택)">
+            <Field
+              label={
+                value.vat_included
+                  ? "최종 금액 직접 입력 (VAT 포함)"
+                  : "최종 금액 직접 입력 (VAT 별도)"
+              }
+            >
               <input
                 type="number"
                 min={0}
                 step={1}
                 className={inputCls}
-                placeholder="비우면 자동 절삭"
+                placeholder={value.vat_included ? "VAT 포함 총액" : "비우면 자동 절삭"}
                 value={value.final_override ?? ""}
                 onChange={(e) =>
                   set(
@@ -827,7 +833,7 @@ export default function QuoteForm({
               checked={!!value.vat_included}
               onChange={(e) => set("vat_included", e.target.checked)}
             />
-            VAT 포함 표시 (산출 결과·PDF에 공급가액·VAT·합계 추가)
+            VAT 포함 표시 (직접 입력 금액은 VAT 포함 총액으로 처리)
           </label>
         </Section>
 
@@ -923,4 +929,3 @@ export default function QuoteForm({
     </div>
   );
 }
-

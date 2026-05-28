@@ -23,6 +23,7 @@ from app.services.quote_calculator import (
     QuoteResult,
     QuoteType,
     _excel_round_half_up,
+    _resolve_final_pricing,
     _resolve_rate,
 )
 
@@ -239,16 +240,9 @@ def _calculate_inspection_bma(inp: QuoteInput) -> QuoteResult:
         mh_outdoor = 0.0
 
     adjusted_int = int(_excel_round_half_up(adjusted, 0))
-    if inp.final_override is not None:
-        final_amount = int(inp.final_override)
-        truncated = adjusted_int - final_amount
-    else:
-        unit = inp.truncate_unit if inp.truncate_unit > 0 else 1
-        truncated = adjusted_int % unit
-        final_amount = adjusted_int - truncated
-
-    vat_amount = int(_excel_round_half_up(final_amount * 0.1, 0))
-    final_with_vat = final_amount + vat_amount
+    final_amount, truncated, vat_amount, final_with_vat = _resolve_final_pricing(
+        inp, adjusted_int
+    )
 
     per_pyeong_area = inp.gross_floor_area / 3.3 if inp.gross_floor_area else 0
     per_pyeong = final_amount / per_pyeong_area if per_pyeong_area else 0
@@ -636,16 +630,9 @@ def _calculate_inspection_legal(inp: QuoteInput) -> QuoteResult:
     adjusted = subtotal * (inp.adjustment_pct / 100)
 
     adjusted_int = int(_excel_round_half_up(adjusted, 0))
-    if inp.final_override is not None:
-        final_amount = int(inp.final_override)
-        truncated = adjusted_int - final_amount
-    else:
-        unit = inp.truncate_unit if inp.truncate_unit > 0 else 1
-        truncated = adjusted_int % unit
-        final_amount = adjusted_int - truncated
-
-    vat_amount = int(_excel_round_half_up(final_amount * 0.1, 0))
-    final_with_vat = final_amount + vat_amount
+    final_amount, truncated, vat_amount, final_with_vat = _resolve_final_pricing(
+        inp, adjusted_int
+    )
 
     per_pyeong_area = inp.gross_floor_area / 3.3 if inp.gross_floor_area else 0
     per_pyeong = final_amount / per_pyeong_area if per_pyeong_area else 0

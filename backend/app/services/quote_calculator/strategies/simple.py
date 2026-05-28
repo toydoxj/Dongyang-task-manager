@@ -23,6 +23,7 @@ from app.services.quote_calculator import (
     QuoteInput,
     QuoteResult,
     _excel_round_half_up,
+    _resolve_final_pricing,
     _resolve_rate,
 )
 
@@ -66,17 +67,9 @@ def _calculate_field_support(inp: QuoteInput) -> QuoteResult:
 
     # 절삭 — final_override 우선, 없으면 truncate_unit으로 절삭
     adjusted_int = int(_excel_round_half_up(adjusted, 0))
-    if inp.final_override is not None:
-        final_amount = int(inp.final_override)
-        truncated = adjusted_int - final_amount
-    else:
-        unit = inp.truncate_unit if inp.truncate_unit > 0 else 1
-        truncated = adjusted_int % unit
-        final_amount = adjusted_int - truncated
-
-    # VAT
-    vat_amount = int(_excel_round_half_up(final_amount * 0.1, 0))
-    final_with_vat = final_amount + vat_amount
+    final_amount, truncated, vat_amount, final_with_vat = _resolve_final_pricing(
+        inp, adjusted_int
+    )
 
     # 평당 — 현장지원은 회당 견적이라 의미 약함. 호환을 위해 채워둠.
     per_pyeong_area = inp.gross_floor_area / 3.3 if inp.gross_floor_area else 0
@@ -140,16 +133,9 @@ def _calculate_supervision(inp: QuoteInput) -> QuoteResult:
     adjusted = subtotal * (inp.adjustment_pct / 100)
 
     adjusted_int = int(_excel_round_half_up(adjusted, 0))
-    if inp.final_override is not None:
-        final_amount = int(inp.final_override)
-        truncated = adjusted_int - final_amount
-    else:
-        unit = inp.truncate_unit if inp.truncate_unit > 0 else 1
-        truncated = adjusted_int % unit
-        final_amount = adjusted_int - truncated
-
-    vat_amount = int(_excel_round_half_up(final_amount * 0.1, 0))
-    final_with_vat = final_amount + vat_amount
+    final_amount, truncated, vat_amount, final_with_vat = _resolve_final_pricing(
+        inp, adjusted_int
+    )
 
     per_pyeong_area = inp.gross_floor_area / 3.3 if inp.gross_floor_area else 0
     per_pyeong = final_amount / per_pyeong_area if per_pyeong_area else 0
@@ -206,16 +192,9 @@ def _calculate_reinforcement_design(inp: QuoteInput) -> QuoteResult:
     adjusted = subtotal * (inp.adjustment_pct / 100)
 
     adjusted_int = int(_excel_round_half_up(adjusted, 0))
-    if inp.final_override is not None:
-        final_amount = int(inp.final_override)
-        truncated = adjusted_int - final_amount
-    else:
-        unit = inp.truncate_unit if inp.truncate_unit > 0 else 1
-        truncated = adjusted_int % unit
-        final_amount = adjusted_int - truncated
-
-    vat_amount = int(_excel_round_half_up(final_amount * 0.1, 0))
-    final_with_vat = final_amount + vat_amount
+    final_amount, truncated, vat_amount, final_with_vat = _resolve_final_pricing(
+        inp, adjusted_int
+    )
 
     per_pyeong_area = inp.gross_floor_area / 3.3 if inp.gross_floor_area else 0
     per_pyeong = final_amount / per_pyeong_area if per_pyeong_area else 0
@@ -264,16 +243,9 @@ def _calculate_third_party_review(inp: QuoteInput) -> QuoteResult:
     adjusted = subtotal * (inp.adjustment_pct / 100)
 
     adjusted_int = int(_excel_round_half_up(adjusted, 0))
-    if inp.final_override is not None:
-        final_amount = int(inp.final_override)
-        truncated = adjusted_int - final_amount
-    else:
-        unit = inp.truncate_unit if inp.truncate_unit > 0 else 1
-        truncated = adjusted_int % unit
-        final_amount = adjusted_int - truncated
-
-    vat_amount = int(_excel_round_half_up(final_amount * 0.1, 0))
-    final_with_vat = final_amount + vat_amount
+    final_amount, truncated, vat_amount, final_with_vat = _resolve_final_pricing(
+        inp, adjusted_int
+    )
 
     per_pyeong_area = inp.gross_floor_area / 3.3 if inp.gross_floor_area else 0
     per_pyeong = final_amount / per_pyeong_area if per_pyeong_area else 0

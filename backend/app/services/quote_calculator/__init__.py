@@ -222,10 +222,10 @@ class QuoteInput(BaseModel):
     # 절삭 단위 — 백만(1,000,000) / 십만 / 만 등. 0이면 절삭 안 함.
     truncate_unit: int = Field(default=1_000_000, ge=0)
     # 최종 금액 직접 지정 — 정수면 truncate_unit 무시하고 그 값 사용 (수동 가격).
+    # vat_included=True이면 직접입력값을 VAT 포함 총액으로 보고 공급가액/VAT를 역산.
     final_override: int | None = Field(default=None, ge=0)
-    # VAT 포함 여부 — UI 표시 + PDF 출력에만 영향. 영업 등록 금액(estimated_amount)
-    # 은 항상 공급가액(final, VAT 별도). True면 산출 패널/PDF에 공급가액·VAT·합계
-    # 3줄을 추가 표시.
+    # VAT 포함 여부 — 자동 산출 금액은 공급가액(final) 기준으로 유지한다.
+    # 단, final_override 입력 시에는 직접입력값을 VAT 포함 총액으로 해석한다.
     vat_included: bool = False
     # 자유 텍스트
     payment_terms: str = ""    # 지불방법
@@ -346,6 +346,37 @@ def _excel_round_half_up(value: float, ndigits: int = 0) -> int | float:
     )
 
 
+def _resolve_final_pricing(
+    inp: QuoteInput,
+    adjusted_int: int,
+) -> tuple[int, int, int, int]:
+    """최종 공급가액·절삭액·VAT·VAT포함합계를 일관되게 산정.
+
+    final_override가 없으면 기존처럼 adjusted_int를 truncate_unit으로 절삭한다.
+    final_override가 있고 vat_included=True이면 직접입력값을 VAT 포함 총액으로
+    보고 공급가액을 역산한다.
+    """
+    if inp.final_override is not None:
+        override = int(inp.final_override)
+        if inp.vat_included:
+            final_with_vat = override
+            final_amount = int(_excel_round_half_up(final_with_vat / 1.1, 0))
+            vat_amount = final_with_vat - final_amount
+        else:
+            final_amount = override
+            vat_amount = int(_excel_round_half_up(final_amount * 0.1, 0))
+            final_with_vat = final_amount + vat_amount
+        truncated = adjusted_int - final_amount
+        return final_amount, truncated, vat_amount, final_with_vat
+
+    unit = inp.truncate_unit if inp.truncate_unit > 0 else 1
+    truncated = adjusted_int % unit
+    final_amount = adjusted_int - truncated
+    vat_amount = int(_excel_round_half_up(final_amount * 0.1, 0))
+    final_with_vat = final_amount + vat_amount
+    return final_amount, truncated, vat_amount, final_with_vat
+
+
 def calculate(inp: QuoteInput) -> QuoteResult:
     """견적서 종류별 dispatch. 미구현 종류는 임시로 구조설계 strategy fallback —
     PR-Q2~Q9에서 종류별 strategy로 교체 예정.
@@ -367,10 +398,6 @@ def calculate(inp: QuoteInput) -> QuoteResult:
 # 들이 모두 정의됐으므로 partial loading 충돌 없음.
 # PR-DF: 건축물관리법점검 / 시특법(정기·정밀·진단)도 strategies/inspection.py 분리.
 # PR-DG: 내진성능평가는 strategies/seismic.py 분리 (V47~AC59 보간 helper 동반).
-from app.services.quote_calculator.strategies.struct import (  # noqa: E402
-    _calculate_struct_design,
-    _calculate_struct_review,
-)
 from app.services.quote_calculator.strategies.inspection import (  # noqa: E402
     _calculate_inspection_bma,
     _calculate_inspection_legal,
@@ -378,12 +405,17 @@ from app.services.quote_calculator.strategies.inspection import (  # noqa: E402
 from app.services.quote_calculator.strategies.seismic import (  # noqa: E402
     _calculate_seismic_eval,
 )
+
 # PR-DH: 소형 4개(현장지원·구조감리·내진보강·3자검토) → strategies/simple.py.
 from app.services.quote_calculator.strategies.simple import (  # noqa: E402
     _calculate_field_support,
     _calculate_reinforcement_design,
     _calculate_supervision,
     _calculate_third_party_review,
+)
+from app.services.quote_calculator.strategies.struct import (  # noqa: E402
+    _calculate_struct_design,
+    _calculate_struct_review,
 )
 
 _DISPATCH: dict[QuoteType, "callable"] = {

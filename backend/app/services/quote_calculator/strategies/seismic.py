@@ -15,9 +15,9 @@ from app.services.quote_calculator import (
     QuoteInput,
     QuoteResult,
     _excel_round_half_up,
+    _resolve_final_pricing,
     _resolve_rate,
 )
-
 
 # 내진성능평가 면적·도면 유무 보간 table (PR-Q8b).
 # xlsx V48:AC56 영역 그대로 — 사장 운영 양식의 표준 인.일 기준.
@@ -192,16 +192,9 @@ def _calculate_seismic_eval(inp: QuoteInput) -> QuoteResult:
     adjusted = total * (inp.adjustment_pct / 100)
 
     adjusted_int = int(_excel_round_half_up(adjusted, 0))
-    if inp.final_override is not None:
-        final_amount = int(inp.final_override)
-        truncated = adjusted_int - final_amount
-    else:
-        unit = inp.truncate_unit if inp.truncate_unit > 0 else 1
-        truncated = adjusted_int % unit
-        final_amount = adjusted_int - truncated
-
-    vat_amount = int(_excel_round_half_up(final_amount * 0.1, 0))
-    final_with_vat = final_amount + vat_amount
+    final_amount, truncated, vat_amount, final_with_vat = _resolve_final_pricing(
+        inp, adjusted_int
+    )
 
     # QuoteResult는 단일 direct_labor/overhead/tech 슬롯 — 두 섹션 합산해 표시
     mh_total = int(round(field_outdoor + field_indoor + analysis))
