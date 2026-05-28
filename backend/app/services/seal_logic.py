@@ -8,8 +8,11 @@ from __future__ import annotations
 from datetime import date
 from typing import Any
 
+from sqlalchemy import select, text
+from sqlalchemy.orm import Session
+
+from app.models import mirror as M
 from app.services import notion_props as P
-from app.services.notion import NotionService
 
 # 신 옵션 — docs/request.md
 SEAL_TYPES_NEW: tuple[str, ...] = (
@@ -110,55 +113,64 @@ def _parse_review_n(doc_no: str, yy: str) -> int | None:
         return None
 
 
-async def list_review_doc_numbers(
-    notion: NotionService, db_id: str, *, year_yy: str
-) -> list[int]:
-    """당해년도(YY) 발급된 구조검토서 NNN 목록 — archive된 row는 제외(노션 default)."""
-    pages = await notion.query_all(
-        db_id,
-        filter={
-            "and": [
-                {"property": "날인유형", "select": {"equals": "구조검토서"}},
-                {"property": "문서번호", "rich_text": {"starts_with": f"{year_yy}-"}},
-            ]
-        },
+def _lock_review_doc_sequence(db: Session, year_yy: str) -> None:
+    """구조검토서 문서번호 발급용 transaction advisory lock.
+
+    운영 DB는 PostgreSQL. 테스트/로컬 등 다른 dialect에서는 lock 없이 계산한다.
+    """
+    bind = db.get_bind()
+    if bind.dialect.name != "postgresql":
+        return
+    db.execute(
+        text("SELECT pg_advisory_xact_lock(hashtext(:key))"),
+        {"key": f"seal-review-doc:{year_yy}"},
     )
+
+
+def list_review_doc_numbers_from_mirror(
+    db: Session, *, year_yy: str
+) -> list[int]:
+    """mirror_seal_requests에서 당해년도 구조검토서 NNN 목록 조회."""
+    rows = db.execute(
+        select(M.MirrorSealRequest).where(
+            M.MirrorSealRequest.archived.is_(False),
+            M.MirrorSealRequest.seal_type == "구조검토서",
+        )
+    ).scalars().all()
     out: list[int] = []
-    for p in pages:
-        no = P.rich_text(p.get("properties", {}), "문서번호").strip()
+    for row in rows:
+        no = P.rich_text(row.properties or {}, "문서번호").strip()
         n = _parse_review_n(no, year_yy)
         if n is not None:
             out.append(n)
     return out
 
 
-async def issue_review_doc_number(notion: NotionService, db_id: str) -> str:
-    """{YY}-의견-{NNN} 발급. NNN = 당해년도 max(NNN) + 1.
-
-    - archive된 row의 번호는 자동 회수 (노션 query default가 archive 제외)
-    - race: 두 사용자가 동시에 호출하면 같은 번호 발급 위험. router에서 발급 후
-      `assert_unique_doc_number()` 재확인 + 1회 재시도로 best-effort 처리.
-    """
+def next_review_doc_number_from_mirror(
+    db: Session, *, lock: bool = False
+) -> str:
+    """{YY}-의견-{NNN} 다음 번호 계산. preview는 lock 없이, 실제 발급은 lock 사용."""
     yy = date.today().strftime("%y")
-    used = await list_review_doc_numbers(notion, db_id, year_yy=yy)
+    if lock:
+        _lock_review_doc_sequence(db, yy)
+    used = list_review_doc_numbers_from_mirror(db, year_yy=yy)
     n = (max(used) + 1) if used else 1
     return f"{yy}-의견-{n:03d}"
 
 
-async def is_last_review_doc_number(
-    notion: NotionService, db_id: str, *, doc_no: str
-) -> bool:
-    """주어진 문서번호가 당해년도 마지막 번호인지 (이후 번호가 발급된 적 없는지).
+def issue_review_doc_number_from_mirror(db: Session) -> str:
+    """구조검토서 문서번호 실제 발급용. transaction advisory lock으로 동시 발급을 줄인다."""
+    return next_review_doc_number_from_mirror(db, lock=True)
 
-    True → 취소 시 hard archive 가능 (다음 발급에서 재사용).
-    False → [날인취소] prefix로 흔적 남김.
-    """
+
+def is_last_review_doc_number_from_mirror(db: Session, *, doc_no: str) -> bool:
+    """주어진 구조검토서 번호가 mirror 기준 마지막 번호인지 확인."""
     if not doc_no:
         return False
     yy = doc_no.split("-")[0] if "-" in doc_no else date.today().strftime("%y")
     target = _parse_review_n(doc_no, yy)
     if target is None:
         return False
-    used = await list_review_doc_numbers(notion, db_id, year_yy=yy)
-    # 자기 자신 제외하고 더 큰 번호가 있는지
+    _lock_review_doc_sequence(db, yy)
+    used = list_review_doc_numbers_from_mirror(db, year_yy=yy)
     return not any(n > target for n in used if n != target)

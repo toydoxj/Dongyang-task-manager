@@ -18,7 +18,7 @@ import logging
 import os
 import socket
 import sys
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 logging.basicConfig(
     level=logging.INFO,
@@ -54,6 +54,7 @@ def _bootstrap_env_from_settings() -> None:
             "notion_db_cashflow",
             "notion_db_expense",
             "notion_db_contract_items",
+            "notion_db_suggestions",
         ):
             v = getattr(s, k, None)
             if v and k.upper() not in os.environ:
@@ -138,11 +139,38 @@ def _should_skip_archived_target(db, row, exc: Exception) -> bool:
     )
 
 
-async def _push_notion_op(notion, row) -> str | None:
-    """outbox row를 노션에 push. 성공 시 노션 page_id 반환 (create 시).
+def _finalize_create_mirror(db, row, page: dict) -> None:
+    """create 성공 후 local mirror row를 실제 Notion page row로 reconcile."""
+    from app.models.notion_outbox import OP_CREATE
+
+    if row.op != OP_CREATE:
+        return
+    finalize_targets = {
+        "cashflow": ("MirrorCashflow", "cashflow"),
+        "suggestions": ("MirrorSuggestion", "suggestions"),
+    }
+    target = finalize_targets.get(row.aggregate_type)
+    if target is None:
+        return
+    new_page_id = str(page.get("id", "") or "")
+    if not new_page_id:
+        return
+    from app.models import mirror as M
+    from app.services.sync import get_sync
+
+    table = getattr(M, target[0])
+    local_row = db.get(table, row.aggregate_id)
+    if local_row is not None and local_row.page_id != new_page_id:
+        local_row.archived = True
+        local_row.synced_at = datetime.now(UTC)
+    get_sync().upsert_in_session(db, target[1], page)
+
+
+async def _push_notion_op(notion, row) -> dict | None:
+    """outbox row를 노션에 push. 성공 시 create page dict 반환.
 
     update/delete: 기존 page_id에 작업. None 반환 (page_id 변화 없음).
-    create: 새 page 생성, page_id 반환.
+    create: 새 page 생성, page dict 반환.
     """
     from app.models.notion_outbox import OP_CREATE, OP_DELETE, OP_UPDATE
 
@@ -177,6 +205,7 @@ async def _push_notion_op(notion, row) -> str | None:
             "cashflow": s.notion_db_cashflow,
             "expense": s.notion_db_expense,
             "contract_items": s.notion_db_contract_items,
+            "suggestions": s.notion_db_suggestions,
         }
         db_id = db_id_map.get(row.aggregate_type)
         if not db_id:
@@ -185,7 +214,7 @@ async def _push_notion_op(notion, row) -> str | None:
                 f"notion db_id 매핑 없음"
             )
         page = await notion.create_page(db_id, row.payload)
-        return str(page.get("id", "")) or None
+        return page
     raise ValueError(f"unknown op: {row.op}")
 
 
@@ -208,7 +237,7 @@ async def drain_once(batch_size: int = _BATCH_SIZE_DEFAULT) -> dict:
     )
     from app.services.notion import get_notion
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     stats = {"picked": 0, "sent": 0, "failed": 0, "dead": 0, "recovered": 0}
 
     with SessionLocal() as db:
@@ -276,14 +305,16 @@ async def drain_once(batch_size: int = _BATCH_SIZE_DEFAULT) -> dict:
             if r is None:
                 continue
             try:
-                new_page_id = await _push_notion_op(notion, r)
+                new_page = await _push_notion_op(notion, r)
                 r.status = STATUS_SENT
-                r.sent_at = datetime.now(timezone.utc)
+                r.sent_at = datetime.now(UTC)
                 r.locked_at = None
                 r.lock_owner = None
                 r.last_error = ""
-                if new_page_id:
+                if new_page:
+                    new_page_id = str(new_page.get("id", "") or "")
                     r.notion_page_id = new_page_id
+                    _finalize_create_mirror(db, r, new_page)
                 stats["sent"] += 1
                 logger.info(
                     "outbox sent — id=%d type=%s op=%s aggregate=%s",
@@ -292,7 +323,7 @@ async def drain_once(batch_size: int = _BATCH_SIZE_DEFAULT) -> dict:
             except Exception as e:  # noqa: BLE001
                 if _should_skip_archived_target(db, r, e):
                     r.status = STATUS_SENT
-                    r.sent_at = datetime.now(timezone.utc)
+                    r.sent_at = datetime.now(UTC)
                     r.locked_at = None
                     r.lock_owner = None
                     r.last_error = "skipped: archived target already reflected in mirror"
@@ -317,7 +348,7 @@ async def drain_once(batch_size: int = _BATCH_SIZE_DEFAULT) -> dict:
                     else:
                         r.status = STATUS_RETRY
                         delay = _next_attempt_delay(r.attempts)
-                        r.next_attempt_at = datetime.now(timezone.utc) + timedelta(
+                        r.next_attempt_at = datetime.now(UTC) + timedelta(
                             seconds=delay
                         )
                         stats["failed"] += 1

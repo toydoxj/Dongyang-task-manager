@@ -13,13 +13,13 @@ Contract ↔ Project 동기화 (PR-FI/1):
 - Contract create/update/delete 후 해당 project의 모든 contracts를 aggregate.
 - `contract_signed=True` (한 번이라도 signed_date 있으면, 삭제 후에도 True 유지).
 - `contract_start = min(non-null start_date)`, `contract_end = max(non-null end_date)`.
-- mirror_projects + 노션 양쪽 update (Codex 협의: 동기 호출 + 부분 성공 허용).
+- mirror_projects 즉시 update + outbox enqueue. 노션 push는 worker가 비동기 처리.
 """
 from __future__ import annotations
 
 import logging
 import time
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 from typing import Any
 
 import httpx
@@ -47,10 +47,11 @@ from app.models.contract import (
     ContractUpdate,
 )
 from app.models.mirror import MirrorClient, MirrorProject
+from app.models.notion_outbox import OP_UPDATE
 from app.models.project import notion_date_range_prop
 from app.security import get_current_user, require_editor
 from app.services import sso_drive
-from app.services.notion import get_notion
+from app.services.notion_outbox import enqueue
 from app.services.sync import get_sync
 
 logger = logging.getLogger("contracts")
@@ -68,7 +69,7 @@ _MAX_FILE_SIZE = 30 * 1024 * 1024
 
 
 def _utcnow() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 def _backfill_drive_url(row: Contract) -> None:
@@ -86,7 +87,8 @@ def _enrich_with_project(
 ) -> list[ContractOut]:
     """Contract row에 mirror_projects join + client_id 우선순위 적용.
 
-    PR-FI/4: contract.client_id가 있으면 그것이 우선, 없으면 project.client_relation_ids[0] fallback.
+    PR-FI/4: contract.client_id가 있으면 그것이 우선,
+    없으면 project.client_relation_ids[0] fallback.
     """
     if not rows:
         return []
@@ -237,15 +239,15 @@ def _aggregate_project_contract_state(
 async def _sync_project_contract_fields(
     db: Session, project_id: str
 ) -> None:
-    """Contract CUD 후 mirror_projects + 노션 Project 페이지의 계약 필드 sync.
+    """Contract CUD 후 mirror_projects + outbox에 프로젝트 계약 필드 sync.
 
     - `Project.contract_signed = True` (한 번이라도 signed_date 있으면, True 유지 정책)
     - `Project.contract_start = min(start_date)`, `Project.contract_end = max(end_date)`
     - 노션 컬럼명: "계약" (checkbox) / "계약기간" (date range).
 
-    실패는 silent log (부분 성공 — Contract 저장은 이미 commit, Codex 협의).
-    PR-GF: notion service를 함수 내부에서 lazy 얻음. Depends(get_notion)으로 받으면
-    NOTION_API_KEY 없는 환경(CI/test)에서 endpoint 진입 자체가 502로 차단됨.
+    실패는 warning log (부분 성공 — Contract 저장은 이미 commit, Codex 협의).
+    PR-GJ: 사용자 응답 path에서 notion.update_page 제거. mirror direct + outbox로
+    전환해 Notion 지연/검증 실패가 계약 CUD 응답을 막지 않도록 한다.
     """
     try:
         has_signed, start, end = _aggregate_project_contract_state(
@@ -277,10 +279,25 @@ async def _sync_project_contract_fields(
         if not props:
             return
 
-        # PR-GF: 노션 service lazy 획득 (NOTION_API_KEY 없으면 NotionApiError → 아래 except로).
-        notion = get_notion()
-        page = await notion.update_page(project_id, props)
-        get_sync().upsert_page("projects", page)
+        page_like = {
+            "id": proj.page_id,
+            "properties": {**(proj.properties or {}), **props},
+            "url": proj.url or "",
+            "created_time": None,
+            "last_edited_time": datetime.now(UTC).isoformat(),
+            "archived": False,
+        }
+        sync = get_sync()
+        sync.upsert_in_session(db, "projects", page_like)
+        enqueue(
+            db,
+            aggregate_type="projects",
+            aggregate_id=project_id,
+            op=OP_UPDATE,
+            payload=props,
+            notion_page_id=project_id,
+        )
+        db.commit()
         logger.info(
             "contract sync: project=%s signed=%s start=%s end=%s",
             project_id,
@@ -289,6 +306,7 @@ async def _sync_project_contract_fields(
             end,
         )
     except Exception as e:  # noqa: BLE001
+        db.rollback()
         logger.warning(
             "contract sync 실패 (project=%s): %s — 부분 성공 (Contract row는 저장됨)",
             project_id,

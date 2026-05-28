@@ -36,10 +36,6 @@ from app.settings import get_settings
 
 logger = logging.getLogger("api.seal_requests.create")
 
-# module-level lazy import — __init__.py가 fully loaded 시점.
-from app.routers.seal_requests import SealRequestItem  # noqa: E402
-
-
 def _db_id() -> str:
     """meta.py / delete.py / list_endpoint.py와 동일 helper (외과적, 2줄)."""
     db_id = get_settings().notion_db_seal_requests
@@ -50,7 +46,10 @@ def _db_id() -> str:
 
 async def create_seal_request(
     project_id: str = Form(..., description="노션 프로젝트 page_id"),
-    seal_type: str = Form(..., description="구조계산서/구조안전확인서/구조검토서/구조도면/보고서/기타"),
+    seal_type: str = Form(
+        ...,
+        description="구조계산서/구조안전확인서/구조검토서/구조도면/보고서/기타",
+    ),
     due_date: str = Form(..., description="제출 예정일 (YYYY-MM-DD, 필수)"),
     title: str = Form("", description="제목 (생략 시 자동 생성)"),
     note: str = Form(""),
@@ -103,7 +102,7 @@ async def create_seal_request(
     elif seal_type in {"구조안전확인서", "구조도면"}:
         fields = {"용도": purpose}
     elif seal_type == "구조검토서":
-        doc_no = await SL.issue_review_doc_number(notion, _db_id())
+        doc_no = SL.issue_review_doc_number_from_mirror(db)
         fields = {"문서번호": doc_no, "내용요약": summary}
     elif seal_type == "기타":
         fields = {"문서종류": doc_kind}

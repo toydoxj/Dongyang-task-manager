@@ -1,8 +1,10 @@
 """/api/cashflow — 수금 + 지출 통합 시계열 (mirror 조회) + 수금 CRUD (admin/manager)."""
 from __future__ import annotations
 
-from datetime import date as Date, datetime, timezone
+from datetime import UTC, datetime
+from datetime import date as Date
 from typing import Any, Literal
+from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel
@@ -13,15 +15,23 @@ from app.db import get_db
 from app.models import mirror as M
 from app.models.auth import User
 from app.models.cashflow import CashflowEntry, CashflowResponse
-from app.models.notion_outbox import OP_DELETE, OP_UPDATE
+from app.models.notion_outbox import (
+    OP_CREATE,
+    OP_DELETE,
+    OP_UPDATE,
+    STATUS_PENDING,
+    STATUS_PROCESSING,
+    STATUS_RETRY,
+    STATUS_SENT,
+    NotionOutbox,
+)
 from app.security import get_current_user, require_admin_or_manager
 from app.services.mirror_dto import cashflow_from_mirror
-from app.services.notion import NotionService, get_notion
 from app.services.notion_outbox import enqueue
 from app.services.sync import get_sync
-from app.settings import get_settings
 
 router = APIRouter(prefix="/cashflow", tags=["cashflow"])
+_LOCAL_INCOME_PREFIX = "local_cashflow_income_"
 
 
 def _parse_date(s: str | None) -> Date | None:
@@ -230,26 +240,89 @@ def _income_update_props(req: IncomeUpdateRequest) -> dict[str, Any]:
     return props
 
 
+def _is_local_income_id(page_id: str) -> bool:
+    return page_id.startswith(_LOCAL_INCOME_PREFIX)
+
+
+def _active_income_create_outbox(
+    db: Session, local_id: str
+) -> NotionOutbox | None:
+    return db.execute(
+        select(NotionOutbox)
+        .where(
+            NotionOutbox.aggregate_type == "cashflow",
+            NotionOutbox.aggregate_id == local_id,
+            NotionOutbox.op == OP_CREATE,
+            NotionOutbox.status.in_([
+                STATUS_PENDING,
+                STATUS_PROCESSING,
+                STATUS_RETRY,
+            ]),
+        )
+        .order_by(NotionOutbox.id.desc())
+        .limit(1)
+    ).scalar_one_or_none()
+
+
+def _resolve_income_row(
+    db: Session, page_id: str
+) -> tuple[M.MirrorCashflow, str]:
+    """local id가 실제 Notion id로 확정된 뒤에도 수금 row를 찾는다."""
+    row = db.get(M.MirrorCashflow, page_id)
+    if row is not None and not row.archived:
+        return row, row.page_id
+    if _is_local_income_id(page_id):
+        real_id = db.execute(
+            select(NotionOutbox.notion_page_id)
+            .where(
+                NotionOutbox.aggregate_type == "cashflow",
+                NotionOutbox.aggregate_id == page_id,
+                NotionOutbox.op == OP_CREATE,
+                NotionOutbox.status == STATUS_SENT,
+                NotionOutbox.notion_page_id.is_not(None),
+            )
+            .order_by(NotionOutbox.id.desc())
+            .limit(1)
+        ).scalar_one_or_none()
+        if real_id:
+            real_row = db.get(M.MirrorCashflow, real_id)
+            if real_row is not None and not real_row.archived:
+                return real_row, real_row.page_id
+    raise HTTPException(status_code=404, detail="수금 항목을 찾을 수 없습니다")
+
+
 @router.post("/incomes", response_model=CashflowEntry)
 async def create_income(
     body: IncomeCreateRequest,
     _user: User = Depends(require_admin_or_manager),
     db: Session = Depends(get_db),
-    notion: NotionService = Depends(get_notion),
 ) -> CashflowEntry:
-    db_id = get_settings().notion_db_cashflow
-    if not db_id:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="NOTION_DB_CASHFLOW 미설정",
-        )
     if not body.date:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail="수금일 필수"
         )
-    page = await notion.create_page(db_id, _income_create_props(body))
-    get_sync().upsert_page("cashflow", page)
-    entry = CashflowEntry.from_income_page(page)
+    props = _income_create_props(body)
+    now = datetime.now(UTC)
+    local_id = f"{_LOCAL_INCOME_PREFIX}{uuid4().hex}"
+    page_like = {
+        "id": local_id,
+        "properties": props,
+        "created_time": now.isoformat(),
+        "last_edited_time": now.isoformat(),
+        "archived": False,
+    }
+    get_sync().upsert_in_session(db, "cashflow", page_like)
+    enqueue(
+        db,
+        aggregate_type="cashflow",
+        aggregate_id=local_id,
+        op=OP_CREATE,
+        payload=props,
+        notion_page_id=None,
+        dedupe_key=f"cashflow:{local_id}:create",
+    )
+    db.commit()
+    entry = CashflowEntry.from_income_page(page_like)
     _resolve_payer_names(db, [entry])
     _resolve_contract_item_labels(db, [entry])
     return entry
@@ -267,23 +340,42 @@ async def update_income(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail="변경할 필드가 없습니다"
         )
-    # PR-GA: 노션 동기 호출 제거 → mirror direct + outbox enqueue (PR-FZ 패턴).
-    prev_row = db.get(M.MirrorCashflow, page_id)
-    if prev_row is None or prev_row.archived:
-        raise HTTPException(status_code=404, detail="수금 항목을 찾을 수 없습니다")
+    prev_row, resolved_id = _resolve_income_row(db, page_id)
+    create_outbox = (
+        _active_income_create_outbox(db, resolved_id)
+        if _is_local_income_id(resolved_id)
+        else None
+    )
+    if create_outbox is not None and create_outbox.status == STATUS_PROCESSING:
+        raise HTTPException(
+            status_code=409,
+            detail="노션 생성 동기화 중입니다. 잠시 후 다시 시도하세요",
+        )
+    if _is_local_income_id(resolved_id) and create_outbox is None:
+        raise HTTPException(
+            status_code=409,
+            detail="노션 생성 대기열을 찾을 수 없습니다. 새로고침 후 다시 시도하세요",
+        )
     merged_props = {**(prev_row.properties or {}), **props}
     page_like = {
-        "id": page_id,
+        "id": resolved_id,
         "properties": merged_props,
-        "last_edited_time": datetime.now(timezone.utc).isoformat(),
+        "last_edited_time": datetime.now(UTC).isoformat(),
         "archived": False,
     }
     sync = get_sync()
     sync.upsert_in_session(db, "cashflow", page_like)
-    enqueue(
-        db, aggregate_type="cashflow", aggregate_id=page_id,
-        op=OP_UPDATE, payload=props, notion_page_id=page_id,
-    )
+    if create_outbox is not None:
+        create_outbox.payload = {**(create_outbox.payload or {}), **props}
+    else:
+        enqueue(
+            db,
+            aggregate_type="cashflow",
+            aggregate_id=resolved_id,
+            op=OP_UPDATE,
+            payload=props,
+            notion_page_id=resolved_id,
+        )
     db.commit()
     entry = CashflowEntry.from_income_page(page_like)
     _resolve_payer_names(db, [entry])
@@ -301,14 +393,29 @@ async def delete_income(
 
     PR-GA: 노션 동기 호출 제거 → mirror direct archive + outbox (PR-FZ 패턴).
     """
-    prev_row = db.get(M.MirrorCashflow, page_id)
-    if prev_row is None or prev_row.archived:
-        raise HTTPException(status_code=404, detail="수금 항목을 찾을 수 없습니다")
-    sync = get_sync()
-    sync.archive_in_session(db, "cashflow", page_id)
-    enqueue(
-        db, aggregate_type="cashflow", aggregate_id=page_id,
-        op=OP_DELETE, payload={}, notion_page_id=page_id,
+    _prev_row, resolved_id = _resolve_income_row(db, page_id)
+    create_outbox = (
+        _active_income_create_outbox(db, resolved_id)
+        if _is_local_income_id(resolved_id)
+        else None
     )
+    if create_outbox is not None and create_outbox.status == STATUS_PROCESSING:
+        raise HTTPException(
+            status_code=409,
+            detail="노션 생성 동기화 중입니다. 잠시 후 다시 시도하세요",
+        )
+    sync = get_sync()
+    sync.archive_in_session(db, "cashflow", resolved_id)
+    if create_outbox is not None:
+        db.delete(create_outbox)
+    elif not _is_local_income_id(resolved_id):
+        enqueue(
+            db,
+            aggregate_type="cashflow",
+            aggregate_id=resolved_id,
+            op=OP_DELETE,
+            payload={},
+            notion_page_id=resolved_id,
+        )
     db.commit()
     return None

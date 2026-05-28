@@ -8,7 +8,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections.abc import Callable
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Any, Literal
 
 from sqlalchemy import select
@@ -59,7 +59,7 @@ _INCREMENTAL_OVERLAP = timedelta(seconds=60)
 
 
 def _utcnow() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 def _parse_iso(s: str | None) -> datetime | None:
@@ -317,6 +317,7 @@ class NotionSyncService:
             "contract_items",
             "sales",
             "seal_requests",
+            "suggestions",
         }:
             return kind
         if kind == "cashflow":

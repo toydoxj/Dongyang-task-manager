@@ -12,7 +12,7 @@ import {
   updateIncome,
 } from "@/lib/api";
 import type { CashflowEntry, Project } from "@/lib/domain";
-import { keys, useCashflow, useContractItems } from "@/lib/hooks";
+import { keys, useContractItems } from "@/lib/hooks";
 
 interface Props {
   /** null이면 신규 등록, entry 있으면 편집 */
@@ -20,9 +20,21 @@ interface Props {
   /** open 제어 (entry !== null이면 편집, isOpen으로 신규 표시) */
   open: boolean;
   onClose: () => void;
-  onSaved: () => void;
+  onSaved: (result: IncomeSaveResult) => void;
   projects: Project[];
+  incomeItems: CashflowEntry[];
 }
+
+export type IncomeSaveResult =
+  | {
+      action: "upsert";
+      entry: CashflowEntry;
+      previousId?: string;
+    }
+  | {
+      action: "delete";
+      id: string;
+    };
 
 export default function IncomeFormModal({
   entry,
@@ -30,6 +42,7 @@ export default function IncomeFormModal({
   onClose,
   onSaved,
   projects,
+  incomeItems,
 }: Props) {
   if (!open) return null;
   return (
@@ -39,6 +52,7 @@ export default function IncomeFormModal({
       onClose={onClose}
       onSaved={onSaved}
       projects={projects}
+      incomeItems={incomeItems}
     />
   );
 }
@@ -53,11 +67,13 @@ function Form({
   onClose,
   onSaved,
   projects,
+  incomeItems,
 }: {
   entry: CashflowEntry | null;
   onClose: () => void;
-  onSaved: () => void;
+  onSaved: (result: IncomeSaveResult) => void;
   projects: Project[];
+  incomeItems: CashflowEntry[];
 }) {
   const isEdit = !!entry;
   const [date, setDate] = useState(entry?.date?.slice(0, 10) ?? todayYMD());
@@ -90,16 +106,11 @@ function Form({
   const { data: contractItemsData, mutate: mutateItems } = useContractItems(
     selectedProjectId,
   );
-  // dropdown에 분담 항목별 기성금(누적 수금) 표시 — 전체 income 호출 후 client side 합산
-  const { data: incomeData } = useCashflow(
-    { flow: "income" },
-    !!selectedProjectId,
-  );
 
   // 분담 항목별 누적 수금합 (편집 중인 row는 제외해야 정확한 '이 row 외 기성금')
   const paidByItem = useMemo(() => {
     const map = new Map<string, number>();
-    for (const e of incomeData?.items ?? []) {
+    for (const e of incomeItems) {
       if (!e.contract_item_id) continue;
       if (entry && e.id === entry.id) continue; // 자기 자신 제외
       map.set(
@@ -108,7 +119,7 @@ function Form({
       );
     }
     return map;
-  }, [incomeData, entry]);
+  }, [incomeItems, entry]);
 
   const projectMatches = projectQuery.trim()
     ? projects
@@ -149,13 +160,16 @@ function Form({
         contract_item_id: effectiveContractItemId,
         note,
       };
-      if (isEdit && entry) {
-        await updateIncome(entry.id, body);
-      } else {
-        await createIncome(body);
-      }
-      onSaved();
+      const saved =
+        isEdit && entry
+          ? await updateIncome(entry.id, body)
+          : await createIncome(body);
       onClose();
+      onSaved({
+        action: "upsert",
+        entry: saved,
+        previousId: entry?.id,
+      });
     } catch (err) {
       setError(err instanceof Error ? err.message : "저장 실패");
     } finally {
@@ -171,8 +185,8 @@ function Form({
     setError(null);
     try {
       await deleteIncome(entry.id);
-      onSaved();
       onClose();
+      onSaved({ action: "delete", id: entry.id });
     } catch (err) {
       setError(err instanceof Error ? err.message : "삭제 실패");
     } finally {
@@ -412,4 +426,3 @@ function Form({
     </Modal>
   );
 }
-

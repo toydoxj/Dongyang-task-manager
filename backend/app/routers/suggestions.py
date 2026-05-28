@@ -1,4 +1,4 @@
-"""건의사항 라우터 — 노션 DB 직접 read/write (mirror 없음, 작은 데이터).
+"""건의사항 라우터 — create/list/update/delete 모두 mirror + outbox 기반.
 
 권한 모델:
 - 작성: 모든 인증 사용자 (작성자 = 본인 이름 자동)
@@ -8,7 +8,9 @@
 from __future__ import annotations
 
 import logging
+from datetime import UTC, datetime
 from typing import Any
+from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
@@ -16,42 +18,32 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db import get_db
-from app.exceptions import NotFoundError
 from app.models import mirror as M
 from app.models.auth import User
+from app.models.notion_outbox import (
+    OP_CREATE,
+    OP_DELETE,
+    OP_UPDATE,
+    STATUS_PENDING,
+    STATUS_PROCESSING,
+    STATUS_RETRY,
+    STATUS_SENT,
+    NotionOutbox,
+)
 from app.security import get_current_user
-from app.services import notion_props as P
-from app.services.notion import NotionService, get_notion
+from app.services.notion_outbox import enqueue
 from app.services.sync import get_sync
-from app.settings import get_settings
 
 logger = logging.getLogger("api.suggestions")
 router = APIRouter(prefix="/suggestions", tags=["suggestions"])
 
 _VALID_STATUSES = {"접수", "검토중", "완료", "반려"}
+_LOCAL_ID_PREFIX = "local_suggestion_"
 
 # PR-CN: 노션 DB의 title 컬럼명은 운영자가 자유 변경 가능 (default "Name", 한글 "제목" 등).
 # create/update 시 잘못된 prop 이름 → 노션 400 → NotionApiError(502).
 # 첫 호출 schema query로 동적 lookup + 모듈 단위 cache.
 _title_prop_name: str | None = None
-
-
-async def _get_title_prop_name(notion: NotionService) -> str:
-    """건의사항 DB의 title type property 이름. 첫 호출 schema query, 이후 cache."""
-    global _title_prop_name
-    if _title_prop_name is not None:
-        return _title_prop_name
-    try:
-        ds = await notion.get_data_source(_db_id())
-    except Exception as e:  # noqa: BLE001
-        logger.warning("suggestions title prop 탐지 실패 — `제목` fallback: %s", e)
-        return "제목"
-    for name, spec in (ds.get("properties") or {}).items():
-        if isinstance(spec, dict) and spec.get("type") == "title":
-            _title_prop_name = name
-            return name
-    logger.warning("suggestions DB에 title type property 없음 — `제목` fallback")
-    return "제목"
 
 
 class SuggestionItem(BaseModel):
@@ -106,40 +98,57 @@ def _from_mirror(row: M.MirrorSuggestion) -> SuggestionItem:
     )
 
 
-def _from_notion_page(page: dict[str, Any]) -> SuggestionItem:
-    """PR-CO: 운영 노션 schema 매핑 — title="내용"(title), content="방안"(rich_text),
-    categories="구분"(multi_select), status="진행상황"(status type), resolution="조치내용".
+def _title_prop_name_from_mirror() -> str:
+    """mirror-only update에서 사용할 title prop 이름.
+
+    운영 schema는 title="내용". create 경로가 schema lookup을 이미 수행했다면 그 값을 우선한다.
     """
-    props = page.get("properties", {})
-    # title 컬럼명은 dynamic이지만 read는 "type=title"인 첫 컬럼만 잡으면 됨 (helper 동일).
-    # 운영은 title 컬럼명이 "내용"이라 기존 P.title("제목")이 빈 string 반환 → 502는 write에서만.
-    # read는 안전하게 dynamic lookup 후 한 번 찾아두면 OK이지만 sync 함수라 일단 운영 컬럼명 직접 매핑.
-    title_text = P.title(props, "내용") or P.title(props, "제목") or P.title(props, "Name")
-    # PR-CP: "작성자"는 운영 노션에서 multi_select type. 첫 옵션이 본인 이름.
-    # 호환: 옛 rich_text type일 가능성도 처리 (둘 중 채워진 것 우선).
-    author_list = P.multi_select_names(props, "작성자")
-    author_text = author_list[0] if author_list else P.rich_text(props, "작성자")
-    return SuggestionItem(
-        id=page.get("id", ""),
-        title=title_text,
-        content=P.rich_text(props, "방안"),
-        author=author_text,
-        categories=P.multi_select_names(props, "구분"),
-        status=P.status_name(props, "진행상황") or P.select_name(props, "진행상황") or "접수",
-        resolution=P.rich_text(props, "조치내용"),
-        created_time=page.get("created_time"),
-        last_edited_time=page.get("last_edited_time"),
-    )
+    return _title_prop_name or "내용"
 
 
-def _db_id() -> str:
-    db_id = get_settings().notion_db_suggestions
-    if not db_id:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="NOTION_DB_SUGGESTIONS 미설정",
+def _is_local_id(page_id: str) -> bool:
+    return page_id.startswith(_LOCAL_ID_PREFIX)
+
+
+def _active_create_outbox(db: Session, local_id: str) -> NotionOutbox | None:
+    return db.execute(
+        select(NotionOutbox)
+        .where(
+            NotionOutbox.aggregate_type == "suggestions",
+            NotionOutbox.aggregate_id == local_id,
+            NotionOutbox.op == OP_CREATE,
+            NotionOutbox.status.in_([STATUS_PENDING, STATUS_PROCESSING, STATUS_RETRY]),
         )
-    return db_id
+        .order_by(NotionOutbox.id.desc())
+        .limit(1)
+    ).scalar_one_or_none()
+
+
+def _resolve_suggestion_row(
+    db: Session, page_id: str
+) -> tuple[M.MirrorSuggestion, str]:
+    """local id가 이미 Notion id로 확정된 경우까지 감안해 row를 찾는다."""
+    row = db.get(M.MirrorSuggestion, page_id)
+    if row is not None and not row.archived:
+        return row, row.page_id
+    if _is_local_id(page_id):
+        real_id = db.execute(
+            select(NotionOutbox.notion_page_id)
+            .where(
+                NotionOutbox.aggregate_type == "suggestions",
+                NotionOutbox.aggregate_id == page_id,
+                NotionOutbox.op == OP_CREATE,
+                NotionOutbox.status == STATUS_SENT,
+                NotionOutbox.notion_page_id.is_not(None),
+            )
+            .order_by(NotionOutbox.id.desc())
+            .limit(1)
+        ).scalar_one_or_none()
+        if real_id:
+            real_row = db.get(M.MirrorSuggestion, real_id)
+            if real_row is not None and not real_row.archived:
+                return real_row, real_row.page_id
+    raise HTTPException(status_code=404, detail="건의사항을 찾을 수 없습니다")
 
 
 @router.get("", response_model=SuggestionListResponse)
@@ -167,32 +176,54 @@ def list_suggestions(
 async def create_suggestion(
     body: SuggestionCreate,
     user: User = Depends(get_current_user),
-    notion: NotionService = Depends(get_notion),
+    db: Session = Depends(get_db),
 ) -> SuggestionItem:
     if not body.title.strip():
         raise HTTPException(status_code=400, detail="제목을 입력하세요")
-    title_prop = await _get_title_prop_name(notion)
-    # PR-CO: 운영 노션 schema 매핑 — title 컬럼은 "내용"(dynamic), 본문은 "방안",
-    # 진행상황은 status type. title_prop과 "방안"이 충돌하지 않도록 분리.
+    title_prop = _title_prop_name_from_mirror()
+    # PR-GK: create도 사용자 응답 path에서 Notion 직접 호출 제거. local id로 mirror에
+    # 먼저 저장하고, outbox worker가 Notion create 성공 후 실제 page_id row로 치환한다.
     author_name = user.name or user.username
+    title = body.title.strip()
+    categories = [c for c in body.categories if c.strip()]
     props: dict[str, Any] = {
-        title_prop: {"title": [{"text": {"content": body.title.strip()}}]},
+        title_prop: {"title": [{"text": {"content": title}}]},
         "방안": {"rich_text": [{"text": {"content": body.content}}]},
         # PR-CP: 운영 노션 "작성자"는 multi_select. 사용자명 1개 옵션으로.
         "작성자": {"multi_select": [{"name": author_name}]},
         "진행상황": {"status": {"name": "접수"}},
     }
-    if body.categories:
-        props["구분"] = {
-            "multi_select": [{"name": c} for c in body.categories if c.strip()]
-        }
-    page = await notion.create_page(_db_id(), props)
-    # PR-EX/3: write-through — mirror 즉시 upsert (5분 sync 기다리지 않음)
-    try:
-        get_sync().upsert_page("suggestions", page)
-    except Exception:  # noqa: BLE001
-        logger.exception("suggestions mirror upsert 실패 (write-through, 응답은 정상)")
-    return _from_notion_page(page)
+    if categories:
+        props["구분"] = {"multi_select": [{"name": c} for c in categories]}
+
+    now = datetime.now(UTC)
+    local_id = f"{_LOCAL_ID_PREFIX}{uuid4().hex}"
+    row = M.MirrorSuggestion(
+        page_id=local_id,
+        title=title,
+        content=body.content,
+        author=author_name,
+        categories=categories,
+        status="접수",
+        resolution="",
+        created_time=now,
+        last_edited_time=now,
+        synced_at=now,
+        archived=False,
+    )
+    db.add(row)
+    enqueue(
+        db,
+        aggregate_type="suggestions",
+        aggregate_id=local_id,
+        op=OP_CREATE,
+        payload=props,
+        notion_page_id=None,
+        dedupe_key=f"suggestions:{local_id}:create",
+    )
+    db.commit()
+    db.refresh(row)
+    return _from_mirror(row)
 
 
 @router.patch("/{page_id}", response_model=SuggestionItem)
@@ -200,19 +231,23 @@ async def update_suggestion(
     page_id: str,
     body: SuggestionUpdate,
     user: User = Depends(get_current_user),
-    notion: NotionService = Depends(get_notion),
+    db: Session = Depends(get_db),
 ) -> SuggestionItem:
-    # 기존 페이지 fetch (권한 체크에 작성자 필요)
-    try:
-        page = await notion.get_page(page_id)
-    except NotFoundError as exc:
-        raise HTTPException(status_code=404, detail=exc.message) from exc
+    row, resolved_id = _resolve_suggestion_row(db, page_id)
+    create_outbox = _active_create_outbox(db, resolved_id) if _is_local_id(resolved_id) else None
+    if create_outbox is not None and create_outbox.status == STATUS_PROCESSING:
+        raise HTTPException(
+            status_code=409,
+            detail="노션 생성 동기화 중입니다. 잠시 후 다시 시도하세요",
+        )
+    if _is_local_id(resolved_id) and create_outbox is None:
+        raise HTTPException(
+            status_code=409,
+            detail="노션 생성 대기열을 찾을 수 없습니다. 새로고침 후 다시 시도하세요",
+        )
 
     is_admin_or_lead = user.role in {"admin", "team_lead"}
-    # PR-CP: 작성자 read는 multi_select 우선 (운영) + rich_text fallback
-    _author_props = page.get("properties", {})
-    _author_list = P.multi_select_names(_author_props, "작성자")
-    page_author = _author_list[0] if _author_list else P.rich_text(_author_props, "작성자")
+    page_author = row.author or ""
     is_owner = (user.name or user.username) == page_author
 
     update_props: dict[str, Any] = {}
@@ -223,24 +258,26 @@ async def update_suggestion(
             raise HTTPException(
                 status_code=403, detail="본인이 작성한 글만 수정 가능"
             )
-        title_prop = await _get_title_prop_name(notion)
+        title_prop = _title_prop_name_from_mirror()
         update_props[title_prop] = {
             "title": [{"text": {"content": body.title.strip()}}]
         }
+        row.title = body.title.strip()
     if body.content is not None:
         if not (is_owner or is_admin_or_lead):
             raise HTTPException(
                 status_code=403, detail="본인이 작성한 글만 수정 가능"
             )
         update_props["방안"] = {"rich_text": [{"text": {"content": body.content}}]}
+        row.content = body.content
     if body.categories is not None:
         if not (is_owner or is_admin_or_lead):
             raise HTTPException(
                 status_code=403, detail="본인이 작성한 글만 수정 가능"
             )
-        update_props["구분"] = {
-            "multi_select": [{"name": c} for c in body.categories if c.strip()]
-        }
+        categories = [c for c in body.categories if c.strip()]
+        update_props["구분"] = {"multi_select": [{"name": c} for c in categories]}
+        row.categories = categories
 
     # 진행상황 / 조치내용 — admin/team_lead 전용
     if body.status is not None:
@@ -251,6 +288,7 @@ async def update_suggestion(
         if body.status not in _VALID_STATUSES:
             raise HTTPException(status_code=400, detail=f"잘못된 상태: {body.status}")
         update_props["진행상황"] = {"status": {"name": body.status}}
+        row.status = body.status
     if body.resolution is not None:
         if not is_admin_or_lead:
             raise HTTPException(
@@ -259,37 +297,43 @@ async def update_suggestion(
         update_props["조치내용"] = {
             "rich_text": [{"text": {"content": body.resolution}}]
         }
+        row.resolution = body.resolution
 
     if not update_props:
         raise HTTPException(status_code=400, detail="갱신할 필드가 없습니다")
 
-    updated = await notion.update_page(page_id, update_props)
-    # PR-EX/3: write-through
-    try:
-        get_sync().upsert_page("suggestions", updated)
-    except Exception:  # noqa: BLE001
-        logger.exception("suggestions mirror upsert 실패 (write-through, 응답은 정상)")
-    return _from_notion_page(updated)
+    row.last_edited_time = datetime.now(UTC)
+    if create_outbox is not None:
+        create_outbox.payload = {**(create_outbox.payload or {}), **update_props}
+    else:
+        enqueue(
+            db,
+            aggregate_type="suggestions",
+            aggregate_id=resolved_id,
+            op=OP_UPDATE,
+            payload=update_props,
+            notion_page_id=resolved_id,
+        )
+    db.commit()
+    return _from_mirror(row)
 
 
 @router.delete("/{page_id}")
 async def delete_suggestion(
     page_id: str,
     user: User = Depends(get_current_user),
-    notion: NotionService = Depends(get_notion),
+    db: Session = Depends(get_db),
 ) -> dict[str, str]:
     """건의사항 archive — 작성자 본인 또는 admin/team_lead 만."""
-    import asyncio
+    row, resolved_id = _resolve_suggestion_row(db, page_id)
+    create_outbox = _active_create_outbox(db, resolved_id) if _is_local_id(resolved_id) else None
+    if create_outbox is not None and create_outbox.status == STATUS_PROCESSING:
+        raise HTTPException(
+            status_code=409,
+            detail="노션 생성 동기화 중입니다. 잠시 후 다시 시도하세요",
+        )
 
-    try:
-        page = await notion.get_page(page_id)
-    except NotFoundError as exc:
-        raise HTTPException(status_code=404, detail=exc.message) from exc
-
-    # PR-CP: 작성자 read는 multi_select 우선 (운영) + rich_text fallback
-    _author_props = page.get("properties", {})
-    _author_list = P.multi_select_names(_author_props, "작성자")
-    page_author = _author_list[0] if _author_list else P.rich_text(_author_props, "작성자")
+    page_author = row.author or ""
     is_owner = (user.name or user.username) == page_author
     is_admin_or_lead = user.role in {"admin", "team_lead"}
     if not (is_owner or is_admin_or_lead):
@@ -297,11 +341,17 @@ async def delete_suggestion(
             status_code=403, detail="본인 글만 삭제 가능 (관리자/팀장은 모두 가능)"
         )
 
-    await asyncio.to_thread(notion._client.pages.update, page_id=page_id, archived=True)
-    notion.clear_cache()
-    # PR-EX/3: write-through — mirror에 archived=True 즉시 반영
-    try:
-        get_sync().archive_page("suggestions", page_id)
-    except Exception:  # noqa: BLE001
-        logger.exception("suggestions mirror archive 실패 (write-through, 응답은 정상)")
+    get_sync().archive_in_session(db, "suggestions", resolved_id)
+    if create_outbox is not None:
+        db.delete(create_outbox)
+    elif not _is_local_id(resolved_id):
+        enqueue(
+            db,
+            aggregate_type="suggestions",
+            aggregate_id=resolved_id,
+            op=OP_DELETE,
+            payload={},
+            notion_page_id=resolved_id,
+        )
+    db.commit()
     return {"status": "archived"}

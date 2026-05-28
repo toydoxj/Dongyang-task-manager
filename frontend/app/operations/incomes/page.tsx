@@ -1,13 +1,20 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 
 import { useRoleGuard } from "@/lib/useRoleGuard";
 import UnauthorizedRedirect from "@/components/UnauthorizedRedirect";
-import IncomeFormModal from "@/components/admin/IncomeFormModal";
+import IncomeFormModal, {
+  type IncomeSaveResult,
+} from "@/components/admin/IncomeFormModal";
 import LoadingState from "@/components/ui/LoadingState";
 import { listContractItems } from "@/lib/api";
-import type { CashflowEntry, ContractItem, Project } from "@/lib/domain";
+import type {
+  CashflowEntry,
+  CashflowResponse,
+  ContractItem,
+  Project,
+} from "@/lib/domain";
 import { formatWon } from "@/lib/format";
 import { useCashflow, useProjects } from "@/lib/hooks";
 import useSWR from "swr";
@@ -24,6 +31,50 @@ interface IncomeRow {
   outstanding: number; // totalAmount - cumulativeAmount (해당 row 시점 미수금)
 }
 
+const PAGE_SIZE = 100;
+
+function withCashflowTotals(
+  current: CashflowResponse,
+  items: CashflowEntry[],
+): CashflowResponse {
+  const incomeTotal = items
+    .filter((e) => e.type === "income")
+    .reduce((sum, e) => sum + e.amount, 0);
+  const expenseTotal = items
+    .filter((e) => e.type === "expense")
+    .reduce((sum, e) => sum + e.amount, 0);
+  return {
+    ...current,
+    items,
+    income_total: incomeTotal,
+    expense_total: expenseTotal,
+    net: incomeTotal - expenseTotal,
+    count: items.length,
+  };
+}
+
+function applyIncomeSaveResult(
+  current: CashflowResponse | undefined,
+  result: IncomeSaveResult,
+): CashflowResponse | undefined {
+  if (!current) return current;
+  if (result.action === "delete") {
+    return withCashflowTotals(
+      current,
+      current.items.filter((e) => e.id !== result.id),
+    );
+  }
+  const removeIds = new Set(
+    [result.entry.id, result.previousId].filter(
+      (id): id is string => typeof id === "string" && id.length > 0,
+    ),
+  );
+  return withCashflowTotals(current, [
+    result.entry,
+    ...current.items.filter((e) => !removeIds.has(e.id)),
+  ]);
+}
+
 export default function IncomesAdminPage() {
   // 운영(수금) — admin + manager. 사이드바 노출과 정합 맞춤.
   const { user, allowed } = useRoleGuard(["admin", "manager"]);
@@ -33,7 +84,7 @@ export default function IncomesAdminPage() {
     allowed,
   );
   // 미수금 계산 시 분담 항목 단위 분모가 필요 — 전체 contract items 일괄 fetch
-  const { data: contractItemsData, mutate: mutateItems } = useSWR(
+  const { data: contractItemsData } = useSWR(
     allowed ? ["contract-items", "all"] : null,
     () => listContractItems(),
   );
@@ -44,6 +95,7 @@ export default function IncomesAdminPage() {
   const [clientQuery, setClientQuery] = useState("");
   const [editTarget, setEditTarget] = useState<CashflowEntry | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
+  const [pageIndex, setPageIndex] = useState(0);
 
   const projectMap = useMemo(() => {
     const map = new Map<string, Project>();
@@ -140,7 +192,7 @@ export default function IncomesAdminPage() {
   }, [cashflowData, projectMap, itemMap, itemsByProject]);
 
   // 필터 적용
-  const filtered = rows.filter((r) => {
+  const filtered = useMemo(() => rows.filter((r) => {
     const d = r.entry.date?.slice(0, 10) ?? "";
     if (dateFrom && d && d < dateFrom) return false;
     if (dateTo && d && d > dateTo) return false;
@@ -157,11 +209,28 @@ export default function IncomesAdminPage() {
       if (!r.clientName.toLowerCase().includes(q)) return false;
     }
     return true;
-  });
+  }), [rows, dateFrom, dateTo, projectQuery, clientQuery]);
 
   // 보드는 desc 정렬이 자연스러움 (최신 위)
-  const visible = filtered.slice().reverse();
-  const totalAmount = filtered.reduce((s, r) => s + r.entry.amount, 0);
+  const visible = useMemo(() => filtered.slice().reverse(), [filtered]);
+  const totalAmount = useMemo(
+    () => filtered.reduce((s, r) => s + r.entry.amount, 0),
+    [filtered],
+  );
+  const pageCount = Math.max(1, Math.ceil(visible.length / PAGE_SIZE));
+  const safePageIndex = Math.min(pageIndex, pageCount - 1);
+  const pageStart = safePageIndex * PAGE_SIZE;
+  const pageEnd = Math.min(pageStart + PAGE_SIZE, visible.length);
+  const pagedVisible = visible.slice(pageStart, pageEnd);
+
+  const handleIncomeSaved = useCallback(
+    (result: IncomeSaveResult) => {
+      void mutate((current) => applyIncomeSaveResult(current, result), {
+        revalidate: false,
+      });
+    },
+    [mutate],
+  );
 
   if (user && !allowed) {
     return (
@@ -247,7 +316,10 @@ export default function IncomesAdminPage() {
             <input
               type="date"
               value={dateFrom}
-              onChange={(e) => setDateFrom(e.target.value)}
+              onChange={(e) => {
+                setDateFrom(e.target.value);
+                setPageIndex(0);
+              }}
               className={inputCls}
             />
           </FilterField>
@@ -255,7 +327,10 @@ export default function IncomesAdminPage() {
             <input
               type="date"
               value={dateTo}
-              onChange={(e) => setDateTo(e.target.value)}
+              onChange={(e) => {
+                setDateTo(e.target.value);
+                setPageIndex(0);
+              }}
               className={inputCls}
             />
           </FilterField>
@@ -263,7 +338,10 @@ export default function IncomesAdminPage() {
             <input
               type="text"
               value={projectQuery}
-              onChange={(e) => setProjectQuery(e.target.value)}
+              onChange={(e) => {
+                setProjectQuery(e.target.value);
+                setPageIndex(0);
+              }}
               className={inputCls}
               placeholder="이름 / Sub CODE"
             />
@@ -272,7 +350,10 @@ export default function IncomesAdminPage() {
             <input
               type="text"
               value={clientQuery}
-              onChange={(e) => setClientQuery(e.target.value)}
+              onChange={(e) => {
+                setClientQuery(e.target.value);
+                setPageIndex(0);
+              }}
               className={inputCls}
               placeholder="발주처명"
             />
@@ -285,7 +366,11 @@ export default function IncomesAdminPage() {
       ) : (
         <section className="rounded-xl border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
           <div className="flex items-center justify-between border-b border-zinc-200 px-4 py-2 text-xs dark:border-zinc-800">
-            <span className="text-zinc-500">{visible.length}건</span>
+            <span className="text-zinc-500">
+              {visible.length}건
+              {visible.length > PAGE_SIZE &&
+                ` · ${pageStart + 1}-${pageEnd} 표시`}
+            </span>
             <span className="font-medium">
               합계 <span className="ml-1">{formatWon(totalAmount)}</span>
             </span>
@@ -318,7 +403,7 @@ export default function IncomesAdminPage() {
                     </td>
                   </tr>
                 ) : (
-                  visible.map((r) => (
+                  pagedVisible.map((r) => (
                     <tr
                       key={r.entry.id}
                       onClick={() => setEditTarget(r.entry)}
@@ -373,6 +458,31 @@ export default function IncomesAdminPage() {
               </tbody>
             </table>
           </div>
+          {visible.length > PAGE_SIZE && (
+            <div className="flex items-center justify-end gap-2 border-t border-zinc-200 px-4 py-2 text-xs dark:border-zinc-800">
+              <button
+                type="button"
+                onClick={() => setPageIndex(Math.max(0, safePageIndex - 1))}
+                disabled={safePageIndex === 0}
+                className="rounded-md border border-zinc-300 px-2 py-1 hover:bg-zinc-50 disabled:opacity-40 dark:border-zinc-700 dark:hover:bg-zinc-800"
+              >
+                이전
+              </button>
+              <span className="min-w-16 text-center text-zinc-500">
+                {safePageIndex + 1} / {pageCount}
+              </span>
+              <button
+                type="button"
+                onClick={() =>
+                  setPageIndex(Math.min(pageCount - 1, safePageIndex + 1))
+                }
+                disabled={safePageIndex >= pageCount - 1}
+                className="rounded-md border border-zinc-300 px-2 py-1 hover:bg-zinc-50 disabled:opacity-40 dark:border-zinc-700 dark:hover:bg-zinc-800"
+              >
+                다음
+              </button>
+            </div>
+          )}
         </section>
       )}
 
@@ -380,21 +490,17 @@ export default function IncomesAdminPage() {
         entry={null}
         open={createOpen}
         onClose={() => setCreateOpen(false)}
-        onSaved={() => {
-          void mutate();
-          void mutateItems();
-        }}
+        onSaved={handleIncomeSaved}
         projects={projectsData?.items ?? []}
+        incomeItems={cashflowData?.items ?? []}
       />
       <IncomeFormModal
         entry={editTarget}
         open={!!editTarget}
         onClose={() => setEditTarget(null)}
-        onSaved={() => {
-          void mutate();
-          void mutateItems();
-        }}
+        onSaved={handleIncomeSaved}
         projects={projectsData?.items ?? []}
+        incomeItems={cashflowData?.items ?? []}
       />
     </div>
   );

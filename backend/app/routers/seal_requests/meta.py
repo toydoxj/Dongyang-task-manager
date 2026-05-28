@@ -19,7 +19,6 @@ from app.models import mirror as M
 from app.models.auth import User
 from app.security import get_current_user
 from app.services import seal_logic as SL
-from app.services.notion import NotionService, get_notion
 from app.settings import get_settings
 
 logger = logging.getLogger("api.seal_requests.meta")
@@ -62,7 +61,7 @@ class PendingCount(BaseModel):
 async def get_next_doc_number(
     seal_type: str,
     _user: User = Depends(get_current_user),
-    notion: NotionService = Depends(get_notion),
+    db: Session = Depends(get_db),
 ) -> NextDocNumberResponse:
     """모달 미리보기용 — 다음 발급될 문서번호를 미리 계산.
 
@@ -73,7 +72,7 @@ async def get_next_doc_number(
     seal_type = SL.normalize_type(seal_type.strip())
     if seal_type != "구조검토서":
         return NextDocNumberResponse(seal_type=seal_type, next_doc_number="")
-    next_no = await SL.issue_review_doc_number(notion, _db_id())
+    next_no = SL.next_review_doc_number_from_mirror(db, lock=False)
     return NextDocNumberResponse(seal_type=seal_type, next_doc_number=next_no)
 
 

@@ -2,13 +2,10 @@
 from __future__ import annotations
 
 from datetime import date
+from types import SimpleNamespace
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock
-
-import pytest
 
 from app.services import seal_logic as SL
-
 
 # ── normalize_type / normalize_status ──
 
@@ -123,87 +120,82 @@ def test_build_title_etc_default() -> None:
     )
 
 
-# ── issue_review_doc_number ──
+# ── mirror 기반 구조검토서 문서번호 ──
 
 
-def _mock_notion_with_pages(pages: list[dict[str, Any]]):
-    notion = MagicMock()
-    notion.query_all = AsyncMock(return_value=pages)
-    return notion
-
-
-def _page(doc_no: str) -> dict[str, Any]:
-    return {
-        "properties": {
+def _mirror_row(doc_no: str):
+    return SimpleNamespace(
+        properties={
             "문서번호": {
                 "rich_text": [{"plain_text": doc_no}],
             }
         }
-    }
-
-
-@pytest.mark.asyncio
-async def test_issue_first_doc_number() -> None:
-    notion = _mock_notion_with_pages([])
-    yy = date.today().strftime("%y")
-    doc_no = await SL.issue_review_doc_number(notion, "db-id")
-    assert doc_no == f"{yy}-의견-001"
-
-
-@pytest.mark.asyncio
-async def test_issue_next_doc_number() -> None:
-    yy = date.today().strftime("%y")
-    pages = [
-        _page(f"{yy}-의견-001"),
-        _page(f"{yy}-의견-005"),
-        _page(f"{yy}-의견-003"),
-    ]
-    notion = _mock_notion_with_pages(pages)
-    doc_no = await SL.issue_review_doc_number(notion, "db-id")
-    assert doc_no == f"{yy}-의견-006"
-
-
-@pytest.mark.asyncio
-async def test_issue_skips_other_year() -> None:
-    """다른 연도(prefix가 다른) 행은 무시 — 노션 query filter가 starts_with로 처리하지만
-    혹시 누수돼도 _parse_review_n이 None을 반환해 보호."""
-    yy = date.today().strftime("%y")
-    other_yy = "99"
-    pages = [
-        _page(f"{yy}-의견-001"),
-        _page(f"{other_yy}-의견-999"),
-    ]
-    notion = _mock_notion_with_pages(pages)
-    doc_no = await SL.issue_review_doc_number(notion, "db-id")
-    assert doc_no == f"{yy}-의견-002"
-
-
-# ── is_last_review_doc_number ──
-
-
-@pytest.mark.asyncio
-async def test_is_last_returns_true_for_max() -> None:
-    yy = date.today().strftime("%y")
-    pages = [_page(f"{yy}-의견-001"), _page(f"{yy}-의견-005")]
-    notion = _mock_notion_with_pages(pages)
-    assert await SL.is_last_review_doc_number(notion, "db-id", doc_no=f"{yy}-의견-005")
-
-
-@pytest.mark.asyncio
-async def test_is_last_returns_false_for_middle() -> None:
-    yy = date.today().strftime("%y")
-    pages = [
-        _page(f"{yy}-의견-001"),
-        _page(f"{yy}-의견-003"),
-        _page(f"{yy}-의견-005"),
-    ]
-    notion = _mock_notion_with_pages(pages)
-    assert not await SL.is_last_review_doc_number(
-        notion, "db-id", doc_no=f"{yy}-의견-003"
     )
 
 
-@pytest.mark.asyncio
-async def test_is_last_empty_doc_no() -> None:
-    notion = _mock_notion_with_pages([])
-    assert not await SL.is_last_review_doc_number(notion, "db-id", doc_no="")
+class _FakeScalars:
+    def __init__(self, rows: list[Any]):
+        self.rows = rows
+
+    def all(self) -> list[Any]:
+        return self.rows
+
+
+class _FakeResult:
+    def __init__(self, rows: list[Any]):
+        self.rows = rows
+
+    def scalars(self) -> _FakeScalars:
+        return _FakeScalars(self.rows)
+
+
+class _FakeDb:
+    def __init__(self, rows: list[Any]):
+        self.rows = rows
+
+    def get_bind(self):
+        return SimpleNamespace(dialect=SimpleNamespace(name="sqlite"))
+
+    def execute(self, *_args: Any, **_kwargs: Any) -> _FakeResult:
+        return _FakeResult(self.rows)
+
+
+def test_issue_first_doc_number_from_mirror() -> None:
+    yy = date.today().strftime("%y")
+    db = _FakeDb([])
+    assert SL.issue_review_doc_number_from_mirror(db) == f"{yy}-의견-001"
+
+
+def test_next_review_doc_number_from_mirror() -> None:
+    yy = date.today().strftime("%y")
+    db = _FakeDb(
+        [
+            _mirror_row(f"{yy}-의견-001"),
+            _mirror_row(f"{yy}-의견-005"),
+            _mirror_row(f"{yy}-의견-003"),
+        ]
+    )
+    assert SL.next_review_doc_number_from_mirror(db) == f"{yy}-의견-006"
+
+
+def test_issue_skips_other_year_from_mirror() -> None:
+    yy = date.today().strftime("%y")
+    db = _FakeDb(
+        [
+            _mirror_row(f"{yy}-의견-001"),
+            _mirror_row("99-의견-999"),
+        ]
+    )
+    assert SL.issue_review_doc_number_from_mirror(db) == f"{yy}-의견-002"
+
+
+def test_is_last_review_doc_number_from_mirror() -> None:
+    yy = date.today().strftime("%y")
+    db = _FakeDb([_mirror_row(f"{yy}-의견-001"), _mirror_row(f"{yy}-의견-005")])
+    assert SL.is_last_review_doc_number_from_mirror(db, doc_no=f"{yy}-의견-005")
+    assert not SL.is_last_review_doc_number_from_mirror(db, doc_no=f"{yy}-의견-001")
+
+
+def test_is_last_empty_doc_no_from_mirror() -> None:
+    db = _FakeDb([])
+    assert not SL.is_last_review_doc_number_from_mirror(db, doc_no="")

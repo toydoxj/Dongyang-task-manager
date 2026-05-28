@@ -18,15 +18,16 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
 from app.db import get_db
-from app.exceptions import NotFoundError
+from app.models import mirror as M
 from app.models.auth import User
+from app.models.notion_outbox import OP_UPDATE
 from app.security import get_current_user
 from app.services import file_storage as storage
 from app.services import notion_props as P
 from app.services import seal_logic as SL
 from app.services import sso_drive
-from app.services.notion import NotionService, get_notion
-from app.services.sync import get_sync
+from app.services.notion_outbox import enqueue
+from app.services.seal_request_mirror import apply_update_to_mirror
 from app.settings import get_settings
 
 logger = logging.getLogger("api.seal_requests.attachments")
@@ -34,6 +35,16 @@ router = APIRouter()
 
 # module-level lazy import — sub-router include가 파일 끝(__init__.py fully loaded 후).
 from app.routers.seal_requests import SealRequestItem  # noqa: E402
+
+
+def _fetch_page_like_or_404(db: Session, page_id: str) -> tuple[M.MirrorSealRequest, dict]:
+    """mirror row를 page-like dict로 변환. 첨부 read/write 공통."""
+    from app.routers.seal_requests.list_endpoint import _mirror_row_to_notion_page
+
+    row = db.get(M.MirrorSealRequest, page_id)
+    if row is None or row.archived:
+        raise HTTPException(status_code=404, detail="날인요청을 찾을 수 없습니다")
+    return row, _mirror_row_to_notion_page(row)
 
 
 def _get_attachment_or_404(page: dict[str, Any], idx: int):
@@ -61,17 +72,13 @@ async def get_attachment_url(
     page_id: str,
     idx: int,
     user: User = Depends(get_current_user),
-    notion: NotionService = Depends(get_notion),
     db: Session = Depends(get_db),
 ) -> dict[str, str]:
     # _can_access는 __init__.py의 module-level helper. include가 파일 끝에서
     # 일어나므로 __init__.py fully loaded 상태에서 lazy import OK.
     from app.routers.seal_requests import _can_access
 
-    try:
-        page = await notion.get_page(page_id)
-    except NotFoundError as exc:
-        raise HTTPException(status_code=404, detail=exc.message) from exc
+    _row, page = _fetch_page_like_or_404(db, page_id)
     if not _can_access(user, page, db):
         raise HTTPException(status_code=403, detail="해당 요청 접근 권한이 없습니다")
     item = _get_attachment_or_404(page, idx)
@@ -98,16 +105,12 @@ async def preview_attachment(
     page_id: str,
     idx: int,
     user: User = Depends(get_current_user),
-    notion: NotionService = Depends(get_notion),
     db: Session = Depends(get_db),
 ):
     """stream proxy + Content-Disposition: inline."""
     from app.routers.seal_requests import _can_access
 
-    try:
-        page = await notion.get_page(page_id)
-    except NotFoundError as exc:
-        raise HTTPException(status_code=404, detail=exc.message) from exc
+    _row, page = _fetch_page_like_or_404(db, page_id)
     if not _can_access(user, page, db):
         raise HTTPException(status_code=403, detail="해당 요청 접근 권한이 없습니다")
     item = _get_attachment_or_404(page, idx)
@@ -175,7 +178,6 @@ async def add_attachments(
     page_id: str,
     files: list[UploadFile] = File(..., description="추가 첨부파일 (다중 가능)"),
     user: User = Depends(get_current_user),
-    notion: NotionService = Depends(get_notion),
     db: Session = Depends(get_db),
 ):
     """반려된 요청을 보완해 파일을 추가하면서 상태를 '1차검토 중'으로 되돌림.
@@ -197,10 +199,7 @@ async def add_attachments(
 
     if not files:
         raise HTTPException(status_code=400, detail="추가할 파일을 선택하세요")
-    try:
-        page = await notion.get_page(page_id)
-    except NotFoundError as exc:
-        raise HTTPException(status_code=404, detail=exc.message) from exc
+    row, page = _fetch_page_like_or_404(db, page_id)
     if not _can_access(user, page, db):
         raise HTTPException(status_code=403, detail="접근 권한이 없습니다")
 
@@ -310,20 +309,19 @@ async def add_attachments(
         update_props["팀장처리자"] = {"rich_text": [{"text": {"content": ""}}]}
         update_props["팀장처리일"] = {"date": None}
 
-    # PR-CA: notion update 최종 실패 시 partial_errors로 노출.
-    try:
-        await notion.update_page(page_id, update_props)
-    except Exception as exc:  # noqa: BLE001
-        logger.exception(
-            "seal_request 첨부 add 노션 update 실패 — Drive 파일은 존재 (page=%s)",
-            page_id,
-        )
-        failed.append(f"노션 첨부메타 업데이트 실패: {exc}")
+    apply_update_to_mirror(row, update_props)
+    enqueue(
+        db,
+        aggregate_type="seal_requests",
+        aggregate_id=page_id,
+        op=OP_UPDATE,
+        payload=update_props,
+        notion_page_id=page_id,
+    )
+    db.commit()
     if failed:
         logger.warning("첨부 추가 일부 실패 (page=%s): %s", page_id, failed)
-    final = await notion.get_page(page_id)
-    # PR-CQ: mirror 즉시 sync.
-    get_sync().upsert_page("seal_requests", final)
+    _, final = _fetch_page_like_or_404(db, page_id)
     item = _from_notion_page(final)
     item.partial_errors = [_failed_to_partial(msg) for msg in failed]
     return item
