@@ -34,6 +34,10 @@ _RETRY_MAX_S = 3600  # 최대 1시간 cap
 _PROCESSING_STALE_AFTER = timedelta(minutes=15)
 _LOCK_OWNER = f"{socket.gethostname()}:{os.getpid()}"
 _ARCHIVED_TARGET_ERROR = "Can't edit block that is archived"
+_LOCAL_RELATION_PREFIXES = (
+    ("local_client_", "clients"),
+    ("local_contract_item_", "contract_items"),
+)
 
 
 def _bootstrap_env_from_settings() -> None:
@@ -139,6 +143,219 @@ def _should_skip_archived_target(db, row, exc: Exception) -> bool:
     )
 
 
+def _aggregate_type_for_local_relation_id(relation_id: str) -> str | None:
+    """relation payload 안의 local id가 어느 aggregate create인지 판별."""
+    for prefix, aggregate_type in _LOCAL_RELATION_PREFIXES:
+        if relation_id.startswith(prefix):
+            return aggregate_type
+    return None
+
+
+def _collect_local_relation_ids(payload: object) -> set[str]:
+    """Notion properties payload에서 아직 확정되지 않은 local relation id 수집."""
+    ids: set[str] = set()
+    if isinstance(payload, dict):
+        relation = payload.get("relation")
+        if isinstance(relation, list):
+            for item in relation:
+                if not isinstance(item, dict):
+                    continue
+                relation_id = item.get("id")
+                if (
+                    isinstance(relation_id, str)
+                    and _aggregate_type_for_local_relation_id(relation_id)
+                ):
+                    ids.add(relation_id)
+        for value in payload.values():
+            ids.update(_collect_local_relation_ids(value))
+    elif isinstance(payload, list):
+        for item in payload:
+            ids.update(_collect_local_relation_ids(item))
+    return ids
+
+
+def _replace_relation_id(
+    payload: object, old_id: str, new_id: str
+) -> tuple[object, bool]:
+    """Notion relation 배열 안의 id만 치환하고 새 payload 객체를 반환."""
+    if isinstance(payload, dict):
+        changed = False
+        next_payload = dict(payload)
+        relation = payload.get("relation")
+        if isinstance(relation, list):
+            next_relation: list[object] = []
+            relation_changed = False
+            for item in relation:
+                if isinstance(item, dict) and item.get("id") == old_id:
+                    next_item = dict(item)
+                    next_item["id"] = new_id
+                    next_relation.append(next_item)
+                    relation_changed = True
+                else:
+                    next_relation.append(item)
+            if relation_changed:
+                next_payload["relation"] = next_relation
+                changed = True
+
+        for key, value in payload.items():
+            if key == "relation" and isinstance(relation, list):
+                continue
+            next_value, value_changed = _replace_relation_id(
+                value, old_id, new_id
+            )
+            if value_changed:
+                next_payload[key] = next_value
+                changed = True
+        return (next_payload, True) if changed else (payload, False)
+
+    if isinstance(payload, list):
+        changed = False
+        next_payload: list[object] = []
+        for item in payload:
+            next_item, item_changed = _replace_relation_id(item, old_id, new_id)
+            next_payload.append(next_item)
+            changed = changed or item_changed
+        return (next_payload, True) if changed else (payload, False)
+
+    return payload, False
+
+
+def _scalar_rows(result) -> list[object]:
+    """SQLAlchemy Result 또는 테스트 fake result에서 scalar row 목록 추출."""
+    scalars = getattr(result, "scalars", None)
+    if callable(scalars):
+        return list(scalars().all())
+    all_rows = getattr(result, "all", None)
+    if callable(all_rows):
+        return list(all_rows())
+    return []
+
+
+def _sent_page_id_for_local_id(
+    db, aggregate_type: str, local_id: str
+) -> str | None:
+    """local create outbox가 성공하며 확보한 실제 Notion page_id 조회."""
+    from sqlalchemy import select
+
+    from app.models.notion_outbox import OP_CREATE, STATUS_SENT, NotionOutbox
+
+    return db.execute(
+        select(NotionOutbox.notion_page_id)
+        .where(
+            NotionOutbox.aggregate_type == aggregate_type,
+            NotionOutbox.aggregate_id == local_id,
+            NotionOutbox.op == OP_CREATE,
+            NotionOutbox.status == STATUS_SENT,
+            NotionOutbox.notion_page_id.is_not(None),
+        )
+        .order_by(NotionOutbox.id.desc())
+        .limit(1)
+    ).scalar_one_or_none()
+
+
+def _resolve_local_relation_payloads(db, row) -> None:
+    """push 직전 payload의 local relation id를 실제 page id로 해소."""
+    from app.models.notion_outbox import OP_CREATE, OP_UPDATE
+
+    if row.op not in (OP_CREATE, OP_UPDATE):
+        return
+    payload = row.payload or {}
+    local_ids = _collect_local_relation_ids(payload)
+    for local_id in sorted(local_ids):
+        aggregate_type = _aggregate_type_for_local_relation_id(local_id)
+        if aggregate_type is None:
+            continue
+        real_id = _sent_page_id_for_local_id(db, aggregate_type, local_id)
+        if not real_id:
+            raise ValueError(f"relation local id not resolved: {local_id}")
+        _rewrite_local_relation_references(db, aggregate_type, local_id, real_id)
+        payload, changed = _replace_relation_id(payload, local_id, real_id)
+        if changed and isinstance(payload, dict):
+            row.payload = payload
+
+
+def _rewrite_active_outbox_relation_refs(db, old_id: str, new_id: str) -> None:
+    """아직 push 전인 outbox payload의 local relation id를 실제 id로 치환."""
+    from sqlalchemy import select
+
+    from app.models.notion_outbox import _ACTIVE_STATUSES, NotionOutbox
+
+    rows = _scalar_rows(
+        db.execute(
+            select(NotionOutbox).where(NotionOutbox.status.in_(_ACTIVE_STATUSES))
+        )
+    )
+    for outbox_row in rows:
+        payload = getattr(outbox_row, "payload", None) or {}
+        next_payload, changed = _replace_relation_id(payload, old_id, new_id)
+        if changed and isinstance(next_payload, dict):
+            outbox_row.payload = next_payload
+
+
+def _rewrite_cashflow_contract_item_refs(
+    db, old_id: str, new_id: str, now: datetime
+) -> None:
+    """수금 mirror의 계약항목 relation을 local id에서 실제 id로 보정."""
+    from sqlalchemy import select
+
+    from app.models.mirror import MirrorCashflow
+
+    rows = _scalar_rows(
+        db.execute(
+            select(MirrorCashflow).where(MirrorCashflow.archived.is_(False))
+        )
+    )
+    for cashflow_row in rows:
+        props = getattr(cashflow_row, "properties", None) or {}
+        next_props, changed = _replace_relation_id(props, old_id, new_id)
+        if changed and isinstance(next_props, dict):
+            cashflow_row.properties = next_props
+            cashflow_row.synced_at = now
+
+
+def _rewrite_contract_item_client_refs(
+    db, old_id: str, new_id: str, now: datetime
+) -> None:
+    """계약항목 mirror의 발주처 relation을 local id에서 실제 id로 보정."""
+    from sqlalchemy import select
+
+    from app.models.mirror import MirrorContractItem
+
+    rows = _scalar_rows(
+        db.execute(
+            select(MirrorContractItem).where(
+                MirrorContractItem.archived.is_(False)
+            )
+        )
+    )
+    for contract_item_row in rows:
+        changed = False
+        if getattr(contract_item_row, "client_id", "") == old_id:
+            contract_item_row.client_id = new_id
+            changed = True
+        props = getattr(contract_item_row, "properties", None) or {}
+        next_props, props_changed = _replace_relation_id(props, old_id, new_id)
+        if props_changed and isinstance(next_props, dict):
+            contract_item_row.properties = next_props
+            changed = True
+        if changed:
+            contract_item_row.synced_at = now
+
+
+def _rewrite_local_relation_references(
+    db, aggregate_type: str, old_id: str, new_id: str
+) -> None:
+    """local create 완료 시 이미 저장된 하위 참조를 실제 Notion id로 동기화."""
+    if old_id == new_id:
+        return
+    now = datetime.now(UTC)
+    if aggregate_type == "contract_items":
+        _rewrite_cashflow_contract_item_refs(db, old_id, new_id, now)
+    elif aggregate_type == "clients":
+        _rewrite_contract_item_client_refs(db, old_id, new_id, now)
+    _rewrite_active_outbox_relation_refs(db, old_id, new_id)
+
+
 def _finalize_create_mirror(db, row, page: dict) -> None:
     """create 성공 후 local mirror row를 실제 Notion page row로 reconcile."""
     from app.models.notion_outbox import OP_CREATE
@@ -165,6 +382,9 @@ def _finalize_create_mirror(db, row, page: dict) -> None:
     if local_row is not None and local_row.page_id != new_page_id:
         local_row.archived = True
         local_row.synced_at = datetime.now(UTC)
+    _rewrite_local_relation_references(
+        db, row.aggregate_type, row.aggregate_id, new_page_id
+    )
     get_sync().upsert_in_session(db, target[1], page)
 
 
@@ -307,6 +527,7 @@ async def drain_once(batch_size: int = _BATCH_SIZE_DEFAULT) -> dict:
             if r is None:
                 continue
             try:
+                _resolve_local_relation_payloads(db, r)
                 new_page = await _push_notion_op(notion, r)
                 r.status = STATUS_SENT
                 r.sent_at = datetime.now(UTC)
