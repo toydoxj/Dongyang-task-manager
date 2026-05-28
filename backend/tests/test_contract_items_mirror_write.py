@@ -1,7 +1,6 @@
-"""PR-FZ 회귀 테스트 — contract_items update/delete mirror-first + outbox.
+"""PR-FZ/GK 회귀 테스트 — contract_items create/update/delete mirror-first + outbox.
 
-tasks(PR-FR)와 동일 패턴 표본 전환. update/delete는 노션 동기 호출 0건,
-mirror direct + outbox enqueue. create는 page_id 확정 위해 노션 직접 유지.
+create/update/delete는 노션 동기 호출 0건, mirror direct + outbox enqueue.
 """
 from __future__ import annotations
 
@@ -15,21 +14,16 @@ from app.models.notion_outbox import OP_DELETE, OP_UPDATE
 
 
 def test_update_delete_no_notion_dependency() -> None:
-    """전환 회귀 방지 — update/delete 핸들러에 notion 의존성이 재유입되지 않음."""
+    """전환 회귀 방지 — 핸들러에 notion 의존성이 재유입되지 않음."""
     from app.routers.contract_items import (
+        create_contract_item,
         delete_contract_item,
         update_contract_item,
     )
 
+    assert "notion" not in inspect.signature(create_contract_item).parameters
     assert "notion" not in inspect.signature(update_contract_item).parameters
     assert "notion" not in inspect.signature(delete_contract_item).parameters
-
-
-def test_create_keeps_notion_dependency() -> None:
-    """create는 노션 page_id 즉시 확정 위해 노션 직접 유지 (tasks 일관)."""
-    from app.routers.contract_items import create_contract_item
-
-    assert "notion" in inspect.signature(create_contract_item).parameters
 
 
 def test_update_props_empty_when_no_fields() -> None:

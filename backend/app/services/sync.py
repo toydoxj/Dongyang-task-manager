@@ -524,11 +524,12 @@ class NotionSyncService:
     def _upsert_client(self, db: Session, page: dict) -> None:
         props = page.get("properties", {})
         # title 자동 탐지
-        name = ""
+        name = P.title(props, "이름")
         for prop in props.values():
-            if prop.get("type") == "title":
-                arr = prop.get("title") or []
-                name = arr[0].get("plain_text", "") if arr else ""
+            if name:
+                break
+            if prop.get("type") == "title" or isinstance(prop.get("title"), list):
+                name = P.title({"_": prop}, "_")
                 break
         category = P.select_name(props, "구분")
         stmt = pg_insert(M.MirrorClient).values(

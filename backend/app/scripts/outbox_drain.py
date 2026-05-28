@@ -147,6 +147,8 @@ def _finalize_create_mirror(db, row, page: dict) -> None:
         return
     finalize_targets = {
         "cashflow": ("MirrorCashflow", "cashflow"),
+        "clients": ("MirrorClient", "clients"),
+        "contract_items": ("MirrorContractItem", "contract_items"),
         "suggestions": ("MirrorSuggestion", "suggestions"),
     }
     target = finalize_targets.get(row.aggregate_type)
