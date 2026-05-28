@@ -150,6 +150,7 @@ app.include_router(notices_router.router, prefix="/api")
 app.include_router(dashboard_router.router, prefix="/api")
 
 
+@app.get("/api/health")
 @app.get("/health")
 async def health() -> dict[str, str]:
     return {"status": "ok"}
