@@ -195,6 +195,8 @@ services:
         sync: false
       - key: NOTION_DB_SALES
         sync: false
+      - key: NOTION_DB_SUGGESTIONS
+        sync: false
 
   # ── 매일 아침 task 자동 진행 트리거 ──
   # 시작일이 도래한 task를 '진행 중'으로 + 그 프로젝트 진행단계 '진행중'으로.
