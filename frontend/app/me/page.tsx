@@ -91,11 +91,15 @@ export default function MyPage() {
   };
 
   // 다른 직원 보기 모드면 mine 대신 assignee=name 으로 fetch
-  const fetchFilters = effectiveName
-    ? isViewingOther
-      ? { assignee: effectiveName }
-      : { mine: true }
-    : undefined;
+  const fetchFilters = useMemo(
+    () =>
+      effectiveName
+        ? isViewingOther
+          ? { assignee: effectiveName }
+          : { mine: true }
+        : undefined,
+    [effectiveName, isViewingOther],
+  );
 
   const { data: projectData, error: projectErr } = useProjects(fetchFilters);
   const { data: tasksData, error: tasksErr } = useTasks(fetchFilters);
@@ -180,13 +184,17 @@ export default function MyPage() {
     [allTasks],
   );
   // mine 프로젝트 = 진행중 + 대기 (완료/타절/종결/이관 제외)
-  const candidates = projectData?.items.filter(
-    (p) => !p.completed && (p.stage === "진행중" || p.stage === "대기"),
+  const candidates = useMemo(
+    () =>
+      projectData?.items.filter(
+        (p) => !p.completed && (p.stage === "진행중" || p.stage === "대기"),
+      ),
+    [projectData?.items],
   );
   // 금주 TASK 활동으로 진행중 vs 대기 자동 분류
-  const { active: activeProjects, idle: idleProjects } = splitByThisWeek(
-    candidates ?? [],
-    tasks ?? [],
+  const { active: activeProjects, idle: idleProjects } = useMemo(
+    () => splitByThisWeek(candidates ?? [], tasks ?? []),
+    [candidates, tasks],
   );
   // ProjectImportModal / 카운트 등에는 합친 목록 사용
   const projects = candidates;

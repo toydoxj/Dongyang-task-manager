@@ -6,6 +6,13 @@
 import type { Project, Task } from "@/lib/domain";
 import { formatDate } from "@/lib/format";
 
+export const SCHEDULE_LOOKBACK_DAYS = 14;
+export const SCHEDULE_LOOKAHEAD_DAYS = 60;
+export const SCHEDULE_BUCKET_LIMIT = 80;
+export const SCHEDULE_BUCKETS = ["외근", "출장", "파견", "휴가"] as const;
+
+export type ScheduleBucket = (typeof SCHEDULE_BUCKETS)[number];
+
 /**
  * 완료된 TASK는 이번주 월요일 00:00 KST 기준 -14일 이후만 표시.
  * 그보다 오래된 완료는 hide. 완료가 아닌 task는 통과.
@@ -101,15 +108,79 @@ export function splitByThisWeek(
   tasks: Task[],
 ): { active: Project[]; idle: Project[] } {
   const [weekStart, weekEnd] = thisWeekRange();
+  const activeProjectIds = new Set<string>();
+  for (const t of tasks) {
+    if (!taskInWeek(t, weekStart, weekEnd)) continue;
+    for (const pid of t.project_ids) {
+      activeProjectIds.add(normId(pid));
+    }
+  }
+
   const active: Project[] = [];
   const idle: Project[] = [];
   for (const p of projects) {
-    const projTasks = tasks.filter((t) => taskBelongsTo(t, p.id));
-    const hasThisWeek = projTasks.some((t) => taskInWeek(t, weekStart, weekEnd));
-    if (hasThisWeek) active.push(p);
+    if (activeProjectIds.has(normId(p.id))) active.push(p);
     else idle.push(p);
   }
   return { active, idle };
+}
+
+function ymd(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+function addDays(base: Date, days: number): Date {
+  const d = new Date(base);
+  d.setDate(d.getDate() + days);
+  return d;
+}
+
+function dateOnly(value: string | null | undefined): string | null {
+  return value ? value.slice(0, 10) : null;
+}
+
+export function scheduleWindowFor(base = new Date()): {
+  startYmd: string;
+  endYmd: string;
+} {
+  return {
+    startYmd: ymd(addDays(base, -SCHEDULE_LOOKBACK_DAYS)),
+    endYmd: ymd(addDays(base, SCHEDULE_LOOKAHEAD_DAYS)),
+  };
+}
+
+export function scheduleBucketForTask(
+  t: Pick<Task, "activity" | "category">,
+): ScheduleBucket | null {
+  if (t.category === "휴가" || t.category === "휴가(연차)") return "휴가";
+  if (t.activity === "파견" || t.category === "파견") return "파견";
+  if (t.activity === "출장" || t.category === "출장") return "출장";
+  if (t.activity === "외근" || t.category === "외근") return "외근";
+  return null;
+}
+
+export function taskOverlapsScheduleWindow(
+  t: Pick<Task, "actual_end_date" | "end_date" | "start_date">,
+  startYmd: string,
+  endYmd: string,
+): boolean {
+  const start = dateOnly(t.start_date) ?? dateOnly(t.end_date) ?? dateOnly(t.actual_end_date);
+  const end = dateOnly(t.end_date) ?? start;
+  if (!start) return true;
+  return start <= endYmd && (end ?? start) >= startYmd;
+}
+
+export function shouldShowInScheduleTab(
+  t: Pick<
+    Task,
+    "actual_end_date" | "activity" | "category" | "end_date" | "start_date"
+  >,
+  window = scheduleWindowFor(),
+): boolean {
+  return (
+    scheduleBucketForTask(t) !== null &&
+    taskOverlapsScheduleWindow(t, window.startYmd, window.endYmd)
+  );
 }
 
 export function statusBadgeColor(t: Task): string {

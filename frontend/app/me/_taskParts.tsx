@@ -162,6 +162,7 @@ export function CategoryCard({
   findProject,
   onAdd,
   addLabel,
+  hiddenCount = 0,
 }: {
   label: string;
   items: Task[];
@@ -174,6 +175,8 @@ export function CategoryCard({
   onAdd?: () => void;
   /** + 버튼 라벨. 기본 '+ 새 항목'. */
   addLabel?: string;
+  /** 렌더링 상한으로 접은 항목 수. */
+  hiddenCount?: number;
 }) {
   return (
     <div className="rounded-xl border border-zinc-200 bg-white p-3 dark:border-zinc-800 dark:bg-zinc-900">
@@ -249,6 +252,11 @@ export function CategoryCard({
             </li>
           ))}
         </ul>
+      )}
+      {hiddenCount > 0 && (
+        <p className="mt-2 rounded-md bg-zinc-100 px-2 py-1 text-center text-[10px] text-zinc-500 dark:bg-zinc-800">
+          외 {hiddenCount.toLocaleString("ko-KR")}건
+        </p>
       )}
     </div>
   );

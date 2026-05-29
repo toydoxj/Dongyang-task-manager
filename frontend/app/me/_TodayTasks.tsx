@@ -11,7 +11,14 @@
 import type { Project, Task } from "@/lib/domain";
 
 import { CategoryCard, ProjectTaskList, TaskCard } from "./_taskParts";
-import { normId } from "./_utils";
+import {
+  SCHEDULE_BUCKET_LIMIT,
+  SCHEDULE_BUCKETS,
+  normId,
+  scheduleBucketForTask,
+  scheduleWindowFor,
+  shouldShowInScheduleTab,
+} from "./_utils";
 
 export type TodayTasksScope = "todo" | "schedule";
 
@@ -41,8 +48,13 @@ export default function TodayTasks({
     if (!b.end_date) return -1;
     return a.end_date.localeCompare(b.end_date);
   });
+  const scheduleWindow = scheduleWindowFor();
+  const source =
+    scope === "schedule"
+      ? open.filter((t) => shouldShowInScheduleTab(t, scheduleWindow))
+      : open;
 
-  if (open.length === 0) {
+  if (scope === "todo" && open.length === 0) {
     return (
       <p className="rounded-md border border-zinc-200 bg-white p-4 text-sm text-zinc-500 dark:border-zinc-800 dark:bg-zinc-900">
         오늘 처리할 업무가 없습니다. 🎉
@@ -76,29 +88,17 @@ export default function TodayTasks({
   const projectTasks: Task[] = [];
   const otherByStatus = new Map<string, Task[]>();
   for (const s of STATUSES) otherByStatus.set(s, []);
-  const scheduleByBucket = new Map<string, Task[]>([
-    ["외근", []],
-    ["출장", []],
-    ["파견", []],
-    ["휴가", []],
-  ]);
+  const scheduleByBucket = new Map<string, Task[]>(
+    SCHEDULE_BUCKETS.map((bucket) => [bucket, []]),
+  );
+  const scheduleHiddenByBucket = new Map<string, number>(
+    SCHEDULE_BUCKETS.map((bucket) => [bucket, 0]),
+  );
   const unclassified: Task[] = [];
 
-  // 휴가는 옛 표기('휴가')와 새 표기('휴가(연차)') 모두 같은 일정 버킷으로 처리
-  const isVacationCat = (c: string): boolean => c === "휴가" || c === "휴가(연차)";
-
-  for (const t of open) {
+  for (const t of source) {
     // 일정 영역에 등장해야 하는가 (분류 또는 활동 기준)
-    const scheduleBucket =
-      isVacationCat(t.category)
-        ? "휴가"
-        : t.activity === "파견" || t.category === "파견"
-          ? "파견"
-          : t.activity === "출장" || t.category === "출장"
-            ? "출장"
-            : t.activity === "외근" || t.category === "외근"
-              ? "외근"
-              : null;
+    const scheduleBucket = scheduleBucketForTask(t);
     if (scheduleBucket) {
       scheduleByBucket.get(scheduleBucket)!.push(t);
     }
@@ -113,7 +113,8 @@ export default function TodayTasks({
       t.category === "외근" ||
       t.category === "출장" ||
       t.category === "파견" ||
-      isVacationCat(t.category)
+      t.category === "휴가" ||
+      t.category === "휴가(연차)"
     ) {
       // 일정 분류 task는 메인 영역에 추가 안 함 (일정 카드에만 표시)
     } else {
@@ -122,6 +123,19 @@ export default function TodayTasks({
   }
 
   const todoCount = projectTasks.length + unclassified.length;
+  const byScheduleDateAsc = (a: Task, b: Task): number => {
+    const ad = a.start_date ?? a.end_date ?? "9999-12-31";
+    const bd = b.start_date ?? b.end_date ?? "9999-12-31";
+    return ad.localeCompare(bd);
+  };
+  for (const bucket of SCHEDULE_BUCKETS) {
+    const list = scheduleByBucket.get(bucket) ?? [];
+    list.sort(byScheduleDateAsc);
+    if (scope === "schedule" && list.length > SCHEDULE_BUCKET_LIMIT) {
+      scheduleHiddenByBucket.set(bucket, list.length - SCHEDULE_BUCKET_LIMIT);
+      scheduleByBucket.set(bucket, list.slice(0, SCHEDULE_BUCKET_LIMIT));
+    }
+  }
 
   if (scope === "todo") {
     return (
@@ -168,11 +182,12 @@ export default function TodayTasks({
   // scope === "schedule"
   return (
     <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-      {(["외근", "출장", "파견", "휴가"] as const).map((c) => (
+      {SCHEDULE_BUCKETS.map((c) => (
         <CategoryCard
           key={c}
           label={c}
           items={scheduleByBucket.get(c) ?? []}
+          hiddenCount={scheduleHiddenByBucket.get(c) ?? 0}
           onClickTask={onClickTask}
           showTime
           showProjectBadge
