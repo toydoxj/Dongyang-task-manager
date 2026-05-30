@@ -110,8 +110,8 @@ export default function AdminSyncPage() {
       <header>
         <h1 className="text-2xl font-semibold">Sync 관리</h1>
         <p className="mt-1 text-sm text-zinc-500">
-          노션 미러 동기화 — 정기 cron은 업무시간(KST 06~20시)에는 멈춤. 운영 중
-          즉시 sync 필요 시 본 페이지에서 트리거.
+          백업 데이터 동기화 — 정기 cron은 업무시간(KST 06~20시)에는 멈춤. 운영 중
+          즉시 동기화가 필요하면 본 페이지에서 실행하세요.
         </p>
       </header>
 

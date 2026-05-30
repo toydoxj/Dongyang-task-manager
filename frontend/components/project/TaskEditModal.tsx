@@ -290,7 +290,7 @@ function Form({
   const remove = async (): Promise<void> => {
     if (
       !confirm(
-        `"${task.title}" 업무를 삭제하시겠습니까?\n노션에서 보관 처리됩니다 (영구 삭제는 노션에서 가능).`,
+        `"${task.title}" 업무를 삭제하시겠습니까?\n보관 처리됩니다.`,
       )
     )
       return;
@@ -642,7 +642,7 @@ function Form({
               onClick={remove}
               disabled={busy}
               className="text-xs text-red-500 hover:underline disabled:opacity-50"
-              title="노션에서 보관 처리됩니다"
+              title="보관 처리됩니다"
             >
               삭제
             </button>
@@ -674,4 +674,3 @@ function Form({
     </Modal>
   );
 }
-

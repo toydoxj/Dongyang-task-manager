@@ -264,7 +264,7 @@ export default function WeeklyReportPage() {
         <div>
           <h1 className="text-2xl font-semibold">주간 업무일지</h1>
           <p className="mt-1 text-sm text-zinc-500">
-            월~금 주차 단위 자동 집계 (KST). 데이터: 노션 미러 + employees + 공지.
+            월~금 주차 단위 자동 집계 (KST). 데이터: 백업 미러 + employees + 공지.
           </p>
         </div>
         <div className="flex flex-wrap items-end gap-2">
@@ -382,7 +382,6 @@ export default function WeeklyReportPage() {
     </div>
   );
 }
-
 
 
 

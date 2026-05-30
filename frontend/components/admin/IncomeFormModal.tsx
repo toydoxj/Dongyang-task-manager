@@ -179,7 +179,7 @@ function Form({
 
   const onDelete = async (): Promise<void> => {
     if (!entry) return;
-    if (!confirm("이 수금 기록을 삭제하시겠습니까? (노션 페이지가 휴지통으로 이동)"))
+    if (!confirm("이 수금 기록을 삭제하시겠습니까?"))
       return;
     setBusy(true);
     setError(null);

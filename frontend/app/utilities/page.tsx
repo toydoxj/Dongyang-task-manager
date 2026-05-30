@@ -24,13 +24,6 @@ const ITEMS: UtilityItem[] = [
     emoji: "🏛️",
   },
   {
-    name: "노션 워크스페이스",
-    description: "원본 데이터베이스",
-    url: "https://www.notion.so/41895be5a9644284a5c7ec568f2f9b18",
-    category: "문서",
-    emoji: "📄",
-  },
-  {
     name: "Google Drive",
     description: "공유 자료실",
     url: "https://drive.google.com",
@@ -66,7 +59,7 @@ export default function UtilitiesPage() {
       <header>
         <h1 className="text-2xl font-semibold">유틸 런처</h1>
         <p className="mt-1 text-sm text-zinc-500">
-          업무에 자주 쓰는 외부 도구 모음. (관리자가 수정 — 추후 노션 DB 연동)
+          업무에 자주 쓰는 외부 도구 모음.
         </p>
       </header>
 

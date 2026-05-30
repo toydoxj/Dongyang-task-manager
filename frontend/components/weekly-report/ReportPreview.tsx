@@ -257,7 +257,7 @@ export default function ReportPreview({
             s.probability != null ? `${Math.round(s.probability)}%` : "",
             s.is_bid ? "(입찰)" : "",
           ])}
-          empty="(저번주 시작 영업건 없음 — 노션 '영업시작일' 입력 필요)"
+          empty="(저번주 시작 영업건 없음 — 영업시작일 입력 필요)"
         />
       </Section>
 

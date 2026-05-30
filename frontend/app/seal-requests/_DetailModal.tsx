@@ -119,7 +119,7 @@ export default function DetailModal({
     return action(() => rejectSealRequest(item.id, reason.trim()));
   };
   const onDelete = (): Promise<void> => {
-    if (!confirm("삭제하시겠습니까? (노션 보관 처리)")) return Promise.resolve();
+    if (!confirm("삭제하시겠습니까? (보관 처리)")) return Promise.resolve();
     return action(() => deleteSealRequest(item.id));
   };
 

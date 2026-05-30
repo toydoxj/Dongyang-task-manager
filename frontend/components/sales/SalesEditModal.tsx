@@ -571,7 +571,7 @@ export default function SalesEditModal({
     if (!sale) return;
     if (
       !confirm(
-        `"${sale.name}" 영업을 수주 확정 — 메인 프로젝트로 전환할까요? 노션의 영업 단계는 "완료"로 자동 변경되고 새 프로젝트가 생성됩니다.`,
+        `"${sale.name}" 영업을 수주 확정 — 메인 프로젝트로 전환할까요? 영업 단계는 "완료"로 자동 변경되고 새 프로젝트가 생성됩니다.`,
       )
     )
       return;
@@ -1013,7 +1013,7 @@ export default function SalesEditModal({
                                   : `견적 [${q.full_doc}]`;
                                 if (
                                   !confirm(
-                                    `${label}을 삭제하시겠습니까?\n(파일은 보존, 노션 row만 갱신)`,
+                                    `${label}을 삭제하시겠습니까?\n(저장된 파일은 보존됩니다)`,
                                   )
                                 )
                                   return;
@@ -1447,7 +1447,7 @@ export default function SalesEditModal({
                       }}
                       disabled={busy}
                       className="rounded-md border border-amber-700/40 px-3 py-1.5 text-xs text-amber-700 hover:bg-amber-500/10 disabled:opacity-50 dark:text-amber-400"
-                      title="통합 PDF를 WORKS Drive에 저장하고 노션 통합견적서첨부 컬럼에 url 등록"
+                      title="통합 PDF를 WORKS Drive에 저장"
                     >
                       묶음 PDF 저장
                     </button>
@@ -1525,4 +1525,3 @@ export default function SalesEditModal({
     </div>
   );
 }
-

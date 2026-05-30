@@ -18,7 +18,7 @@ export default function RecentUpdatesPanel({ items }: Props) {
       <header className="mb-3">
         <h3 className="text-sm font-semibold">최근 변경 프로젝트</h3>
         <p className="text-[11px] text-zinc-500">
-          지난 {RECENT_DAYS}일 이내 노션 변경 — Top {TOP_N}
+          지난 {RECENT_DAYS}일 이내 변경 — Top {TOP_N}
         </p>
       </header>
       {items.length === 0 ? (

@@ -285,16 +285,6 @@ function Body({
         </section>
       )}
 
-      {mp.url && (
-        <a
-          href={mp.url}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="block text-right text-xs text-zinc-500 hover:underline"
-        >
-          노션에서 열기 ↗
-        </a>
-      )}
     </div>
   );
 }
@@ -563,4 +553,3 @@ function EditForm({
     </section>
   );
 }
-

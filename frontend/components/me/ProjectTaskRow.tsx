@@ -148,7 +148,7 @@ export default function ProjectTaskRow({
               void handleUnassign();
             }}
             disabled={busy}
-            title="본인을 이 프로젝트 담당자에서 제거 (노션 이력 기록)"
+            title="본인을 이 프로젝트 담당자에서 제거"
             className="shrink-0 rounded-md border border-zinc-300 px-2 py-1 text-[10px] text-zinc-600 hover:border-red-400 hover:bg-red-500/5 hover:text-red-500 disabled:opacity-50 dark:border-zinc-700 dark:text-zinc-300"
           >
             {busy ? "해제중..." : "내 담당 해제"}

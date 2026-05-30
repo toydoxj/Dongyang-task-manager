@@ -289,7 +289,7 @@ export default function IncomesAdminPage() {
         <div>
           <h1 className="text-2xl font-semibold">수금 관리</h1>
           <p className="mt-1 text-sm text-zinc-500">
-            노션 수금 DB의 일자별 일지. 신규 등록·편집·삭제 가능 (관리자 전용).
+            수금 일자별 일지. 신규 등록·편집·삭제 가능 (관리자 전용).
           </p>
         </div>
         <div className="flex gap-2">

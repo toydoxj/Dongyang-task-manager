@@ -265,18 +265,7 @@ export default function ProjectClient({
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <BackButton onClick={goBack} />
-        <div className="flex items-center gap-2">
-          {project.url && (
-            <a
-              href={project.url}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-xs text-zinc-500 hover:underline"
-            >
-              노션에서 열기 ↗
-            </a>
-          )}
-        </div>
+        <div className="flex items-center gap-2" />
       </div>
 
       <ProjectHeader project={project} actions={headerActions} />

@@ -141,9 +141,6 @@ export default function ProjectCard({
           label="매출"
           href={`/projects/${project.id}#cashflow`}
         />
-        {project.url && (
-          <QuickActionChip label="노션" href={project.url} external />
-        )}
       </div>
     </div>
   );

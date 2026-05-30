@@ -210,7 +210,7 @@ export default function MyPage() {
   };
 
   const handleDeleteTask = async (t: Task): Promise<void> => {
-    if (!confirm(`"${t.title || "(제목 없음)"}" 업무를 삭제하시겠습니까?\n노션에서 보관 처리됩니다.`)) {
+    if (!confirm(`"${t.title || "(제목 없음)"}" 업무를 삭제하시겠습니까?\n보관 처리됩니다.`)) {
       return;
     }
     try {
@@ -288,7 +288,7 @@ export default function MyPage() {
         <p className="rounded-md border border-yellow-500/40 bg-yellow-500/5 p-3 text-sm text-yellow-400">
           본인 이름이 등록되어 있지 않아 담당 프로젝트를 조회할 수 없습니다.
           <br />
-          노션 담당자 옵션과 일치하는 이름으로 프로필을 설정해주세요.
+          직원 명부와 일치하는 이름으로 프로필을 설정해주세요.
         </p>
       </div>
     );

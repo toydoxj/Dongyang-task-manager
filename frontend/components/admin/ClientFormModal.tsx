@@ -88,7 +88,7 @@ function Form({
     if (!client) return;
     if (
       !confirm(
-        `'${client.name}' 발주처를 삭제하시겠습니까? (노션 휴지통으로 이동, 이미 사용 중이면 거절됨)`,
+        `'${client.name}' 발주처를 삭제하시겠습니까? (이미 사용 중이면 거절됨)`,
       )
     )
       return;

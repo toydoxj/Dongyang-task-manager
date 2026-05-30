@@ -263,7 +263,7 @@ function UserEditModal({
         </div>
         <div>
           <label className="mb-1 block text-xs text-zinc-500">
-            노션 사용자 ID (선택)
+            외부 사용자 ID (선택)
           </label>
           <input
             type="text"

@@ -89,8 +89,8 @@ export default function ClientsAdminPage() {
         <div>
           <h1 className="text-2xl font-semibold">발주처 관리</h1>
           <p className="mt-1 text-sm text-zinc-500">
-            노션 발주처(협력업체) DB 관리. 프로젝트·수금에서 사용 중인 발주처는
-            삭제 불가.
+            발주처(협력업체) DB 관리. 프로젝트·수금에서 사용 중인 발주처는 삭제
+            불가.
           </p>
         </div>
         <button

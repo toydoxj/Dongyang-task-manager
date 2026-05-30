@@ -35,8 +35,8 @@ export default function HelpPage() {
           이름/이메일 입력 → <B>관리자 승인 후</B> 로그인 가능합니다.
         </P>
         <Note>
-          본인 이름은 노션 담당자 옵션과 정확히 일치해야 「내 업무」에 본인
-          프로젝트가 표시됩니다. 다르면 우상단 프로필에서 수정.
+          본인 이름은 직원 명부와 정확히 일치해야 「내 업무」에 본인 프로젝트가
+          표시됩니다. 다르면 우상단 프로필에서 수정.
         </Note>
       </Section>
 
@@ -60,7 +60,7 @@ export default function HelpPage() {
                 수금·지출)·승인 지연 날인도 노출.
               </li>
               <li>
-                <B>팀장</B> — 본인 팀(노션 프로젝트 「담당팀」) 단위로만 계산.
+                <B>팀장</B> — 본인 팀 단위로만 계산.
                 &ldquo;최다 부하 팀&rdquo;은 자기 팀 진행건수, 재무·승인 지연 날인은 숨김.
               </li>
               <li>같은 화면이지만 표시되는 건수·preview가 역할에 맞게 제한됨.</li>
@@ -237,7 +237,7 @@ export default function HelpPage() {
         <H3>4.4 날인취소</H3>
         <Ul>
           <li>[날인취소] → confirm 후 실행</li>
-          <li>노션 페이지 archive 또는 (구조검토서 중간 번호) [날인취소] prefix</li>
+          <li>요청 건 보관 또는 (구조검토서 중간 번호) [날인취소] prefix</li>
           <li>연결된 모든 TASK는 완료 상태로 자동 마감 (history 보존)</li>
         </Ul>
       </Section>
@@ -252,13 +252,13 @@ export default function HelpPage() {
           </li>
           <li>프로젝트명 / Sub CODE / 발주처 / 수주일 / 용역비·VAT 입력</li>
           <li>
-            발주처가 자동완성에 없으면 <B>「발주처 DB에 추가」</B> 클릭 → 노션
-            발주처 DB에 신규 등록
+            발주처가 자동완성에 없으면 <B>「발주처 DB에 추가」</B> 클릭 → 발주처
+            DB에 신규 등록
           </li>
           <li>
-            담당자: 콤마/엔터로 추가. 담당팀은 입력 불필요 — 노션 자동 집계
+            담당자: 콤마/엔터로 추가. 담당팀은 입력 불필요 — 시스템 자동 집계
           </li>
-          <li>업무내용: 노션 옵션에서 다중 선택 (자유 입력 가능)</li>
+          <li>업무내용: 기존 옵션에서 다중 선택 (자유 입력 가능)</li>
           <li>
             <B>「생성」</B> — 신규 프로젝트의 진행단계는 <code>대기</code>로 시작
             (TASK 활동이 잡히면 <code>진행중</code>으로 자동 전환)
@@ -317,10 +317,10 @@ export default function HelpPage() {
       <Section title="7. 자주 묻는 질문">
         <Faq
           q="「내 업무」가 비어있어요"
-          a="본인 이름이 노션 담당자 옵션과 일치하지 않을 가능성이 큽니다. 우상단 프로필에서 본인 이름을 노션과 정확히 같은 형태로 수정해주세요."
+          a="본인 이름이 직원 명부와 일치하지 않을 가능성이 큽니다. 우상단 프로필에서 본인 이름을 직원 명부와 같은 형태로 수정해주세요."
         />
         <Faq
-          q="발주처를 입력했는데 노션에 안 들어갔어요"
+          q="발주처를 입력했는데 정식 항목으로 저장되지 않았어요"
           a="입력한 이름이 발주처 DB에 등록되어 있지 않으면 임시 텍스트 컬럼에 들어갑니다. 입력란 아래 「발주처 DB에 추가」 버튼을 눌러야 정식 relation으로 저장됩니다."
         />
         <Faq
@@ -336,8 +336,8 @@ export default function HelpPage() {
           a="이전 schema mismatch 버그(2026-05-02 수정)입니다. 새로 등록하시면 즉시 칸반에 표시됩니다."
         />
         <Faq
-          q="프로젝트가 노션에는 있는데 화면에서는 안 보여요"
-          a="시스템은 노션과 5분 주기로 동기화합니다. 잠시 후 새로고침해보시고, 그래도 안 보이면 관리자에게 동기화 강제 실행을 요청하세요."
+          q="프로젝트가 화면에서 안 보여요"
+          a="시스템은 백업 데이터와 5분 주기로 동기화합니다. 잠시 후 새로고침해보시고, 그래도 안 보이면 관리자에게 동기화 강제 실행을 요청하세요."
         />
         <Faq
           q="화면이 멈추거나 502 에러가 나와요"
@@ -397,10 +397,10 @@ export default function HelpPage() {
         <H3>9.4 「Sync 관리」 (/admin/sync)</H3>
         <Ul>
           <li>
-            노션 미러 동기화 — 정기 cron은{" "}
+            백업 데이터 동기화 — 정기 cron은{" "}
             <B>업무시간(KST 06~20시) 회피</B> (KST 20~06시에만 실행).
           </li>
-          <li>업무 중 노션에서 변경한 항목을 즉시 화면에 반영하려면 본 페이지에서 트리거:</li>
+          <li>업무 중 백업 데이터 변경 항목을 즉시 화면에 반영하려면 본 페이지에서 트리거:</li>
           <Ul>
             <li><B>전체 sync (incremental)</B> — 모든 kind 변경분만 sync</li>
             <li><B>전체 sync (full reconcile)</B> — archive된 row 정리까지 (시간 길어짐)</li>
@@ -443,7 +443,7 @@ export default function HelpPage() {
           <li><B>파일 형식</B>: PDF / DOC / DOCX / HWP / HWPX · 최대 30MB</li>
           <li><B>저장 위치 (PR-FI/1)</B>: NAVER WORKS Drive [CODE]프로젝트명/6. 계약서/{`{원본 filename}`}. 프로젝트별 자체 폴더의 sub-folder. 누락 시 self-heal로 재생성</li>
           <li><B>삭제</B>: 계약서 row 삭제 시 첨부 PDF도 함께 삭제 (cascade)</li>
-          <li><B>Project 자동 동기화 (PR-FI/1)</B>: Contract 저장 시 해당 프로젝트의 모든 계약서를 aggregate → 노션 + mirror_projects 반영:</li>
+          <li><B>Project 자동 동기화 (PR-FI/1)</B>: Contract 저장 시 해당 프로젝트의 모든 계약서를 aggregate → 프로젝트 DB 반영:</li>
           <Ul>
             <li>Project.contract_signed = True (한 번이라도 체결일 있는 계약서)</li>
             <li>Project.contract_start = min(start_date), contract_end = max(end_date)</li>
@@ -452,7 +452,7 @@ export default function HelpPage() {
           </Ul>
           <li><B>계약서 자체 발주처 (PR-FI/4)</B>: Contract.client_id 필드로 계약서마다 다른 발주처 가능 (공동수급 등). 빈 값이면 프로젝트 발주처 사용</li>
           <li><B>「계약체크 + 미등록」 가상 row (PR-FI/6)</B>: Project.contract_signed=True인데 Contract 0건인 프로젝트는 amber row로 같이 표시. 클릭 시 신규 등록 모달이 그 프로젝트로 prefill</li>
-          <li>1 프로젝트 → N 계약서 (원계약/변경계약/부속합의 등 다중). 노션 mirror는 차후 단계.</li>
+          <li>1 프로젝트 → N 계약서 (원계약/변경계약/부속합의 등 다중).</li>
         </Ul>
       </Section>
 
