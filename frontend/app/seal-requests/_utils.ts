@@ -24,6 +24,14 @@ export function extractResourceKey(url: string): string {
   }
 }
 
+export function attachmentSummary(item: {
+  attachments: unknown[];
+  folder_url: string;
+}): string {
+  if (item.attachments.length > 0) return `${item.attachments.length}건`;
+  return item.folder_url ? "Drive 폴더" : "0건";
+}
+
 export function resolveClientName(
   id: string,
   clients: { id: string; name: string }[] | undefined,

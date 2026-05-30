@@ -13,7 +13,12 @@ import { formatDate } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 import DetailModal from "./_DetailModal";
-import { STATUS_TABS, STATUS_COLOR, type StatusTab } from "./_utils";
+import {
+  attachmentSummary,
+  STATUS_TABS,
+  STATUS_COLOR,
+  type StatusTab,
+} from "./_utils";
 
 export default function SealRequestsPage() {
   const { user } = useAuth();
@@ -116,7 +121,7 @@ export default function SealRequestsPage() {
                           · 제출예정 {formatDate(s.due_date)}
                         </span>
                       )}
-                      <span className="ml-1">· 📎 {s.attachments.length}건</span>
+                      <span className="ml-1">· 📎 {attachmentSummary(s)}</span>
                     </p>
                   </div>
                   <span
