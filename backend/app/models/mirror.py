@@ -299,3 +299,23 @@ class NotionSyncState(Base):
     )
     last_error: Mapped[str] = mapped_column(Text, default="")
     last_run_count: Mapped[int] = mapped_column(default=0)
+
+
+class NotionSyncRunLog(Base):
+    """sync 실행 이력 — manual/cron 실행 추적용."""
+
+    __tablename__ = "notion_sync_run_log"
+
+    run_id: Mapped[str] = mapped_column(String, primary_key=True)
+    source: Mapped[str] = mapped_column(String, default="", index=True)
+    kind: Mapped[str] = mapped_column(String, default="", index=True)
+    full: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+    status: Mapped[str] = mapped_column(String, default="running", index=True)
+    result: Mapped[str] = mapped_column(Text, default="")
+    error: Mapped[str] = mapped_column(Text, default="")
+    started_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, index=True
+    )
+    finished_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )

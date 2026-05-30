@@ -3,8 +3,8 @@
 /**
  * /admin/sync — 노션 미러 동기화 관리 (admin only).
  *
- * 업무시간(KST 06~20시)에는 Render cron이 멈춰 있어 노션 변경이 즉시 반영
- * 안 됨. 운영 중 즉시 sync가 필요하면 여기서 트리거.
+ * 정기 full reconcile은 매일 새벽 03시(KST)에 실행된다.
+ * 운영 중 즉시 sync가 필요하면 여기서 web service background task로 트리거.
  *
  * PR-AR.
  */
@@ -17,9 +17,13 @@ import UnauthorizedRedirect from "@/components/UnauthorizedRedirect";
 import LoadingState from "@/components/ui/LoadingState";
 import {
   adminSyncRun,
+  adminSyncRuns,
   adminSyncStatus,
+  type SyncRunLogItem,
   type SyncStatusItem,
 } from "@/lib/api";
+
+const STALE_FULL_MS = 26 * 60 * 60 * 1000;
 
 const KIND_LABEL: Record<string, string> = {
   projects: "프로젝트",
@@ -30,6 +34,8 @@ const KIND_LABEL: Record<string, string> = {
   expense: "지출",
   contract_items: "계약 분담",
   sales: "영업",
+  seal_requests: "날인요청",
+  suggestions: "건의사항",
 };
 
 function formatTime(iso: string | null): string {
@@ -63,6 +69,47 @@ function relativeTime(iso: string | null): string {
   return `${diffDay}일 전`;
 }
 
+function formatElapsed(seconds: number | null): string {
+  if (seconds === null) return "—";
+  if (seconds < 60) return `${seconds.toFixed(1)}초`;
+  const min = Math.floor(seconds / 60);
+  const sec = Math.round(seconds % 60);
+  return `${min}분 ${sec}초`;
+}
+
+function isFullStale(iso: string | null): boolean {
+  if (!iso) return true;
+  const t = new Date(iso).getTime();
+  if (Number.isNaN(t)) return true;
+  return Date.now() - t > STALE_FULL_MS;
+}
+
+function statusLabel(status: string): string {
+  if (status === "running") return "진행 중";
+  if (status === "success") return "완료";
+  if (status === "partial_failed") return "일부 실패";
+  if (status === "failed") return "실패";
+  return status;
+}
+
+function statusClass(status: string): string {
+  if (status === "running") return "text-sky-600 dark:text-sky-400";
+  if (status === "success") return "text-emerald-600 dark:text-emerald-400";
+  if (status === "partial_failed") return "text-amber-600 dark:text-amber-400";
+  if (status === "failed") return "text-red-600 dark:text-red-400";
+  return "text-zinc-600 dark:text-zinc-400";
+}
+
+function sourceLabel(source: string): string {
+  if (source === "manual") return "수동";
+  if (source === "cron") return "cron";
+  return source;
+}
+
+function runTarget(run: SyncRunLogItem): string {
+  return run.kind ? KIND_LABEL[run.kind] ?? run.kind : "전체";
+}
+
 export default function AdminSyncPage() {
   const { allowed: isAdmin } = useRoleGuard(["admin"]);
 
@@ -70,6 +117,15 @@ export default function AdminSyncPage() {
     isAdmin ? ["admin-sync-status"] : null,
     () => adminSyncStatus(),
     { refreshInterval: 10_000 }, // 10초마다 자동 갱신
+  );
+  const {
+    data: runsData,
+    error: runsError,
+    mutate: mutateRuns,
+  } = useSWR(
+    isAdmin ? ["admin-sync-runs"] : null,
+    () => adminSyncRuns(12),
+    { refreshInterval: 10_000 },
   );
 
   const [busy, setBusy] = useState<string | null>(null);
@@ -92,11 +148,12 @@ export default function AdminSyncPage() {
       setMsg(
         `[${kind ? KIND_LABEL[kind] ?? kind : "전체"}] ${
           res.status === "started" ? "실행 시작" : res.status
-        }${full ? " (full)" : ""}`,
+        }${full ? " (full)" : ""} · run ${res.run_id}`,
       );
       // 즉시 한번 갱신, 그 후 SWR refreshInterval로 추적
       setTimeout(() => {
         void mutate();
+        void mutateRuns();
       }, 1500);
     } catch (e) {
       setMsg(`실패: ${e instanceof Error ? e.message : String(e)}`);
@@ -105,13 +162,18 @@ export default function AdminSyncPage() {
     }
   };
 
+  const staleFullItems = data?.items.filter((it) =>
+    isFullStale(it.last_full_synced_at),
+  ) ?? [];
+  const runningRun = runsData?.items.find((it) => it.status === "running");
+
   return (
     <div className="space-y-4">
       <header>
         <h1 className="text-2xl font-semibold">Sync 관리</h1>
         <p className="mt-1 text-sm text-zinc-500">
-          백업 데이터 동기화 — 정기 cron은 업무시간(KST 06~20시)에는 멈춤. 운영 중
-          즉시 동기화가 필요하면 본 페이지에서 실행하세요.
+          백업 데이터 동기화 — 정기 full reconcile은 매일 KST 03:00에 실행됩니다.
+          운영 중 즉시 동기화가 필요하면 본 페이지에서 실행하세요.
         </p>
       </header>
 
@@ -144,6 +206,31 @@ export default function AdminSyncPage() {
       {error && (
         <div className="rounded-md border border-red-500/40 bg-red-500/5 p-3 text-sm text-red-600 dark:text-red-400">
           상태 조회 실패: {error instanceof Error ? error.message : String(error)}
+        </div>
+      )}
+      {runsError && (
+        <div className="rounded-md border border-red-500/40 bg-red-500/5 p-3 text-sm text-red-600 dark:text-red-400">
+          실행 이력 조회 실패:{" "}
+          {runsError instanceof Error ? runsError.message : String(runsError)}
+        </div>
+      )}
+
+      {staleFullItems.length > 0 && (
+        <div className="rounded-md border border-amber-500/40 bg-amber-500/5 p-3 text-sm text-amber-700 dark:text-amber-300">
+          full reconcile 지연 감지:{" "}
+          {staleFullItems
+            .map((it) => KIND_LABEL[it.kind] ?? it.kind)
+            .slice(0, 6)
+            .join(", ")}
+          {staleFullItems.length > 6 && ` 외 ${staleFullItems.length - 6}개`}
+        </div>
+      )}
+
+      {runningRun && (
+        <div className="rounded-md border border-sky-500/40 bg-sky-500/5 p-3 text-sm text-sky-700 dark:text-sky-300">
+          실행 중: {runTarget(runningRun)}
+          {runningRun.full ? " full" : " incremental"} · run{" "}
+          {runningRun.run_id} · {relativeTime(runningRun.started_at)}
         </div>
       )}
 
@@ -217,9 +304,90 @@ export default function AdminSyncPage() {
         </div>
       )}
 
+      {runsData && (
+        <div className="overflow-x-auto rounded-md border border-zinc-200 dark:border-zinc-800">
+          <table className="w-full text-sm">
+            <thead className="bg-zinc-100 dark:bg-zinc-900">
+              <tr className="text-left">
+                <th className="px-3 py-2 font-medium">run</th>
+                <th className="px-3 py-2 font-medium">출처</th>
+                <th className="px-3 py-2 font-medium">대상</th>
+                <th className="px-3 py-2 font-medium">모드</th>
+                <th className="px-3 py-2 font-medium">상태</th>
+                <th className="px-3 py-2 font-medium">시작</th>
+                <th className="px-3 py-2 text-right font-medium">소요</th>
+                <th className="px-3 py-2 font-medium">결과</th>
+              </tr>
+            </thead>
+            <tbody>
+              {runsData.items.map((it) => {
+                const detail = it.error || it.result || "";
+                return (
+                  <tr
+                    key={it.run_id}
+                    className="border-t border-zinc-200 dark:border-zinc-800"
+                  >
+                    <td className="px-3 py-2 font-mono text-xs">
+                      {it.run_id}
+                    </td>
+                    <td className="px-3 py-2">{sourceLabel(it.source)}</td>
+                    <td className="px-3 py-2">{runTarget(it)}</td>
+                    <td className="px-3 py-2">
+                      {it.full ? "full" : "incremental"}
+                    </td>
+                    <td
+                      className={`px-3 py-2 font-medium ${statusClass(
+                        it.status,
+                      )}`}
+                    >
+                      {statusLabel(it.status)}
+                    </td>
+                    <td className="px-3 py-2 text-zinc-600 dark:text-zinc-400">
+                      {formatTime(it.started_at)}
+                      <span className="ml-1 text-[10px] text-zinc-400">
+                        {relativeTime(it.started_at)}
+                      </span>
+                    </td>
+                    <td className="px-3 py-2 text-right tabular-nums">
+                      {formatElapsed(it.elapsed_seconds)}
+                    </td>
+                    <td className="max-w-sm truncate px-3 py-2" title={detail}>
+                      {detail ? (
+                        <span
+                          className={
+                            it.error
+                              ? "text-red-600 dark:text-red-400"
+                              : "text-zinc-500 dark:text-zinc-400"
+                          }
+                        >
+                          {detail}
+                        </span>
+                      ) : (
+                        <span className="text-zinc-400">—</span>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+              {runsData.items.length === 0 && (
+                <tr>
+                  <td
+                    colSpan={8}
+                    className="border-t border-zinc-200 px-3 py-6 text-center text-zinc-500 dark:border-zinc-800"
+                  >
+                    실행 이력이 없습니다.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      )}
+
       <p className="text-[11px] text-zinc-500">
         ※ 표는 10초마다 자동 갱신. sync는 fire-and-forget으로 진행 — 결과는 위
-        시각/건수가 갱신되면 완료. 에러 발생 시 backend Logs(Render) 확인 권장.
+        시각/건수가 갱신되면 완료. 실행 로그는 Render의 dy-task-backend web
+        service에서 run id로 확인하세요.
       </p>
     </div>
   );

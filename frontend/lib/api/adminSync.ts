@@ -13,15 +13,40 @@ export interface SyncStatusResponse {
   items: SyncStatusItem[];
 }
 
+export interface SyncRunLogItem {
+  run_id: string;
+  source: string;
+  kind: string | null;
+  full: boolean;
+  status: string;
+  started_at: string;
+  finished_at: string | null;
+  elapsed_seconds: number | null;
+  result: string;
+  error: string;
+}
+
+export interface SyncRunLogResponse {
+  items: SyncRunLogItem[];
+}
+
 export async function adminSyncStatus(): Promise<SyncStatusResponse> {
   const res = await authFetch(`/api/admin/sync/status`);
   return jsonOrThrow<SyncStatusResponse>(res);
+}
+
+export async function adminSyncRuns(
+  limit: number = 10,
+): Promise<SyncRunLogResponse> {
+  const res = await authFetch(`/api/admin/sync/runs?limit=${limit}`);
+  return jsonOrThrow<SyncRunLogResponse>(res);
 }
 
 export interface SyncRunResponse {
   status: string; // "started" | "already_running"
   kind: string | null;
   full: boolean;
+  run_id: string;
 }
 
 export async function adminSyncRun(

@@ -15,11 +15,13 @@ import asyncio
 import logging
 import os
 import sys
+from uuid import uuid4
 
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(name)s] %(levelname)s: %(message)s",
 )
+logger = logging.getLogger("sync_once")
 
 
 _KIND_ENV = {
@@ -108,20 +110,56 @@ async def main() -> int:
 
     # 늦은 import — env 검증 실패 시 backend 모듈 로딩 비용 회피
     from app.services.sync import ALL_KINDS, get_sync
+    from app.services.sync_run_log import (
+        finish_sync_run,
+        start_sync_run,
+        status_for_result,
+    )
 
+    run_id = uuid4().hex[:8]
+    run_logged = False
     sync = get_sync()
-    if args.kind:
-        if args.kind not in ALL_KINDS:
-            print(
-                f"unknown kind: {args.kind}. allowed: {ALL_KINDS}",
-                file=sys.stderr,
+    try:
+        start_sync_run(
+            run_id=run_id,
+            source="cron",
+            kind=args.kind or None,
+            full=args.full,
+        )
+        run_logged = True
+        if args.kind:
+            if args.kind not in ALL_KINDS:
+                print(
+                    f"unknown kind: {args.kind}. allowed: {ALL_KINDS}",
+                    file=sys.stderr,
+                )
+                finish_sync_run(
+                    run_id=run_id,
+                    status="failed",
+                    error=f"unknown kind: {args.kind}",
+                )
+                return 2
+            n = await sync.sync_kind(args.kind, full=args.full)  # type: ignore[arg-type]
+            finish_sync_run(
+                run_id=run_id,
+                status="success",
+                result={"kind": args.kind, "count": n},
             )
-            return 2
-        n = await sync.sync_kind(args.kind, full=args.full)  # type: ignore[arg-type]
-        print(f"sync {args.kind} full={args.full} done: {n}")
-    else:
-        result = await sync.sync_all(full=args.full)
-        print(f"sync_all full={args.full} done: {result}")
+            print(f"sync {args.kind} full={args.full} run_id={run_id} done: {n}")
+        else:
+            result = await sync.sync_all(full=args.full)
+            status = status_for_result(result)
+            finish_sync_run(run_id=run_id, status=status, result=result)
+            print(
+                f"sync_all full={args.full} run_id={run_id} status={status} done: {result}"
+            )
+            if status != "success":
+                return 1
+    except Exception as exc:  # noqa: BLE001
+        if run_logged:
+            finish_sync_run(run_id=run_id, status="failed", error=str(exc))
+        logger.exception("sync_once 실패 run_id=%s", run_id)
+        return 1
     return 0
 
 
