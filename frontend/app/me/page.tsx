@@ -71,6 +71,8 @@ export default function MyPage() {
   const [todoViewMode, setTodoViewMode] = useState<"category" | "time">(
     "category",
   );
+  const [projectExpandTaskItemsSignal, setProjectExpandTaskItemsSignal] =
+    useState(0);
   // PR-T — 5탭 구분 (할일 / 일정 / 담당프로젝트 / 내영업 / 기타업무).
   // URL `?tab=` 우선, 없으면 default "todo".
   const tabFromUrl = sp.get("tab");
@@ -457,7 +459,15 @@ export default function MyPage() {
           <h2 className="flex items-center gap-2 text-sm font-medium text-zinc-700 dark:text-zinc-300">
             담당 프로젝트 ({projects?.length ?? "—"})
           </h2>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap justify-end gap-2">
+            <button
+              type="button"
+              onClick={() => setProjectExpandTaskItemsSignal((v) => v + 1)}
+              disabled={(projects?.length ?? 0) === 0}
+              className="rounded-md border border-zinc-300 px-2.5 py-1 text-xs hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-700 dark:hover:bg-zinc-800"
+            >
+              TASK 있는 항목 펼치기
+            </button>
             <button
               type="button"
               onClick={() => setImportOpen(true)}
@@ -509,6 +519,7 @@ export default function MyPage() {
                         setTaskCreate({ projectId, status })
                       }
                       onUnassigned={handleUnassigned}
+                      expandTaskItemsSignal={projectExpandTaskItemsSignal}
                     />
                   ))}
                 </div>
@@ -542,6 +553,7 @@ export default function MyPage() {
                         setTaskCreate({ projectId, status })
                       }
                       onUnassigned={handleUnassigned}
+                      expandTaskItemsSignal={projectExpandTaskItemsSignal}
                     />
                   ))}
                 </div>

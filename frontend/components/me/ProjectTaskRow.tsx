@@ -22,6 +22,8 @@ interface Props {
   forUser?: string;
   /** 우리 앱 분류: 금주 TASK 활동 있으면 true (배지 표시 우선) */
   effectiveActive?: boolean;
+  /** 상위 버튼으로 TASK가 있는 행만 일괄 펼칠 때 증가하는 신호값. */
+  expandTaskItemsSignal: number;
 }
 
 const STAGE_BADGE: Record<string, string> = {
@@ -37,6 +39,7 @@ export default function ProjectTaskRow({
   myName,
   forUser,
   effectiveActive,
+  expandTaskItemsSignal,
 }: Props) {
   // 프로젝트 전체 task (다른 직원 담당분 포함) — 카운트 + 칸반에 사용.
   // 페이지 레벨 mine tasks 는 '해야할 일' 과 진행중/대기 분류에만 쓰이고
@@ -61,14 +64,20 @@ export default function ProjectTaskRow({
       ? project.client_names.join(", ")
       : project.client_text;
   const [busy, setBusy] = useState(false);
-  // PR-FF (사용자 요청, 2026-05-17): default 펼침 — task 있으면 열림, 없으면 닫힘.
-  // derived state 패턴 (set-state-in-effect lint 회피):
-  // - userOverride === null: 자동 — task 도착 후 task.length === 0 ? closed : open
-  // - userOverride !== null: 사용자 명시 토글 결과 우선
-  const [userOverride, setUserOverride] = useState<boolean | null>(null);
-  const autoCollapsed = !projectTasksData || tasks.length === 0;
-  const collapsed = userOverride ?? autoCollapsed;
-  const toggleCollapsed = (): void => setUserOverride(!collapsed);
+  // 기본은 접힘. 상위 신호가 바뀐 동안에는 TASK가 있는 행만 자동 펼침.
+  const [collapseState, setCollapseState] = useState({
+    signal: expandTaskItemsSignal,
+    collapsed: true,
+  });
+  const collapsed =
+    collapseState.signal === expandTaskItemsSignal
+      ? collapseState.collapsed
+      : tasks.length === 0;
+  const toggleCollapsed = (): void =>
+    setCollapseState({
+      signal: expandTaskItemsSignal,
+      collapsed: !collapsed,
+    });
   const isMine = !!myName && project.assignees.includes(myName);
 
   const handleUnassign = async (): Promise<void> => {

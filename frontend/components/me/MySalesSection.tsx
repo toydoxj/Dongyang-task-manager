@@ -29,6 +29,7 @@ export default function MySalesSection({
   const { data, error } = useSales(filters);
   const [editing, setEditing] = useState<Sale | null>(null);
   const [creating, setCreating] = useState(false);
+  const [expandTaskItemsSignal, setExpandTaskItemsSignal] = useState(0);
 
   // PR-FI/10 (사용자 요청): 완료·종결 영업은 /me 화면에서 제외.
   // 운영 list (/sales)와 영업 상세는 별도 — 거기서는 그대로 보임.
@@ -44,7 +45,7 @@ export default function MySalesSection({
 
   return (
     <section>
-      <div className="mb-2 flex items-center justify-between">
+      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
         <h2 className="flex items-center gap-2 text-sm font-medium text-zinc-700 dark:text-zinc-300">
           {isViewingOther ? `${effectiveName} 님의 영업` : "내 영업"} ({sales.length})
           {totalExpected > 0 && (
@@ -56,13 +57,23 @@ export default function MySalesSection({
             </span>
           )}
         </h2>
-        <button
-          type="button"
-          onClick={() => setCreating(true)}
-          className="rounded-md bg-zinc-900 px-2.5 py-1 text-xs text-white hover:bg-zinc-700 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300"
-        >
-          + 새 영업
-        </button>
+        <div className="flex flex-wrap justify-end gap-2">
+          <button
+            type="button"
+            onClick={() => setExpandTaskItemsSignal((v) => v + 1)}
+            disabled={sales.length === 0}
+            className="rounded-md border border-zinc-300 px-2.5 py-1 text-xs hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-700 dark:hover:bg-zinc-800"
+          >
+            TASK 있는 항목 펼치기
+          </button>
+          <button
+            type="button"
+            onClick={() => setCreating(true)}
+            className="rounded-md bg-zinc-900 px-2.5 py-1 text-xs text-white hover:bg-zinc-700 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300"
+          >
+            + 새 영업
+          </button>
+        </div>
       </div>
 
       {error && (
@@ -89,6 +100,7 @@ export default function MySalesSection({
                     onClickHeader={setEditing}
                     onChanged={() => mutate((k) => Array.isArray(k) && k[0] === "tasks")}
                     onCreate={onCreateTask}
+                    expandTaskItemsSignal={expandTaskItemsSignal}
                   />
                 ))}
               </div>
@@ -104,6 +116,7 @@ export default function MySalesSection({
                     onClickHeader={setEditing}
                     onChanged={() => mutate((k) => Array.isArray(k) && k[0] === "tasks")}
                     onCreate={onCreateTask}
+                    expandTaskItemsSignal={expandTaskItemsSignal}
                   />
                 ))}
               </div>
@@ -119,6 +132,7 @@ export default function MySalesSection({
                     onClickHeader={setEditing}
                     onChanged={() => mutate((k) => Array.isArray(k) && k[0] === "tasks")}
                     onCreate={onCreateTask}
+                    expandTaskItemsSignal={expandTaskItemsSignal}
                   />
                 ))}
               </div>

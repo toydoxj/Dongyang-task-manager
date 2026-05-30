@@ -18,6 +18,8 @@ interface Props {
   effectiveActive?: boolean;
   /** 영업별 task 추가 — ProjectTaskRow와 동일 패턴. 부모가 setTaskCreate({ saleId, status, category }) 처리. */
   onCreate?: (saleId: string, initialStatus?: string) => void;
+  /** 상위 버튼으로 TASK가 있는 행만 일괄 펼칠 때 증가하는 신호값. */
+  expandTaskItemsSignal: number;
 }
 
 const STAGE_BADGE: Record<string, string> = {
@@ -31,6 +33,7 @@ export default function SaleTaskRow({
   onChanged,
   effectiveActive,
   onCreate,
+  expandTaskItemsSignal,
 }: Props) {
   // 영업 전체 task (sales_ids @> [sale.id]).
   const { data: saleTasksData } = useTasks({ sale_id: sale.id });
@@ -42,7 +45,20 @@ export default function SaleTaskRow({
   );
   const displayStage =
     effectiveActive == null ? "" : effectiveActive ? "진행 중" : "대기";
-  const [collapsed, setCollapsed] = useState(true);
+  // 기본은 접힘. 상위 신호가 바뀐 동안에는 TASK가 있는 행만 자동 펼침.
+  const [collapseState, setCollapseState] = useState({
+    signal: expandTaskItemsSignal,
+    collapsed: true,
+  });
+  const collapsed =
+    collapseState.signal === expandTaskItemsSignal
+      ? collapseState.collapsed
+      : tasks.length === 0;
+  const toggleCollapsed = (): void =>
+    setCollapseState({
+      signal: expandTaskItemsSignal,
+      collapsed: !collapsed,
+    });
 
   const expectedRevenue = sale.expected_revenue || 0;
 
@@ -50,14 +66,14 @@ export default function SaleTaskRow({
     <section className="rounded-xl border border-emerald-200/70 bg-emerald-50/30 dark:border-emerald-900/40 dark:bg-emerald-950/20">
       {/* 펼침 막대 — ProjectTaskRow와 동일 패턴, 색만 emerald 계열 */}
       <div
-        onClick={() => setCollapsed((v) => !v)}
+        onClick={toggleCollapsed}
         role="button"
         tabIndex={0}
         aria-expanded={!collapsed}
         onKeyDown={(e) => {
           if (e.key === "Enter" || e.key === " ") {
             e.preventDefault();
-            setCollapsed((v) => !v);
+            toggleCollapsed();
           }
         }}
         className="flex w-full cursor-pointer items-start gap-2 px-3 py-2 hover:bg-emerald-100/40 dark:hover:bg-emerald-900/20"
