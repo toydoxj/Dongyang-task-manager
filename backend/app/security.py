@@ -26,7 +26,14 @@ JWT_COOKIE_NAME = "dy_jwt"
 # 즉시 cookie 비율 조회. Render restart 시 reset (single instance, starter plan).
 # 멀티 인스턴스/재시작 누락 위험은 since 표시로 사용자가 인지 — 영속 영향 적음.
 # 5차 재시도 go 임계값 권고: cookie 비율 99%+ (Codex 권고).
-_auth_channel_counts: dict[str, int] = {"header": 0, "cookie": 0}
+_auth_channel_counts: dict[str, int] = {
+    "header": 0,
+    "cookie": 0,
+    "header_with_valid_cookie": 0,
+    "header_without_cookie": 0,
+    "header_with_invalid_cookie": 0,
+    "header_with_mismatched_cookie": 0,
+}
 _auth_counter_since: datetime = datetime.now(timezone.utc)
 
 
@@ -36,13 +43,39 @@ def get_auth_channel_stats() -> dict[str, Any]:
     """
     h = _auth_channel_counts["header"]
     c = _auth_channel_counts["cookie"]
+    header_with_valid_cookie = _auth_channel_counts["header_with_valid_cookie"]
+    header_without_cookie = _auth_channel_counts["header_without_cookie"]
+    header_with_invalid_cookie = _auth_channel_counts["header_with_invalid_cookie"]
+    header_with_mismatched_cookie = _auth_channel_counts[
+        "header_with_mismatched_cookie"
+    ]
     total = h + c
     ratio = (c / total) if total > 0 else 0.0
+    cookie_ready = c + header_with_valid_cookie
+    cookie_blocked = (
+        header_without_cookie
+        + header_with_invalid_cookie
+        + header_with_mismatched_cookie
+    )
+    cookie_readiness_total = cookie_ready + cookie_blocked
+    cookie_ready_ratio = (
+        cookie_ready / cookie_readiness_total
+        if cookie_readiness_total > 0
+        else 0.0
+    )
     return {
         "header": h,
         "cookie": c,
         "total": total,
         "cookie_ratio": round(ratio, 4),
+        "header_with_valid_cookie": header_with_valid_cookie,
+        "header_without_cookie": header_without_cookie,
+        "header_with_invalid_cookie": header_with_invalid_cookie,
+        "header_with_mismatched_cookie": header_with_mismatched_cookie,
+        "cookie_ready": cookie_ready,
+        "cookie_blocked": cookie_blocked,
+        "cookie_readiness_total": cookie_readiness_total,
+        "cookie_ready_ratio": round(cookie_ready_ratio, 4),
         "since": _auth_counter_since.isoformat(),
     }
 
@@ -81,26 +114,7 @@ def decode_token(token: str) -> dict[str, Any]:
     return jwt.decode(token, s.jwt_secret, algorithms=[s.jwt_algorithm])
 
 
-def get_current_user(
-    cred: HTTPAuthorizationCredentials | None = Depends(_bearer),
-    db: Session = Depends(get_db),
-    dy_jwt: str | None = Cookie(default=None),
-) -> User:
-    # PR-BH (Phase 4-G 1단계): Authorization header 우선 + 없으면 dy_jwt cookie fallback.
-    # 점진 마이그레이션 동안 두 인증 채널 모두 허용. 2단계에서 header 비활성 가능.
-    raw_token = cred.credentials if cred is not None else dy_jwt
-    if not raw_token:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, detail="로그인이 필요합니다"
-        )
-    # PR-EL (Phase 4-G 2단계 telemetry): 인증 채널 분기 비율 관찰.
-    # PR-EM에서 frontend가 localStorage token 저장을 중단하면 신규 cohort부터 cookie로
-    # 수렴. PR-EN(header 코드 완전 제거) go/no-go 판단에 cookie 비율 99%+ 지표 활용.
-    # 사용자 식별자는 사후 로깅(decode 후) — 여기는 채널만.
-    _auth_via = "header" if cred is not None else "cookie"
-    _auth_logger.info("auth_via=%s", _auth_via)
-    # PR-ES: in-memory 누적 카운터 증가 (Render single instance, GIL 보호로 race 안전).
-    _auth_channel_counts[_auth_via] += 1
+def _resolve_user_from_token(raw_token: str, db: Session) -> User:
     try:
         payload = decode_token(raw_token)
         username: str = payload.get("sub", "")
@@ -146,6 +160,54 @@ def get_current_user(
                     status_code=status.HTTP_401_UNAUTHORIZED,
                     detail="다른 기기에서 로그인되었습니다",
                 )
+    return user
+
+
+def _record_header_cookie_shadow(
+    dy_jwt: str | None, db: Session, primary_user: User
+) -> None:
+    """헤더 인증 요청에서 cookie-only 전환 가능성을 그림자 검증한다."""
+    if not dy_jwt:
+        _auth_channel_counts["header_without_cookie"] += 1
+        return
+
+    try:
+        cookie_user = _resolve_user_from_token(dy_jwt, db)
+    except HTTPException:
+        _auth_channel_counts["header_with_invalid_cookie"] += 1
+        return
+
+    if cookie_user.id != primary_user.id:
+        _auth_channel_counts["header_with_mismatched_cookie"] += 1
+        return
+
+    _auth_channel_counts["header_with_valid_cookie"] += 1
+
+
+def get_current_user(
+    cred: HTTPAuthorizationCredentials | None = Depends(_bearer),
+    db: Session = Depends(get_db),
+    dy_jwt: str | None = Cookie(default=None),
+) -> User:
+    # PR-BH (Phase 4-G 1단계): Authorization header 우선 + 없으면 dy_jwt cookie fallback.
+    # 점진 마이그레이션 동안 두 인증 채널 모두 허용. 2단계에서 header 비활성 가능.
+    cookie_token = dy_jwt if isinstance(dy_jwt, str) else None
+    raw_token = cred.credentials if cred is not None else cookie_token
+    if not raw_token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="로그인이 필요합니다"
+        )
+    # PR-EL (Phase 4-G 2단계 telemetry): 인증 채널 분기 비율 관찰.
+    # PR-EM에서 frontend가 localStorage token 저장을 중단하면 신규 cohort부터 cookie로
+    # 수렴. PR-EN(header 코드 완전 제거) go/no-go 판단에 cookie 비율 99%+ 지표 활용.
+    # 사용자 식별자는 사후 로깅(decode 후) — 여기는 채널만.
+    _auth_via = "header" if cred is not None else "cookie"
+    _auth_logger.info("auth_via=%s", _auth_via)
+    # PR-ES: in-memory 누적 카운터 증가 (Render single instance, GIL 보호로 race 안전).
+    _auth_channel_counts[_auth_via] += 1
+    user = _resolve_user_from_token(raw_token, db)
+    if _auth_via == "header":
+        _record_header_cookie_shadow(cookie_token, db, user)
     return user
 
 

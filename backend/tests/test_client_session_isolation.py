@@ -12,7 +12,7 @@ from fastapi.security import HTTPAuthorizationCredentials
 
 from app.db import SessionLocal
 from app.models.auth import User, UserSession
-from app.security import create_token, get_current_user
+from app.security import create_token, get_auth_channel_stats, get_current_user
 from app.services import sso_works
 
 
@@ -214,3 +214,82 @@ def test_token_with_cli_but_no_session_row_rejected(db) -> None:
     with pytest.raises(HTTPException) as exc:
         get_current_user(_bearer(token), db)
     assert exc.value.status_code == 401
+
+
+# ── auth channel shadow telemetry ───────────────────────────────────────────
+
+
+def test_header_auth_records_valid_cookie_shadow(db) -> None:
+    """헤더 인증이어도 같은 사용자 cookie가 유효하면 전환 가능으로 집계."""
+    user = _make_user(db, username="erin", email="erin@dyce.kr")
+    _set_session(db, user.id, "task", "sid-task")
+    token = create_token(user.username, user.role, "sid-task", client="task")
+    before = get_auth_channel_stats()
+
+    u = get_current_user(_bearer(token), db, dy_jwt=token)
+    after = get_auth_channel_stats()
+
+    assert u.id == user.id
+    assert after["header_with_valid_cookie"] == (
+        before["header_with_valid_cookie"] + 1
+    )
+    assert after["cookie_ready"] == before["cookie_ready"] + 1
+
+
+def test_header_auth_records_missing_cookie_shadow(db) -> None:
+    """헤더 인증에 cookie가 없으면 header 제거 시 위험으로 집계."""
+    user = _make_user(db, username="frank", email="frank@dyce.kr")
+    _set_session(db, user.id, "task", "sid-task")
+    token = create_token(user.username, user.role, "sid-task", client="task")
+    before = get_auth_channel_stats()
+
+    u = get_current_user(_bearer(token), db)
+    after = get_auth_channel_stats()
+
+    assert u.id == user.id
+    assert after["header_without_cookie"] == before["header_without_cookie"] + 1
+    assert after["cookie_blocked"] == before["cookie_blocked"] + 1
+
+
+def test_header_auth_records_invalid_cookie_shadow(db) -> None:
+    """cookie가 있어도 sid가 낡았으면 header 제거 시 위험으로 집계."""
+    user = _make_user(db, username="grace", email="grace@dyce.kr")
+    _set_session(db, user.id, "task", "sid-current")
+    header_token = create_token(
+        user.username, user.role, "sid-current", client="task"
+    )
+    cookie_token = create_token(user.username, user.role, "sid-old", client="task")
+    before = get_auth_channel_stats()
+
+    u = get_current_user(_bearer(header_token), db, dy_jwt=cookie_token)
+    after = get_auth_channel_stats()
+
+    assert u.id == user.id
+    assert after["header_with_invalid_cookie"] == (
+        before["header_with_invalid_cookie"] + 1
+    )
+    assert after["cookie_blocked"] == before["cookie_blocked"] + 1
+
+
+def test_header_auth_records_mismatched_cookie_shadow(db) -> None:
+    """다른 사용자 cookie는 유효하더라도 안전한 cookie-only 전환으로 보지 않음."""
+    header_user = _make_user(db, username="heidi", email="heidi@dyce.kr")
+    cookie_user = _make_user(db, username="ivan", email="ivan@dyce.kr")
+    _set_session(db, header_user.id, "task", "sid-header")
+    _set_session(db, cookie_user.id, "task", "sid-cookie")
+    header_token = create_token(
+        header_user.username, header_user.role, "sid-header", client="task"
+    )
+    cookie_token = create_token(
+        cookie_user.username, cookie_user.role, "sid-cookie", client="task"
+    )
+    before = get_auth_channel_stats()
+
+    u = get_current_user(_bearer(header_token), db, dy_jwt=cookie_token)
+    after = get_auth_channel_stats()
+
+    assert u.id == header_user.id
+    assert after["header_with_mismatched_cookie"] == (
+        before["header_with_mismatched_cookie"] + 1
+    )
+    assert after["cookie_blocked"] == before["cookie_blocked"] + 1

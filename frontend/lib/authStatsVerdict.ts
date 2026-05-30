@@ -12,7 +12,7 @@ export interface VerdictMeta {
   detail: string;
 }
 
-/** cookie_ratio와 total로 5차 재시도 verdict 산출.
+/** cookie-only 준비율과 표본 수로 5차 재시도 verdict 산출.
  * - total === 0 → idle (데이터 없음)
  * - ratio ≥ 0.99 → go
  * - 0.95 ≤ ratio < 0.99 → watch
@@ -30,19 +30,19 @@ export function verdictForRatio(ratio: number, total: number): VerdictMeta {
     return {
       label: "GO — 5차 재시도 안전",
       tone: "go",
-      detail: `cookie 비율 ${(ratio * 100).toFixed(2)}% ≥ ${(GO_THRESHOLD * 100).toFixed(0)}% 임계 초과.`,
+      detail: `cookie-only 준비율 ${(ratio * 100).toFixed(2)}% ≥ ${(GO_THRESHOLD * 100).toFixed(0)}% 임계 초과.`,
     };
   }
   if (ratio >= WATCH_THRESHOLD) {
     return {
       label: "관찰 지속",
       tone: "watch",
-      detail: `cookie 비율 ${(ratio * 100).toFixed(2)}% — 95% 도달, 99% 수렴 대기.`,
+      detail: `cookie-only 준비율 ${(ratio * 100).toFixed(2)}% — 95% 도달, 99% 수렴 대기.`,
     };
   }
   return {
-    label: "NO-GO — header fallback 의존 잔존",
+    label: "NO-GO — cookie-only 차단 요청 잔존",
     tone: "no-go",
-    detail: `cookie 비율 ${(ratio * 100).toFixed(2)}% < ${(WATCH_THRESHOLD * 100).toFixed(0)}%. PR-EM/EN 재시도 시 회귀 위험.`,
+    detail: `cookie-only 준비율 ${(ratio * 100).toFixed(2)}% < ${(WATCH_THRESHOLD * 100).toFixed(0)}%. PR-EM/EN 재시도 시 회귀 위험.`,
   };
 }

@@ -124,11 +124,14 @@ def auth_channel_stats(_user: User = Depends(require_admin)) -> dict[str, object
     backend 인스턴스 부팅 후 누적. Render single instance + GIL 보호로 race 안전.
     Render restart 시 reset — `since` 필드로 사용자가 인지.
 
-    5차 재시도(cookie 단독 인증 전환) go 임계값 권고: cookie_ratio ≥ 0.99
-    (Codex 권고). 95~99% 관찰 단계 권장.
+    5차 재시도(cookie 단독 인증 전환) go 임계값 권고:
+    cookie_ready_ratio ≥ 0.99 (Codex 권고). 95~99% 관찰 단계 권장.
+    header 인증 요청은 dy_jwt cookie를 shadow 검증해 header 제거 시 통과
+    가능한지 별도 집계한다.
 
     응답:
-        {"header": int, "cookie": int, "total": int, "cookie_ratio": float, "since": str}
+        {"header": int, "cookie": int, "total": int, "cookie_ratio": float,
+         "cookie_ready": int, "cookie_ready_ratio": float, "since": str, ...}
     """
     return get_auth_channel_stats()
 

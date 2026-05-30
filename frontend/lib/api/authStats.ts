@@ -7,6 +7,14 @@ export interface AuthChannelStats {
   cookie: number;
   total: number;
   cookie_ratio: number; // 0..1
+  header_with_valid_cookie?: number;
+  header_without_cookie?: number;
+  header_with_invalid_cookie?: number;
+  header_with_mismatched_cookie?: number;
+  cookie_ready?: number;
+  cookie_blocked?: number;
+  cookie_readiness_total?: number;
+  cookie_ready_ratio?: number; // 0..1
   since: string; // ISO
 }
 

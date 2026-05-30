@@ -414,15 +414,17 @@ export default function HelpPage() {
             Phase 4-G 5차 재시도(cookie 단독 인증 전환) 안전성 판단용. backend
             in-memory 누적 카운터 — Render restart 시 reset되므로{" "}
             <B>since 표기 확인 필수</B>.
+            header 인증 요청은 dy_jwt cookie를 shadow 검증해 cookie-only 전환 가능
+            여부를 별도 집계.
           </li>
           <li>verdict:</li>
           <Ul>
-            <li><B>GO</B> — cookie_ratio ≥ 0.99 → 5차 재시도 안전</li>
-            <li><B>관찰</B> — 0.95 ≤ ratio &lt; 0.99 → 표본 더 모은 후 판단</li>
-            <li><B>NO-GO</B> — ratio &lt; 0.95 → cookie 미발급 사용자 잔존, header fallback 의존. 재시도 시 401 무한 회귀 위험(PR-EM/EN 4차 사고 패턴)</li>
+            <li><B>GO</B> — cookie_ready_ratio ≥ 0.99 → 5차 재시도 안전</li>
+            <li><B>관찰</B> — 0.95 ≤ cookie_ready_ratio &lt; 0.99 → 표본 더 모은 후 판단</li>
+            <li><B>NO-GO</B> — cookie_ready_ratio &lt; 0.95 → cookie 없음/무효/사용자 불일치 요청 잔존. 재시도 시 401 무한 회귀 위험(PR-EM/EN 4차 사고 패턴)</li>
           </Ul>
           <li>30초 자동 갱신. since가 짧으면(수십 분) 표본 부족 → 운영 1주 이상 관찰 권장</li>
-          <li>같은 사용자가 자주 호출하면 ratio 왜곡 — 다양한 사용자 활동 패턴 누적이 필요</li>
+          <li>같은 사용자가 자주 호출하면 준비율 왜곡 — 다양한 사용자 활동 패턴 누적이 필요</li>
         </Ul>
         <H3>9.6 「계약서 관리」 (/operations/contracts)</H3>
         <Ul>

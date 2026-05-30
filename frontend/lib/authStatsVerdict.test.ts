@@ -62,10 +62,10 @@ describe("verdictForRatio (PR-EZ)", () => {
     it("0 with total>0 → no-go (header fallback 100%)", () => {
       expect(verdictForRatio(0, 100).tone).toBe("no-go");
     });
-    it("no-go label 포함 \"NO-GO\" + header fallback 경고", () => {
+    it("no-go label 포함 \"NO-GO\" + cookie-only 차단 경고", () => {
       const v = verdictForRatio(0.5, 100);
       expect(v.label).toMatch(/NO-GO/);
-      expect(v.detail).toMatch(/header fallback 의존 잔존|PR-EM\/EN 재시도/);
+      expect(v.detail).toMatch(/cookie-only 준비율|PR-EM\/EN 재시도/);
     });
   });
 

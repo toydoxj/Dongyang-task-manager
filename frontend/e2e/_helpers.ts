@@ -140,26 +140,58 @@ export function makeCallbackFragment(
 }
 
 /** PR-EY: admin/auth-stats 페이지가 호출하는 `/api/auth/channel-stats` mock.
- * cookie_ratio별 verdict 분기(GO/관찰/NO-GO) 회귀 검증용. */
+ * cookie_ready_ratio별 verdict 분기(GO/관찰/NO-GO) 회귀 검증용. */
 export async function mockAuthChannelStats(
   page: Page,
   opts: {
     header?: number;
     cookie?: number;
+    headerWithValidCookie?: number;
+    headerWithoutCookie?: number;
+    headerWithInvalidCookie?: number;
+    headerWithMismatchedCookie?: number;
     since?: string;
   } = {},
 ): Promise<void> {
   const header = opts.header ?? 5;
   const cookie = opts.cookie ?? 495;
   const total = header + cookie;
+  const headerWithValidCookie = opts.headerWithValidCookie ?? 0;
+  const headerWithInvalidCookie = opts.headerWithInvalidCookie ?? 0;
+  const headerWithMismatchedCookie = opts.headerWithMismatchedCookie ?? 0;
+  const headerWithoutCookie =
+    opts.headerWithoutCookie ??
+    Math.max(
+      0,
+      header
+        - headerWithValidCookie
+        - headerWithInvalidCookie
+        - headerWithMismatchedCookie,
+    );
   const ratio = total > 0 ? cookie / total : 0;
-  const since = opts.since ?? new Date(Date.now() - 8 * 24 * 60 * 60 * 1000).toISOString();
+  const cookieReady = cookie + headerWithValidCookie;
+  const cookieBlocked =
+    headerWithoutCookie + headerWithInvalidCookie + headerWithMismatchedCookie;
+  const cookieReadinessTotal = cookieReady + cookieBlocked;
+  const cookieReadyRatio =
+    cookieReadinessTotal > 0 ? cookieReady / cookieReadinessTotal : 0;
+  const since =
+    opts.since ??
+    new Date(Date.now() - 8 * 24 * 60 * 60 * 1000).toISOString();
   await page.route("**/api/auth/channel-stats", (r) =>
     fulfillJson(r, {
       header,
       cookie,
       total,
       cookie_ratio: Math.round(ratio * 10000) / 10000,
+      header_with_valid_cookie: headerWithValidCookie,
+      header_without_cookie: headerWithoutCookie,
+      header_with_invalid_cookie: headerWithInvalidCookie,
+      header_with_mismatched_cookie: headerWithMismatchedCookie,
+      cookie_ready: cookieReady,
+      cookie_blocked: cookieBlocked,
+      cookie_readiness_total: cookieReadinessTotal,
+      cookie_ready_ratio: Math.round(cookieReadyRatio * 10000) / 10000,
       since,
     }),
   );

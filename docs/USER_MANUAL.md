@@ -205,12 +205,13 @@
 
 ### 9.5 「인증 채널 모니터」 (`/admin/auth-stats`)
 Phase 4-G 5차 재시도(cookie 단독 인증 전환) 안전성 판단용 (PR-ES/ET).
-backend in-memory 누적 카운터 — Render restart 시 reset되므로 `since` 표기 확인 필수:
-- **GO** (`cookie_ratio ≥ 0.99`) — 5차 재시도 안전
-- **관찰** (`0.95 ≤ ratio < 0.99`) — 표본 더 모은 후 판단
-- **NO-GO** (`ratio < 0.95`) — cookie 미발급 사용자 잔존, header fallback 의존 → 재시도 시 401 무한 회귀 위험 (PR-EM/EN 4차 사고 패턴)
+backend in-memory 누적 카운터 — Render restart 시 reset되므로 `since` 표기 확인 필수.
+header 인증 요청은 dy_jwt cookie를 shadow 검증해 cookie-only 전환 가능 여부를 별도 집계:
+- **GO** (`cookie_ready_ratio ≥ 0.99`) — 5차 재시도 안전
+- **관찰** (`0.95 ≤ cookie_ready_ratio < 0.99`) — 표본 더 모은 후 판단
+- **NO-GO** (`cookie_ready_ratio < 0.95`) — cookie 없음/무효/사용자 불일치 요청 잔존 → 재시도 시 401 무한 회귀 위험 (PR-EM/EN 4차 사고 패턴)
 - 30초 자동 갱신, since 짧으면(수십 분) 표본 부족 → 운영 1주 이상 관찰 권장
-- 같은 사용자가 자주 호출하면 ratio 왜곡 — 다양한 사용자 활동 패턴 누적이 필요
+- 같은 사용자가 자주 호출하면 준비율 왜곡 — 다양한 사용자 활동 패턴 누적이 필요
 
 ### 9.6 「계약서 관리」 (`/operations/contracts`)
 프로젝트별 계약서 메타 + PDF 파일을 통합 관리하는 페이지 (PR-FH/PR-FI).

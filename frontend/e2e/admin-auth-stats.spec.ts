@@ -19,33 +19,41 @@ test.describe("/admin/auth-stats verdict 분기 (PR-EY)", () => {
     await setupRoleAuth(page, "admin");
   });
 
-  test("cookie_ratio ≥ 0.99 → GO verdict", async ({ page }) => {
-    // header=5, cookie=995 → ratio 0.995
-    await mockAuthChannelStats(page, { header: 5, cookie: 995 });
+  test("cookie_ready_ratio ≥ 0.99 → GO verdict", async ({ page }) => {
+    // header 요청 5건도 모두 유효 cookie 보유 → cookie-only 준비율 100%
+    await mockAuthChannelStats(page, {
+      header: 5,
+      cookie: 995,
+      headerWithValidCookie: 5,
+    });
     await page.goto("/admin/auth-stats");
     await expect(page.getByText(/GO — 5차 재시도 안전/)).toBeVisible({
       timeout: 5000,
     });
-    // 카운터 표시 확인 (콤마 포함 1,000)
-    await expect(page.getByText("995").first()).toBeVisible();
+    // cookie-only 통과 가능 카운터 표시 확인 (995 + 5 = 1,000)
+    await expect(page.getByText("1,000").first()).toBeVisible();
   });
 
-  test("0.95 ≤ ratio < 0.99 → 관찰 verdict", async ({ page }) => {
-    // header=40, cookie=960 → ratio 0.96
-    await mockAuthChannelStats(page, { header: 40, cookie: 960 });
+  test("0.95 ≤ cookie_ready_ratio < 0.99 → 관찰 verdict", async ({ page }) => {
+    // cookie 920 + valid cookie header 40 / 전체 1,000 → 준비율 96%
+    await mockAuthChannelStats(page, {
+      header: 80,
+      cookie: 920,
+      headerWithValidCookie: 40,
+    });
     await page.goto("/admin/auth-stats");
     await expect(page.getByText(/관찰 지속/)).toBeVisible({ timeout: VISIBLE_TIMEOUT });
   });
 
-  test("ratio < 0.95 → NO-GO verdict (header fallback 의존 잔존)", async ({
+  test("cookie_ready_ratio < 0.95 → NO-GO verdict", async ({
     page,
   }) => {
-    // header=500, cookie=500 → ratio 0.5
+    // header 500건 모두 cookie 없음 → 준비율 50%
     await mockAuthChannelStats(page, { header: 500, cookie: 500 });
     await page.goto("/admin/auth-stats");
     await expect(page.getByText(/NO-GO/)).toBeVisible({ timeout: VISIBLE_TIMEOUT });
     await expect(
-      page.getByText(/header fallback 의존 잔존/),
+      page.getByText(/cookie-only 차단 요청 잔존/),
     ).toBeVisible();
   });
 
