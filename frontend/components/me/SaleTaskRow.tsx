@@ -20,6 +20,8 @@ interface Props {
   onCreate?: (saleId: string, initialStatus?: string) => void;
   /** 상위 버튼으로 TASK가 있는 행만 일괄 펼칠 때 증가하는 신호값. */
   expandTaskItemsSignal: number;
+  /** 상위 버튼으로 모든 행을 일괄 접을 때 증가하는 신호값. */
+  collapseAllSignal: number;
 }
 
 const STAGE_BADGE: Record<string, string> = {
@@ -34,6 +36,7 @@ export default function SaleTaskRow({
   effectiveActive,
   onCreate,
   expandTaskItemsSignal,
+  collapseAllSignal,
 }: Props) {
   // 영업 전체 task (sales_ids @> [sale.id]).
   const { data: saleTasksData } = useTasks({ sale_id: sale.id });
@@ -45,20 +48,26 @@ export default function SaleTaskRow({
   );
   const displayStage =
     effectiveActive == null ? "" : effectiveActive ? "진행 중" : "대기";
-  // 기본은 접힘. 상위 신호가 바뀐 동안에는 TASK가 있는 행만 자동 펼침.
+  // 기본은 접힘. 상위 신호에 따라 TASK 보유 행 펼침/전체 접기를 동기화.
   const [collapseState, setCollapseState] = useState({
-    signal: expandTaskItemsSignal,
+    expandSignal: expandTaskItemsSignal,
+    collapseSignal: collapseAllSignal,
     collapsed: true,
   });
   const collapsed =
-    collapseState.signal === expandTaskItemsSignal
-      ? collapseState.collapsed
-      : tasks.length === 0;
-  const toggleCollapsed = (): void =>
+    collapseState.collapseSignal !== collapseAllSignal
+      ? true
+      : collapseState.expandSignal !== expandTaskItemsSignal
+        ? tasks.length === 0
+        : collapseState.collapsed;
+  const syncCollapseState = (nextCollapsed: boolean): void =>
     setCollapseState({
-      signal: expandTaskItemsSignal,
-      collapsed: !collapsed,
+      expandSignal: expandTaskItemsSignal,
+      collapseSignal: collapseAllSignal,
+      collapsed: nextCollapsed,
     });
+  const toggleCollapsed = (): void =>
+    syncCollapseState(!collapsed);
 
   const expectedRevenue = sale.expected_revenue || 0;
 

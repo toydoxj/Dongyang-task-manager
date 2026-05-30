@@ -24,6 +24,8 @@ interface Props {
   effectiveActive?: boolean;
   /** 상위 버튼으로 TASK가 있는 행만 일괄 펼칠 때 증가하는 신호값. */
   expandTaskItemsSignal: number;
+  /** 상위 버튼으로 모든 행을 일괄 접을 때 증가하는 신호값. */
+  collapseAllSignal: number;
 }
 
 const STAGE_BADGE: Record<string, string> = {
@@ -40,6 +42,7 @@ export default function ProjectTaskRow({
   forUser,
   effectiveActive,
   expandTaskItemsSignal,
+  collapseAllSignal,
 }: Props) {
   // 프로젝트 전체 task (다른 직원 담당분 포함) — 카운트 + 칸반에 사용.
   // 페이지 레벨 mine tasks 는 '해야할 일' 과 진행중/대기 분류에만 쓰이고
@@ -64,20 +67,26 @@ export default function ProjectTaskRow({
       ? project.client_names.join(", ")
       : project.client_text;
   const [busy, setBusy] = useState(false);
-  // 기본은 접힘. 상위 신호가 바뀐 동안에는 TASK가 있는 행만 자동 펼침.
+  // 기본은 접힘. 상위 신호에 따라 TASK 보유 행 펼침/전체 접기를 동기화.
   const [collapseState, setCollapseState] = useState({
-    signal: expandTaskItemsSignal,
+    expandSignal: expandTaskItemsSignal,
+    collapseSignal: collapseAllSignal,
     collapsed: true,
   });
   const collapsed =
-    collapseState.signal === expandTaskItemsSignal
-      ? collapseState.collapsed
-      : tasks.length === 0;
-  const toggleCollapsed = (): void =>
+    collapseState.collapseSignal !== collapseAllSignal
+      ? true
+      : collapseState.expandSignal !== expandTaskItemsSignal
+        ? tasks.length === 0
+        : collapseState.collapsed;
+  const syncCollapseState = (nextCollapsed: boolean): void =>
     setCollapseState({
-      signal: expandTaskItemsSignal,
-      collapsed: !collapsed,
+      expandSignal: expandTaskItemsSignal,
+      collapseSignal: collapseAllSignal,
+      collapsed: nextCollapsed,
     });
+  const toggleCollapsed = (): void =>
+    syncCollapseState(!collapsed);
   const isMine = !!myName && project.assignees.includes(myName);
 
   const handleUnassign = async (): Promise<void> => {

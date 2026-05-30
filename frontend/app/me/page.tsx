@@ -73,6 +73,7 @@ export default function MyPage() {
   );
   const [projectExpandTaskItemsSignal, setProjectExpandTaskItemsSignal] =
     useState(0);
+  const [projectCollapseAllSignal, setProjectCollapseAllSignal] = useState(0);
   // PR-T — 5탭 구분 (할일 / 일정 / 담당프로젝트 / 내영업 / 기타업무).
   // URL `?tab=` 우선, 없으면 default "todo".
   const tabFromUrl = sp.get("tab");
@@ -470,6 +471,14 @@ export default function MyPage() {
             </button>
             <button
               type="button"
+              onClick={() => setProjectCollapseAllSignal((v) => v + 1)}
+              disabled={(projects?.length ?? 0) === 0}
+              className="rounded-md border border-zinc-300 px-2.5 py-1 text-xs hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-700 dark:hover:bg-zinc-800"
+            >
+              모두 접기
+            </button>
+            <button
+              type="button"
               onClick={() => setImportOpen(true)}
               className="rounded-md border border-zinc-300 px-2.5 py-1 text-xs hover:bg-zinc-50 dark:border-zinc-700 dark:hover:bg-zinc-800"
             >
@@ -520,6 +529,7 @@ export default function MyPage() {
                       }
                       onUnassigned={handleUnassigned}
                       expandTaskItemsSignal={projectExpandTaskItemsSignal}
+                      collapseAllSignal={projectCollapseAllSignal}
                     />
                   ))}
                 </div>
@@ -554,6 +564,7 @@ export default function MyPage() {
                       }
                       onUnassigned={handleUnassigned}
                       expandTaskItemsSignal={projectExpandTaskItemsSignal}
+                      collapseAllSignal={projectCollapseAllSignal}
                     />
                   ))}
                 </div>
