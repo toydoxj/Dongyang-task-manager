@@ -126,6 +126,19 @@ def test_apply_update_to_mirror_idempotent() -> None:
     assert row1.properties["상태"] == row2.properties["상태"]
 
 
+def test_task_link_update_keeps_current_status() -> None:
+    """자동 TASK 링크 write-through는 진행 상태를 되돌리지 않고 id만 병합."""
+    row = _row_factory(status="2차검토 중")
+    update_props = {
+        "2차검토TASK": {"rich_text": [{"text": {"content": "task-admin-1"}}]},
+    }
+
+    apply_update_to_mirror(row, update_props)
+
+    assert row.status == "2차검토 중"
+    assert row.properties["2차검토TASK"]["rich_text"][0]["plain_text"] == "task-admin-1"
+
+
 def test_status_select_null_safe() -> None:
     """노션 raw {select: None} (clear 신호) — KeyError 없이 처리."""
     # date {"date": None} 같은 clear 패턴

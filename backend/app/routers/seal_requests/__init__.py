@@ -33,7 +33,7 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.db import get_db
+from app.db import SessionLocal, get_db
 from app.exceptions import NotFoundError
 from app.models import mirror as M
 from app.models.auth import User
@@ -42,9 +42,9 @@ from app.security import get_current_user, require_admin, require_admin_or_lead
 from app.services import file_storage as storage
 from app.services import notion_props as P
 from app.services import seal_logic as SL
-from app.services import sso_drive
-from app.services import sso_works_bot
+from app.services import sso_drive, sso_works_bot
 from app.services.notion import NotionService, get_notion
+from app.services.seal_request_mirror import apply_update_to_mirror
 from app.services.sync import get_sync
 from app.settings import get_settings
 
@@ -492,6 +492,32 @@ def _find_user_by_name(db: Session, name: str) -> User | None:
 # ── 자동 TASK 생성 / 동기화 ──
 
 
+def _mirror_seal_task_link_write_through(
+    seal_page_id: str, update_props: dict[str, Any]
+) -> tuple[str, str]:
+    """자동 TASK page_id 링크를 mirror에 반영하고 현재 상태/처리일을 반환."""
+    try:
+        with SessionLocal() as db:
+            row = db.get(M.MirrorSealRequest, seal_page_id)
+            if row is None:
+                return "", ""
+            apply_update_to_mirror(row, update_props)
+            props = row.properties or {}
+            status_name = row.status or ""
+            if status_name == "승인":
+                done_on = (
+                    P.date_range(props, "관리자처리일")[0]
+                    or date.today().isoformat()
+                )
+            else:
+                done_on = date.today().isoformat()
+            db.commit()
+            return status_name, done_on
+    except Exception as e:  # noqa: BLE001
+        logger.warning("자동 task 링크 mirror 반영 실패 (%s): %s", seal_page_id, e)
+        return "", ""
+
+
 def _project_summary_from_db(
     db: Session, project_id: str
 ) -> tuple[str, str, str, str]:
@@ -560,10 +586,24 @@ async def _create_seal_task_bg(
                 get_sync().upsert_page("tasks", page)
             except Exception as e:  # noqa: BLE001
                 logger.warning("자동 task mirror upsert 실패: %s", e)
+            link_props = {
+                seal_link_prop: {"rich_text": [{"text": {"content": task_id}}]}
+            }
             await notion.update_page(
                 seal_page_id,
-                {seal_link_prop: {"rich_text": [{"text": {"content": task_id}}]}},
+                link_props,
             )
+            seal_status, done_on = _mirror_seal_task_link_write_through(
+                seal_page_id, link_props
+            )
+            should_complete = (
+                seal_status in {"승인", "취소"}
+                or (seal_status == "반려" and seal_link_prop != "연결TASK")
+            )
+            if should_complete:
+                await _sync_linked_task(
+                    notion, task_id, target="완료", completed_on=done_on
+                )
     except Exception as e:  # noqa: BLE001
         logger.warning("자동 task 생성/연결 실패 (%s): %s", seal_link_prop, e)
 
@@ -580,7 +620,11 @@ def _spawn_task(coro: Any) -> None:
 
 
 async def _sync_linked_task(
-    notion: NotionService, task_id: str, *, target: str
+    notion: NotionService,
+    task_id: str,
+    *,
+    target: str,
+    completed_on: str | None = None,
 ) -> None:
     """target ∈ {'완료', '취소'}.
 
@@ -603,11 +647,12 @@ async def _sync_linked_task(
                 (cur.get("properties", {}).get("기간") or {})
                 .get("date", {})
                 .get("start")
+                or completed_on
                 or date.today().isoformat()
             )
         except Exception:  # noqa: BLE001
-            start = date.today().isoformat()
-        today_iso = date.today().isoformat()
+            start = completed_on or date.today().isoformat()
+        today_iso = completed_on or date.today().isoformat()
         updated = await notion.update_page(
             task_id,
             {
@@ -623,6 +668,50 @@ async def _sync_linked_task(
             logger.warning("자동 task mirror upsert 실패 (완료): %s", e)
     except Exception as e:  # noqa: BLE001
         logger.warning("연결 task 동기화 실패 (%s, %s): %s", task_id, target, e)
+
+
+async def _sync_seal_tasks_bg(
+    notion: NotionService,
+    seal_page_id: str,
+    *,
+    linked_task_id: str = "",
+    lead_task_id: str = "",
+    admin_task_id: str = "",
+    include_linked: bool = False,
+    include_lead: bool = False,
+    include_admin: bool = False,
+    target: str = "완료",
+) -> None:
+    """날인요청 연결 TASK들을 완료/취소 처리.
+
+    mirror에 TASK id가 아직 없으면 노션 원본 row를 한 번 조회해 보강한다.
+    """
+    tasks = {
+        "연결TASK": linked_task_id,
+        "1차검토TASK": lead_task_id,
+        "2차검토TASK": admin_task_id,
+    }
+    include = {
+        "연결TASK": include_linked,
+        "1차검토TASK": include_lead,
+        "2차검토TASK": include_admin,
+    }
+    if any(should and not tasks[prop] for prop, should in include.items()):
+        try:
+            page = await notion.get_page(seal_page_id)
+            props = page.get("properties", {})
+            for prop, should in include.items():
+                if should and not tasks[prop]:
+                    tasks[prop] = P.rich_text(props, prop)
+        except Exception as e:  # noqa: BLE001
+            logger.warning("날인요청 TASK id 보강 조회 실패 (%s): %s", seal_page_id, e)
+
+    seen: set[str] = set()
+    for prop, task_id in tasks.items():
+        if not include[prop] or not task_id or task_id in seen:
+            continue
+        seen.add(task_id)
+        await _sync_linked_task(notion, task_id, target=target)
 
 
 # ── endpoints ──

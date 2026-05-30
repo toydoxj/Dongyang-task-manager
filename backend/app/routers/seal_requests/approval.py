@@ -90,7 +90,7 @@ async def approve_lead(
         _find_admins,
         _resolve_works_id,
         _spawn_task,
-        _sync_linked_task,
+        _sync_seal_tasks_bg,
     )
 
     row = _fetch_mirror_or_404(db, page_id)
@@ -114,8 +114,14 @@ async def approve_lead(
 
     # ── 이하 fire-and-forget (사용자 응답 path 외) ──
     # 1차 검토자 TASK 완료 + 2차 검토자(admin) TASK 생성 (tasks 도메인 — PR-FP+1로 분리)
-    if item_before.lead_task_id:
-        _spawn_task(_sync_linked_task(notion, item_before.lead_task_id, target="완료"))
+    _spawn_task(
+        _sync_seal_tasks_bg(
+            notion,
+            page_id,
+            lead_task_id=item_before.lead_task_id,
+            include_lead=True,
+        )
+    )
     project_id_for_task = item_before.project_ids[0] if item_before.project_ids else ""
     admins = _find_admins(db)
     admin_reviewer_name = (admins[0].name or "") if admins else ""
@@ -156,7 +162,7 @@ async def approve_admin(
         _find_user_by_name,
         _resolve_works_id,
         _spawn_task,
-        _sync_linked_task,
+        _sync_seal_tasks_bg,
     )
 
     row = _fetch_mirror_or_404(db, page_id)
@@ -180,12 +186,18 @@ async def approve_admin(
 
     # ── fire-and-forget (사용자 응답 path 외) ──
     # 2차 + 1차(미경유 케이스) + 요청자 TASK 완료
-    if item_before.admin_task_id:
-        _spawn_task(_sync_linked_task(notion, item_before.admin_task_id, target="완료"))
-    if item_before.lead_task_id:
-        _spawn_task(_sync_linked_task(notion, item_before.lead_task_id, target="완료"))
-    if item_before.linked_task_id:
-        _spawn_task(_sync_linked_task(notion, item_before.linked_task_id, target="완료"))
+    _spawn_task(
+        _sync_seal_tasks_bg(
+            notion,
+            page_id,
+            linked_task_id=item_before.linked_task_id,
+            lead_task_id=item_before.lead_task_id,
+            admin_task_id=item_before.admin_task_id,
+            include_linked=True,
+            include_lead=True,
+            include_admin=True,
+        )
+    )
 
     # Bot 알림 — 요청자에게
     requester_user = _find_user_by_name(db, item_before.requester)
@@ -209,7 +221,7 @@ async def reject_seal_request(
         _find_user_by_name,
         _resolve_works_id,
         _spawn_task,
-        _sync_linked_task,
+        _sync_seal_tasks_bg,
     )
 
     row = _fetch_mirror_or_404(db, page_id)
@@ -244,10 +256,16 @@ async def reject_seal_request(
     db.commit()
 
     # ── fire-and-forget ──
-    if cur == "1차검토 중" and item_before.lead_task_id:
-        _spawn_task(_sync_linked_task(notion, item_before.lead_task_id, target="완료"))
-    elif cur == "2차검토 중" and item_before.admin_task_id:
-        _spawn_task(_sync_linked_task(notion, item_before.admin_task_id, target="완료"))
+    _spawn_task(
+        _sync_seal_tasks_bg(
+            notion,
+            page_id,
+            lead_task_id=item_before.lead_task_id,
+            admin_task_id=item_before.admin_task_id,
+            include_lead=cur == "1차검토 중",
+            include_admin=cur == "2차검토 중",
+        )
+    )
 
     requester_user = _find_user_by_name(db, item_before.requester)
     msg = (
