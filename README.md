@@ -26,7 +26,7 @@ Browser (task.dyce.kr)
 Vercel (Next.js 16)
    │  fetch → https://api.dyce.kr/api/*
    ▼
-Render Web Service (FastAPI)            ◀── Render Cron (5분 incremental, 매일 03:00 full)
+Render Web Service (FastAPI)            ◀── Render Cron HTTP trigger (outbox 5분, 매일 03:00 full)
    ├─ JWT 인증 (HS256) + NAVER WORKS SSO
    ├─ /api/* 라우터 (Postgres mirror 우선 read, write-through)
    └─ 노션 호출 (transient 502/503 retry, batch streaming)
@@ -42,7 +42,7 @@ Render Web Service (FastAPI)            ◀── Render Cron (5분 incremental,
 | Frontend | Next.js 16.2 / React 19 / Tailwind 4 / SWR / @dnd-kit / Recharts / Nivo |
 | Backend | FastAPI / SQLAlchemy 2 / psycopg3 / APScheduler / notion-client 3 / httpx |
 | DB | Supabase Postgres (Pooled URI :6543) |
-| Hosting | Vercel (FE) + Render Starter (BE/Cron) + Supabase Free (DB) |
+| Hosting | Vercel (FE) + Render (BE + 경량 Cron HTTP trigger) + Supabase Free (DB) |
 | Domain | `task.dyce.kr` (FE) / `api.dyce.kr` (BE) |
 
 ## 개발 모드

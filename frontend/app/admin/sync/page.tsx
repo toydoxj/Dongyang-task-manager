@@ -4,6 +4,7 @@
  * /admin/sync — 노션 미러 동기화 관리 (admin only).
  *
  * 정기 full reconcile은 매일 새벽 03시(KST)에 실행된다.
+ * outbox drain은 5분마다 실행된다.
  * 운영 중 즉시 sync가 필요하면 여기서 web service background task로 트리거.
  *
  * PR-AR.
@@ -16,9 +17,12 @@ import { useRoleGuard } from "@/lib/useRoleGuard";
 import UnauthorizedRedirect from "@/components/UnauthorizedRedirect";
 import LoadingState from "@/components/ui/LoadingState";
 import {
+  adminOutboxDrain,
+  adminOutboxStatus,
   adminSyncRun,
   adminSyncRuns,
   adminSyncStatus,
+  type OutboxStatusEntry,
   type SyncRunLogItem,
   type SyncStatusItem,
 } from "@/lib/api";
@@ -37,6 +41,21 @@ const KIND_LABEL: Record<string, string> = {
   seal_requests: "날인요청",
   suggestions: "건의사항",
 };
+
+const OUTBOX_LABEL: Record<string, string> = {
+  pending: "대기",
+  processing: "처리 중",
+  retry: "재시도",
+  sent: "완료",
+  dead: "실패",
+};
+const OUTBOX_STATUSES = [
+  "pending",
+  "processing",
+  "retry",
+  "sent",
+  "dead",
+] as const;
 
 function formatTime(iso: string | null): string {
   if (!iso) return "—";
@@ -110,6 +129,23 @@ function runTarget(run: SyncRunLogItem): string {
   return run.kind ? KIND_LABEL[run.kind] ?? run.kind : "전체";
 }
 
+function outboxLabel(status: string): string {
+  return OUTBOX_LABEL[status] ?? status;
+}
+
+function outboxClass(status: string): string {
+  if (status === "pending") return "text-amber-600 dark:text-amber-400";
+  if (status === "processing") return "text-sky-600 dark:text-sky-400";
+  if (status === "retry") return "text-orange-600 dark:text-orange-400";
+  if (status === "dead") return "text-red-600 dark:text-red-400";
+  if (status === "sent") return "text-emerald-600 dark:text-emerald-400";
+  return "text-zinc-600 dark:text-zinc-400";
+}
+
+function outboxCount(items: OutboxStatusEntry[], status: string): number {
+  return items.find((it) => it.status === status)?.count ?? 0;
+}
+
 export default function AdminSyncPage() {
   const { allowed: isAdmin } = useRoleGuard(["admin"]);
 
@@ -125,6 +161,15 @@ export default function AdminSyncPage() {
   } = useSWR(
     isAdmin ? ["admin-sync-runs"] : null,
     () => adminSyncRuns(12),
+    { refreshInterval: 10_000 },
+  );
+  const {
+    data: outboxData,
+    error: outboxError,
+    mutate: mutateOutbox,
+  } = useSWR(
+    isAdmin ? ["admin-sync-outbox"] : null,
+    () => adminOutboxStatus(),
     { refreshInterval: 10_000 },
   );
 
@@ -162,18 +207,44 @@ export default function AdminSyncPage() {
     }
   };
 
+  const drainOutbox = async (): Promise<void> => {
+    setBusy("_outbox");
+    setMsg(null);
+    try {
+      const res = await adminOutboxDrain(20);
+      setMsg(
+        `Outbox ${
+          res.status === "started" ? "처리 시작" : "이미 실행 중"
+        }${res.run_id ? ` · run ${res.run_id}` : ""}`,
+      );
+      setTimeout(() => {
+        void mutateOutbox();
+      }, 1500);
+    } catch (e) {
+      setMsg(`실패: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setBusy(null);
+    }
+  };
+
   const staleFullItems = data?.items.filter((it) =>
     isFullStale(it.last_full_synced_at),
   ) ?? [];
   const runningRun = runsData?.items.find((it) => it.status === "running");
+  const outboxItems = outboxData?.items ?? [];
+  const activeOutboxCount =
+    outboxCount(outboxItems, "pending") +
+    outboxCount(outboxItems, "processing") +
+    outboxCount(outboxItems, "retry");
+  const deadOutboxCount = outboxCount(outboxItems, "dead");
 
   return (
     <div className="space-y-4">
       <header>
         <h1 className="text-2xl font-semibold">Sync 관리</h1>
         <p className="mt-1 text-sm text-zinc-500">
-          백업 데이터 동기화 — 정기 full reconcile은 매일 KST 03:00에 실행됩니다.
-          운영 중 즉시 동기화가 필요하면 본 페이지에서 실행하세요.
+          백업 데이터 동기화 — 정기 full reconcile은 매일 KST 03:00, outbox drain은
+          5분마다 실행됩니다.
         </p>
       </header>
 
@@ -202,6 +273,55 @@ export default function AdminSyncPage() {
         )}
       </div>
 
+      {outboxData && (
+        <div className="rounded-md border border-zinc-200 bg-white p-3 dark:border-zinc-800 dark:bg-zinc-950">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h2 className="text-sm font-semibold">Outbox</h2>
+              <p className="mt-1 text-xs text-zinc-500">
+                노션 반영 대기 {activeOutboxCount}건
+                {deadOutboxCount > 0 ? ` · 실패 ${deadOutboxCount}건` : ""}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => void drainOutbox()}
+              disabled={busy !== null}
+              className="rounded border border-zinc-300 px-3 py-1.5 text-sm font-medium hover:bg-zinc-100 disabled:opacity-50 dark:border-zinc-700 dark:hover:bg-zinc-800"
+            >
+              {busy === "_outbox" ? "실행 중..." : "즉시 처리"}
+            </button>
+          </div>
+          <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-5">
+            {OUTBOX_STATUSES.map((status) => {
+              const item = outboxItems.find((it) => it.status === status);
+              return (
+                <div
+                  key={status}
+                  className="rounded border border-zinc-200 px-3 py-2 dark:border-zinc-800"
+                  title={
+                    item?.oldest_created_at
+                      ? formatTime(item.oldest_created_at)
+                      : ""
+                  }
+                >
+                  <div className="text-xs text-zinc-500">
+                    {outboxLabel(status)}
+                  </div>
+                  <div
+                    className={`mt-1 text-lg font-semibold tabular-nums ${outboxClass(
+                      status,
+                    )}`}
+                  >
+                    {item?.count ?? 0}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       {isLoading && <LoadingState />}
       {error && (
         <div className="rounded-md border border-red-500/40 bg-red-500/5 p-3 text-sm text-red-600 dark:text-red-400">
@@ -212,6 +332,12 @@ export default function AdminSyncPage() {
         <div className="rounded-md border border-red-500/40 bg-red-500/5 p-3 text-sm text-red-600 dark:text-red-400">
           실행 이력 조회 실패:{" "}
           {runsError instanceof Error ? runsError.message : String(runsError)}
+        </div>
+      )}
+      {outboxError && (
+        <div className="rounded-md border border-red-500/40 bg-red-500/5 p-3 text-sm text-red-600 dark:text-red-400">
+          Outbox 조회 실패:{" "}
+          {outboxError instanceof Error ? outboxError.message : String(outboxError)}
         </div>
       )}
 
@@ -386,8 +512,7 @@ export default function AdminSyncPage() {
 
       <p className="text-[11px] text-zinc-500">
         ※ 표는 10초마다 자동 갱신. sync는 fire-and-forget으로 진행 — 결과는 위
-        시각/건수가 갱신되면 완료. 실행 로그는 Render의 dy-task-backend web
-        service에서 run id로 확인하세요.
+        시각/건수가 갱신되면 완료. 정기 cron은 backend HTTP trigger만 호출합니다.
       </p>
     </div>
   );

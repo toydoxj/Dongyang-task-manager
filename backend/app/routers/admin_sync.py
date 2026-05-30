@@ -1,7 +1,7 @@
-"""/api/admin/sync — admin 강제 트리거 + 마지막 sync 상태.
+"""/api/admin/sync — admin 강제 트리거 + 마지막 sync/outbox 상태.
 
-업무시간(KST 06~20시)에는 Render cron이 안 돌므로, 즉시 동기화가
-필요할 때 admin이 본 페이지에서 트리거. 외부 cron secret 불필요.
+정기 작업은 Render cron이 backend HTTP endpoint를 호출해 실행한다.
+즉시 동기화나 outbox drain이 필요할 때 admin이 본 페이지에서 트리거한다.
 """
 from __future__ import annotations
 
@@ -31,6 +31,7 @@ logger = logging.getLogger("admin.sync")
 ops_logger = logging.getLogger("uvicorn.error")
 
 router = APIRouter(prefix="/admin/sync", tags=["admin_sync"])
+_running_outbox_drain = False
 
 
 class SyncStatusItem(BaseModel):
@@ -251,6 +252,12 @@ class OutboxStatusResponse(BaseModel):
     items: list[OutboxStatusEntry]
 
 
+class OutboxDrainResponse(BaseModel):
+    status: str  # started | already_running
+    batch: int
+    run_id: str | None = None
+
+
 @router.get("/outbox", response_model=OutboxStatusResponse)
 def outbox_status(
     db: Session = Depends(get_db),
@@ -265,3 +272,48 @@ def outbox_status(
 
     items = [OutboxStatusEntry(**row) for row in status_summary(db)]
     return OutboxStatusResponse(items=items)
+
+
+@router.post("/outbox/drain", response_model=OutboxDrainResponse)
+async def drain_outbox(
+    background: BackgroundTasks,
+    batch: int = Query(default=20, ge=1, le=100),
+    _admin: User = Depends(require_admin),
+) -> OutboxDrainResponse:
+    """admin 수동 outbox drain — cron secret 없이 운영자가 즉시 실행."""
+    global _running_outbox_drain
+    if _running_outbox_drain:
+        return OutboxDrainResponse(status="already_running", batch=batch)
+
+    run_id = uuid4().hex[:8]
+    requested_at = time.monotonic()
+    _running_outbox_drain = True
+    ops_logger.info(
+        "admin outbox drain accepted run_id=%s batch=%d", run_id, batch
+    )
+
+    async def _run() -> None:
+        global _running_outbox_drain
+        try:
+            from app.scripts.outbox_drain import drain_once
+
+            result = await drain_once(batch_size=batch)
+            elapsed = time.monotonic() - requested_at
+            ops_logger.info(
+                "admin outbox drain done run_id=%s result=%s elapsed=%.1fs",
+                run_id,
+                result,
+                elapsed,
+            )
+        except Exception:  # noqa: BLE001
+            elapsed = time.monotonic() - requested_at
+            ops_logger.exception(
+                "admin outbox drain failed run_id=%s elapsed=%.1fs",
+                run_id,
+                elapsed,
+            )
+        finally:
+            _running_outbox_drain = False
+
+    background.add_task(_run)
+    return OutboxDrainResponse(status="started", batch=batch, run_id=run_id)

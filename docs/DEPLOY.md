@@ -18,10 +18,12 @@ GitHub main push
    └─ Render 자동 빌드 → Backend 재시작 (~3-5분)
 
 Render Cron Job (별도 컨테이너)
-   └─ 5분마다 sync_once incremental, 매일 03:00 KST full reconcile
+   └─ HTTP trigger만 수행: outbox 5분 drain, 매일 03:00 KST full reconcile, 매일 09:00 자동 진행
 ```
 
 `main` 브랜치에 push만 하면 Frontend·Backend 모두 자동 배포. 정상이라면 추가 작업 불필요.
+Render backend는 `backend/**` 변경 때만 자동 빌드된다. Cron 서비스는 build pipeline minutes 절감을 위해
+`buildCommand: "true"`와 `autoDeployTrigger: "off"`로 고정되어 있으며, 실제 작업은 backend API가 비동기로 실행한다.
 
 ## 배포 실패 대응
 
@@ -58,8 +60,10 @@ Render Cron Job (별도 컨테이너)
 - 변경 후 **재배포 필요** (env 변경만으론 즉시 반영 안 됨).
 
 ### Cron (Render Cron Service)
-- backend Web Service와 **동일한 Environment 변수** 사용.
-- `cron service` 타입은 schedule cron 표현식으로 5분마다 + 매일 03:00 동작.
+- cron service는 `CRON_SECRET`만 필요하다.
+- sync/outbox/auto-progress cron은 Python 의존성을 설치하지 않고 표준 라이브러리 HTTP 호출만 수행한다.
+- 옛 `dy-task-sync-master`, `dy-task-sync-projects`, `dy-task-sync-tasks`, `dy-task-sync-others` 서비스가 Render 대시보드에 남아 있으면 삭제 또는 suspend한다. 현재 운영 구성에는 `dy-task-sync-full`, `dy-task-outbox-drain`, `dy-task-auto-progress-cron`만 필요하다.
+- cron 설정을 바꾼 경우에는 Render Blueprint sync 또는 해당 cron service의 Manual Deploy를 1회 실행한다. 이후 일반 코드 배포 때는 cron service가 자동 재빌드되지 않는다.
 
 ## DB 마이그레이션 (Alembic)
 

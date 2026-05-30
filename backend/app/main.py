@@ -7,6 +7,7 @@ import os
 import time
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from uuid import uuid4
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -38,6 +39,11 @@ from app.services.notion import get_notion
 from app.services.notion_schema import ensure_all_schemas
 from app.services.scheduler import shutdown_scheduler, start_scheduler
 from app.services.sync import ALL_KINDS, get_sync
+from app.services.sync_run_log import (
+    finish_sync_run,
+    start_sync_run,
+    status_for_result,
+)
 from app.settings import get_settings
 
 settings = get_settings()
@@ -196,7 +202,7 @@ def _verify_cron(authorization: str | None = Header(default=None)) -> None:
 #
 # 주의: 이 set은 process-local. uvicorn workers > 1 환경에선 worker별로
 # 독립이므로 worker 간 동시 manual sync 가 둘 다 통과할 수 있음. 그러나:
-#  - 정기 sync는 별도 cron container(HTTP 미경유) 라 race 없음
+#  - 운영은 single instance 기준이고 정기 sync는 새벽 1회라 빈도 낮음
 #  - manual sync 는 admin이 가끔 누르는 상황이라 빈도 낮음
 #  - 동작은 idempotent (notion upsert + 노션 rate limit이 자연 직렬화)
 # 정밀 cluster-wide dedup이 필요해지면 PgBouncer 호환 row-mutex 또는
@@ -209,7 +215,9 @@ _running_sync: set[str] = set()
 _bg_tasks: set[asyncio.Task[None]] = set()
 
 
-async def _run_sync_in_bg(*, kind: str | None, full: bool) -> None:
+async def _run_sync_in_bg(
+    *, kind: str | None, full: bool, run_id: str
+) -> None:
     """fire-and-forget으로 sync 실행. 결과는 Render Logs에서 확인."""
     key = kind or "_all"
     cron_logger = logging.getLogger("dy.cron")
@@ -217,25 +225,48 @@ async def _run_sync_in_bg(*, kind: str | None, full: bool) -> None:
         sync = get_sync()
         if kind:
             n = await sync.sync_kind(kind, full=full)  # type: ignore[arg-type]
+            finish_sync_run(
+                run_id=run_id,
+                status="success",
+                result={"kind": kind, "count": n},
+            )
             cron_logger.info(
-                "manual cron %s full=%s done: %d", kind, full, n
+                "cron sync %s full=%s run_id=%s done: %d",
+                kind,
+                full,
+                run_id,
+                n,
             )
         else:
             result = await sync.sync_all(full=full)
-            cron_logger.info(
-                "manual cron sync_all full=%s done: %s", full, result
+            finish_sync_run(
+                run_id=run_id,
+                status=status_for_result(result),
+                result=result,
             )
-    except Exception:  # noqa: BLE001
-        cron_logger.exception("manual cron sync 실패")
+            cron_logger.info(
+                "cron sync_all full=%s run_id=%s done: %s",
+                full,
+                run_id,
+                result,
+            )
+    except Exception as exc:  # noqa: BLE001
+        finish_sync_run(run_id=run_id, status="failed", error=str(exc))
+        cron_logger.exception("cron sync 실패")
     finally:
         _running_sync.discard(key)
 
 
-def _spawn_bg_sync(*, kind: str | None, full: bool) -> None:
+def _spawn_bg_sync(*, kind: str | None, full: bool) -> str:
     """create_task + 강한 참조 유지. done 시 set에서 자동 제거."""
-    task = asyncio.create_task(_run_sync_in_bg(kind=kind, full=full))
+    run_id = uuid4().hex[:8]
+    start_sync_run(run_id=run_id, source="cron", kind=kind, full=full)
+    task = asyncio.create_task(
+        _run_sync_in_bg(kind=kind, full=full, run_id=run_id)
+    )
     _bg_tasks.add(task)
     task.add_done_callback(_bg_tasks.discard)
+    return run_id
 
 
 @app.post("/api/cron/sync", status_code=202)
@@ -243,8 +274,7 @@ async def cron_sync(
     full: bool = False,
     _ok: None = Depends(_verify_cron),
 ) -> dict[str, str]:
-    """수동 트리거 (외부 cron은 더 이상 이 endpoint를 호출하지 않고
-    `python -m app.scripts.sync_once --kind <kind>`를 별도 cron container에서 실행).
+    """수동/정기 sync HTTP trigger.
 
     무거운 sync가 worker를 막아 다른 요청이 502 되는 문제를 방지하기 위해
     fire-and-forget으로 실행. 즉시 202 반환, 결과는 Render Logs에서 확인.
@@ -267,8 +297,8 @@ async def cron_sync(
     if _running_sync:
         return {"status": "already_running", "active": ",".join(sorted(_running_sync))}
     _running_sync.add("_all")
-    _spawn_bg_sync(kind=None, full=full)
-    return {"status": "started", "full": str(full).lower()}
+    run_id = _spawn_bg_sync(kind=None, full=full)
+    return {"status": "started", "full": str(full).lower(), "run_id": run_id}
 
 
 @app.post("/api/cron/sync/{kind}", status_code=202)
@@ -284,8 +314,13 @@ async def cron_sync_one(
     if "_all" in _running_sync or kind in _running_sync:
         return {"status": "already_running", "kind": kind}
     _running_sync.add(kind)
-    _spawn_bg_sync(kind=kind, full=full)
-    return {"status": "started", "kind": kind, "full": str(full).lower()}
+    run_id = _spawn_bg_sync(kind=kind, full=full)
+    return {
+        "status": "started",
+        "kind": kind,
+        "full": str(full).lower(),
+        "run_id": run_id,
+    }
 
 
 # task 시작일 도래 자동 진행 — 매일 아침 cron으로 호출
@@ -323,6 +358,45 @@ async def cron_auto_progress(
     _bg_tasks.add(task)
     task.add_done_callback(_bg_tasks.discard)
     return {"status": "started"}
+
+
+# outbox drain — Render cron은 빌드 비용 절감을 위해 HTTP trigger만 수행
+_running_outbox_drain = False
+
+
+async def _run_outbox_drain_in_bg(*, batch: int) -> None:
+    global _running_outbox_drain
+    cron_logger = logging.getLogger("dy.cron")
+    try:
+        from app.scripts.outbox_drain import drain_once
+
+        result = await drain_once(batch_size=batch)
+        cron_logger.info("outbox drain done: %s", result)
+    except Exception:  # noqa: BLE001
+        cron_logger.exception("outbox drain 실패")
+    finally:
+        _running_outbox_drain = False
+
+
+@app.post("/api/cron/outbox-drain", status_code=202)
+async def cron_outbox_drain(
+    batch: int = 20,
+    _ok: None = Depends(_verify_cron),
+) -> dict[str, str]:
+    """notion_outbox pending/retry row를 backend worker에서 비동기 drain.
+
+    Render cron service는 표준 라이브러리 HTTP 호출만 수행해 build pipeline
+    minutes를 쓰지 않는다. 실제 Notion push는 이미 떠 있는 backend가 맡는다.
+    """
+    global _running_outbox_drain
+    if _running_outbox_drain:
+        return {"status": "already_running"}
+    safe_batch = min(max(batch, 1), 100)
+    _running_outbox_drain = True
+    task = asyncio.create_task(_run_outbox_drain_in_bg(batch=safe_batch))
+    _bg_tasks.add(task)
+    task.add_done_callback(_bg_tasks.discard)
+    return {"status": "started", "batch": str(safe_batch)}
 
 
 # 정적 frontend 서빙 (FRONTEND_DIST 환경변수가 설정되었을 때만)

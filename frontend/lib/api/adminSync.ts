@@ -30,6 +30,22 @@ export interface SyncRunLogResponse {
   items: SyncRunLogItem[];
 }
 
+export interface OutboxStatusEntry {
+  status: string;
+  count: number;
+  oldest_created_at: string | null;
+}
+
+export interface OutboxStatusResponse {
+  items: OutboxStatusEntry[];
+}
+
+export interface OutboxDrainResponse {
+  status: string;
+  batch: number;
+  run_id: string | null;
+}
+
 export async function adminSyncStatus(): Promise<SyncStatusResponse> {
   const res = await authFetch(`/api/admin/sync/status`);
   return jsonOrThrow<SyncStatusResponse>(res);
@@ -58,4 +74,18 @@ export async function adminSyncRun(
     body: JSON.stringify(body),
   });
   return jsonOrThrow<SyncRunResponse>(res);
+}
+
+export async function adminOutboxStatus(): Promise<OutboxStatusResponse> {
+  const res = await authFetch(`/api/admin/sync/outbox`);
+  return jsonOrThrow<OutboxStatusResponse>(res);
+}
+
+export async function adminOutboxDrain(
+  batch: number = 20,
+): Promise<OutboxDrainResponse> {
+  const res = await authFetch(`/api/admin/sync/outbox/drain?batch=${batch}`, {
+    method: "POST",
+  });
+  return jsonOrThrow<OutboxDrainResponse>(res);
 }
