@@ -14,7 +14,6 @@ import { cn } from "@/lib/utils";
 
 import DetailModal from "./_DetailModal";
 import {
-  attachmentSummary,
   STATUS_TABS,
   STATUS_COLOR,
   type StatusTab,
@@ -22,26 +21,12 @@ import {
 
 const INITIAL_LIMIT = 25;
 
-function displayTitle(item: SealRequestItem): string {
-  const title = item.title || "(제목 없음)";
-  const code = item.project_code?.trim();
-  if (!code) return title;
-  if (title.startsWith(`${code}_`)) return title.slice(code.length + 1);
-  if (title.startsWith(`[${code}] `)) return title.slice(code.length + 3);
-  return title;
-}
-
-function projectLabel(item: SealRequestItem): string {
-  const code = item.project_code?.trim();
-  const name = item.project_name?.trim();
-  if (code && name) return `[${code}] ${name}`;
-  if (code) return `[${code}]`;
-  if (name) return name;
-  return item.project_ids[0] || "프로젝트 미연결";
+function fallbackText(value: string | null | undefined): string {
+  return value?.trim() || "미지정";
 }
 
 function realSourceLabel(item: SealRequestItem): string {
-  return item.real_source_name?.trim() || "실제출처 미지정";
+  return fallbackText(item.real_source_name);
 }
 
 export default function SealRequestsPage() {
@@ -132,49 +117,81 @@ export default function SealRequestsPage() {
           {tab === "전체" ? "등록된 요청이 없습니다." : `${tab} 상태의 요청이 없습니다.`}
         </p>
       ) : (
-        <ul className="space-y-2">
-          {filtered.map((s) => {
-            const title = displayTitle(s);
-            return (
-              <li key={s.id}>
-                <button
-                  type="button"
+        <div className="overflow-x-auto rounded-md border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
+          <table className="min-w-[980px] w-full table-fixed text-left text-sm">
+            <colgroup>
+              <col className="w-[90px]" />
+              <col className="w-[270px]" />
+              <col className="w-[220px]" />
+              <col className="w-[170px]" />
+              <col className="w-[90px]" />
+              <col className="w-[90px]" />
+              <col className="w-[120px]" />
+              <col className="w-[90px]" />
+            </colgroup>
+            <thead className="border-b border-zinc-200 bg-zinc-50 text-xs text-zinc-500 dark:border-zinc-800 dark:bg-zinc-950/60 dark:text-zinc-400">
+              <tr>
+                <th className="px-3 py-2 font-medium">프로젝트번호</th>
+                <th className="px-3 py-2 font-medium">프로젝트명</th>
+                <th className="px-3 py-2 font-medium">발주처</th>
+                <th className="px-3 py-2 font-medium">실제출처</th>
+                <th className="px-3 py-2 font-medium">구분</th>
+                <th className="px-3 py-2 font-medium">요청자</th>
+                <th className="px-3 py-2 font-medium">제출예정일</th>
+                <th className="px-3 py-2 font-medium">상태</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
+              {filtered.map((s) => (
+                <tr
+                  key={s.id}
+                  tabIndex={0}
+                  role="button"
                   onClick={() => setSelected(s)}
-                  className="block w-full rounded-lg border border-zinc-200 bg-white p-3 text-left hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900 dark:hover:bg-zinc-800/50"
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" || event.key === " ") {
+                      event.preventDefault();
+                      setSelected(s);
+                    }
+                  }}
+                  className="cursor-pointer hover:bg-zinc-50 focus:bg-zinc-50 focus:outline-none dark:hover:bg-zinc-800/50 dark:focus:bg-zinc-800/50"
                 >
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-medium" title={title}>
-                        {title}
-                      </p>
-                      <p className="mt-0.5 truncate text-xs text-zinc-600 dark:text-zinc-400">
-                        {projectLabel(s)} · 실제출처 {realSourceLabel(s)}
-                      </p>
-                      <p className="mt-0.5 truncate text-xs text-zinc-500">
-                        {s.seal_type} · {s.requester} ·{" "}
-                        {formatDate(s.requested_at)}
-                        {s.due_date && (
-                          <span className="ml-1 text-amber-600 dark:text-amber-400">
-                            · 제출예정 {formatDate(s.due_date)}
-                          </span>
-                        )}
-                        <span className="ml-1">· 📎 {attachmentSummary(s)}</span>
-                      </p>
-                    </div>
+                  <td className="truncate px-3 py-2 text-zinc-700 dark:text-zinc-200" title={fallbackText(s.project_code)}>
+                    {fallbackText(s.project_code)}
+                  </td>
+                  <td className="truncate px-3 py-2 font-medium text-zinc-900 dark:text-zinc-100" title={fallbackText(s.project_name)}>
+                    {fallbackText(s.project_name)}
+                  </td>
+                  <td className="truncate px-3 py-2 text-zinc-700 dark:text-zinc-300" title={fallbackText(s.project_client_name)}>
+                    {fallbackText(s.project_client_name)}
+                  </td>
+                  <td className="truncate px-3 py-2 text-zinc-700 dark:text-zinc-300" title={realSourceLabel(s)}>
+                    {realSourceLabel(s)}
+                  </td>
+                  <td className="truncate px-3 py-2 text-zinc-700 dark:text-zinc-300" title={fallbackText(s.seal_type)}>
+                    {fallbackText(s.seal_type)}
+                  </td>
+                  <td className="truncate px-3 py-2 text-zinc-700 dark:text-zinc-300" title={fallbackText(s.requester)}>
+                    {fallbackText(s.requester)}
+                  </td>
+                  <td className="truncate px-3 py-2 text-zinc-700 dark:text-zinc-300">
+                    {formatDate(s.due_date)}
+                  </td>
+                  <td className="px-3 py-2">
                     <span
                       className={cn(
-                        "shrink-0 rounded-md px-2 py-0.5 text-[11px] font-medium",
+                        "inline-flex rounded-md px-2 py-0.5 text-[11px] font-medium",
                         STATUS_COLOR[s.status] ?? STATUS_COLOR["1차검토 중"],
                       )}
                     >
                       {s.status}
                     </span>
-                  </div>
-                </button>
-              </li>
-            );
-          })}
-        </ul>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
 
       {hasMore && (

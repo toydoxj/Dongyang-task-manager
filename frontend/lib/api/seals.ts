@@ -27,6 +27,7 @@ export interface SealRequestItem {
   project_ids: string[];
   project_code?: string;
   project_name?: string;
+  project_client_name?: string;
   seal_type: string;
   status: string;
   requester: string;

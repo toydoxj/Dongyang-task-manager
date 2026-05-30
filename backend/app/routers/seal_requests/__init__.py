@@ -112,6 +112,7 @@ class SealRequestItem(BaseModel):
     project_ids: list[str] = []
     project_code: str = ""
     project_name: str = ""
+    project_client_name: str = ""
     seal_type: str = ""
     status: str = "1차검토 중"
     requester: str = ""

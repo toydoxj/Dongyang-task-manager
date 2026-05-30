@@ -83,6 +83,26 @@ def _mirror_row_to_notion_page(row: M.MirrorSealRequest) -> dict:
     }
 
 
+def _project_client_text(properties: dict) -> str:
+    """프로젝트 properties의 발주처(임시) rich_text fallback."""
+    value = (properties or {}).get("발주처(임시)", {})
+    if not isinstance(value, dict):
+        return ""
+    rich_text = value.get("rich_text") or []
+    if not rich_text or not isinstance(rich_text[0], dict):
+        return ""
+    first = rich_text[0]
+    plain = first.get("plain_text")
+    if isinstance(plain, str):
+        return plain
+    text = first.get("text")
+    if isinstance(text, dict):
+        content = text.get("content")
+        if isinstance(content, str):
+            return content
+    return ""
+
+
 def _enrich_list_labels(db: Session, items: list[SealRequestItem]) -> None:
     """목록 표시용 프로젝트/실제출처 이름을 mirror에서 한 번에 보강."""
     project_ids = {
@@ -90,19 +110,36 @@ def _enrich_list_labels(db: Session, items: list[SealRequestItem]) -> None:
         for item in items
         if item.project_ids and item.project_ids[0]
     }
-    client_ids = {
+    real_source_ids = {
         item.real_source_id
         for item in items
         if item.real_source_id
     }
 
-    project_map: dict[str, tuple[str, str]] = {}
+    project_map: dict[str, tuple[str, str, list[str], str]] = {}
+    client_ids = set(real_source_ids)
     if project_ids:
         rows = db.execute(
-            select(M.MirrorProject.page_id, M.MirrorProject.code, M.MirrorProject.name)
+            select(
+                M.MirrorProject.page_id,
+                M.MirrorProject.code,
+                M.MirrorProject.name,
+                M.MirrorProject.client_relation_ids,
+                M.MirrorProject.properties,
+            )
             .where(M.MirrorProject.page_id.in_(project_ids))
         ).all()
-        project_map = {pid: (code or "", name or "") for pid, code, name in rows}
+        project_map = {
+            pid: (
+                code or "",
+                name or "",
+                client_relation_ids or [],
+                _project_client_text(properties or {}),
+            )
+            for pid, code, name, client_relation_ids, properties in rows
+        }
+        for _code, _name, client_relation_ids, _client_text in project_map.values():
+            client_ids.update(cid for cid in client_relation_ids if cid)
 
     client_map: dict[str, str] = {}
     if client_ids:
@@ -115,7 +152,17 @@ def _enrich_list_labels(db: Session, items: list[SealRequestItem]) -> None:
     for item in items:
         project_id = item.project_ids[0] if item.project_ids else ""
         if project_id in project_map:
-            item.project_code, item.project_name = project_map[project_id]
+            code, name, client_relation_ids, client_text = project_map[project_id]
+            item.project_code = code
+            item.project_name = name
+            item.project_client_name = next(
+                (
+                    client_map.get(cid, "").strip()
+                    for cid in client_relation_ids
+                    if client_map.get(cid, "").strip()
+                ),
+                client_text,
+            )
         if item.real_source_id:
             item.real_source_name = client_map.get(item.real_source_id, "")
 
