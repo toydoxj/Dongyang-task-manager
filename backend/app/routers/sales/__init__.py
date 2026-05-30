@@ -64,6 +64,24 @@ router = APIRouter(prefix="/sales", tags=["sales"])
 _KST = timezone(timedelta(hours=9))
 
 
+def _require_quote_submission_date(value: str | date | None) -> str:
+    """견적서 작성 시 필요한 실제 제출일을 YYYY-MM-DD로 정규화."""
+    if isinstance(value, date):
+        return value.isoformat()
+    if not value or not value.strip():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="견적서 작성 전 실제 제출일을 입력해야 합니다.",
+        )
+    try:
+        return date.fromisoformat(value.strip()).isoformat()
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="제출일은 YYYY-MM-DD 형식으로 입력해야 합니다.",
+        ) from exc
+
+
 def _sale_page_from_mirror_with_update(
     row: M.MirrorSales, update_props: dict[str, Any]
 ) -> dict[str, Any]:
@@ -81,6 +99,31 @@ def _sale_page_from_mirror_with_update(
         "last_edited_time": datetime.now(timezone.utc).isoformat(),
         "archived": False,
     }
+
+
+def _quote_task_props_for_sale(sale_row: M.MirrorSales) -> dict[str, Any]:
+    """견적서 작성 자동 task의 노션 properties."""
+    assignees = [a for a in (sale_row.assignees or []) if a]
+    title_parts: list[str] = []
+    if sale_row.code:
+        title_parts.append(sale_row.code)
+    title_parts.append("견적서 작성")
+    if sale_row.name:
+        title_parts.append(f"— {sale_row.name}")
+    title = " ".join(title_parts)
+
+    submission_iso = _require_quote_submission_date(sale_row.submission_date)
+    props: dict[str, Any] = {
+        "내용": {"title": [{"text": {"content": title}}]},
+        "분류": {"select": {"name": "영업(서비스)"}},
+        "영업": {"relation": [{"id": sale_row.page_id}]},
+        "상태": {"status": {"name": "완료"}},
+        "기간": {"date": {"start": submission_iso, "end": submission_iso}},
+        "실제 완료일": {"date": {"start": submission_iso}},
+    }
+    if assignees:
+        props["담당자"] = {"multi_select": [{"name": a} for a in assignees]}
+    return props
 
 # PR-CC/CD/CE (Phase 4-J): sub-router include — 상위 router의 prefix(`/sales`)를
 # 그대로 상속받음. sub-module은 prefix 없이 endpoint 정의.
@@ -111,28 +154,9 @@ async def _create_quote_task_for_sale(
     if existing:
         return
 
-    assignees = [a for a in (sale_row.assignees or []) if a]
-    title_parts: list[str] = []
-    if sale_row.code:
-        title_parts.append(sale_row.code)
-    title_parts.append("견적서 작성")
-    if sale_row.name:
-        title_parts.append(f"— {sale_row.name}")
-    title = " ".join(title_parts)
-
-    today_iso = date.today().isoformat()
-    props: dict[str, Any] = {
-        "내용": {"title": [{"text": {"content": title}}]},
-        "분류": {"select": {"name": "영업(서비스)"}},
-        "영업": {"relation": [{"id": sale_row.page_id}]},
-        "상태": {"status": {"name": "시작 전"}},
-        "기간": {"date": {"start": today_iso}},
-    }
-    if assignees:
-        props["담당자"] = {"multi_select": [{"name": a} for a in assignees]}
-
     settings = get_settings()
     try:
+        props = _quote_task_props_for_sale(sale_row)
         page = await notion.create_page(settings.notion_db_tasks, props)
         try:
             get_sync().upsert_page("tasks", page, skip_active_outbox=False)
@@ -272,6 +296,8 @@ async def create_sale(
     # 견적서 모드 — quote_form_data가 있는데 문서번호 미지정이면 자동 부여
     # ({YY}-{CC}-{NNN}, CC = 견적서 종류 분류 코드. quote_type은 form input
     # 또는 body.quote_type에서 결정, 빈 값은 구조설계 fallback)
+    if body.quote_form_data:
+        _require_quote_submission_date(body.submission_date)
     if body.quote_form_data and not body.quote_doc_number:
         qtype_val = (
             body.quote_type
@@ -314,6 +340,11 @@ async def create_sale(
         )
 
     db.commit()  # advisory lock 해제 + mirror upsert 커밋
+    if body.quote_form_data:
+        new_page_id = page.get("id", "")
+        created_row = db.get(M.MirrorSales, new_page_id)
+        if created_row is not None:
+            await _create_quote_task_for_sale(notion, created_row, db)
     return Sale.from_notion_page(page)
 
 
@@ -487,6 +518,7 @@ async def add_sale_quote(
     row = db.get(M.MirrorSales, page_id)
     if row is None or row.archived:
         raise HTTPException(status_code=404, detail="영업 건을 찾을 수 없습니다")
+    _require_quote_submission_date(row.submission_date)
 
     forms = normalize_quote_forms(
         row.quote_form_data, legacy_doc_number=row.quote_doc_number or ""

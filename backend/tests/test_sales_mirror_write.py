@@ -2,11 +2,18 @@
 from __future__ import annotations
 
 import inspect
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
+
+import pytest
+from fastapi import HTTPException
 
 from app.models import mirror as M
 from app.models.notion_outbox import OP_DELETE, OP_UPDATE
-from app.routers.sales import _sale_page_from_mirror_with_update
+from app.routers.sales import (
+    _quote_task_props_for_sale,
+    _require_quote_submission_date,
+    _sale_page_from_mirror_with_update,
+)
 
 
 def _sale_row(
@@ -125,6 +132,28 @@ def test_sale_page_from_mirror_merges_props() -> None:
     assert page["archived"] is False
     assert page["created_time"] == "2026-05-27T00:00:00+00:00"
     assert "T" in page["last_edited_time"]
+
+
+def test_quote_submission_date_required() -> None:
+    with pytest.raises(HTTPException) as exc:
+        _require_quote_submission_date(None)
+
+    assert exc.value.status_code == 400
+
+
+def test_quote_task_props_use_submission_date_as_completion_date() -> None:
+    row = _sale_row()
+    row.submission_date = date(2026, 5, 10)
+    row.assignees = ["정지훈"]
+
+    props = _quote_task_props_for_sale(row)
+
+    assert props["상태"] == {"status": {"name": "완료"}}
+    assert props["기간"] == {
+        "date": {"start": "2026-05-10", "end": "2026-05-10"}
+    }
+    assert props["실제 완료일"] == {"date": {"start": "2026-05-10"}}
+    assert props["담당자"] == {"multi_select": [{"name": "정지훈"}]}
 
 
 def test_sale_project_link_props() -> None:

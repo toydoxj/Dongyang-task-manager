@@ -63,6 +63,18 @@ interface Props {
 }
 
 const KIND_OPTIONS = ["수주영업", "기술지원"] as const;
+const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+function isValidIsoDate(value: string): boolean {
+  if (!ISO_DATE_RE.test(value)) return false;
+  const [year, month, day] = value.split("-").map(Number);
+  const parsed = new Date(year, month - 1, day);
+  return (
+    parsed.getFullYear() === year &&
+    parsed.getMonth() === month - 1 &&
+    parsed.getDate() === day
+  );
+}
 
 // 견적서 종류별 산출 default 값 — 사장이 운영하는 xlsx 양식의 표준 요율/조정/절삭
 // 단위. 사용자가 종류 select를 변경할 때 자동 적용 (모달 prefill 시에는 미적용 —
@@ -427,6 +439,30 @@ export default function SalesEditModal({
     onChanged?.();
   };
 
+  const requestQuoteSubmissionDate = (): string | null => {
+    const current = (form.submission_date ?? sale?.submission_date ?? "").trim();
+    if (isValidIsoDate(current)) return current;
+
+    let promptDefault = current;
+    while (true) {
+      const raw = window.prompt(
+        "견적서 실제 제출일을 입력해주세요. (YYYY-MM-DD)",
+        promptDefault,
+      );
+      if (raw === null) {
+        setErr("견적 저장 전 실제 제출일 입력이 필요합니다.");
+        return null;
+      }
+      const next = raw.trim();
+      if (isValidIsoDate(next)) {
+        setForm((prev) => ({ ...prev, submission_date: next }));
+        return next;
+      }
+      promptDefault = next;
+      window.alert("제출일은 YYYY-MM-DD 형식의 유효한 날짜로 입력해주세요.");
+    }
+  };
+
   const handleSave = async (): Promise<void> => {
     // 견적서 탭 저장 (PR-M3) — list 모드는 저장 X (신규/수정 공통).
     // new 모드: 신규 영업이면 createSale, 영업 수정이면 addSaleQuote.
@@ -438,6 +474,8 @@ export default function SalesEditModal({
         );
         return;
       }
+      const submissionDate = requestQuoteSubmissionDate();
+      if (!submissionDate) return;
       if (!quoteInput.service_name?.trim()) {
         setErr("용역명은 필수입니다.");
         return;
@@ -482,6 +520,7 @@ export default function SalesEditModal({
             estimated_amount: quoteResult.final,
             client_id: resolvedClientId,
             assignees: defaultAssignee ? [defaultAssignee] : [],
+            submission_date: submissionDate,
             ...scaleFields,
             quote_form_data: { input: quoteInput, result: quoteResult },
           };
@@ -494,12 +533,24 @@ export default function SalesEditModal({
           );
         } else if (sale && quoteMode === "new") {
           // 영업 수정 모드 + 신규 견적 추가
+          if (sale.submission_date !== submissionDate) {
+            const updated = await updateSale(sale.id, {
+              submission_date: submissionDate,
+            });
+            setSale(updated);
+          }
           await addSaleQuote(sale.id, quoteInput);
           await refreshQuoteList();
           setQuoteMode("list");
           refreshSales();
           alert("견적이 추가되었습니다.");
         } else if (sale && quoteMode === "edit" && editingQuoteId) {
+          if (sale.submission_date !== submissionDate) {
+            const updated = await updateSale(sale.id, {
+              submission_date: submissionDate,
+            });
+            setSale(updated);
+          }
           await updateSaleQuote(sale.id, editingQuoteId, quoteInput);
           await refreshQuoteList();
           setQuoteMode("list");

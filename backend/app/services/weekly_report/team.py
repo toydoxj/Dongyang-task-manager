@@ -21,7 +21,7 @@ from __future__ import annotations
 from collections import defaultdict
 from datetime import date
 
-from sqlalchemy import and_, or_
+from sqlalchemy import and_, func, or_
 from sqlalchemy.orm import Session
 
 from app.models import mirror as M
@@ -49,6 +49,23 @@ _STAGE_SORT_PRIORITY: dict[str, int] = {
     "대기": 2,
     "보류": 3,
 }
+
+
+def _task_effective_end_date(task: M.MirrorTask) -> date | None:
+    """업무 활성 기간 종료일.
+
+    완료 업무는 예상 완료일이 비어 있어도 실제 완료일 이후 주차에 계속 노출되면
+    안 되므로 actual_end_date를 우선 사용한다.
+    """
+    return task.actual_end_date or task.end_date
+
+
+def _task_overlaps_period(task: M.MirrorTask, start: date, end: date) -> bool:
+    """task 기간이 [start, end]와 교집합인지 판단."""
+    effective_end = _task_effective_end_date(task)
+    return (task.start_date is None or task.start_date <= end) and (
+        effective_end is None or effective_end >= start
+    )
 
 
 def aggregate_team_projects(
@@ -187,6 +204,10 @@ def aggregate_team_work(
     client_name_by_id = _client_name_lookup(db)
 
     # ── 3. 관련 task 한 번에 fetch (지난주 활성/완료 또는 이번주 활성) ──
+    effective_end_expr = func.coalesce(
+        M.MirrorTask.actual_end_date,
+        M.MirrorTask.end_date,
+    )
     tasks = (
         db.query(M.MirrorTask)
         .filter(M.MirrorTask.archived.is_(False))
@@ -201,12 +222,12 @@ def aggregate_team_work(
                 # 지난주에 활성이었던 task — 기간이 last_week와 교집합 (진행 중 포함)
                 and_(
                     or_(M.MirrorTask.start_date.is_(None), M.MirrorTask.start_date <= last_week_end),
-                    or_(M.MirrorTask.end_date.is_(None), M.MirrorTask.end_date >= last_week_start),
+                    or_(effective_end_expr.is_(None), effective_end_expr >= last_week_start),
                 ),
                 # 이번주 활성 task — 기간이 [week_start, week_end]와 교집합
                 and_(
                     or_(M.MirrorTask.start_date.is_(None), M.MirrorTask.start_date <= week_end),
-                    or_(M.MirrorTask.end_date.is_(None), M.MirrorTask.end_date >= week_start),
+                    or_(effective_end_expr.is_(None), effective_end_expr >= week_start),
                 ),
             )
         )
@@ -226,13 +247,8 @@ def aggregate_team_work(
         is_last_week = (
             t.actual_end_date is not None
             and last_week_start <= t.actual_end_date <= last_week_end
-        ) or (
-            (t.start_date is None or t.start_date <= last_week_end)
-            and (t.end_date is None or t.end_date >= last_week_start)
-        )
-        is_this_week = (t.start_date is None or t.start_date <= week_end) and (
-            t.end_date is None or t.end_date >= week_start
-        )
+        ) or _task_overlaps_period(t, last_week_start, last_week_end)
+        is_this_week = _task_overlaps_period(t, week_start, week_end)
         relations: list[tuple[str, str]] = []
         for pid in t.project_ids or []:
             relations.append((pid, "project"))
