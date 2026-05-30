@@ -239,8 +239,16 @@ class NotionSyncService:
 
     # ── 마스터 페이지 본문(이미지 등) ──
 
-    async def sync_master_blocks(self, page_id: str) -> int:
-        children = await self.notion.list_block_children(page_id)
+    async def sync_master_blocks(
+        self,
+        page_id: str,
+        *,
+        user_facing: bool = False,
+    ) -> int:
+        children = await self.notion.list_block_children(
+            page_id,
+            user_facing=user_facing,
+        )
         with self.session_factory() as db:
             # 기존 블록 모두 지우고 다시 채움 (단순/안전)
             db.query(M.MirrorBlock).filter(

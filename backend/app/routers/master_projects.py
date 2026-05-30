@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
@@ -22,6 +23,7 @@ from app.settings import get_settings
 # 노션이 업로드를 받는 MIME 화이트리스트 (이미지)
 _IMAGE_TYPES = {"image/png", "image/jpeg", "image/gif", "image/webp", "image/svg+xml"}
 _MAX_IMAGE_BYTES = 20 * 1024 * 1024  # single_part upload 한도
+_IMAGE_URL_REFRESH_AFTER = timedelta(minutes=10)
 
 logger = logging.getLogger("master_projects")
 
@@ -151,6 +153,23 @@ def _image_url(image: dict[str, Any]) -> str | None:
     if src_type and (image.get(src_type) or {}).get("url"):
         return image[src_type]["url"]
     return None
+
+
+def _needs_image_url_refresh(rows: list[M.MirrorBlock]) -> bool:
+    """노션 file URL은 만료되므로 오래된 file image row는 재동기화한다."""
+    if not rows:
+        return True
+    now = datetime.now(UTC)
+    for row in rows:
+        image = row.content or {}
+        if image.get("type") == "external":
+            continue
+        synced_at = row.synced_at
+        if synced_at.tzinfo is None:
+            synced_at = synced_at.replace(tzinfo=UTC)
+        if now - synced_at >= _IMAGE_URL_REFRESH_AFTER:
+            return True
+    return False
 
 
 def _from_page(page: dict) -> MasterProject:
@@ -307,12 +326,19 @@ async def list_master_images(
         .scalars()
         .all()
     )
-    if not rows:
-        # mirror에 없으면 즉시 sync (최초 진입 등)
+    if _needs_image_url_refresh(rows):
+        # mirror miss 또는 Notion signed file URL 만료 예방을 위해 신선한 URL로 갱신한다.
         try:
-            await get_sync().sync_master_blocks(page_id)
+            await get_sync().sync_master_blocks(page_id, user_facing=True)
         except NotFoundError as exc:
             raise HTTPException(status_code=404, detail=exc.message) from exc
+        except Exception as exc:  # noqa: BLE001 — 노션 일시 실패 시 기존 mirror를 fallback
+            if not rows:
+                raise HTTPException(
+                    status_code=502,
+                    detail="마스터 프로젝트 이미지 동기화 실패",
+                ) from exc
+            logger.warning("master image URL refresh 실패 (page=%s): %s", page_id, exc)
         rows = (
             db.execute(
                 select(M.MirrorBlock)

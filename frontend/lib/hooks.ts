@@ -187,6 +187,7 @@ export function useMasterImages(
   return useSWR(
     id ? ["master-images", id] : null,
     () => listMasterImages(id!),
+    { refreshInterval: 9 * 60 * 1000 },
   );
 }
 

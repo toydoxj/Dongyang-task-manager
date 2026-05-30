@@ -477,9 +477,14 @@ class NotionService:
     # ── 블록(페이지 본문) ──
 
     async def list_block_children(
-        self, block_id: str, *, page_size: int = 100
+        self,
+        block_id: str,
+        *,
+        page_size: int = 100,
+        user_facing: bool = False,
     ) -> list[dict[str, Any]]:
         """페이지/블록의 children 전체 (페이지네이션 자동)."""
+        client = self._pick_client(user_facing)
         results: list[dict[str, Any]] = []
         cursor: str | None = None
         while True:
@@ -487,7 +492,8 @@ class NotionService:
             if cursor is not None:
                 opts["start_cursor"] = cursor
             page = await self._call(
-                lambda o=opts: self._client.blocks.children.list(**o),
+                lambda o=opts: client.blocks.children.list(**o),
+                user_facing=user_facing,
             )
             results.extend(page.get("results", []))
             if not page.get("has_more"):
