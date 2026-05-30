@@ -110,6 +110,8 @@ class SealRequestItem(BaseModel):
     id: str
     title: str = ""
     project_ids: list[str] = []
+    project_code: str = ""
+    project_name: str = ""
     seal_type: str = ""
     status: str = "1차검토 중"
     requester: str = ""
@@ -125,6 +127,7 @@ class SealRequestItem(BaseModel):
     # 실제출처: 거래처 DB(notion_db_clients) relation. 단일 선택. 이름은 frontend가
     # useClients로 resolve.
     real_source_id: str = ""
+    real_source_name: str = ""
     purpose: str = ""            # 용도
     revision: int | None = None  # Revision (구조계산서)
     with_safety_cert: bool = False  # 안전확인서포함 (구조계산서)
@@ -146,6 +149,7 @@ class SealRequestItem(BaseModel):
 class SealListResponse(BaseModel):
     items: list[SealRequestItem]
     count: int
+    total: int | None = None
 
 
 # PendingCount — PR-CG에서 seal_requests/meta.py로 이동

@@ -20,15 +20,16 @@ from sqlalchemy.orm import Session
 from app.db import get_db
 from app.models import mirror as M
 from app.models.auth import User
-from app.security import get_current_user
-from app.services.notion import NotionService, get_notion
 
 # PR-CV: list endpoint의 path가 빈 문자열("")이라 sub-router로 mount하면
 # FastAPI의 "prefix와 path 둘 다 비면 안 됨" 검증에 걸림. router 만들지 않고
 # 함수만 export → __init__.py에서 root router에 직접 add_api_route.
-
 # module-level lazy import — __init__.py가 sub-router include 시점(파일 끝)에 fully loaded.
-from app.routers.seal_requests import SealListResponse  # noqa: E402
+from app.routers.seal_requests import SealListResponse, SealRequestItem  # noqa: E402
+from app.security import get_current_user
+from app.services.notion import NotionService, get_notion
+
+_LIST_MAX_LIMIT = 100
 
 
 def _synth_props_from_minimal(row: M.MirrorSealRequest) -> dict:
@@ -82,8 +83,47 @@ def _mirror_row_to_notion_page(row: M.MirrorSealRequest) -> dict:
     }
 
 
+def _enrich_list_labels(db: Session, items: list[SealRequestItem]) -> None:
+    """목록 표시용 프로젝트/실제출처 이름을 mirror에서 한 번에 보강."""
+    project_ids = {
+        item.project_ids[0]
+        for item in items
+        if item.project_ids and item.project_ids[0]
+    }
+    client_ids = {
+        item.real_source_id
+        for item in items
+        if item.real_source_id
+    }
+
+    project_map: dict[str, tuple[str, str]] = {}
+    if project_ids:
+        rows = db.execute(
+            select(M.MirrorProject.page_id, M.MirrorProject.code, M.MirrorProject.name)
+            .where(M.MirrorProject.page_id.in_(project_ids))
+        ).all()
+        project_map = {pid: (code or "", name or "") for pid, code, name in rows}
+
+    client_map: dict[str, str] = {}
+    if client_ids:
+        rows = db.execute(
+            select(M.MirrorClient.page_id, M.MirrorClient.name)
+            .where(M.MirrorClient.page_id.in_(client_ids))
+        ).all()
+        client_map = {pid: name or "" for pid, name in rows}
+
+    for item in items:
+        project_id = item.project_ids[0] if item.project_ids else ""
+        if project_id in project_map:
+            item.project_code, item.project_name = project_map[project_id]
+        if item.real_source_id:
+            item.real_source_name = client_map.get(item.real_source_id, "")
+
+
 async def list_seal_requests(
     project_id: str | None = None,
+    offset: int = 0,
+    limit: int | None = None,
     user: User = Depends(get_current_user),
     notion: NotionService = Depends(get_notion),  # signature 유지 (호출자 forward)
     db: Session = Depends(get_db),
@@ -127,4 +167,10 @@ async def list_seal_requests(
     pages = _filter_accessible(user, pages, db)
     items = [_from_notion_page(p) for p in pages]
     items = _sort_items_by_role(items, user.role or "member")
-    return SealListResponse(items=items, count=len(items))
+    total = len(items)
+    if limit is not None:
+        safe_offset = max(0, int(offset or 0))
+        safe_limit = min(max(1, int(limit)), _LIST_MAX_LIMIT)
+        items = items[safe_offset:safe_offset + safe_limit]
+    _enrich_list_labels(db, items)
+    return SealListResponse(items=items, count=len(items), total=total)

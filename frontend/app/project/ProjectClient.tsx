@@ -374,6 +374,14 @@ const SEAL_HISTORY_BADGE: Record<string, string> = {
   반려: "bg-red-500/15 text-red-700 dark:text-red-400",
 };
 
+function displaySealTitle(title: string, projectCode?: string): string {
+  const code = projectCode?.trim();
+  if (!code) return title || "(제목 없음)";
+  if (title.startsWith(`${code}_`)) return title.slice(code.length + 1);
+  if (title.startsWith(`[${code}] `)) return title.slice(code.length + 3);
+  return title || "(제목 없음)";
+}
+
 function SealHistoryList({
   seals,
   onClick,
@@ -399,6 +407,7 @@ function SealHistoryList({
                 day: "2-digit",
               })
             : "—";
+          const title = displaySealTitle(s.title, s.project_code);
           return (
             <li key={s.id}>
               <button
@@ -423,9 +432,9 @@ function SealHistoryList({
                 </span>
                 <span
                   className="flex-1 truncate text-xs text-zinc-900 dark:text-zinc-100"
-                  title={s.title}
+                  title={title}
                 >
-                  {s.title || "(제목 없음)"}
+                  {title}
                 </span>
                 {s.doc_no && (
                   <span className="hidden shrink-0 font-mono text-[10px] text-zinc-500 sm:inline">

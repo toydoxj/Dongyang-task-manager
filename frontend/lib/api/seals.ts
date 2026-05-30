@@ -25,6 +25,8 @@ export interface SealRequestItem {
   id: string;
   title: string;
   project_ids: string[];
+  project_code?: string;
+  project_name?: string;
   seal_type: string;
   status: string;
   requester: string;
@@ -39,6 +41,7 @@ export interface SealRequestItem {
   // docs/request.md 추가 컬럼
   // 실제출처: 거래처 DB relation. 이름은 frontend useClients hook으로 lookup.
   real_source_id: string;
+  real_source_name?: string;
   purpose: string;
   revision: number | null;
   with_safety_cert: boolean;
@@ -69,13 +72,18 @@ export interface SealUpdateBody {
 export interface SealListResponse {
   items: SealRequestItem[];
   count: number;
+  total?: number | null;
 }
 
 export async function listSealRequests(
-  filters: { projectId?: string } = {},
+  filters: { projectId?: string; offset?: number; limit?: number } = {},
 ): Promise<SealListResponse> {
   const res = await authFetch(
-    `/api/seal-requests${qs({ project_id: filters.projectId })}`,
+    `/api/seal-requests${qs({
+      project_id: filters.projectId,
+      offset: filters.offset,
+      limit: filters.limit,
+    })}`,
   );
   return jsonOrThrow<SealListResponse>(res);
 }

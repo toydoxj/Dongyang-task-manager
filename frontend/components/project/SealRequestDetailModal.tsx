@@ -22,6 +22,14 @@ const STATUS_COLOR: Record<string, string> = {
   반려: "bg-red-500/15 text-red-700 dark:text-red-400",
 };
 
+function displayTitle(title: string, projectCode?: string): string {
+  const code = projectCode?.trim();
+  if (!code) return title || "(제목 없음)";
+  if (title.startsWith(`${code}_`)) return title.slice(code.length + 1);
+  if (title.startsWith(`[${code}] `)) return title.slice(code.length + 3);
+  return title || "(제목 없음)";
+}
+
 interface Props {
   item: SealRequestItem;
   onClose: () => void;
@@ -41,9 +49,10 @@ export default function SealRequestDetailModal({
     : "";
   // PR-FW: 프로젝트 폴더 부재 시 만들기 버튼 노출용. project_ids 중 첫 element.
   const { data: project } = useProject(item.project_ids[0] ?? null);
+  const modalTitle = displayTitle(item.title, item.project_code || project?.code);
 
   return (
-    <Modal open onClose={onClose} title={item.title || "(제목 없음)"} size="lg">
+    <Modal open onClose={onClose} title={modalTitle} size="lg">
       <div className="space-y-3 text-sm">
         <EnsureProjectFolderButton project={project} />
         <div className="grid grid-cols-2 gap-3">

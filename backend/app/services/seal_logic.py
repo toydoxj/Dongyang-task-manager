@@ -65,37 +65,37 @@ def build_title(*, code: str, seal_type: str, fields: dict[str, Any]) -> str:
 
     | seal_type        | fields keys              | template                          |
     |------------------|--------------------------|-----------------------------------|
-    | 구조계산서       | revision, 용도           | {code}_구조계산서_rev{N}_{용도}   |
-    | 구조안전확인서   | 용도                     | {code}_구조안전확인서_{용도}      |
-    | 구조검토서       | 문서번호                 | {code}_{문서번호}_구조검토서      |
-    | 구조도면         | 용도                     | {code}_구조도면_{용도}            |
-    | 보고서           | (없음)                   | {code}_보고서                     |
-    | 기타             | 문서종류                 | {code}_{문서종류}                 |
+    | 구조계산서       | revision, 용도           | 구조계산서_rev{N}_{용도}          |
+    | 구조안전확인서   | 용도                     | 구조안전확인서_{용도}             |
+    | 구조검토서       | 문서번호                 | {문서번호}_구조검토서             |
+    | 구조도면         | 용도                     | 구조도면_{용도}                   |
+    | 보고서           | (없음)                   | 보고서                            |
+    | 기타             | 문서종류                 | {문서종류}                        |
 
     값이 비어있으면 placeholder를 채워 일단 문자열 반환 (router에서 검증).
     """
-    c = (code or "").strip() or "?"
+    _ = code  # 기존 호출부 호환용. 제목에는 프로젝트 번호를 넣지 않는다.
     if seal_type == "구조계산서":
         rev = fields.get("revision")
         purpose = (fields.get("용도") or "").strip() or "?"
         rev_str = str(int(rev)) if isinstance(rev, int | float) and rev else "0"
-        return f"{c}_구조계산서_rev{rev_str}_{purpose}"
+        return f"구조계산서_rev{rev_str}_{purpose}"
     if seal_type == "구조안전확인서":
         purpose = (fields.get("용도") or "").strip() or "?"
-        return f"{c}_구조안전확인서_{purpose}"
+        return f"구조안전확인서_{purpose}"
     if seal_type == "구조검토서":
         doc_no = (fields.get("문서번호") or "").strip() or "?"
-        return f"{c}_{doc_no}_구조검토서"
+        return f"{doc_no}_구조검토서"
     if seal_type == "구조도면":
         purpose = (fields.get("용도") or "").strip() or "?"
-        return f"{c}_구조도면_{purpose}"
+        return f"구조도면_{purpose}"
     if seal_type == "보고서":
-        return f"{c}_보고서"
+        return "보고서"
     if seal_type == "기타":
         kind = (fields.get("문서종류") or "").strip() or "기타"
-        return f"{c}_{kind}"
+        return kind
     # fallback (legacy 호출 등)
-    return f"{c}_{seal_type}"
+    return seal_type
 
 
 # ── 구조검토서 문서번호 ──

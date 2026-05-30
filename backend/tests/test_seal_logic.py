@@ -47,7 +47,7 @@ def test_build_title_calc() -> None:
             seal_type="구조계산서",
             fields={"revision": 2, "용도": "허가용"},
         )
-        == "DY-26-100_구조계산서_rev2_허가용"
+        == "구조계산서_rev2_허가용"
     )
 
 
@@ -59,7 +59,7 @@ def test_build_title_calc_zero_rev() -> None:
             seal_type="구조계산서",
             fields={"revision": 0, "용도": "허가용"},
         )
-        == "DY-26-100_구조계산서_rev0_허가용"
+        == "구조계산서_rev0_허가용"
     )
 
 
@@ -70,7 +70,7 @@ def test_build_title_safety_cert() -> None:
             seal_type="구조안전확인서",
             fields={"용도": "착공용"},
         )
-        == "DY-26-100_구조안전확인서_착공용"
+        == "구조안전확인서_착공용"
     )
 
 
@@ -81,7 +81,7 @@ def test_build_title_review() -> None:
             seal_type="구조검토서",
             fields={"문서번호": "26-의견-005"},
         )
-        == "DY-26-100_26-의견-005_구조검토서"
+        == "26-의견-005_구조검토서"
     )
 
 
@@ -92,13 +92,13 @@ def test_build_title_drawing() -> None:
             seal_type="구조도면",
             fields={"용도": "실시설계"},
         )
-        == "DY-26-100_구조도면_실시설계"
+        == "구조도면_실시설계"
     )
 
 
 def test_build_title_report() -> None:
     assert SL.build_title(code="DY-26-100", seal_type="보고서", fields={}) == (
-        "DY-26-100_보고서"
+        "보고서"
     )
 
 
@@ -109,14 +109,14 @@ def test_build_title_etc() -> None:
             seal_type="기타",
             fields={"문서종류": "공사관리계획"},
         )
-        == "DY-26-100_공사관리계획"
+        == "공사관리계획"
     )
 
 
 def test_build_title_etc_default() -> None:
     """문서종류 비어있으면 '기타'로."""
     assert SL.build_title(code="DY-26-100", seal_type="기타", fields={}) == (
-        "DY-26-100_기타"
+        "기타"
     )
 
 

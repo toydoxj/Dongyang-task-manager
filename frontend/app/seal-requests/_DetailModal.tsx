@@ -26,6 +26,14 @@ import { cn } from "@/lib/utils";
 
 import { extractResourceKey, resolveClientName, STATUS_COLOR } from "./_utils";
 
+function displayTitle(title: string, projectCode?: string): string {
+  const code = projectCode?.trim();
+  if (!code) return title || "(제목 없음)";
+  if (title.startsWith(`${code}_`)) return title.slice(code.length + 1);
+  if (title.startsWith(`[${code}] `)) return title.slice(code.length + 3);
+  return title || "(제목 없음)";
+}
+
 export default function DetailModal({
   item,
   isAdmin,
@@ -47,6 +55,7 @@ export default function DetailModal({
   // 프로젝트명/발주처 표시용 — 첫 번째 project_id로 lookup
   const projectId = item.project_ids?.[0] ?? "";
   const { data: project } = useProject(projectId || null);
+  const modalTitle = displayTitle(item.title, item.project_code || project?.code);
   const projectClientLabel = useMemo<string>(() => {
     if (item.real_source_id) {
       return clients.find((c) => c.id === item.real_source_id)?.name ?? "";
@@ -124,7 +133,7 @@ export default function DetailModal({
   };
 
   return (
-    <Modal open onClose={onClose} title={item.title || "(제목 없음)"} size="lg">
+    <Modal open onClose={onClose} title={modalTitle} size="lg">
       <div className="space-y-3 text-sm">
         {/* 프로젝트명 + 발주처(실제출처) */}
         <div className="grid grid-cols-2 gap-3 rounded-md border border-zinc-200 p-2 dark:border-zinc-800">
