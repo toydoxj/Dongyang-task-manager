@@ -18,6 +18,7 @@ from sqlalchemy.orm import Session
 from app.models import mirror as M
 from app.models.cashflow import CashflowEntry
 from app.models.contract_item import ContractItem
+from app.models.employee import Employee
 from app.models.project import Project
 from app.models.sale import Sale
 from app.models.task import Task
@@ -56,6 +57,7 @@ ALL_KINDS: tuple[SyncKind, ...] = (
 # 지연·clock skew로 boundary 페이지가 빠질 수 있어 60초 overlap. upsert가
 # idempotent라 중복 수집은 안전.
 _INCREMENTAL_OVERLAP = timedelta(seconds=60)
+_EMPLOYEE_TEAM_CACHE_KEY = "active_employee_team_map"
 
 
 def _utcnow() -> datetime:
@@ -83,6 +85,28 @@ def _parse_date(s: str | None):
             return datetime.strptime(s, "%Y-%m-%d").date()
         except ValueError:
             return None
+
+
+def _multi_select_prop(values: list[str]) -> dict[str, Any]:
+    return {"multi_select": [{"name": v} for v in values if v]}
+
+
+def _preserve_team_prop(
+    props: dict[str, Any],
+    *,
+    current_teams: list[str] | None,
+    current_props: dict[str, Any] | None,
+) -> tuple[list[str], dict[str, Any]]:
+    """기존 담당팀을 properties와 정규화 컬럼 양쪽에 보존한다."""
+    current_props = current_props or {}
+    teams = [t for t in (current_teams or []) if t]
+    if not teams:
+        teams = [t for t in P.multi_select_names(current_props, "담당팀") if t]
+    if not teams:
+        return [], props
+
+    team_prop = current_props.get("담당팀") or _multi_select_prop(teams)
+    return teams, {**props, "담당팀": team_prop}
 
 
 class NotionSyncService:
@@ -361,10 +385,19 @@ class NotionSyncService:
             normalized = P.normalize_properties_for_mirror(props)
             if normalized is not props:
                 page = {**page, "properties": normalized}
+        preserve_teams_without_assignees = skip_active_outbox
         if kind == "projects":
-            self._upsert_project(db, page)
+            self._upsert_project(
+                db,
+                page,
+                preserve_teams_without_assignees=preserve_teams_without_assignees,
+            )
         elif kind == "tasks":
-            self._upsert_task(db, page)
+            self._upsert_task(
+                db,
+                page,
+                preserve_teams_without_assignees=preserve_teams_without_assignees,
+            )
         elif kind == "clients":
             self._upsert_client(db, page)
         elif kind == "master":
@@ -431,8 +464,95 @@ class NotionSyncService:
 
     # ── 도메인별 upsert ──
 
-    def _upsert_project(self, db: Session, page: dict) -> None:
+    def _active_employee_team_map(self, db: Session) -> dict[str, str]:
+        info = getattr(db, "info", None)
+        if isinstance(info, dict):
+            cached = info.get(_EMPLOYEE_TEAM_CACHE_KEY)
+            if isinstance(cached, dict):
+                return {
+                    str(name): str(team)
+                    for name, team in cached.items()
+                    if name and team
+                }
+
+        rows = db.execute(
+            select(Employee.name, Employee.team).where(
+                Employee.resigned_at.is_(None),
+            )
+        ).all()
+        team_by_name = {name: team for name, team in rows if name and team}
+        if isinstance(info, dict):
+            info[_EMPLOYEE_TEAM_CACHE_KEY] = team_by_name
+        return team_by_name
+
+    def _teams_from_assignees(
+        self,
+        db: Session,
+        assignees: list[str],
+    ) -> list[str]:
+        names = [name for name in assignees if name]
+        if not names:
+            return []
+
+        team_by_name = self._active_employee_team_map(db)
+
+        teams: list[str] = []
+        seen: set[str] = set()
+        for name in names:
+            team = team_by_name.get(name)
+            if team and team not in seen:
+                seen.add(team)
+                teams.append(team)
+        return teams
+
+    def _apply_assignee_team_policy(
+        self,
+        db: Session,
+        table: type,
+        page_id: str,
+        props: dict[str, Any],
+        *,
+        assignees: list[str],
+        teams: list[str],
+        preserve_without_assignees: bool,
+    ) -> tuple[list[str], dict[str, Any]]:
+        derived_teams = self._teams_from_assignees(db, assignees)
+        if derived_teams:
+            return derived_teams, {
+                **props,
+                "담당팀": _multi_select_prop(derived_teams),
+            }
+
+        if assignees or teams or not page_id or not preserve_without_assignees:
+            return teams, props
+
+        current = db.get(table, page_id)
+        if current is None or getattr(current, "archived", False):
+            return teams, props
+        return _preserve_team_prop(
+            props,
+            current_teams=list(getattr(current, "teams", []) or []),
+            current_props=getattr(current, "properties", None) or {},
+        )
+
+    def _upsert_project(
+        self,
+        db: Session,
+        page: dict,
+        *,
+        preserve_teams_without_assignees: bool = False,
+    ) -> None:
         p = Project.from_notion_page(page)
+        props = page.get("properties", {})
+        teams, props = self._apply_assignee_team_policy(
+            db,
+            M.MirrorProject,
+            p.id,
+            props,
+            assignees=list(p.assignees),
+            teams=list(p.teams),
+            preserve_without_assignees=preserve_teams_without_assignees,
+        )
         stmt = pg_insert(M.MirrorProject).values(
             page_id=p.id,
             code=p.code or "",
@@ -442,9 +562,9 @@ class NotionSyncService:
             stage=p.stage or "",
             completed=bool(p.completed),
             assignees=list(p.assignees),
-            teams=list(p.teams),
+            teams=teams,
             client_relation_ids=list(p.client_relation_ids),
-            properties=page.get("properties", {}),
+            properties=props,
             url=page.get("url") or "",
             last_edited_time=_parse_iso(p.last_edited_time),
             synced_at=_utcnow(),
@@ -472,8 +592,24 @@ class NotionSyncService:
             )
         )
 
-    def _upsert_task(self, db: Session, page: dict) -> None:
+    def _upsert_task(
+        self,
+        db: Session,
+        page: dict,
+        *,
+        preserve_teams_without_assignees: bool = False,
+    ) -> None:
         t = Task.from_notion_page(page)
+        props = page.get("properties", {})
+        teams, props = self._apply_assignee_team_policy(
+            db,
+            M.MirrorTask,
+            t.id,
+            props,
+            assignees=list(t.assignees),
+            teams=list(t.teams),
+            preserve_without_assignees=preserve_teams_without_assignees,
+        )
         stmt = pg_insert(M.MirrorTask).values(
             page_id=t.id,
             title=t.title or "",
@@ -490,9 +626,9 @@ class NotionSyncService:
             end_date=_parse_date(t.end_date),
             actual_end_date=_parse_date(t.actual_end_date),
             assignees=list(t.assignees),
-            teams=list(t.teams),
+            teams=teams,
             weekly_plan_text=t.weekly_plan_text or "",
-            properties=page.get("properties", {}),
+            properties=props,
             url=page.get("url") or "",
             created_time=_parse_iso(t.created_time),
             last_edited_time=_parse_iso(t.last_edited_time),
