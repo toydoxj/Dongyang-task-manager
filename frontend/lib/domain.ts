@@ -13,7 +13,7 @@ export interface Project {
   stage: string; // 진행중|대기|보류|완료|타절|종결|이관 (운영 상태)
   phase: string; // 작업단계: 사업승인|계획설계|계획검토|기본설계|실시설계|시공감리|사용승인 (PR-W)
   contract_signed: boolean;
-  completed: boolean;
+  completed: boolean; // backend 계산값: stage in {완료,타절,종결}
   start_date: string | null;
   contract_start: string | null;
   contract_end: string | null;

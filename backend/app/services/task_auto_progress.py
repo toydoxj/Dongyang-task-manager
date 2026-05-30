@@ -13,12 +13,12 @@ from __future__ import annotations
 
 import logging
 from datetime import date, datetime, timedelta, timezone
-from typing import Any
 
 from sqlalchemy import and_, or_, select
 
 from app.db import SessionLocal
 from app.models import mirror as M
+from app.models.project import is_project_completed_stage
 from app.services import notion_props as P
 from app.services.notion import NotionService
 from app.services.project_log import log_assign_change
@@ -122,8 +122,7 @@ async def auto_progress_tasks(notion: NotionService) -> dict[str, int]:
             logger.exception("task 자동 진행 실패 page_id=%s", t.page_id)
             task_failed += 1
 
-    # 프로젝트 진행단계 promote — '완료' 체크박스/완료일도 함께 클리어해
-    # stage=진행중 + completed=true 같은 부정합 회피.
+    # 프로젝트 진행단계 promote — 완료 단계에서 재활성화되는 경우 완료일도 함께 클리어.
     # 클리어되는 이전 완료 정보는 assign_log 에 '완료 해제' 이벤트로 기록.
     projects_due = _list_projects_to_promote(project_ids_to_promote)
     project_updated = 0
@@ -131,7 +130,7 @@ async def auto_progress_tasks(notion: NotionService) -> dict[str, int]:
     for p in projects_due:
         try:
             # 이전 완료 정보 capture — 클리어 후 추적용
-            prev_completed = bool(p.completed)
+            prev_completed = is_project_completed_stage(p.stage)
             prev_end_date = (
                 P.date_range(p.properties or {}, "완료일")[0] or ""
             )
@@ -140,7 +139,6 @@ async def auto_progress_tasks(notion: NotionService) -> dict[str, int]:
                 p.page_id,
                 {
                     "진행단계": {"select": {"name": "진행중"}},
-                    "완료": {"checkbox": False},
                     "완료일": {"date": None},
                 },
             )

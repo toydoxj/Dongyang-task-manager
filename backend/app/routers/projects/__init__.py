@@ -27,10 +27,12 @@ from app.models import mirror as M
 from app.models.auth import User
 from app.models.notion_outbox import OP_UPDATE
 from app.models.project import (
+    PROJECT_COMPLETED_STAGES,
     Project,
     ProjectCreateRequest,
     ProjectListResponse,
     ProjectUpdateRequest,
+    is_project_completed_stage,
     project_create_to_props,
     project_update_to_props,
 )
@@ -220,8 +222,10 @@ def list_projects(
         stmt = stmt.where(M.MirrorProject.stage == stage)
     if team:
         stmt = stmt.where(M.MirrorProject.teams.contains([team]))  # type: ignore[attr-defined]
-    if completed is not None:
-        stmt = stmt.where(M.MirrorProject.completed.is_(completed))
+    if completed is True:
+        stmt = stmt.where(M.MirrorProject.stage.in_(PROJECT_COMPLETED_STAGES))
+    elif completed is False:
+        stmt = stmt.where(~M.MirrorProject.stage.in_(PROJECT_COMPLETED_STAGES))
     if q:
         # PR-ED: code 또는 name에 부분 일치 (대소문자 무시).
         from sqlalchemy import or_ as _or
@@ -405,16 +409,13 @@ async def assign_me(
     props = row.properties or {}
     current = P.multi_select_names(props, "담당자")
     current_stage = P.select_name(props, "진행단계")
-    current_completed = P.checkbox(props, "완료")
+    current_completed = is_project_completed_stage(current_stage)
     prev_end_date = P.date_range(props, "완료일")[0] or ""
     needs_assign = target_name not in current
     needs_stage = set_to_waiting and current_stage != "진행중"
-    needs_data_heal = (
-        current_stage in {"진행중", "대기"} and current_completed
-    )
-    needs_clear_completed = (needs_stage and current_completed) or needs_data_heal
+    needs_clear_completed = needs_stage and current_completed
 
-    if not needs_assign and not needs_stage and not needs_data_heal:
+    if not needs_assign and not needs_stage:
         return project_from_mirror(row)
 
     update_props: dict = {}
@@ -426,7 +427,6 @@ async def assign_me(
     if needs_stage:
         update_props["진행단계"] = {"select": {"name": "대기"}}
     if needs_clear_completed:
-        update_props["완료"] = {"checkbox": False}
         update_props["완료일"] = {"date": None}
 
     page_like = _project_page_from_mirror_with_update(row, update_props)
@@ -504,6 +504,7 @@ VALID_STAGES = {"진행중", "대기", "보류", "완료", "타절", "종결", "
 @router.patch("/{page_id}/stage", response_model=Project)
 async def set_project_stage(
     page_id: str,
+    background: BackgroundTasks,
     stage: str = Query(..., description="대기/보류/완료/타절/종결/이관 중 하나"),
     _admin: User = Depends(require_admin),
     notion: NotionService = Depends(get_notion),  # noqa: ARG001
@@ -524,7 +525,12 @@ async def set_project_stage(
     row = db.get(M.MirrorProject, page_id)
     if row is None or row.archived:
         raise HTTPException(status_code=404, detail="프로젝트를 찾을 수 없습니다")
+    was_completed = is_project_completed_stage(row.stage)
+    will_be_completed = is_project_completed_stage(stage)
+    prev_end_date = P.date_range(row.properties or {}, "완료일")[0] or ""
     props = {"진행단계": {"select": {"name": stage}}}
+    if was_completed and not will_be_completed:
+        props["완료일"] = {"date": None}
     page_like = _project_page_from_mirror_with_update(row, props)
     sync = get_sync()
     sync.upsert_in_session(db, "projects", page_like)
@@ -533,7 +539,20 @@ async def set_project_stage(
         op=OP_UPDATE, payload=props, notion_page_id=page_id,
     )
     db.commit()
-    return Project.from_notion_page(page_like)
+    project = Project.from_notion_page(page_like)
+    if was_completed and not will_be_completed:
+        background.add_task(
+            _log_assign_change,
+            notion,
+            project_id=page_id,
+            project_name=(
+                f"{project.name} (이전 완료일: {prev_end_date or '미상'})"
+            ),
+            actor=_admin.name or "(시스템)",
+            target="(자동)",
+            action="완료 해제",
+        )
+    return project
 
 
 @router.delete("/{page_id}/assign", response_model=Project)

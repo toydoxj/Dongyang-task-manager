@@ -10,6 +10,7 @@ from datetime import datetime, timezone
 import pytest
 
 from app.models import mirror as M
+from app.models.project import Project
 from app.routers.projects import _project_page_from_mirror_with_update
 
 
@@ -56,6 +57,29 @@ def test_project_page_from_mirror_merges_props() -> None:
     assert page["url"] == "https://notion.so/..."
     assert page["archived"] is False
     assert "T" in page["last_edited_time"]  # ISO format
+
+
+def test_project_completed_is_derived_from_stage() -> None:
+    """완료 여부는 노션 체크박스가 아니라 진행단계에서 계산한다."""
+    page = {
+        "id": "proj-stage",
+        "properties": {
+            "프로젝트명": {
+                "type": "title",
+                "title": [{"plain_text": "단계 완료 프로젝트"}],
+            },
+            "진행단계": {"type": "select", "select": {"name": "완료"}},
+            "완료": {"type": "checkbox", "checkbox": False},
+        },
+    }
+    assert Project.from_notion_page(page).completed is True
+
+    page["properties"]["진행단계"] = {
+        "type": "select",
+        "select": {"name": "진행중"},
+    }
+    page["properties"]["완료"] = {"type": "checkbox", "checkbox": True}
+    assert Project.from_notion_page(page).completed is False
 
 
 def test_project_page_with_null_properties() -> None:

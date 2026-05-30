@@ -42,10 +42,10 @@ export default function ProjectImportModal({
   const [busyId, setBusyId] = useState<string | null>(null);
   const [assignErr, setAssignErr] = useState<string | null>(null);
 
-  // 종료 = stage in {완료,타절,종결,이관} OR 완료 체크박스. 노션 stage만 "완료"로
-  // 바꾸고 체크박스는 비어있는 케이스가 흔해 stage 기반 판정 병행.
+  // 완료 여부는 backend가 진행단계(완료/타절/종결)로 계산한다.
+  // 이관은 가져오기 화면에서만 종료성 단계로 함께 취급한다.
   const isClosed = (p: Project): boolean =>
-    p.completed || ["완료", "타절", "종결", "이관"].includes(p.stage);
+    p.completed || p.stage === "이관";
 
   const candidates = useMemo<Project[]>(() => {
     if (searchMode) {

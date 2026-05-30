@@ -15,6 +15,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from app.db import SessionLocal
 from app.models import mirror as M
+from app.models.project import PROJECT_COMPLETED_STAGES
 from app.models.snapshot import ProjectSnapshot
 from app.services.weekly_report.helpers import _avg_task_progress
 
@@ -45,7 +46,7 @@ def take_snapshot(target_week_start: date | None = None) -> int:
         rows = (
             db.query(M.MirrorProject)
             .filter(M.MirrorProject.archived.is_(False))
-            .filter(M.MirrorProject.completed.is_(False))
+            .filter(~M.MirrorProject.stage.in_(PROJECT_COMPLETED_STAGES))
             .all()
         )
         for r in rows:

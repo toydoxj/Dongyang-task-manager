@@ -26,6 +26,7 @@ from sqlalchemy.orm import Session
 
 from app.models import mirror as M
 from app.models.employee import Employee
+from app.models.project import PROJECT_COMPLETED_STAGES
 from app.services.mirror_dto import project_from_mirror
 from app.services.weekly_report import EmployeeWorkRow, TeamProjectRow
 from app.services.weekly_report.helpers import (
@@ -53,7 +54,7 @@ _STAGE_SORT_PRIORITY: dict[str, int] = {
 def aggregate_team_projects(
     db: Session, week_start: date, week_end: date
 ) -> dict[str, list[TeamProjectRow]]:
-    """팀별 진행 중 프로젝트 — completed=False, stage가 active.
+    """팀별 진행 중 프로젝트 — 완료 단계 제외, stage가 active.
 
     Bulk pre-fetch: mirror_tasks를 한 번에 가져와 진행률 평균/금주예정사항을
     메모리에서 계산 (N+1 제거).
@@ -61,7 +62,7 @@ def aggregate_team_projects(
     rows = (
         db.query(M.MirrorProject)
         .filter(M.MirrorProject.archived.is_(False))
-        .filter(M.MirrorProject.completed.is_(False))
+        .filter(~M.MirrorProject.stage.in_(PROJECT_COMPLETED_STAGES))
         .order_by(M.MirrorProject.code)
         .all()
     )
@@ -166,7 +167,7 @@ def aggregate_team_work(
     project_rows = (
         db.query(M.MirrorProject)
         .filter(M.MirrorProject.archived.is_(False))
-        .filter(M.MirrorProject.completed.is_(False))
+        .filter(~M.MirrorProject.stage.in_(PROJECT_COMPLETED_STAGES))
         .all()
     )
     project_meta: dict[str, M.MirrorProject] = {}

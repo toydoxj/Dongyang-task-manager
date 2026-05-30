@@ -8,6 +8,14 @@ from pydantic import BaseModel, ConfigDict
 from app.services import notion_props as P
 
 
+PROJECT_COMPLETED_STAGES: tuple[str, ...] = ("완료", "종결", "타절")
+
+
+def is_project_completed_stage(stage: str | None) -> bool:
+    """프로젝트 완료 여부는 노션 체크박스가 아니라 진행단계로 판단한다."""
+    return (stage or "") in PROJECT_COMPLETED_STAGES
+
+
 class Project(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
@@ -28,7 +36,7 @@ class Project(BaseModel):
     stage: str = ""             # 진행단계 (진행중/대기/보류/완료/타절/종결/이관) — 운영 상태
     phase: str = ""             # 작업단계 (사업승인/계획설계/계획검토/기본설계/실시설계/시공감리/사용승인) — PR-W
     contract_signed: bool = False  # 계약 checkbox
-    completed: bool = False        # 완료 checkbox
+    completed: bool = False        # 진행단계 기반 완료 여부
 
     # 일정
     start_date: str | None = None         # 시작일 (수주확정)
@@ -66,6 +74,7 @@ class Project(BaseModel):
         props = page.get("properties", {})
         cs, ce = P.date_range(props, "계약기간")
         master_ids = P.relation_ids(props, "Master Project")
+        stage = P.select_name(props, "진행단계")
         return cls(
             id=page.get("id", ""),
             code=P.rich_text(props, "Sub_CODE"),
@@ -74,10 +83,10 @@ class Project(BaseModel):
             name=P.title(props, "프로젝트명"),
             client_text=P.rich_text(props, "발주처(임시)"),
             client_relation_ids=P.relation_ids(props, "발주처"),
-            stage=P.select_name(props, "진행단계"),
+            stage=stage,
             phase=P.select_name(props, "작업단계"),
             contract_signed=P.checkbox(props, "계약"),
-            completed=P.checkbox(props, "완료"),
+            completed=is_project_completed_stage(stage),
             start_date=P.date_range(props, "시작일")[0],
             contract_start=cs,
             contract_end=ce,

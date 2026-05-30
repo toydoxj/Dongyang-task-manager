@@ -18,10 +18,10 @@ from __future__ import annotations
 
 from datetime import date, datetime, timedelta, timezone
 
-from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.models import mirror as M
+from app.models.project import PROJECT_COMPLETED_STAGES
 from app.services.mirror_dto import project_from_mirror
 from app.services.weekly_report import (
     CompletedProjectItem,
@@ -54,7 +54,7 @@ def aggregate_stage_projects(
     rows = (
         db.query(M.MirrorProject)
         .filter(M.MirrorProject.archived.is_(False))
-        .filter(M.MirrorProject.completed.is_(False))
+        .filter(~M.MirrorProject.stage.in_(PROJECT_COMPLETED_STAGES))
         .filter(M.MirrorProject.stage.in_(stages))
         .all()
     )
@@ -97,18 +97,13 @@ def aggregate_completed(
 
     기준 (사용자 결정 2026-05-09):
     - 완료일(end_date)이 [last_week_start, last_week_end] 안
-    - completed=True 또는 stage in {종결, 타절} (운영자가 명시적으로 표시한 것)
+    - 진행단계가 {완료, 종결, 타절}
     - 완료일 비어있는 row는 제외 (운영자가 노션 "완료일" 입력 안 한 경우 표시 X)
     """
     rows = (
         db.query(M.MirrorProject)
         .filter(M.MirrorProject.archived.is_(False))
-        .filter(
-            or_(
-                M.MirrorProject.completed.is_(True),
-                M.MirrorProject.stage.in_(_TERMINATED_STAGES),
-            )
-        )
+        .filter(M.MirrorProject.stage.in_(PROJECT_COMPLETED_STAGES))
         .order_by(M.MirrorProject.code)
         .all()
     )
@@ -157,14 +152,14 @@ def aggregate_new_projects(
     """신규 프로젝트 — 저번주 범위 내 수주된 프로젝트.
 
     기준: 노션 "시작일"(수주확정일) = Project.start_date가 [last_week_start, last_week_end]
-    범위 안. completed=False (이미 완료된 건 제외 — 완료 표에 별도 표시).
+    범위 안. 완료 단계는 제외 — 완료 표에 별도 표시.
     이전 stage 휴리스틱(_NEW_STAGES) 폐기 — mirror_projects.stage가 운영상태(진행중/대기/보류)라
     작업단계 가정이 맞지 않았음 (사용자 피드백 2026-05-09).
     """
     rows = (
         db.query(M.MirrorProject)
         .filter(M.MirrorProject.archived.is_(False))
-        .filter(M.MirrorProject.completed.is_(False))
+        .filter(~M.MirrorProject.stage.in_(PROJECT_COMPLETED_STAGES))
         .order_by(M.MirrorProject.code)
         .all()
     )

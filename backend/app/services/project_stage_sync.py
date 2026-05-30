@@ -18,6 +18,7 @@ from sqlalchemy.orm import Session
 
 from app.db import SessionLocal
 from app.models import mirror as M
+from app.models.project import is_project_completed_stage
 from app.services import notion_props as P
 from app.services.notion import NotionService
 from app.services.project_log import log_assign_change
@@ -78,7 +79,7 @@ def _read_desired_stage(
         return (
             proj.stage,
             desired,
-            bool(proj.completed),
+            is_project_completed_stage(proj.stage),
             prev_end_date,
             proj.name or "",
         )
@@ -102,12 +103,10 @@ async def reconcile_project_stage(
     current, desired, prev_completed, prev_end_date, project_name = decision
     if desired == current:
         return None
-    # stage가 진행중/대기로 바뀔 때 '완료' 체크박스/완료일도 함께 클리어 —
-    # stage=진행중 + completed=true 같은 부정합 회피 (auto_progress_tasks와 동일).
+    # stage가 진행중/대기로 바뀔 때 완료일을 클리어한다.
     # 클리어되는 이전 완료 정보는 assign_log 에 이력 기록.
     props = {
         "진행단계": {"select": {"name": desired}},
-        "완료": {"checkbox": False},
         "완료일": {"date": None},
     }
     updated = await notion.update_page(project_id, props)
