@@ -252,6 +252,10 @@ def list_projects(
     rows = db.execute(stmt).scalars().all()
     items = [project_from_mirror(r) for r in rows]
     _resolve_names(db, items)
+    # FastAPI yield dependency 정리는 응답 전송 이후라, 큰/느린 응답에서는
+    # read transaction이 idle-in-transaction으로 남아 pool을 점유할 수 있다.
+    # DTO 조립이 끝난 뒤 즉시 rollback해 mirror_projects lock/connection을 놓는다.
+    db.rollback()
     return ProjectListResponse(items=items, count=len(items), total=total)
 
 
