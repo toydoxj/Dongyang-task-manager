@@ -29,8 +29,10 @@ export default function MySalesSection({
   const { data, error } = useSales(filters);
   const [editing, setEditing] = useState<Sale | null>(null);
   const [creating, setCreating] = useState(false);
-  const [expandTaskItemsSignal, setExpandTaskItemsSignal] = useState(0);
-  const [collapseAllSignal, setCollapseAllSignal] = useState(0);
+  const [collapseCommand, setCollapseCommand] = useState<{
+    type: "expandTaskItems" | "collapseAll";
+    version: number;
+  }>({ type: "collapseAll", version: 0 });
 
   // PR-FI/10 (사용자 요청): 완료·종결 영업은 /me 화면에서 제외.
   // 운영 list (/sales)와 영업 상세는 별도 — 거기서는 그대로 보임.
@@ -61,7 +63,12 @@ export default function MySalesSection({
         <div className="flex flex-wrap justify-end gap-2">
           <button
             type="button"
-            onClick={() => setExpandTaskItemsSignal((v) => v + 1)}
+            onClick={() =>
+              setCollapseCommand((prev) => ({
+                type: "expandTaskItems",
+                version: prev.version + 1,
+              }))
+            }
             disabled={sales.length === 0}
             className="rounded-md border border-zinc-300 px-2.5 py-1 text-xs hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-700 dark:hover:bg-zinc-800"
           >
@@ -69,7 +76,12 @@ export default function MySalesSection({
           </button>
           <button
             type="button"
-            onClick={() => setCollapseAllSignal((v) => v + 1)}
+            onClick={() =>
+              setCollapseCommand((prev) => ({
+                type: "collapseAll",
+                version: prev.version + 1,
+              }))
+            }
             disabled={sales.length === 0}
             className="rounded-md border border-zinc-300 px-2.5 py-1 text-xs hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-700 dark:hover:bg-zinc-800"
           >
@@ -109,8 +121,7 @@ export default function MySalesSection({
                     onClickHeader={setEditing}
                     onChanged={() => mutate((k) => Array.isArray(k) && k[0] === "tasks")}
                     onCreate={onCreateTask}
-                    expandTaskItemsSignal={expandTaskItemsSignal}
-                    collapseAllSignal={collapseAllSignal}
+                    collapseCommand={collapseCommand}
                   />
                 ))}
               </div>
@@ -126,8 +137,7 @@ export default function MySalesSection({
                     onClickHeader={setEditing}
                     onChanged={() => mutate((k) => Array.isArray(k) && k[0] === "tasks")}
                     onCreate={onCreateTask}
-                    expandTaskItemsSignal={expandTaskItemsSignal}
-                    collapseAllSignal={collapseAllSignal}
+                    collapseCommand={collapseCommand}
                   />
                 ))}
               </div>
@@ -143,8 +153,7 @@ export default function MySalesSection({
                     onClickHeader={setEditing}
                     onChanged={() => mutate((k) => Array.isArray(k) && k[0] === "tasks")}
                     onCreate={onCreateTask}
-                    expandTaskItemsSignal={expandTaskItemsSignal}
-                    collapseAllSignal={collapseAllSignal}
+                    collapseCommand={collapseCommand}
                   />
                 ))}
               </div>
