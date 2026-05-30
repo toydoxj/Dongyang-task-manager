@@ -28,14 +28,14 @@ export default function ProjectImportModal({
   const trimmed = query.trim();
   const searchMode = trimmed.length > 0;
 
-  // 기본(스크롤): 진행중만 — 빠름 (47건 정도)
+  // 기본(스크롤): 진행중만. 검색은 서버 q/limit로 좁혀 전체 프로젝트를
+  // 한 번에 받지 않는다.
   const { data: openData, error: openErr } = useProjects(
-    { stage: "진행중" },
+    { stage: "진행중", limit: 500 },
     open,
   );
-  // 검색 모드: 전체 (1500+건, 첫 호출만 5~15초)
-  const { data: allData, error: allErr } = useProjects(
-    undefined,
+  const { data: searchData, error: searchErr } = useProjects(
+    { q: trimmed, limit: 100 },
     open && searchMode,
   );
 
@@ -49,10 +49,10 @@ export default function ProjectImportModal({
 
   const candidates = useMemo<Project[]>(() => {
     if (searchMode) {
-      if (!allData) return [];
+      if (!searchData) return [];
       const q = trimmed.toLowerCase();
       // 검색 모드: 본인 미담당 + (이미 담당이지만 종료된 프로젝트도 = 재활성화 케이스)
-      return allData.items
+      return searchData.items
         .filter((p) => !p.assignees.includes(myName) || isClosed(p))
         .filter((p) => `${p.code} ${p.name}`.toLowerCase().includes(q))
         .slice(0, 100);
@@ -61,7 +61,7 @@ export default function ProjectImportModal({
     return openData.items
       .filter((p) => !isClosed(p) && !p.assignees.includes(myName))
       .slice(0, 50);
-  }, [searchMode, openData, allData, trimmed, myName]);
+  }, [searchMode, openData, searchData, trimmed, myName]);
 
   const handleAssign = async (p: Project): Promise<void> => {
     // 진행단계가 "진행중"이 아니면 사용자 확인 후 "대기"로 자동 전환
@@ -86,8 +86,8 @@ export default function ProjectImportModal({
     }
   };
 
-  const error = openErr ?? allErr;
-  const loadingAll = searchMode && !allData;
+  const error = openErr ?? searchErr;
+  const loadingAll = searchMode && !searchData;
   const loadingOpen = !searchMode && !openData;
 
   return (
@@ -124,7 +124,7 @@ export default function ProjectImportModal({
         )}
         {loadingAll && (
           <p className="py-8 text-center text-xs text-zinc-500">
-            전체 프로젝트 불러오는 중 (5~15초)…
+            프로젝트 검색 중…
           </p>
         )}
         {!loadingOpen && !loadingAll && candidates.length === 0 && (
@@ -138,7 +138,7 @@ export default function ProjectImportModal({
           <>
             <p className="text-[11px] text-zinc-500">
               {searchMode
-                ? `검색 결과 ${candidates.length}건 (전체 ${allData?.count ?? "?"}건 중)`
+                ? `검색 결과 ${candidates.length}건 (전체 ${searchData?.total ?? searchData?.count ?? "?"}건 중)`
                 : `진행중 ${candidates.length}건 표시`}
             </p>
             <ul className="max-h-[60vh] divide-y divide-zinc-200 overflow-y-auto rounded-md border border-zinc-200 dark:divide-zinc-800 dark:border-zinc-800">

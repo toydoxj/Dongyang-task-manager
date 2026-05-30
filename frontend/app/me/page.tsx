@@ -95,7 +95,7 @@ export default function MyPage() {
   };
 
   // 다른 직원 보기 모드면 mine 대신 assignee=name 으로 fetch
-  const fetchFilters = useMemo(
+  const taskFilters = useMemo(
     () =>
       effectiveName
         ? isViewingOther
@@ -104,9 +104,18 @@ export default function MyPage() {
         : undefined,
     [effectiveName, isViewingOther],
   );
+  const projectFilters = useMemo(
+    () =>
+      effectiveName
+        ? isViewingOther
+          ? { assignee: effectiveName, completed: false }
+          : { mine: true, completed: false }
+        : undefined,
+    [effectiveName, isViewingOther],
+  );
 
-  const { data: projectData, error: projectErr } = useProjects(fetchFilters);
-  const { data: tasksData, error: tasksErr } = useTasks(fetchFilters);
+  const { data: projectData, error: projectErr } = useProjects(projectFilters);
+  const { data: tasksData, error: tasksErr } = useTasks(taskFilters);
   // MY-001 카드 — 본인 검토자(lead/admin) 매칭에 사용. backend는 status 필터 없음 → 전체 fetch.
   const { data: sealData } = useSealRequests();
   // MY-005 — 팀장/관리자가 토글로 팀원 진입 시 사용할 직원 list (admin/team_lead만 fetch).
@@ -252,7 +261,7 @@ export default function MyPage() {
     //     unassignMe 호출이 mirror upsert까지 마치고 응답하므로 backend는
     //     최신 상태이지만, SWR의 dedupingInterval/inflight 충돌 가능.
     void mutate<ProjectListResponse>(
-      keys.projects(fetchFilters),
+      keys.projects(projectFilters),
       (old) =>
         old
           ? {
@@ -268,7 +277,7 @@ export default function MyPage() {
       (key) =>
         Array.isArray(key) &&
         key[0] === "projects" &&
-        JSON.stringify(key[1]) !== JSON.stringify(fetchFilters ?? null),
+        JSON.stringify(key[1]) !== JSON.stringify(projectFilters ?? null),
       undefined,
       { revalidate: false },
     );
