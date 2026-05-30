@@ -16,6 +16,7 @@ import SealRequestEditModal from "@/components/project/SealRequestEditModal";
 import TaskCreateModal from "@/components/project/TaskCreateModal";
 import TaskKanban from "@/components/project/TaskKanban";
 import LoadingState from "@/components/ui/LoadingState";
+import { openSaleModal } from "@/lib/stores/detailModal";
 import { cn } from "@/lib/utils";
 import useSWR from "swr";
 
@@ -181,13 +182,19 @@ export default function ProjectClient({
       {linkedSale && (
         <button
           type="button"
-          onClick={() =>
+          onClick={() => {
+            // 프로젝트가 전역 모달로 열린 상태에서는 페이지 이동 시 영업 모달이
+            // 프로젝트 모달 뒤에 깔린다. 같은 전역 레이어로 바로 연다.
+            if (onCloseOverride) {
+              openSaleModal(linkedSale.id);
+              return;
+            }
             router.push(
               `/sales?sale=${encodeURIComponent(linkedSale.id)}&from=${encodeURIComponent(
                 `/projects/${id}`,
               )}`,
-            )
-          }
+            );
+          }}
           className="rounded-md border border-emerald-400 px-2.5 py-1 text-xs text-emerald-700 hover:bg-emerald-50 dark:border-emerald-700 dark:text-emerald-400 dark:hover:bg-emerald-950"
           title={`영업 ${linkedSale.code || ""} ${linkedSale.name} 상세 보기`}
         >
