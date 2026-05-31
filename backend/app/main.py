@@ -272,6 +272,7 @@ def _spawn_bg_sync(*, kind: str | None, full: bool) -> str:
 @app.post("/api/cron/sync", status_code=202)
 async def cron_sync(
     full: bool = False,
+    force: bool = False,
     _ok: None = Depends(_verify_cron),
 ) -> dict[str, str]:
     """수동/정기 sync HTTP trigger.
@@ -280,9 +281,10 @@ async def cron_sync(
     fire-and-forget으로 실행. 즉시 202 반환, 결과는 Render Logs에서 확인.
     이미 실행 중이면 중복 spawn 금지(already_running) — process-local guard.
 
-    full sync는 KST 7~22시(업무시간)에는 차단 — 새벽에만 허용.
+    full sync는 KST 7~22시(업무시간)에는 기본 차단. Render Manual Run처럼
+    운영자가 의도적으로 누른 실행은 force=true로 허용한다.
     """
-    if full:
+    if full and not force:
         from datetime import datetime, timedelta, timezone
 
         kst = datetime.now(timezone(timedelta(hours=9)))
@@ -298,7 +300,12 @@ async def cron_sync(
         return {"status": "already_running", "active": ",".join(sorted(_running_sync))}
     _running_sync.add("_all")
     run_id = _spawn_bg_sync(kind=None, full=full)
-    return {"status": "started", "full": str(full).lower(), "run_id": run_id}
+    return {
+        "status": "started",
+        "full": str(full).lower(),
+        "force": str(force).lower(),
+        "run_id": run_id,
+    }
 
 
 @app.post("/api/cron/sync/{kind}", status_code=202)

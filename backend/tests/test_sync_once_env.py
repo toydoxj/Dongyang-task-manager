@@ -24,7 +24,7 @@ def test_render_cron_services_are_http_triggers() -> None:
     }
 
     expected = {
-        "dy-task-sync-full": "/api/cron/sync?full=true",
+        "dy-task-sync-full": "/api/cron/sync?full=true&force=true",
         "dy-task-outbox-drain": "/api/cron/outbox-drain?batch=20",
         "dy-task-auto-progress-cron": "/api/cron/auto-progress",
     }
