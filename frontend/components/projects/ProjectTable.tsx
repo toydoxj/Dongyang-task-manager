@@ -5,6 +5,20 @@ import type { ProjectTag } from "@/components/projects/ProjectCard";
 import StageBadge from "@/components/ui/StageBadge";
 import type { Project } from "@/lib/domain";
 import { formatDate, formatPercent, formatWon } from "@/lib/format";
+import { cn } from "@/lib/utils";
+
+export type ProjectTableSortKey =
+  | "code"
+  | "name"
+  | "stage"
+  | "client"
+  | "team"
+  | "assignees"
+  | "contract_period"
+  | "amount"
+  | "collection_rate";
+
+export type ProjectSortDir = "asc" | "desc";
 
 const TAG_LABEL: Record<ProjectTag, string> = {
   stalled: "정체",
@@ -18,25 +32,43 @@ const TAG_LABEL: Record<ProjectTag, string> = {
 interface Props {
   projects: Project[];
   tagsById: Map<string, ProjectTag[]>;
+  sortKey?: ProjectTableSortKey | null;
+  sortDir?: ProjectSortDir;
+  onSortChange?: (key: ProjectTableSortKey) => void;
 }
 
 /** PROJ-003 — 카드보다 컴팩트한 테이블 보기. 한 행 click → 상세 페이지. */
-export default function ProjectTable({ projects, tagsById }: Props) {
+export default function ProjectTable({
+  projects,
+  tagsById,
+  sortKey = null,
+  sortDir = "desc",
+  onSortChange,
+}: Props) {
+  const thSort = { sortKey, sortDir, onSortChange };
+
   return (
     <div className="overflow-x-auto rounded-xl border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
-      <table className="w-full text-xs">
+      <table className="w-full min-w-[1040px] text-xs">
         <thead className="border-b border-zinc-200 bg-zinc-50 text-[10px] uppercase tracking-wider text-zinc-500 dark:border-zinc-800 dark:bg-zinc-950">
           <tr>
-            <th className="px-2 py-2 text-left">코드</th>
-            <th className="px-2 py-2 text-left">프로젝트명</th>
-            <th className="px-2 py-2 text-left">단계</th>
-            <th className="px-2 py-2 text-left">발주처</th>
-            <th className="px-2 py-2 text-left">담당팀</th>
-            <th className="px-2 py-2 text-left">담당자</th>
-            <th className="px-2 py-2 text-left">계약기간</th>
-            <th className="px-2 py-2 text-right">용역비</th>
-            <th className="px-2 py-2 text-right">수금률</th>
-            <th className="px-2 py-2 text-left">상태 태그</th>
+            <SortableTh k="code" label="코드" {...thSort} />
+            <SortableTh k="name" label="프로젝트명" {...thSort} />
+            <SortableTh k="stage" label="단계" {...thSort} />
+            <SortableTh k="client" label="발주처" {...thSort} />
+            <SortableTh k="team" label="담당팀" {...thSort} />
+            <SortableTh k="assignees" label="담당자" {...thSort} />
+            <SortableTh k="contract_period" label="계약기간" {...thSort} />
+            <SortableTh k="amount" label="용역비" align="right" {...thSort} />
+            <SortableTh
+              k="collection_rate"
+              label="수금률"
+              align="right"
+              {...thSort}
+            />
+            <th scope="col" className="px-2 py-2 text-left">
+              상태 태그
+            </th>
           </tr>
         </thead>
         <tbody>
@@ -119,5 +151,56 @@ export default function ProjectTable({ projects, tagsById }: Props) {
         </p>
       )}
     </div>
+  );
+}
+
+/** 정렬 가능 header. 정렬 안 됨이면 회색 ⇅, asc=▲, desc=▼. */
+function SortableTh({
+  k,
+  label,
+  align = "left",
+  sortKey,
+  sortDir,
+  onSortChange,
+}: {
+  k: ProjectTableSortKey;
+  label: string;
+  align?: "left" | "right";
+  sortKey?: ProjectTableSortKey | null;
+  sortDir?: ProjectSortDir;
+  onSortChange?: (key: ProjectTableSortKey) => void;
+}) {
+  const active = sortKey === k;
+  const arrow = active ? (sortDir === "asc" ? "▲" : "▼") : "⇅";
+
+  return (
+    <th
+      scope="col"
+      aria-sort={
+        active ? (sortDir === "asc" ? "ascending" : "descending") : "none"
+      }
+      className={cn("px-2 py-2", align === "right" && "text-right")}
+    >
+      <button
+        type="button"
+        onClick={onSortChange ? () => onSortChange(k) : undefined}
+        className={cn(
+          "inline-flex w-full select-none items-center gap-1 whitespace-nowrap",
+          align === "right" ? "justify-end" : "justify-start",
+          onSortChange &&
+            "cursor-pointer hover:text-zinc-700 dark:hover:text-zinc-200",
+        )}
+      >
+        <span>{label}</span>
+        <span
+          className={cn(
+            "text-[9px]",
+            !active && "text-zinc-300 dark:text-zinc-600",
+          )}
+        >
+          {arrow}
+        </span>
+      </button>
+    </th>
   );
 }

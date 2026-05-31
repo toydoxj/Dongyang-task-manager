@@ -15,20 +15,32 @@ import ProjectPresets, {
   PRESETS,
   type PresetKey,
 } from "@/components/projects/ProjectPresets";
-import ProjectTable from "@/components/projects/ProjectTable";
+import ProjectTable, {
+  type ProjectSortDir,
+  type ProjectTableSortKey,
+} from "@/components/projects/ProjectTable";
 import LoadingState from "@/components/ui/LoadingState";
 import { getEmployeeTeamsMap } from "@/lib/api";
+import { PROJECT_STAGES, type Project } from "@/lib/domain";
 import { useProjects, useSealRequests } from "@/lib/hooks";
-import type { Project } from "@/lib/domain";
 
 const PAGE_SIZE = 60;
 const STALE_DAYS = 90;
 // COMMON-002 — list ↔ 상세 왕복 시 필터/스크롤 보존 (탭 단위 저장).
 const SS_KEY = "projects-page-state-v1";
 
+type SortKey = ProjectTableSortKey | "start_date";
+type LegacySortKey = "start_desc" | "start_asc" | "name_asc" | "amount_desc";
+
+interface SortState {
+  key: SortKey;
+  dir: ProjectSortDir;
+}
+
 interface SavedState {
   filter?: FilterState;
-  sortKey?: SortKey;
+  sortKey?: SortKey | LegacySortKey | null;
+  sortDir?: ProjectSortDir;
   view?: "cards" | "table";
   activePreset?: PresetKey | null;
   visibleCount?: number;
@@ -50,7 +62,47 @@ const RECENT_EDIT_DAYS = 7;
 const INCOME_ISSUE_RATIO = 0.3;
 const PENDING_SEAL_STATUSES = new Set(["1차검토 중", "2차검토 중"]);
 
-type SortKey = "start_desc" | "start_asc" | "name_asc" | "amount_desc";
+const TABLE_SORT_KEYS = [
+  "code",
+  "name",
+  "stage",
+  "client",
+  "team",
+  "assignees",
+  "contract_period",
+  "amount",
+  "collection_rate",
+] as const satisfies readonly ProjectTableSortKey[];
+
+const SORT_KEYS = [
+  "start_date",
+  ...TABLE_SORT_KEYS,
+] as const satisfies readonly SortKey[];
+
+type SortOptionValue = `${SortKey}:${ProjectSortDir}`;
+
+const SORT_OPTIONS: { value: SortOptionValue; label: string }[] = [
+  { value: "start_date:desc", label: "최신 시작일 (내림차순)" },
+  { value: "start_date:asc", label: "오래된 시작일 (오름차순)" },
+  { value: "code:asc", label: "코드 (오름차순)" },
+  { value: "code:desc", label: "코드 (내림차순)" },
+  { value: "name:asc", label: "이름 (가나다)" },
+  { value: "name:desc", label: "이름 (역순)" },
+  { value: "stage:asc", label: "단계 (정방향)" },
+  { value: "stage:desc", label: "단계 (역방향)" },
+  { value: "client:asc", label: "발주처 (가나다)" },
+  { value: "client:desc", label: "발주처 (역순)" },
+  { value: "team:asc", label: "담당팀 (가나다)" },
+  { value: "team:desc", label: "담당팀 (역순)" },
+  { value: "assignees:asc", label: "담당자 (가나다)" },
+  { value: "assignees:desc", label: "담당자 (역순)" },
+  { value: "contract_period:desc", label: "계약기간 (최신 시작)" },
+  { value: "contract_period:asc", label: "계약기간 (오래된 시작)" },
+  { value: "amount:desc", label: "용역비 (큰 금액 순)" },
+  { value: "amount:asc", label: "용역비 (작은 금액 순)" },
+  { value: "collection_rate:desc", label: "수금률 (높은 순)" },
+  { value: "collection_rate:asc", label: "수금률 (낮은 순)" },
+];
 
 function ymd(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -66,6 +118,72 @@ function startOfWeekMonday(d: Date): Date {
 
 function isValidPreset(s: string | null): s is PresetKey {
   return !!s && PRESETS.some((p) => p.key === s);
+}
+
+function isSortKey(value: unknown): value is SortKey {
+  return (
+    typeof value === "string" && (SORT_KEYS as readonly string[]).includes(value)
+  );
+}
+
+function isProjectTableSortKey(value: SortKey): value is ProjectTableSortKey {
+  return (TABLE_SORT_KEYS as readonly string[]).includes(value);
+}
+
+function isSortDir(value: unknown): value is ProjectSortDir {
+  return value === "asc" || value === "desc";
+}
+
+function defaultSortDir(key: SortKey): ProjectSortDir {
+  switch (key) {
+    case "start_date":
+    case "contract_period":
+    case "amount":
+    case "collection_rate":
+      return "desc";
+    case "code":
+    case "name":
+    case "stage":
+    case "client":
+    case "team":
+    case "assignees":
+      return "asc";
+  }
+}
+
+function loadSavedSort(): SortState {
+  const saved = loadSavedState();
+  switch (saved.sortKey) {
+    case "start_desc":
+      return { key: "start_date", dir: "desc" };
+    case "start_asc":
+      return { key: "start_date", dir: "asc" };
+    case "name_asc":
+      return { key: "name", dir: "asc" };
+    case "amount_desc":
+      return { key: "amount", dir: "desc" };
+  }
+
+  if (isSortKey(saved.sortKey)) {
+    return {
+      key: saved.sortKey,
+      dir: isSortDir(saved.sortDir)
+        ? saved.sortDir
+        : defaultSortDir(saved.sortKey),
+    };
+  }
+
+  return { key: "start_date", dir: "desc" };
+}
+
+function parseSortOptionValue(value: string): SortState {
+  const [key, dir] = value.split(":");
+  if (isSortKey(key) && isSortDir(dir)) return { key, dir };
+  return { key: "start_date", dir: "desc" };
+}
+
+function sortOptionValue(sort: SortState): SortOptionValue {
+  return `${sort.key}:${sort.dir}` as SortOptionValue;
 }
 
 /** 활성 프리셋이 통과하는 프로젝트인지 판정. seals/myTeam은 외부 데이터 의존. */
@@ -124,12 +242,50 @@ function projectMatchesPreset(
   }
 }
 
-/** 시작일 내림차순 비교 (null은 항상 뒤로). */
-function cmpDateDesc(a: string | null, b: string | null): number {
+const koCollator = new Intl.Collator("ko", {
+  numeric: true,
+  sensitivity: "base",
+});
+
+function compareText(a: string, b: string, dir: number): number {
+  const av = a.trim();
+  const bv = b.trim();
+  if (!av && !bv) return 0;
+  if (!av) return 1;
+  if (!bv) return -1;
+  return koCollator.compare(av, bv) * dir;
+}
+
+function compareDate(
+  a: string | null,
+  b: string | null,
+  dir: number,
+): number {
   if (!a && !b) return 0;
   if (!a) return 1;
   if (!b) return -1;
-  return b.localeCompare(a);
+  return a.localeCompare(b) * dir;
+}
+
+function compareNumber(
+  a: number | null,
+  b: number | null,
+  dir: number,
+): number {
+  if (a == null && b == null) return 0;
+  if (a == null) return 1;
+  if (b == null) return -1;
+  return (a - b) * dir;
+}
+
+function clientLabel(p: Project): string {
+  return p.client_names.length > 0
+    ? p.client_names.join(", ")
+    : p.client_text;
+}
+
+function collectionRateNumber(p: Project): number | null {
+  return typeof p.collection_rate === "number" ? p.collection_rate : null;
 }
 
 export default function ProjectsPage() {
@@ -171,9 +327,7 @@ export default function ProjectsPage() {
         completed: "open",
       },
   );
-  const [sortKey, setSortKey] = useState<SortKey>(
-    () => loadSavedState().sortKey ?? "start_desc",
-  );
+  const [sort, setSort] = useState<SortState>(() => loadSavedSort());
   const [visibleCount, setVisibleCount] = useState(
     () => loadSavedState().visibleCount ?? PAGE_SIZE,
   );
@@ -192,13 +346,14 @@ export default function ProjectsPage() {
     const next: SavedState = {
       ...loadSavedState(),
       filter,
-      sortKey,
+      sortKey: sort.key,
+      sortDir: sort.dir,
       view,
       activePreset,
       visibleCount,
     };
     window.sessionStorage.setItem(SS_KEY, JSON.stringify(next));
-  }, [filter, sortKey, view, activePreset, visibleCount]);
+  }, [filter, sort, view, activePreset, visibleCount]);
 
   // 데이터 로드 후 1회 scroll restore (back navigation 대응).
   const scrollRestoredRef = useRef(false);
@@ -241,6 +396,24 @@ export default function ProjectsPage() {
     else params.delete("preset");
     const qs = params.toString();
     router.replace(qs ? `/projects?${qs}` : "/projects", { scroll: false });
+  };
+
+  const updateSort = (next: SortState): void => {
+    setSort(next);
+    setVisibleCount(PAGE_SIZE);
+  };
+
+  const updateTableSort = (key: ProjectTableSortKey): void => {
+    setSort((current) => ({
+      key,
+      dir:
+        current.key === key
+          ? current.dir === "asc"
+            ? "desc"
+            : "asc"
+          : defaultSortDir(key),
+    }));
+    setVisibleCount(PAGE_SIZE);
   };
 
   // preset 평가 컨텍스트 (날짜 cutoff + sealActive id set + myTeam)
@@ -312,20 +485,48 @@ export default function ProjectsPage() {
     });
     // 정렬
     const sorted = [...result];
+    const dir = sort.dir === "asc" ? 1 : -1;
+    const stageOrder = (stage: string): number => {
+      const i = (PROJECT_STAGES as readonly string[]).indexOf(stage);
+      return i === -1 ? PROJECT_STAGES.length : i;
+    };
     sorted.sort((a, b) => {
-      switch (sortKey) {
-        case "start_desc":
-          return cmpDateDesc(a.start_date, b.start_date);
-        case "start_asc":
-          return -cmpDateDesc(a.start_date, b.start_date);
-        case "name_asc":
-          return (a.name ?? "").localeCompare(b.name ?? "", "ko");
-        case "amount_desc":
-          return (b.contract_amount ?? 0) - (a.contract_amount ?? 0);
+      switch (sort.key) {
+        case "start_date":
+          return compareDate(a.start_date, b.start_date, dir);
+        case "code":
+          return compareText(a.code, b.code, dir);
+        case "name":
+          return compareText(a.name, b.name, dir);
+        case "stage":
+          return (stageOrder(a.stage) - stageOrder(b.stage)) * dir;
+        case "client":
+          return compareText(clientLabel(a), clientLabel(b), dir);
+        case "team":
+          return compareText(a.teams.join(", "), b.teams.join(", "), dir);
+        case "assignees":
+          return compareText(
+            a.assignees.join(", "),
+            b.assignees.join(", "),
+            dir,
+          );
+        case "contract_period": {
+          const start = compareDate(a.contract_start, b.contract_start, dir);
+          if (start !== 0) return start;
+          return compareDate(a.contract_end, b.contract_end, dir);
+        }
+        case "amount":
+          return compareNumber(a.contract_amount, b.contract_amount, dir);
+        case "collection_rate":
+          return compareNumber(
+            collectionRateNumber(a),
+            collectionRateNumber(b),
+            dir,
+          );
       }
     });
     return sorted;
-  }, [all, filter, sortKey, teamsMap, activePreset, presetCtx]);
+  }, [all, filter, sort, teamsMap, activePreset, presetCtx]);
 
   // PROJ-002 — 각 프로젝트의 상태 태그 (cards/table 둘 다 공유)
   const tagsById = useMemo(() => {
@@ -397,17 +598,17 @@ export default function ProjectsPage() {
             <div className="flex items-center gap-2">
               <span className="text-zinc-500">정렬</span>
               <select
-                value={sortKey}
+                value={sortOptionValue(sort)}
                 onChange={(e) => {
-                  setSortKey(e.target.value as SortKey);
-                  setVisibleCount(PAGE_SIZE);
+                  updateSort(parseSortOptionValue(e.target.value));
                 }}
                 className="rounded-md border border-zinc-300 bg-white px-2.5 py-1 outline-none dark:border-zinc-700 dark:bg-zinc-950"
               >
-                <option value="start_desc">최신 시작일 (내림차순)</option>
-                <option value="start_asc">오래된 시작일 (오름차순)</option>
-                <option value="name_asc">이름 (가나다)</option>
-                <option value="amount_desc">용역비 (큰 금액 순)</option>
+                {SORT_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
               </select>
             </div>
             <div className="flex items-center gap-1 rounded-md border border-zinc-300 p-0.5 dark:border-zinc-700">
@@ -461,6 +662,9 @@ export default function ProjectsPage() {
             <ProjectTable
               projects={filtered.slice(0, visibleCount)}
               tagsById={tagsById}
+              sortKey={isProjectTableSortKey(sort.key) ? sort.key : null}
+              sortDir={sort.dir}
+              onSortChange={updateTableSort}
             />
           )}
 
