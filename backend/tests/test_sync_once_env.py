@@ -40,4 +40,6 @@ def test_render_cron_services_are_http_triggers() -> None:
         assert service.get("buildCommand") == "true"
         assert service.get("autoDeployTrigger") == "off"
         assert env_keys == {"PYTHON_VERSION", "CRON_SECRET"}
-        assert path in service.get("startCommand", "")
+        start_command = service.get("startCommand", "")
+        assert path in start_command
+        assert "timeout=60" in start_command

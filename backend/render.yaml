@@ -132,7 +132,7 @@ services:
     schedule: "0 18 * * *"            # UTC 18:00 = KST 03:00
     buildCommand: "true"
     startCommand: |
-      python -c "import os, urllib.request; req = urllib.request.Request('https://api.dyce.kr/api/cron/sync?full=true&force=true', method='POST', headers={'Authorization': 'Bearer ' + os.environ['CRON_SECRET']}); print(urllib.request.urlopen(req, timeout=15).read().decode())"
+      python -c "import os, urllib.request; req = urllib.request.Request('https://api.dyce.kr/api/cron/sync?full=true&force=true', method='POST', headers={'Authorization': 'Bearer ' + os.environ['CRON_SECRET']}); print(urllib.request.urlopen(req, timeout=60).read().decode())"
     envVars:
       - key: PYTHON_VERSION
         value: 3.12.7
@@ -154,7 +154,7 @@ services:
     schedule: "*/5 * * * *"          # 5분마다
     buildCommand: "true"
     startCommand: |
-      python -c "import os, urllib.request; req = urllib.request.Request('https://api.dyce.kr/api/cron/outbox-drain?batch=20', method='POST', headers={'Authorization': 'Bearer ' + os.environ['CRON_SECRET']}); print(urllib.request.urlopen(req, timeout=15).read().decode())"
+      python -c "import os, urllib.request; req = urllib.request.Request('https://api.dyce.kr/api/cron/outbox-drain?batch=20', method='POST', headers={'Authorization': 'Bearer ' + os.environ['CRON_SECRET']}); print(urllib.request.urlopen(req, timeout=60).read().decode())"
     envVars:
       - key: PYTHON_VERSION
         value: 3.12.7
@@ -174,7 +174,7 @@ services:
     schedule: "0 0 * * *"
     buildCommand: "true"
     startCommand: |
-      python -c "import os, urllib.request; req = urllib.request.Request('https://api.dyce.kr/api/cron/auto-progress', method='POST', headers={'Authorization': 'Bearer ' + os.environ['CRON_SECRET']}); print(urllib.request.urlopen(req, timeout=15).read().decode())"
+      python -c "import os, urllib.request; req = urllib.request.Request('https://api.dyce.kr/api/cron/auto-progress', method='POST', headers={'Authorization': 'Bearer ' + os.environ['CRON_SECRET']}); print(urllib.request.urlopen(req, timeout=60).read().decode())"
     envVars:
       - key: PYTHON_VERSION
         value: 3.12.7
