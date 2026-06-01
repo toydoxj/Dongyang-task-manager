@@ -22,3 +22,15 @@ def test_health_routes_return_ok() -> None:
             response = client.get(path)
             assert response.status_code == 200
             assert response.json() == {"status": "ok"}
+
+
+def test_health_db_returns_ok() -> None:
+    """DB health는 로컬 SQLite 테스트 환경에서도 정상 응답한다."""
+    with TestClient(app) as client:
+        response = client.get("/api/health/db")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "status": "ok",
+        "idle_in_transaction_session_timeout": "unsupported",
+    }

@@ -71,7 +71,7 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 # (a) SQL 자체 시간이 큰지 (b) connection checkout wait가 큰지 분리.
 # slow log threshold 0.5s — codex 권장.
 _SQL_SLOW_S = 0.5
-_CHECKOUT_SLOW_S = 0.3
+_CHECKOUT_SLOW_S = 0.5
 _perf_logger = logging.getLogger("db.perf")
 
 

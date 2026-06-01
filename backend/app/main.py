@@ -28,10 +28,10 @@ from app.routers import contracts as contracts_router
 from app.routers import dashboard as dashboard_router
 from app.routers import employees as employees_router
 from app.routers import master_projects as master_projects_router
+from app.routers import notices as notices_router
 from app.routers import projects as projects_router
 from app.routers import sales as sales_router
 from app.routers import seal_requests as seal_requests_router
-from app.routers import notices as notices_router
 from app.routers import suggestions as suggestions_router
 from app.routers import tasks as tasks_router
 from app.routers import weekly_report as weekly_report_router
@@ -167,21 +167,28 @@ async def health_db() -> dict[str, str]:
     """DB까지 거치는 health check — Render의 Health Check Path를 이쪽으로 교체하면
     connection pool 고갈 시 자동 restart가 트리거된다 (PR-AQ).
 
-    가벼운 ping query — pool에서 1개 connection 빌려 즉시 release.
+    가벼운 설정 조회 query — pool에서 1개 connection 빌려 즉시 release.
     PR-DB: PR-DA로 적용한 session timeout이 backend 연결에 살아있는지 확인용으로
     `idle_in_transaction_session_timeout` 값 함께 노출 (운영 검증).
     """
     from sqlalchemy import text
 
-    from app.db import SessionLocal
+    from app.db import SessionLocal, engine
 
     try:
         with SessionLocal() as db:
-            db.execute(text("SELECT 1"))
-            row = db.execute(
-                text("SHOW idle_in_transaction_session_timeout")
-            ).first()
-            iit = row[0] if row else "unknown"
+            if engine.dialect.name == "sqlite":
+                db.execute(text("SELECT 1"))
+                iit = "unsupported"
+            else:
+                row = db.execute(
+                    text(
+                        "SELECT current_setting("
+                        "'idle_in_transaction_session_timeout'"
+                        ")"
+                    )
+                ).first()
+                iit = row[0] if row else "unknown"
         return {"status": "ok", "idle_in_transaction_session_timeout": iit}
     except Exception as e:  # noqa: BLE001
         raise HTTPException(status_code=503, detail=f"db unhealthy: {e}")
