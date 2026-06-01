@@ -104,13 +104,7 @@ def _sale_page_from_mirror_with_update(
 def _quote_task_props_for_sale(sale_row: M.MirrorSales) -> dict[str, Any]:
     """견적서 작성 자동 task의 노션 properties."""
     assignees = [a for a in (sale_row.assignees or []) if a]
-    title_parts: list[str] = []
-    if sale_row.code:
-        title_parts.append(sale_row.code)
-    title_parts.append("견적서 작성")
-    if sale_row.name:
-        title_parts.append(f"— {sale_row.name}")
-    title = " ".join(title_parts)
+    title = "견적서 작성"
 
     submission_iso = _require_quote_submission_date(sale_row.submission_date)
     props: dict[str, Any] = {
@@ -152,12 +146,18 @@ async def _create_quote_task_for_sale(
         .first()
     )
     if existing:
+        db.rollback()
         return
+    # 중복 확인 read transaction은 외부 Notion 호출 전에 닫아 DB connection 점유를 줄인다.
+    db.rollback()
 
     settings = get_settings()
     try:
         props = _quote_task_props_for_sale(sale_row)
-        page = await notion.create_page(settings.notion_db_tasks, props)
+        # 사용자 저장 응답 path라 Notion 지연은 5초 제한 client로 fail-fast.
+        page = await notion.create_page(
+            settings.notion_db_tasks, props, user_facing=True
+        )
         try:
             get_sync().upsert_page("tasks", page, skip_active_outbox=False)
         except Exception as e:  # noqa: BLE001

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import inspect
 from datetime import date, datetime, timezone
+from types import SimpleNamespace
 
 import pytest
 from fastapi import HTTPException
@@ -10,6 +11,7 @@ from fastapi import HTTPException
 from app.models import mirror as M
 from app.models.notion_outbox import OP_DELETE, OP_UPDATE
 from app.routers.sales import (
+    _create_quote_task_for_sale,
     _quote_task_props_for_sale,
     _require_quote_submission_date,
     _sale_page_from_mirror_with_update,
@@ -148,12 +150,79 @@ def test_quote_task_props_use_submission_date_as_completion_date() -> None:
 
     props = _quote_task_props_for_sale(row)
 
+    assert props["내용"] == {"title": [{"text": {"content": "견적서 작성"}}]}
     assert props["상태"] == {"status": {"name": "완료"}}
     assert props["기간"] == {
         "date": {"start": "2026-05-10", "end": "2026-05-10"}
     }
     assert props["실제 완료일"] == {"date": {"start": "2026-05-10"}}
     assert props["담당자"] == {"multi_select": [{"name": "정지훈"}]}
+
+
+@pytest.mark.asyncio
+async def test_quote_task_create_uses_user_facing_notion(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import app.routers.sales as sales_router
+
+    row = _sale_row()
+    row.submission_date = date(2026, 5, 10)
+    captured: dict[str, object] = {}
+
+    class FakeQuery:
+        def filter(self, _expr: object) -> "FakeQuery":
+            return self
+
+        def first(self) -> None:
+            return None
+
+    class FakeDb:
+        def __init__(self) -> None:
+            self.rollback_count = 0
+
+        def query(self, _field: object) -> FakeQuery:
+            return FakeQuery()
+
+        def rollback(self) -> None:
+            self.rollback_count += 1
+
+    class FakeSync:
+        def upsert_page(
+            self,
+            _kind: str,
+            _page: dict[str, object],
+            *,
+            skip_active_outbox: bool = True,
+        ) -> None:
+            captured["skip_active_outbox"] = skip_active_outbox
+
+    class FakeNotion:
+        async def create_page(
+            self,
+            db_id: str,
+            props: dict[str, object],
+            *,
+            user_facing: bool = False,
+        ) -> dict[str, object]:
+            captured["db_id"] = db_id
+            captured["props"] = props
+            captured["user_facing"] = user_facing
+            return {"id": "task-1", "properties": props}
+
+    def fake_settings() -> SimpleNamespace:
+        return SimpleNamespace(notion_db_tasks="tasks-db")
+
+    monkeypatch.setattr(sales_router, "get_settings", fake_settings)
+    monkeypatch.setattr(sales_router, "get_sync", lambda: FakeSync())
+
+    db = FakeDb()
+
+    await _create_quote_task_for_sale(FakeNotion(), row, db)
+
+    assert captured["db_id"] == "tasks-db"
+    assert captured["user_facing"] is True
+    assert captured["skip_active_outbox"] is False
+    assert db.rollback_count == 1
 
 
 def test_sale_project_link_props() -> None:
