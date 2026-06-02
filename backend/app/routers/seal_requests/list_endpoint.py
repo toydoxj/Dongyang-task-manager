@@ -206,7 +206,7 @@ async def list_seal_requests(
     if project_id:
         # ARRAY contains — page_id가 project_ids에 포함된 row만.
         # 옛 노션 filter `relation.contains`와 동등.
-        stmt = stmt.where(M.MirrorSealRequest.project_ids.any(project_id))  # type: ignore[attr-defined]
+        stmt = stmt.where(M.MirrorSealRequest.project_ids.contains([project_id]))  # type: ignore[attr-defined]
     stmt = stmt.order_by(M.MirrorSealRequest.created_time.desc())
     rows = db.execute(stmt).scalars().all()
 
@@ -220,4 +220,5 @@ async def list_seal_requests(
         safe_limit = min(max(1, int(limit)), _LIST_MAX_LIMIT)
         items = items[safe_offset:safe_offset + safe_limit]
     _enrich_list_labels(db, items)
+    db.rollback()
     return SealListResponse(items=items, count=len(items), total=total)

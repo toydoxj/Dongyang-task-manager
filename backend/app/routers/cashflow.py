@@ -160,6 +160,7 @@ def get_cashflow(
 
     inc = sum(e.amount for e in items if e.type == "income")
     exp = sum(e.amount for e in items if e.type == "expense")
+    db.rollback()
     return CashflowResponse(
         items=items,
         income_total=inc,

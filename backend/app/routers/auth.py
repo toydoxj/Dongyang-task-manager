@@ -429,21 +429,27 @@ def update_me(
     db: Session = Depends(get_db),
 ) -> UserInfo:
     """SSO 전용이라 password 필드는 무시 (이름·이메일·MIDAS 설정만 갱신)."""
+    target = db.get(User, user.id)
+    if target is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="사용자를 찾을 수 없습니다",
+        )
     if body.name is not None:
-        user.name = body.name
+        target.name = body.name
     if body.email is not None:
-        user.email = str(body.email)
+        target.email = str(body.email)
     if body.notion_user_id is not None:
-        user.notion_user_id = body.notion_user_id
+        target.notion_user_id = body.notion_user_id
     if body.midas_url is not None:
-        user.midas_url = body.midas_url
+        target.midas_url = body.midas_url
     if body.midas_key is not None:
-        user.midas_key = body.midas_key
+        target.midas_key = body.midas_key
     if body.work_dir is not None:
-        user.work_dir = body.work_dir
+        target.work_dir = body.work_dir
     db.commit()
-    db.refresh(user)
-    return _to_info(user)
+    db.refresh(target)
+    return _to_info(target)
 
 
 # ── 관리자 (사용자 관리는 SSO로 자동 생성된 계정에 대해서만) ──

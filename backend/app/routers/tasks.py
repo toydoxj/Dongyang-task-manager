@@ -133,6 +133,7 @@ def list_tasks(
 
     rows = db.execute(stmt).scalars().all()
     items = [task_from_mirror(r) for r in rows]
+    db.rollback()
     return TaskListResponse(items=items, count=len(items), total=total)
 
 

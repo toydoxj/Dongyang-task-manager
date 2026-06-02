@@ -73,6 +73,7 @@ async def get_next_doc_number(
     if seal_type != "구조검토서":
         return NextDocNumberResponse(seal_type=seal_type, next_doc_number="")
     next_no = SL.next_review_doc_number_from_mirror(db, lock=False)
+    db.rollback()
     return NextDocNumberResponse(seal_type=seal_type, next_doc_number=next_no)
 
 
@@ -103,4 +104,5 @@ def get_pending_count(
             M.MirrorSealRequest.status.in_(targets),
         )
     ).scalar_one()
+    db.rollback()
     return PendingCount(count=int(count))

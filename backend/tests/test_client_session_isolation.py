@@ -9,9 +9,11 @@ from __future__ import annotations
 import pytest
 from fastapi import HTTPException
 from fastapi.security import HTTPAuthorizationCredentials
+from sqlalchemy import inspect as sa_inspect
 
 from app.db import SessionLocal
 from app.models.auth import User, UserSession
+from app.routers.auth import update_me
 from app.security import create_token, get_auth_channel_stats, get_current_user
 from app.services import sso_works
 
@@ -154,6 +156,38 @@ def test_dy_midas_login_does_not_invalidate_task_session(db) -> None:
 
     u = get_current_user(_bearer(token_task), db)
     assert u.id == user.id
+
+
+def test_get_current_user_releases_read_transaction(db) -> None:
+    """인증 조회 후 응답 처리 동안 DB connection을 잡고 있지 않도록 분리한다."""
+    user = _make_user(db)
+    _set_session(db, user.id, "task", "sid-task")
+    token = create_token(user.username, user.role, "sid-task", client="task")
+
+    u = get_current_user(_bearer(token), db)
+
+    assert u.id == user.id
+    assert u.role == "member"
+    assert sa_inspect(u).detached
+    assert not db.in_transaction()
+
+
+def test_update_me_persists_with_detached_current_user(db) -> None:
+    """get_current_user가 detached User를 반환해도 /me 수정은 route db에서 저장된다."""
+    from app.models.auth import UserUpdateRequest
+
+    user = _make_user(db)
+    _set_session(db, user.id, "task", "sid-task")
+    token = create_token(user.username, user.role, "sid-task", client="task")
+    current_user = get_current_user(_bearer(token), db)
+
+    info = update_me(UserUpdateRequest(name="alice-updated"), current_user, db)
+
+    db.expire_all()
+    saved = db.get(User, user.id)
+    assert info.name == "alice-updated"
+    assert saved is not None
+    assert saved.name == "alice-updated"
 
 
 def test_legacy_token_without_cli_uses_users_session_id(db) -> None:

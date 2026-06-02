@@ -9,11 +9,9 @@ import KPICards from "@/components/dashboard/KPICards";
 import PriorityActionsPanel from "@/components/dashboard/PriorityActionsPanel";
 import LoadingState from "@/components/ui/LoadingState";
 import {
-  useCashflow,
   useDashboardActions,
   useDashboardSummary,
   useProjects,
-  useTasks,
 } from "@/lib/hooks";
 import { useRoleGuard } from "@/lib/useRoleGuard";
 
@@ -26,26 +24,16 @@ export default function DashboardPage() {
   }, [user, allowed, router]);
 
   const { data: projectData, error: projectErr } = useProjects(undefined, allowed);
-  const { data: cashflowData, error: cashflowErr } = useCashflow(
-    { flow: "income" },
-    allowed,
-  );
-  const { data: expenseData } = useCashflow({ flow: "expense" }, allowed);
-  const { data: tasksData } = useTasks(undefined, allowed);
   // PR-BJ-2/3b: KPI와 액션 패널 backend 집계 endpoint 사용. seal pending/overdue도
-  // backend에서 처리해 useSealRequests는 dashboard에서 제거. ChartsTabs/
-  // RecentUpdates/Warnings는 여전히 list endpoint — PR-BJ-5에서 검토.
+  // backend에서 처리해 useSealRequests는 dashboard에서 제거.
   const { data: summary } = useDashboardSummary(allowed);
   const { data: actions } = useDashboardActions(allowed);
 
   if (!user || !allowed) return null;
 
-  const error = projectErr ?? cashflowErr;
+  const error = projectErr;
   const projects = projectData?.items;
-  const incomes = cashflowData?.items;
-  const expenses = expenseData?.items;
-  const allTasks = tasksData?.items;
-  const loading = !projects || !incomes;
+  const loading = !projects;
 
   // 최근 1년 (시작일 기준)
   const oneYearAgo = new Date();
@@ -85,7 +73,7 @@ export default function DashboardPage() {
         />
       )}
 
-      {projects && incomes && (
+      {projects && (
         <>
           {summary && <KPICards summary={summary} />}
 
@@ -93,9 +81,6 @@ export default function DashboardPage() {
 
           <ChartsTabs
             projects={projects}
-            incomes={incomes}
-            expenses={expenses ?? []}
-            allTasks={allTasks}
             recentYearProjects={recentYearProjects}
           />
         </>

@@ -14,8 +14,8 @@ import TeamLoadHeatmap from "@/components/dashboard/TeamLoadHeatmap";
 import WarningItemsPanel from "@/components/dashboard/WarningItemsPanel";
 import WorkTypeTreemap from "@/components/dashboard/WorkTypeTreemap";
 import LoadingState from "@/components/ui/LoadingState";
-import type { CashflowEntry, Project, Task } from "@/lib/domain";
-import { useDashboardInsights } from "@/lib/hooks";
+import type { Project } from "@/lib/domain";
+import { useCashflow, useDashboardInsights, useTasks } from "@/lib/hooks";
 
 type TabKey = "risk" | "load" | "revenue" | "stage";
 
@@ -28,23 +28,29 @@ const TABS: { key: TabKey; label: string; hint: string }[] = [
 
 interface Props {
   projects: Project[];
-  incomes: CashflowEntry[];
-  expenses: CashflowEntry[];
-  allTasks: Task[] | undefined;
   recentYearProjects: Project[];
 }
 
 /** DASH-003 — 9개 차트 컴포넌트를 4개 탭으로 그룹화. */
 export default function ChartsTabs({
   projects,
-  incomes,
-  expenses,
-  allTasks,
   recentYearProjects,
 }: Props) {
   const [active, setActive] = useState<TabKey>("risk");
   // PR-BJ Phase 4-F 마감: RecentUpdates/WarningItems backend 집계.
-  const { data: insights } = useDashboardInsights();
+  const { data: insights } = useDashboardInsights(active === "risk");
+  const { data: tasksData } = useTasks({ status: "시작 전" }, active === "risk");
+  const { data: cashflowData } = useCashflow(
+    { flow: "income" },
+    active === "revenue",
+  );
+  const { data: expenseData } = useCashflow(
+    { flow: "expense" },
+    active === "revenue",
+  );
+  const allTasks = tasksData?.items;
+  const incomes = cashflowData?.items;
+  const expenses = expenseData?.items ?? [];
 
   return (
     <section className="space-y-3">
@@ -97,11 +103,15 @@ export default function ChartsTabs({
       {active === "revenue" && (
         <div className="space-y-4">
           <Subsection title="월별 수주 / 수금 / 지출 추이">
-            <RevenueCollectionChart
-              projects={projects}
-              incomes={incomes}
-              expenses={expenses}
-            />
+            {incomes ? (
+              <RevenueCollectionChart
+                projects={projects}
+                incomes={incomes}
+                expenses={expenses}
+              />
+            ) : (
+              <LoadingState message="수금 데이터 분석 중" height="h-64" />
+            )}
           </Subsection>
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
             <Subsection title="현금흐름 예측 (향후 12개월)">

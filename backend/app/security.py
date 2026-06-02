@@ -184,6 +184,15 @@ def _record_header_cookie_shadow(
     _auth_channel_counts["header_with_valid_cookie"] += 1
 
 
+def _detach_loaded_user(db: Session, user: User) -> User:
+    """인증용 read transaction을 끝내도 라우터에서 scalar 필드를 읽을 수 있게 분리."""
+    for column in User.__mapper__.column_attrs:
+        getattr(user, column.key)
+    if user in db:
+        db.expunge(user)
+    return user
+
+
 def get_current_user(
     cred: HTTPAuthorizationCredentials | None = Depends(_bearer),
     db: Session = Depends(get_db),
@@ -205,9 +214,17 @@ def get_current_user(
     _auth_logger.info("auth_via=%s", _auth_via)
     # PR-ES: in-memory 누적 카운터 증가 (Render single instance, GIL 보호로 race 안전).
     _auth_channel_counts[_auth_via] += 1
-    user = _resolve_user_from_token(raw_token, db)
-    if _auth_via == "header":
-        _record_header_cookie_shadow(cookie_token, db, user)
+    try:
+        user = _resolve_user_from_token(raw_token, db)
+        if _auth_via == "header":
+            _record_header_cookie_shadow(cookie_token, db, user)
+        user = _detach_loaded_user(db, user)
+        # 인증 조회는 여기서 끝났다. 응답 직렬화/라우터 작업 동안 auth 세션이
+        # connection을 잡고 있지 않도록 즉시 read transaction을 반환한다.
+        db.rollback()
+    except Exception:
+        db.rollback()
+        raise
     return user
 
 

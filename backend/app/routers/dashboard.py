@@ -190,6 +190,7 @@ async def get_dashboard_summary(
     if not force_refresh:
         cached = _cache_get(_summary_cache, cache_key)
         if cached is not None:
+            db.rollback()
             return cached
 
     stale_cutoff = today - timedelta(days=_STALE_DAYS)
@@ -325,6 +326,7 @@ async def get_dashboard_summary(
         week_end=week_end.isoformat(),
     )
     _cache_set(_summary_cache, cache_key, summary)
+    db.rollback()
     return summary
 
 
@@ -449,6 +451,7 @@ async def get_dashboard_actions(
     if not force_refresh:
         cached = _cache_get(_actions_cache, cache_key)
         if cached is not None:
+            db.rollback()
             return cached
 
     stale_cutoff = today - timedelta(days=_STALE_DAYS)
@@ -620,6 +623,7 @@ async def get_dashboard_actions(
         stuck_tasks=stuck_item,
     )
     _cache_set(_actions_cache, cache_key, actions)
+    db.rollback()
     return actions
 
 
@@ -668,6 +672,7 @@ async def get_dashboard_insights(
     if not force_refresh:
         cached = _cache_get(_insights_cache, cache_key)
         if cached is not None:
+            db.rollback()
             return cached
 
     stale_cutoff = today - timedelta(days=_STALE_DAYS)
@@ -761,4 +766,5 @@ async def get_dashboard_insights(
         warnings=warnings,
     )
     _cache_set(_insights_cache, cache_key, insights)
+    db.rollback()
     return insights
