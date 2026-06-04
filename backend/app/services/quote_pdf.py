@@ -267,10 +267,15 @@ def build_quote_bundle_pdf(
     for page in cover_reader.pages:
         writer.add_page(page)
 
-    # 2) 자식 견적별 PDF concat — 외부 견적(is_external)은 산출 데이터 없이
-    # 갑지 row만 표시. PDF 첨부가 있으면 PR-EXT-2에서 concat.
+    # 2) 자식 견적별 PDF concat — 외부 견적은 첨부 PDF가 있을 때만 병합.
     for section in sections:
         if section.get("is_external"):
+            attached_pdf_bytes = section.get("attached_pdf_bytes")
+            if not isinstance(attached_pdf_bytes, bytes) or not attached_pdf_bytes:
+                continue
+            reader = PdfReader(io.BytesIO(attached_pdf_bytes))
+            for page in reader.pages:
+                writer.add_page(page)
             continue
         form_data = section.get("form_data") or {}
         if not form_data.get("input") or not form_data.get("result"):

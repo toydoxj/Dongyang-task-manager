@@ -14,6 +14,7 @@ import logging
 from datetime import datetime, timedelta, timezone
 from urllib.parse import quote as url_quote
 
+import httpx
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
@@ -37,7 +38,7 @@ from app.services.quote_pdf import (
     quote_pdf_filename,
 )
 from app.services.sync import get_sync
-from app.settings import get_settings
+from app.settings import Settings, get_settings
 
 logger = logging.getLogger("api.sales.pdf")
 router = APIRouter()
@@ -78,7 +79,7 @@ def _collect_bundle_sections(
 
     영업당 다중 견적 모델 (PR-M0~M4) — 일반 견적 + 외부 견적 (PR-EXT).
     외부 견적은 input/result 비어 있어도 sections에 포함 (갑지 row 표시용).
-    PDF concat에서 is_external은 build_quote_bundle_pdf가 skip.
+    외부 견적은 첨부 PDF file_id가 있으면 라우터에서 bytes로 내려받아 병합한다.
     """
     sale = db.get(M.MirrorSales, sale_id)
     if sale is None or sale.archived:
@@ -105,10 +106,86 @@ def _collect_bundle_sections(
                 "amount": float(form.get("amount") or 0),
                 "vat_included": bool(form.get("vat_included")),
                 "attached_pdf_url": form.get("attached_pdf_url") or "",
+                "attached_pdf_name": form.get("attached_pdf_name") or "",
                 "attached_pdf_file_id": form.get("attached_pdf_file_id") or "",
             }
         )
     return sections
+
+
+def _quote_drive_settings(settings_: Settings) -> Settings:
+    if settings_.works_drive_quote_sharedrive_id:
+        return settings_.model_copy(
+            update={
+                "works_drive_sharedrive_id": settings_.works_drive_quote_sharedrive_id
+            }
+        )
+    return settings_
+
+
+def _has_external_pdf_attachment(sections: list[dict[str, object]]) -> bool:
+    return any(
+        bool(section.get("is_external") and section.get("attached_pdf_file_id"))
+        for section in sections
+    )
+
+
+async def _download_external_pdf_bytes(
+    *,
+    file_id: str,
+    display_name: str,
+    settings_: Settings,
+) -> bytes:
+    try:
+        download_url = await sso_drive.get_download_url(file_id, settings=settings_)
+        async with httpx.AsyncClient(timeout=60.0, follow_redirects=True) as client:
+            resp = await client.get(download_url)
+            resp.raise_for_status()
+    except sso_drive.DriveError as exc:
+        logger.exception("외부 견적 첨부 PDF 다운로드 URL 발급 실패")
+        raise HTTPException(
+            status_code=502,
+            detail=f"외부 견적 첨부 PDF 다운로드 준비 실패: {display_name}",
+        ) from exc
+    except httpx.HTTPError as exc:
+        logger.exception("외부 견적 첨부 PDF 다운로드 실패")
+        raise HTTPException(
+            status_code=502,
+            detail=f"외부 견적 첨부 PDF 다운로드 실패: {display_name}",
+        ) from exc
+
+    if not resp.content:
+        raise HTTPException(
+            status_code=502,
+            detail=f"외부 견적 첨부 PDF가 비어 있습니다: {display_name}",
+        )
+    return resp.content
+
+
+async def _attach_external_pdf_bytes(
+    sections: list[dict[str, object]],
+    *,
+    settings_: Settings,
+) -> list[dict[str, object]]:
+    if not _has_external_pdf_attachment(sections):
+        return sections
+
+    enriched: list[dict[str, object]] = []
+    for section in sections:
+        file_id = str(section.get("attached_pdf_file_id") or "")
+        if not section.get("is_external") or not file_id:
+            enriched.append(section)
+            continue
+        display_name = str(
+            section.get("attached_pdf_name") or section.get("service") or "외부 견적"
+        )
+        pdf_bytes = await _download_external_pdf_bytes(
+            file_id=file_id,
+            display_name=display_name,
+            settings_=settings_,
+        )
+        enriched.append({**section, "attached_pdf_bytes": pdf_bytes})
+    return enriched
 
 
 # ── 단일 견적 PDF 다운로드 ──
@@ -184,7 +261,7 @@ def download_quote_pdf(
 
 
 @router.get("/{page_id}/quote-bundle.pdf")
-def download_quote_bundle_pdf(
+async def download_quote_bundle_pdf(
     page_id: str,
     show_total: bool = True,
     user: User = Depends(get_current_user),
@@ -206,6 +283,18 @@ def download_quote_bundle_pdf(
         raise HTTPException(
             status_code=400,
             detail="이 영업에는 견적이 없습니다",
+        )
+
+    if _has_external_pdf_attachment(sections):
+        settings_ = get_settings()
+        if not settings_.works_drive_enabled:
+            raise HTTPException(
+                status_code=503,
+                detail="외부 견적 첨부 PDF 병합에는 WORKS Drive 통합이 필요합니다.",
+            )
+        sections = await _attach_external_pdf_bytes(
+            sections,
+            settings_=_quote_drive_settings(settings_),
         )
 
     employee = (
@@ -277,11 +366,7 @@ async def save_quote_pdf_to_drive(
             status_code=503,
             detail="견적서 저장 폴더가 설정되지 않았습니다 (WORKS_DRIVE_QUOTE_ROOT_FOLDER_ID 미설정).",
         )
-    quote_settings = settings_
-    if settings_.works_drive_quote_sharedrive_id:
-        quote_settings = settings_.model_copy(
-            update={"works_drive_sharedrive_id": settings_.works_drive_quote_sharedrive_id}
-        )
+    quote_settings = _quote_drive_settings(settings_)
 
     row = db.get(M.MirrorSales, page_id)
     if row is None or row.archived:
@@ -411,11 +496,7 @@ async def save_quote_bundle_pdf_to_drive(
             status_code=503,
             detail="견적서 저장 폴더가 설정되지 않았습니다 (WORKS_DRIVE_QUOTE_ROOT_FOLDER_ID 미설정).",
         )
-    quote_settings = settings_
-    if settings_.works_drive_quote_sharedrive_id:
-        quote_settings = settings_.model_copy(
-            update={"works_drive_sharedrive_id": settings_.works_drive_quote_sharedrive_id}
-        )
+    quote_settings = _quote_drive_settings(settings_)
 
     sale = db.get(M.MirrorSales, page_id)
     if sale is None or sale.archived:
@@ -427,6 +508,8 @@ async def save_quote_bundle_pdf_to_drive(
             status_code=400,
             detail="이 영업에는 견적이 없습니다",
         )
+
+    sections = await _attach_external_pdf_bytes(sections, settings_=quote_settings)
 
     # 1. 통합 PDF 생성
     employee = (
