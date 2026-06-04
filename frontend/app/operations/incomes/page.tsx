@@ -15,7 +15,7 @@ import type {
   ContractItem,
   Project,
 } from "@/lib/domain";
-import { formatWon } from "@/lib/format";
+import { formatPercent, formatWon } from "@/lib/format";
 import { useCashflow, useProjects } from "@/lib/hooks";
 import useSWR from "swr";
 
@@ -31,7 +31,33 @@ interface IncomeRow {
   outstanding: number; // totalAmount - cumulativeAmount (해당 row 시점 미수금)
 }
 
+interface ReceivableGroup {
+  key: string;
+  projectName: string;
+  projectCode: string;
+  clientName: string;
+  contractItemLabel: string;
+  totalAmount: number;
+  collectedAmount: number;
+  outstanding: number;
+}
+
 const PAGE_SIZE = 100;
+const HIGH_RISK_OUTSTANDING_RATIO = 0.5;
+
+function projectClientName(project: Project | null): string {
+  if (!project) return "";
+  if (project.client_names.length > 0) return project.client_names.join(", ");
+  return project.client_text;
+}
+
+function projectTotalAmount(project: Project): number {
+  return (project.contract_amount ?? 0) + (project.vat ?? 0);
+}
+
+function contractItemTotalAmount(item: ContractItem): number {
+  return (item.amount ?? 0) + (item.vat ?? 0);
+}
 
 function withCashflowTotals(
   current: CashflowResponse,
@@ -191,6 +217,76 @@ export default function IncomesAdminPage() {
     });
   }, [cashflowData, projectMap, itemMap, itemsByProject]);
 
+  const receivables: ReceivableGroup[] = useMemo(() => {
+    const incomeByItem = new Map<string, number>();
+    const legacyIncomeByProject = new Map<string, number>();
+    const incomeItems = (cashflowData?.items ?? []).filter((e) => e.type === "income");
+
+    for (const e of incomeItems) {
+      const d = e.date?.slice(0, 10) ?? "";
+      if (dateTo && d && d > dateTo) continue;
+      if (e.contract_item_id) {
+        incomeByItem.set(
+          e.contract_item_id,
+          (incomeByItem.get(e.contract_item_id) ?? 0) + e.amount,
+        );
+        continue;
+      }
+      const pid = e.project_ids[0] ?? "";
+      if (!pid) continue;
+      legacyIncomeByProject.set(
+        pid,
+        (legacyIncomeByProject.get(pid) ?? 0) + e.amount,
+      );
+    }
+
+    const groups: ReceivableGroup[] = [];
+    for (const item of contractItemsData?.items ?? []) {
+      const total = contractItemTotalAmount(item);
+      if (total <= 0) continue;
+      const project = projectMap.get(item.project_id) ?? null;
+      const collected = incomeByItem.get(item.id) ?? 0;
+      groups.push({
+        key: `item:${item.id}`,
+        projectName: project?.name ?? "(프로젝트 미연결)",
+        projectCode: project?.code ?? "",
+        clientName: item.client_name || projectClientName(project),
+        contractItemLabel: item.label || "분담항목",
+        totalAmount: total,
+        collectedAmount: collected,
+        outstanding: total - collected,
+      });
+    }
+
+    for (const project of projectsData?.items ?? []) {
+      const projectItems = itemsByProject.get(project.id) ?? [];
+      if (projectItems.length > 0) continue;
+      const total = projectTotalAmount(project);
+      const collected = legacyIncomeByProject.get(project.id) ?? 0;
+      if (total <= 0 && collected <= 0) continue;
+      if (!project.contract_signed && collected <= 0) continue;
+      groups.push({
+        key: `proj:${project.id}`,
+        projectName: project.name,
+        projectCode: project.code,
+        clientName: projectClientName(project),
+        contractItemLabel: "본 계약",
+        totalAmount: total,
+        collectedAmount: collected,
+        outstanding: total - collected,
+      });
+    }
+
+    return groups;
+  }, [
+    cashflowData,
+    contractItemsData,
+    dateTo,
+    itemsByProject,
+    projectMap,
+    projectsData,
+  ]);
+
   // 필터 적용
   const filtered = useMemo(() => rows.filter((r) => {
     const d = r.entry.date?.slice(0, 10) ?? "";
@@ -211,6 +307,58 @@ export default function IncomesAdminPage() {
     return true;
   }), [rows, dateFrom, dateTo, projectQuery, clientQuery]);
 
+  const filteredReceivables = useMemo(() => receivables.filter((r) => {
+    if (projectQuery) {
+      const q = projectQuery.toLowerCase();
+      if (
+        !r.projectName.toLowerCase().includes(q) &&
+        !r.projectCode.toLowerCase().includes(q)
+      )
+        return false;
+    }
+    if (clientQuery) {
+      const q = clientQuery.toLowerCase();
+      if (!r.clientName.toLowerCase().includes(q)) return false;
+    }
+    return true;
+  }), [receivables, projectQuery, clientQuery]);
+
+  const receivableSummary = useMemo(() => {
+    const targetTotal = filteredReceivables.reduce(
+      (sum, r) => sum + r.totalAmount,
+      0,
+    );
+    const collectedTotal = filteredReceivables.reduce(
+      (sum, r) => sum + r.collectedAmount,
+      0,
+    );
+    const unpaid = filteredReceivables.filter((r) => r.outstanding > 1);
+    const outstandingTotal = unpaid.reduce(
+      (sum, r) => sum + Math.max(0, r.outstanding),
+      0,
+    );
+    const highRiskCount = unpaid.filter(
+      (r) =>
+        r.totalAmount > 0 &&
+        r.outstanding > r.totalAmount * HIGH_RISK_OUTSTANDING_RATIO,
+    ).length;
+    return {
+      targetTotal,
+      collectedTotal,
+      outstandingTotal,
+      collectionRate:
+        targetTotal > 0 ? Math.min(collectedTotal, targetTotal) / targetTotal : null,
+      totalCount: filteredReceivables.length,
+      paidCount: filteredReceivables.length - unpaid.length,
+      unpaidCount: unpaid.length,
+      highRiskCount,
+      topOutstanding: unpaid
+        .slice()
+        .sort((a, b) => b.outstanding - a.outstanding)
+        .slice(0, 5),
+    };
+  }, [filteredReceivables]);
+
   // 보드는 desc 정렬이 자연스러움 (최신 위)
   const visible = useMemo(() => filtered.slice().reverse(), [filtered]);
   const totalAmount = useMemo(
@@ -222,6 +370,7 @@ export default function IncomesAdminPage() {
   const pageStart = safePageIndex * PAGE_SIZE;
   const pageEnd = Math.min(pageStart + PAGE_SIZE, visible.length);
   const pagedVisible = visible.slice(pageStart, pageEnd);
+  const receivableAsOfLabel = dateTo ? `${dateTo} 기준` : "전체 기간 기준";
 
   const handleIncomeSaved = useCallback(
     (result: IncomeSaveResult) => {
@@ -241,7 +390,7 @@ export default function IncomesAdminPage() {
     );
   }
 
-  const loading = !cashflowData || !projectsData;
+  const loading = !cashflowData || !projectsData || !contractItemsData;
 
   const exportCsv = (): void => {
     const header = [
@@ -360,6 +509,93 @@ export default function IncomesAdminPage() {
           </FilterField>
         </div>
       </section>
+
+      {!loading && (
+        <section className="space-y-3">
+          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+            <ReceivableStat
+              label="현재 미수금"
+              value={formatWon(Math.round(receivableSummary.outstandingTotal))}
+              caption={`미완납 ${receivableSummary.unpaidCount}개 · ${receivableAsOfLabel}`}
+              tone={receivableSummary.outstandingTotal > 0 ? "amber" : "green"}
+            />
+            <ReceivableStat
+              label="계약 기준액"
+              value={formatWon(Math.round(receivableSummary.targetTotal))}
+              caption={`수금 ${formatWon(Math.round(receivableSummary.collectedTotal))}`}
+            />
+            <ReceivableStat
+              label="수금률"
+              value={formatPercent(receivableSummary.collectionRate)}
+              caption={`완납 ${receivableSummary.paidCount} / 전체 ${receivableSummary.totalCount}`}
+              tone="green"
+            />
+            <ReceivableStat
+              label="고위험 미수"
+              value={`${receivableSummary.highRiskCount}개`}
+              caption="잔액 50% 초과"
+              tone={receivableSummary.highRiskCount > 0 ? "amber" : "default"}
+            />
+          </div>
+
+          {receivableSummary.topOutstanding.length > 0 && (
+            <div className="rounded-xl border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
+              <div className="flex items-center justify-between border-b border-zinc-200 px-4 py-2 text-xs dark:border-zinc-800">
+                <span className="font-medium">미수금 큰 항목</span>
+                <span className="text-zinc-500">상위 5개</span>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs">
+                  <thead className="border-b border-zinc-200 bg-zinc-50 text-zinc-500 dark:border-zinc-800 dark:bg-zinc-950">
+                    <tr>
+                      <Th>프로젝트</Th>
+                      <Th>발주처</Th>
+                      <Th>분담항목</Th>
+                      <Th className="text-right">미수금</Th>
+                      <Th className="text-right">수금률</Th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {receivableSummary.topOutstanding.map((r) => (
+                      <tr
+                        key={r.key}
+                        className="border-b border-zinc-100 dark:border-zinc-800"
+                      >
+                        <Td>
+                          <div className="flex items-center gap-2">
+                            <span className="font-mono text-[10px] text-zinc-500">
+                              {r.projectCode || "—"}
+                            </span>
+                            <span className="truncate" title={r.projectName}>
+                              {r.projectName}
+                            </span>
+                          </div>
+                        </Td>
+                        <Td className="truncate" title={r.clientName}>
+                          {r.clientName || "—"}
+                        </Td>
+                        <Td className="truncate text-zinc-500" title={r.contractItemLabel}>
+                          {r.contractItemLabel}
+                        </Td>
+                        <Td className="text-right font-medium text-amber-600 dark:text-amber-400">
+                          {formatWon(Math.round(r.outstanding))}
+                        </Td>
+                        <Td className="text-right text-zinc-500">
+                          {formatPercent(
+                            r.totalAmount > 0
+                              ? Math.min(r.collectedAmount, r.totalAmount) / r.totalAmount
+                              : null,
+                          )}
+                        </Td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </section>
+      )}
 
       {loading ? (
         <LoadingState message="수금 데이터 불러오는 중" height="h-64" />
@@ -581,5 +817,31 @@ function OutstandingCell({
       {isPaid ? "완납" : formatWon(outstanding)}
       {!isPaid && <span className="ml-1 text-[10px] text-zinc-400">({pct}%)</span>}
     </span>
+  );
+}
+
+function ReceivableStat({
+  label,
+  value,
+  caption,
+  tone = "default",
+}: {
+  label: string;
+  value: string;
+  caption: string;
+  tone?: "default" | "green" | "amber";
+}) {
+  const toneClass =
+    tone === "green"
+      ? "text-emerald-600 dark:text-emerald-400"
+      : tone === "amber"
+        ? "text-amber-600 dark:text-amber-400"
+        : "text-zinc-900 dark:text-zinc-100";
+  return (
+    <div className="rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
+      <p className="text-[11px] font-medium text-zinc-500">{label}</p>
+      <p className={`mt-2 text-xl font-semibold ${toneClass}`}>{value}</p>
+      <p className="mt-1 text-[11px] text-zinc-500">{caption}</p>
+    </div>
   );
 }
