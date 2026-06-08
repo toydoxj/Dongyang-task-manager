@@ -138,8 +138,9 @@ async def _download_external_pdf_bytes(
 ) -> bytes:
     try:
         download_url = await sso_drive.get_download_url(file_id, settings=settings_)
+        download_headers = await sso_drive.get_download_headers(settings=settings_)
         async with httpx.AsyncClient(timeout=60.0, follow_redirects=True) as client:
-            resp = await client.get(download_url)
+            resp = await client.get(download_url, headers=download_headers)
             resp.raise_for_status()
     except sso_drive.DriveError as exc:
         logger.exception("외부 견적 첨부 PDF 다운로드 URL 발급 실패")

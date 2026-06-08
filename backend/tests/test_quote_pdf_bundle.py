@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import io
+from types import TracebackType
 from typing import cast
 
 import pytest
@@ -95,3 +96,76 @@ async def test_attach_external_pdf_bytes_downloads_attached_external_only(
     assert isinstance(enriched[0].get("attached_pdf_bytes"), bytes)
     assert "attached_pdf_bytes" not in enriched[1]
     assert "attached_pdf_bytes" not in enriched[2]
+
+
+@pytest.mark.asyncio
+async def test_download_external_pdf_bytes_sends_drive_auth_header(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """WORKS Storage URL 실제 다운로드에도 Bearer 인증 헤더를 전달한다."""
+
+    captured_headers: list[dict[str, str] | None] = []
+
+    async def fake_get_download_url(
+        file_id: str, *, settings: Settings
+    ) -> str:
+        assert file_id == "file-1"
+        return "https://storage.example.test/file.pdf"
+
+    async def fake_get_download_headers(
+        *, settings: Settings
+    ) -> dict[str, str]:
+        return {"Authorization": "Bearer token-1"}
+
+    class FakeResponse:
+        content = b"%PDF-1.7\n"
+
+        def raise_for_status(self) -> None:
+            return None
+
+    class FakeClient:
+        def __init__(self, *, timeout: float, follow_redirects: bool) -> None:
+            assert timeout == 60.0
+            assert follow_redirects is True
+
+        async def __aenter__(self) -> "FakeClient":
+            return self
+
+        async def __aexit__(
+            self,
+            exc_type: type[BaseException] | None,
+            exc: BaseException | None,
+            traceback: TracebackType | None,
+        ) -> None:
+            return None
+
+        async def get(
+            self,
+            url: str,
+            *,
+            headers: dict[str, str] | None = None,
+        ) -> FakeResponse:
+            assert url == "https://storage.example.test/file.pdf"
+            captured_headers.append(headers)
+            return FakeResponse()
+
+    monkeypatch.setattr(
+        sales_pdf.sso_drive,
+        "get_download_url",
+        fake_get_download_url,
+    )
+    monkeypatch.setattr(
+        sales_pdf.sso_drive,
+        "get_download_headers",
+        fake_get_download_headers,
+    )
+    monkeypatch.setattr(sales_pdf.httpx, "AsyncClient", FakeClient)
+
+    pdf_bytes = await sales_pdf._download_external_pdf_bytes(
+        file_id="file-1",
+        display_name="외부.pdf",
+        settings_=cast(Settings, object()),
+    )
+
+    assert pdf_bytes == b"%PDF-1.7\n"
+    assert captured_headers == [{"Authorization": "Bearer token-1"}]

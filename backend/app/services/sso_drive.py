@@ -840,6 +840,15 @@ async def get_download_url(
     raise DriveError(f"download URL 발급 실패 ({resp.status_code})")
 
 
+async def get_download_headers(
+    *, settings: Settings | None = None
+) -> dict[str, str]:
+    """Storage URL 다운로드에 필요한 인증 헤더를 반환."""
+    s = settings or get_settings()
+    token = await _get_valid_access_token(s)
+    return {"Authorization": f"Bearer {token}"}
+
+
 def build_file_web_url(file_id: str, resource_location: int | str | None) -> str:
     """NAVER WORKS Drive 파일/폴더 web URL 조립.
 
