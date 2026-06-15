@@ -123,6 +123,13 @@ def _quote_drive_settings(settings_: Settings) -> Settings:
     return settings_
 
 
+def _quote_header_date(sale: M.MirrorSales) -> str:
+    """견적서 헤더 날짜는 실제 제출일 기준. legacy 누락 row만 생성일로 보정."""
+    if sale.submission_date:
+        return sale.submission_date.strftime("%Y. %m. %d")
+    return datetime.now(_KST).strftime("%Y. %m. %d")
+
+
 def _has_external_pdf_attachment(sections: list[dict[str, object]]) -> bool:
     return any(
         bool(section.get("is_external") and section.get("attached_pdf_file_id"))
@@ -239,6 +246,7 @@ def download_quote_pdf(
         doc_number=full_doc,
         author_name=author_name,
         author_position=author_position,
+        display_date=_quote_header_date(row),
     )
     filename = quote_pdf_filename(
         full_doc or "no-doc",
@@ -322,6 +330,7 @@ async def download_quote_bundle_pdf(
             "building_count": sale.building_count,
         },
         show_total=show_total,
+        display_date=_quote_header_date(sale),
     )
     filename = quote_bundle_pdf_filename(
         sale.quote_doc_number or "no-doc",
@@ -404,6 +413,7 @@ async def save_quote_pdf_to_drive(
         doc_number=full_doc,
         author_name=author_name,
         author_position=author_position,
+        display_date=_quote_header_date(row),
     )
     filename = quote_pdf_filename(
         full_doc or "no-doc",
@@ -536,6 +546,7 @@ async def save_quote_bundle_pdf_to_drive(
             "building_count": sale.building_count,
         },
         show_total=show_total,
+        display_date=_quote_header_date(sale),
     )
     filename = quote_bundle_pdf_filename(
         sale.quote_doc_number or "no-doc",

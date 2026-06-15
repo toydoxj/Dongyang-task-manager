@@ -107,12 +107,18 @@ def _krw(value: int | float | None) -> str:
 _env.filters["krw"] = _krw
 
 
+def _header_date(display_date: str = "") -> str:
+    """PDF 헤더 날짜. 호출자가 주지 않으면 기존처럼 생성일을 사용한다."""
+    return display_date or date.today().strftime("%Y. %m. %d")
+
+
 def build_quote_pdf(
     form_data: dict[str, Any],
     *,
     doc_number: str = "",
     author_name: str = "",
     author_position: str = "",
+    display_date: str = "",
 ) -> bytes:
     """form_data['input'] + ['result']를 quote_template.html로 렌더링 → PDF bytes.
 
@@ -136,7 +142,7 @@ def build_quote_pdf(
         doc_number=doc_number,
         input=inp,
         result=result,
-        today=date.today().strftime("%Y. %m. %d"),
+        today=_header_date(display_date),
         logo_svg=_read_logo_svg(),
         seal_data_uri=_read_seal_data_uri(),
         author_name=author_name,
@@ -155,6 +161,7 @@ def build_bundle_cover_pdf(
     author_position: str = "",
     parent_meta: dict[str, Any] | None = None,
     show_total: bool = True,
+    display_date: str = "",
 ) -> bytes:
     """통합 PDF 첫 페이지 갑지(cover) — 영업 정보 + 견적 종합 표 + 총합.
 
@@ -219,7 +226,7 @@ def build_bundle_cover_pdf(
         parent_name=parent_name,
         parent_doc_number=parent_doc_number,
         parent_meta=parent_meta or {},
-        today=date.today().strftime("%Y. %m. %d"),
+        today=_header_date(display_date),
         logo_svg=_read_logo_svg(),
         seal_data_uri=_read_seal_data_uri(),
         author_name=author_name,
@@ -238,6 +245,7 @@ def build_quote_bundle_pdf(
     parent_doc_number: str = "",
     parent_meta: dict[str, Any] | None = None,
     show_total: bool = True,
+    display_date: str = "",
 ) -> bytes:
     """영업 내 다중 견적을 1 PDF로 묶음. 첫 페이지는 갑지(cover, 견적 종합 표
     + 총합), 후속 페이지는 자식 견적별 단일 PDF (build_quote_pdf 결과).
@@ -262,6 +270,7 @@ def build_quote_bundle_pdf(
         author_position=author_position,
         parent_meta=parent_meta,
         show_total=show_total,
+        display_date=display_date,
     )
     cover_reader = PdfReader(io.BytesIO(cover_bytes))
     for page in cover_reader.pages:
@@ -285,6 +294,7 @@ def build_quote_bundle_pdf(
             doc_number=section.get("doc_number", "") or "",
             author_name=author_name,
             author_position=author_position,
+            display_date=display_date,
         )
         reader = PdfReader(io.BytesIO(pdf_bytes))
         for page in reader.pages:

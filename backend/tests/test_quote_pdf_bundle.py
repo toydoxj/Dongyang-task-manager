@@ -48,6 +48,41 @@ def test_quote_bundle_includes_external_attached_pdf(
     assert len(reader.pages) == 3
 
 
+def test_quote_bundle_passes_display_date_to_cover_and_children(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """통합 견적 PDF의 갑지와 자식 견적 모두 같은 헤더 날짜를 사용한다."""
+    captured: list[tuple[str, object]] = []
+
+    def fake_cover_pdf(*_args: object, **kwargs: object) -> bytes:
+        captured.append(("cover", kwargs.get("display_date")))
+        return _blank_pdf_bytes()
+
+    def fake_quote_pdf(*_args: object, **kwargs: object) -> bytes:
+        captured.append(("child", kwargs.get("display_date")))
+        return _blank_pdf_bytes()
+
+    monkeypatch.setattr(quote_pdf, "build_bundle_cover_pdf", fake_cover_pdf)
+    monkeypatch.setattr(quote_pdf, "build_quote_pdf", fake_quote_pdf)
+
+    pdf_bytes = quote_pdf.build_quote_bundle_pdf(
+        [
+            {
+                "form_data": {
+                    "input": {"quote_type": "구조설계"},
+                    "result": {"final": 1000},
+                },
+                "doc_number": "26-01-001A",
+            }
+        ],
+        display_date="2026. 05. 25",
+    )
+
+    reader = PdfReader(io.BytesIO(pdf_bytes))
+    assert len(reader.pages) == 2
+    assert captured == [("cover", "2026. 05. 25"), ("child", "2026. 05. 25")]
+
+
 @pytest.mark.asyncio
 async def test_attach_external_pdf_bytes_downloads_attached_external_only(
     monkeypatch: pytest.MonkeyPatch,
