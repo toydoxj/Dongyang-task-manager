@@ -23,7 +23,10 @@ from sqlalchemy.orm import Session
 from app.models import mirror as M
 from app.models.employee import Employee
 from app.services.weekly_report import PersonalScheduleEntry
-from app.services.weekly_report.helpers import _normalize_schedule_category
+from app.services.weekly_report.helpers import (
+    _is_employee_active_for_week,
+    _normalize_schedule_category,
+)
 
 # 개인 일정 매트릭스에 표시할 task category.
 # "휴가(연차)"는 frontend의 통합 옵션 — 표시 시 duration 기반 연차/반차로 분기.
@@ -57,7 +60,9 @@ def aggregate_personal_schedule(
     )
     # 직원별 team 조회 캐시
     team_by_name: dict[str, str] = {}
-    for emp in db.query(Employee.name, Employee.team).all():
+    for emp in db.query(Employee.name, Employee.team, Employee.resigned_at).all():
+        if not _is_employee_active_for_week(emp.resigned_at, week_end):
+            continue
         team_by_name[emp.name] = emp.team or ""
 
     entries: list[PersonalScheduleEntry] = []
@@ -73,6 +78,8 @@ def aggregate_personal_schedule(
         else:
             kind = "other"
         for assignee in t.assignees or []:
+            if assignee not in team_by_name:
+                continue
             entries.append(
                 PersonalScheduleEntry(
                     employee_name=assignee,

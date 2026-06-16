@@ -31,6 +31,7 @@ from app.services.mirror_dto import project_from_mirror
 from app.services.weekly_report import EmployeeWorkRow, TeamProjectRow
 from app.services.weekly_report.helpers import (
     _client_name_lookup,
+    _is_employee_active_for_week,
     _resolve_client_label,
 )
 
@@ -176,8 +177,14 @@ def aggregate_team_work(
     # ── 1. 직원 lookup ──
     emp_meta: dict[str, tuple[str, str, int]] = {}
     for emp in db.query(
-        Employee.name, Employee.position, Employee.team, Employee.sort_order
+        Employee.name,
+        Employee.position,
+        Employee.team,
+        Employee.sort_order,
+        Employee.resigned_at,
     ).all():
+        if not _is_employee_active_for_week(emp.resigned_at, week_end):
+            continue
         emp_meta[emp.name] = (emp.position or "", emp.team or "", emp.sort_order or 0)
 
     # ── 2. mirror_projects / mirror_sales meta dict ──

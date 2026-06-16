@@ -6,6 +6,7 @@ from types import SimpleNamespace
 from typing import cast
 
 from app.models import mirror as M
+from app.services.weekly_report.helpers import _is_employee_active_for_week
 from app.services.weekly_report.team import _task_overlaps_period
 
 
@@ -57,3 +58,11 @@ def test_open_task_without_actual_end_stays_active() -> None:
     )
 
     assert _task_overlaps_period(task, date(2026, 6, 1), date(2026, 6, 5)) is True
+
+
+def test_employee_active_for_week_excludes_resigned_before_week_end() -> None:
+    assert _is_employee_active_for_week(date(2026, 6, 3), date(2026, 6, 5)) is False
+
+
+def test_employee_active_for_week_includes_future_resignation() -> None:
+    assert _is_employee_active_for_week(date(2026, 6, 8), date(2026, 6, 5)) is True

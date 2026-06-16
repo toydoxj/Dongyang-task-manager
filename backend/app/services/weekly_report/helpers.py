@@ -48,6 +48,11 @@ def _classify_occupation(team: str, position: str) -> str:
     return "기타"
 
 
+def _is_employee_active_for_week(resigned_at: date | None, week_end: date) -> bool:
+    """보고서 주간 종료일 기준 재직 중이면 True."""
+    return resigned_at is None or resigned_at > week_end
+
+
 def _kst_range(week_start: date, week_end: date | None = None) -> tuple[datetime, datetime]:
     """[week_start KST 00:00, week_end KST 23:59:59.999999) UTC aware datetime.
 
