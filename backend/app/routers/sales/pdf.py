@@ -67,9 +67,28 @@ def _resolve_target_form(forms: list[dict], quote_id: str) -> dict | None:
     return forms[0]
 
 
-def _form_to_pdf_data(form: dict) -> dict:
-    """견적 form → build_quote_pdf 입력 형식 ({input, result})."""
-    return {"input": form.get("input") or {}, "result": form.get("result") or {}}
+def _form_to_pdf_data(form: dict, *, sale: M.MirrorSales | None = None) -> dict:
+    """견적 form → build_quote_pdf 입력 형식 ({input, result}).
+
+    sync_with_sale=false가 아닌 견적은 영업 row의 수신 담당자·메일·주소를 PDF에
+    우선 반영한다. 기존 견적별 자체 입력 모드는 그대로 보존한다.
+    """
+    data = {
+        "input": dict(form.get("input") or {}),
+        "result": form.get("result") or {},
+    }
+    if sale is None or data["input"].get("sync_with_sale") is False:
+        return data
+
+    sale_dto = sale_from_mirror(sale)
+    for key, value in [
+        ("recipient_person", sale_dto.recipient_person),
+        ("recipient_email", sale_dto.recipient_email),
+        ("location", sale_dto.location),
+    ]:
+        if value:
+            data["input"][key] = value
+    return data
 
 
 def _collect_bundle_sections(
@@ -97,7 +116,7 @@ def _collect_bundle_sections(
             continue
         sections.append(
             {
-                "form_data": _form_to_pdf_data(form),
+                "form_data": _form_to_pdf_data(form, sale=sale),
                 "doc_number": format_doc_full(
                     form.get("doc_number", ""), form.get("suffix", "")
                 ),
@@ -242,7 +261,7 @@ def download_quote_pdf(
     author_position = employee.position if employee else ""
 
     pdf_bytes = build_quote_pdf(
-        _form_to_pdf_data(target),
+        _form_to_pdf_data(target, sale=row),
         doc_number=full_doc,
         author_name=author_name,
         author_position=author_position,
@@ -409,7 +428,7 @@ async def save_quote_pdf_to_drive(
     author_position = employee.position if employee else ""
 
     pdf_bytes = build_quote_pdf(
-        _form_to_pdf_data(target),
+        _form_to_pdf_data(target, sale=row),
         doc_number=full_doc,
         author_name=author_name,
         author_position=author_position,

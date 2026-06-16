@@ -337,7 +337,17 @@
     {% if recipient_company %}
     <div class="meta-row">
       <div class="meta-label">수신처</div>
-      <div class="meta-value">{{ recipient_company }}</div>
+      <div class="meta-value">
+        {{ recipient_company }}
+        {% if recipient_person %}&nbsp;&nbsp;담당 {{ recipient_person }}{% endif %}
+        {% if recipient_email %}&nbsp; · {{ recipient_email }}{% endif %}
+      </div>
+    </div>
+    {% endif %}
+    {% if location %}
+    <div class="meta-row">
+      <div class="meta-label">주소</div>
+      <div class="meta-value">{{ location }}</div>
     </div>
     {% endif %}
     {% if parent_name %}

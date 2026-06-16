@@ -470,7 +470,7 @@
       <div class="meta-value">
         <strong class="recipient-company">{{ input.recipient_company or "—" }}</strong>
         {%- if input.recipient_person %}
-          <span class="recipient-person">&nbsp;&nbsp;참조 {{ input.recipient_person }}</span>
+          <span class="recipient-person">&nbsp;&nbsp;담당 {{ input.recipient_person }}</span>
         {%- endif %}
         {%- if input.recipient_phone %}
           <span class="contact">&nbsp;{{ input.recipient_phone }}</span>
@@ -488,7 +488,7 @@
     {% endif %}
     {% if input.location %}
     <div class="meta-row">
-      <div class="meta-label">위치</div>
+      <div class="meta-label">주소</div>
       <div class="meta-value">{{ input.location }}</div>
     </div>
     {% endif %}

@@ -259,6 +259,8 @@ export default function SalesEditModal({
         performance_design_amount: sale.performance_design_amount ?? undefined,
         wind_tunnel_amount: sale.wind_tunnel_amount ?? undefined,
         location: sale.location || undefined,
+        recipient_person: sale.recipient_person || undefined,
+        recipient_email: sale.recipient_email || undefined,
         assignees: sale.assignees,
         quote_type: sale.quote_type || undefined,
       });
@@ -277,6 +279,10 @@ export default function SalesEditModal({
             sale.building_count ?? sale.quote_form_data.input.building_count,
           location:
             sale.location || sale.quote_form_data.input.location || "",
+          recipient_person:
+            sale.recipient_person || sale.quote_form_data.input.recipient_person || "",
+          recipient_email:
+            sale.recipient_email || sale.quote_form_data.input.recipient_email || "",
         });
         setQuoteResult(sale.quote_form_data.result ?? null);
       } else {
@@ -292,6 +298,8 @@ export default function SalesEditModal({
           floors_below: sale.floors_below ?? null,
           building_count: sale.building_count ?? null,
           location: sale.location ?? "",
+          recipient_person: sale.recipient_person ?? "",
+          recipient_email: sale.recipient_email ?? "",
         });
         setQuoteResult(null);
       }
@@ -362,6 +370,8 @@ export default function SalesEditModal({
         floors_below: form.floors_below ?? prev.floors_below,
         building_count: form.building_count ?? prev.building_count,
         location: form.location ?? prev.location,
+        recipient_person: form.recipient_person ?? prev.recipient_person,
+        recipient_email: form.recipient_email ?? prev.recipient_email,
       };
     });
   }, [
@@ -371,6 +381,8 @@ export default function SalesEditModal({
     form.floors_below,
     form.building_count,
     form.location,
+    form.recipient_person,
+    form.recipient_email,
   ]);
 
   // 모달 닫힘 시 prev type 추적 ref 초기화 — 다음 모달 열림 시 첫 prefill을 skip
@@ -502,6 +514,9 @@ export default function SalesEditModal({
         floors_above: quoteInput.floors_above ?? undefined,
         floors_below: quoteInput.floors_below ?? undefined,
         building_count: quoteInput.building_count ?? undefined,
+        location: quoteInput.location ?? undefined,
+        recipient_person: quoteInput.recipient_person ?? undefined,
+        recipient_email: quoteInput.recipient_email ?? undefined,
         quote_type: quoteInput.quote_type ?? undefined,
       };
 
@@ -773,6 +788,8 @@ export default function SalesEditModal({
                         service_name: form.name ?? "",
                         quote_type: "구조설계",
                         recipient_company: client,
+                        recipient_person: form.recipient_person ?? "",
+                        recipient_email: form.recipient_email ?? "",
                         location: form.location ?? sale?.location ?? "",
                         payment_terms: "쌍방의 협의에 의함.",
                       });
@@ -1002,7 +1019,35 @@ export default function SalesEditModal({
                                 <button
                                   type="button"
                                   onClick={() => {
-                                    setQuoteInput(q.input);
+                                    setQuoteInput(
+                                      q.input.sync_with_sale === false
+                                        ? q.input
+                                        : {
+                                            ...q.input,
+                                            service_name:
+                                              form.name ?? q.input.service_name,
+                                            gross_floor_area:
+                                              form.gross_floor_area ??
+                                              q.input.gross_floor_area,
+                                            floors_above:
+                                              form.floors_above ??
+                                              q.input.floors_above,
+                                            floors_below:
+                                              form.floors_below ??
+                                              q.input.floors_below,
+                                            building_count:
+                                              form.building_count ??
+                                              q.input.building_count,
+                                            location:
+                                              form.location ?? q.input.location,
+                                            recipient_person:
+                                              form.recipient_person ??
+                                              q.input.recipient_person,
+                                            recipient_email:
+                                              form.recipient_email ??
+                                              q.input.recipient_email,
+                                          },
+                                    );
                                     setQuoteResult(q.result);
                                     setEditingQuoteId(q.id);
                                     setQuoteMode("edit");
@@ -1195,7 +1240,31 @@ export default function SalesEditModal({
             )}
           </Field>
 
-          <Field label="위치">
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="수신 담당자명">
+              <input
+                className={inputCls}
+                value={form.recipient_person ?? ""}
+                onChange={(e) =>
+                  setForm({ ...form, recipient_person: e.target.value })
+                }
+                placeholder="예: 홍길동 차장"
+              />
+            </Field>
+            <Field label="수신 메일">
+              <input
+                type="email"
+                className={inputCls}
+                value={form.recipient_email ?? ""}
+                onChange={(e) =>
+                  setForm({ ...form, recipient_email: e.target.value })
+                }
+                placeholder="name@example.com"
+              />
+            </Field>
+          </div>
+
+          <Field label="주소">
             <input
               className={inputCls}
               value={form.location ?? ""}
@@ -1373,7 +1442,7 @@ export default function SalesEditModal({
             </Field>
           </div>
 
-          <Field label="담당자 (콤마 구분)">
+          <Field label="내부 담당자 (콤마 구분)">
             <input
               className={inputCls}
               value={(form.assignees ?? []).join(", ")}

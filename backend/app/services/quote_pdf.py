@@ -176,6 +176,9 @@ def build_bundle_cover_pdf(
     rows: list[dict[str, Any]] = []
     total = 0
     recipient_company = ""
+    recipient_person = ""
+    recipient_email = ""
+    location = ""
     for s in sections:
         form_data = s.get("form_data") or {}
         inp = form_data.get("input") or {}
@@ -218,11 +221,20 @@ def build_bundle_cover_pdf(
         total += amount
         if not recipient_company:
             recipient_company = (inp.get("recipient_company") or "").strip()
+        if not recipient_person:
+            recipient_person = (inp.get("recipient_person") or "").strip()
+        if not recipient_email:
+            recipient_email = (inp.get("recipient_email") or "").strip()
+        if not location:
+            location = (inp.get("location") or "").strip()
 
     html = template.render(
         rows=rows,
         total=total,
         recipient_company=recipient_company,
+        recipient_person=recipient_person,
+        recipient_email=recipient_email,
+        location=location,
         parent_name=parent_name,
         parent_doc_number=parent_doc_number,
         parent_meta=parent_meta or {},

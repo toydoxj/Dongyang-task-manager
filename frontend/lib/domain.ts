@@ -541,6 +541,10 @@ export interface Sale {
   converted_project_id: string;
   /** 영업 위치 — 영업 row 단위. 견적서 탭에서 echo. */
   location: string;
+  /** 견적서 수신 담당자명 — 영업 row 단위. 견적서 탭/PDF에서 echo. */
+  recipient_person: string;
+  /** 견적서 수신 이메일 — 영업 row 단위. 견적서 탭/PDF에서 echo. */
+  recipient_email: string;
   assignees: string[];
   created_time: string | null;
   last_edited_time: string | null;
@@ -583,6 +587,10 @@ export interface SaleCreateRequest {
   wind_tunnel_amount?: number;
   /** 영업 위치. */
   location?: string;
+  /** 견적서 수신 담당자명. */
+  recipient_person?: string;
+  /** 견적서 수신 이메일. */
+  recipient_email?: string;
   assignees?: string[];
 }
 

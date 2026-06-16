@@ -32,7 +32,7 @@ interface Props {
   onChange: (next: QuoteInput) => void;
   /** 부모(SalesEditModal)가 산출 결과를 알아야 저장 시 quote_form_data에 포함 가능 */
   onResultChange?: (result: QuoteResult | null) => void;
-  /** true면 영업정보 탭 echo 필드(수신처/용역명/위치/규모) input을 disabled —
+  /** true면 영업정보 탭 echo 필드(수신처/담당자/메일/용역명/주소/규모) input을 disabled —
    *  사용자가 영업정보 탭에서 입력하도록 유도. */
   echoReadOnly?: boolean;
 }
@@ -211,7 +211,7 @@ export default function QuoteForm({
                   checked={syncOn}
                   onChange={(e) => set("sync_with_sale", e.target.checked)}
                 />
-                <span className="font-medium">영업 정보와 동기화 (수신처·용역명·위치·연면적·층수·동수)</span>
+                <span className="font-medium">영업 정보와 동기화 (수신처·담당자·메일·용역명·주소·연면적·층수·동수)</span>
               </label>
               <button
                 type="button"
@@ -276,11 +276,12 @@ export default function QuoteForm({
                 ))}
               </datalist>
             </Field>
-            <Field label="참조자">
+            <Field label="담당자명">
               <input
                 className={inputCls}
                 value={value.recipient_person ?? ""}
                 onChange={(e) => set("recipient_person", e.target.value)}
+                disabled={effectiveEcho}
               />
             </Field>
             <Field label="전화">
@@ -295,6 +296,7 @@ export default function QuoteForm({
                 className={inputCls}
                 value={value.recipient_email ?? ""}
                 onChange={(e) => set("recipient_email", e.target.value)}
+                disabled={effectiveEcho}
               />
             </Field>
           </div>
@@ -309,7 +311,7 @@ export default function QuoteForm({
               disabled={effectiveEcho}
             />
           </Field>
-          <Field label="위치">
+          <Field label="주소">
             <input
               className={inputCls}
               value={value.location ?? ""}

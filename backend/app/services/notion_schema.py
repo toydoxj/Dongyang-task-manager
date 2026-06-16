@@ -193,6 +193,9 @@ SALES_DB_REQUIRED: dict[str, dict[str, Any]] = {
     "문서번호": {"rich_text": {}},
     # 영업 위치 — 영업 row 단위. 견적서 탭에서 echo로 자동 채움.
     "위치": {"rich_text": {}},
+    # 견적서 수신 정보 — 내부 담당자 multi_select와 구분하기 위해 수신 prefix 사용.
+    "수신담당자": {"rich_text": {}},
+    "수신메일": {"rich_text": {}},
     # 견적서 첨부 — WORKS Drive에 저장된 PDF의 web url 보관
     "견적서첨부": {"files": {}},
     # 통합 견적서 첨부 (PR-G2) — parent_lead_id로 묶인 자식 견적까지 1 PDF로
